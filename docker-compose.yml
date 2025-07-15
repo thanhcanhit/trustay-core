@@ -1,0 +1,73 @@
+version: "3.8"
+
+services:
+  trustay-postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    container_name: trustay-postgres
+    environment:
+      - POSTGRES_USER=nestjs
+      - POSTGRES_PASSWORD=atrustay2025
+      - POSTGRES_DB=trustay_db
+      # Tối ưu PostgreSQL
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Tùy chọn: mount custom PostgreSQL config
+      # - ./postgresql.conf:/etc/postgresql/postgresql.conf
+    ports:
+      - "5432:5432"
+    # Tùy chọn: Giới hạn tài nguyên
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nestjs -d trustay_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Tùy chọn: Network tùy chỉnh
+    networks:
+      - trustay-network
+
+  trustay-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    container_name: trustay-redis
+    # Thêm cấu hình Redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    # Health check
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    # Tùy chọn: Giới hạn tài nguyên
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+    networks:
+      - trustay-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# Tùy chọn: Network riêng biệt
+networks:
+  trustay-network:
+    driver: bridge
