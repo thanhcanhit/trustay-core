@@ -60,9 +60,9 @@
 ## 🧪 Code Quality
 | Library | Purpose |
 |---------|---------|
-| `eslint` | Code linting |
-| `prettier` | Code formatting |
-| `@typescript-eslint/parser` | TypeScript ESLint support |
+| `@biomejs/biome` | Ultra-fast linter & formatter (replaces ESLint + Prettier) |
+| `eslint` | Code linting (legacy support) |
+| `prettier` | Code formatting (legacy support) |
 
 ## 📦 Package.json Scripts
 ```json
@@ -73,8 +73,11 @@
   "db:migrate": "npx prisma migrate dev",
   "db:generate": "npx prisma generate",
   "db:studio": "npx prisma studio",
-  "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
-  "format": "prettier --write \"src/**/*.ts\""
+  "lint": "biome lint src",
+  "lint:fix": "biome lint --write src",
+  "format": "biome format --write src",
+  "check": "biome check src",
+  "check:fix": "biome check --write src"
 }
 ```
 
