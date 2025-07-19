@@ -82,7 +82,7 @@ export class LoggerService implements NestLoggerService {
 	}
 
 	// Custom methods for specific use cases
-	logDbQuery(query: string, params?: any[], duration?: number) {
+	logDbQuery(query: string, params?: unknown[], duration?: number) {
 		this.logger.info("Database Query", {
 			context: "Database",
 			query,
@@ -111,7 +111,7 @@ export class LoggerService implements NestLoggerService {
 	logError(
 		error: Error,
 		context?: string,
-		additionalInfo?: Record<string, any>,
+		additionalInfo?: Record<string, unknown>,
 	) {
 		this.logger.error(error.message, {
 			context: context || "Error",
