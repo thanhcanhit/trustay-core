@@ -1,7 +1,7 @@
-import { NestFactory } from "@nestjs/core";
-import { AppModule } from "./app.module";
-import { AppConfigService } from "./config/config.service";
-import { LoggerService } from "./logger/logger.service";
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import { AppConfigService } from './config/config.service';
+import { LoggerService } from './logger/logger.service';
 
 async function bootstrap() {
 	const app = await NestFactory.create(AppModule);
@@ -19,12 +19,9 @@ async function bootstrap() {
 
 	await app.listen(port);
 
-	loggerService.log(
-		`Application is running on port ${port} in ${environment} mode`,
-		"Bootstrap",
-	);
+	loggerService.log(`Application is running on port ${port} in ${environment} mode`, 'Bootstrap');
 }
 
 bootstrap().catch((error) => {
-	console.error("Application failed to start", error);
+	console.error('Application failed to start', error);
 });

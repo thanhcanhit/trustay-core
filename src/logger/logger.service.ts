@@ -1,8 +1,5 @@
-import {
-	Injectable,
-	type LoggerService as NestLoggerService,
-} from "@nestjs/common";
-import { createLogger, format, type Logger, transports } from "winston";
+import { Injectable, type LoggerService as NestLoggerService } from '@nestjs/common';
+import { createLogger, format, type Logger, transports } from 'winston';
 
 @Injectable()
 export class LoggerService implements NestLoggerService {
@@ -10,13 +7,13 @@ export class LoggerService implements NestLoggerService {
 
 	constructor() {
 		this.logger = createLogger({
-			level: process.env.NODE_ENV === "production" ? "info" : "debug",
+			level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
 			format: format.combine(
-				format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
+				format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
 				format.errors({ stack: true }),
 				format.json(),
 			),
-			defaultMeta: { service: "nestjs-app" },
+			defaultMeta: { service: 'nestjs-app' },
 			transports: [
 				// Console logging
 				new transports.Console({
@@ -38,22 +35,22 @@ export class LoggerService implements NestLoggerService {
 								trace: string;
 							}) => {
 								return `${timestamp} [${
-									context || "Application"
-								}] ${level}: ${message}${trace ? `\n${trace}` : ""}`;
+									context || 'Application'
+								}] ${level}: ${message}${trace ? `\n${trace}` : ''}`;
 							},
 						),
 					),
 				}),
 				// File logging for errors
 				new transports.File({
-					filename: "logs/error.log",
-					level: "error",
+					filename: 'logs/error.log',
+					level: 'error',
 					maxsize: 5242880, // 5MB
 					maxFiles: 5,
 				}),
 				// File logging for all logs
 				new transports.File({
-					filename: "logs/combined.log",
+					filename: 'logs/combined.log',
 					maxsize: 5242880, // 5MB
 					maxFiles: 5,
 				}),
@@ -83,8 +80,8 @@ export class LoggerService implements NestLoggerService {
 
 	// Custom methods for specific use cases
 	logDbQuery(query: string, params?: unknown[], duration?: number) {
-		this.logger.info("Database Query", {
-			context: "Database",
+		this.logger.info('Database Query', {
+			context: 'Database',
 			query,
 			params,
 			duration: duration ? `${duration}ms` : undefined,
@@ -98,8 +95,8 @@ export class LoggerService implements NestLoggerService {
 		duration: number,
 		userId?: string,
 	) {
-		this.logger.info("API Request", {
-			context: "HTTP",
+		this.logger.info('API Request', {
+			context: 'HTTP',
 			method,
 			url,
 			statusCode,
@@ -108,13 +105,9 @@ export class LoggerService implements NestLoggerService {
 		});
 	}
 
-	logError(
-		error: Error,
-		context?: string,
-		additionalInfo?: Record<string, unknown>,
-	) {
+	logError(error: Error, context?: string, additionalInfo?: Record<string, unknown>) {
 		this.logger.error(error.message, {
-			context: context || "Error",
+			context: context || 'Error',
 			stack: error.stack,
 			...additionalInfo,
 		});

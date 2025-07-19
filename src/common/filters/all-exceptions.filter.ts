@@ -4,9 +4,9 @@ import {
 	type ExceptionFilter,
 	HttpException,
 	HttpStatus,
-} from "@nestjs/common";
-import type { Request, Response } from "express";
-import type { LoggerService } from "../../logger/logger.service";
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
+import type { LoggerService } from '../../logger/logger.service';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -18,14 +18,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
 		const request = ctx.getRequest<Request>();
 
 		const status =
-			exception instanceof HttpException
-				? exception.getStatus()
-				: HttpStatus.INTERNAL_SERVER_ERROR;
+			exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
 
 		const message =
-			exception instanceof HttpException
-				? exception.getResponse()
-				: "Internal server error";
+			exception instanceof HttpException ? exception.getResponse() : 'Internal server error';
 
 		const errorResponse = {
 			statusCode: status,
@@ -38,12 +34,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
 		// Log the error
 		this.logger.logError(
 			exception instanceof Error ? exception : new Error(String(exception)),
-			"HTTP Exception",
+			'HTTP Exception',
 			{
 				url: request.url,
 				method: request.method,
 				statusCode: status,
-				userAgent: request.get("User-Agent"),
+				userAgent: request.get('User-Agent'),
 				ip: request.ip,
 			},
 		);

@@ -1,11 +1,7 @@
-import {
-	Injectable,
-	type OnModuleDestroy,
-	type OnModuleInit,
-} from "@nestjs/common";
-import { PrismaClient } from "@prisma/client";
-import type { AppConfigService } from "../config/config.service";
-import type { LoggerService } from "../logger/logger.service"; // ✅ Bỏ 'type' keyword
+import { Injectable, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
+import type { AppConfigService } from '../config/config.service';
+import type { LoggerService } from '../logger/logger.service'; // ✅ Bỏ 'type' keyword
 
 interface PrismaQueryEvent {
 	query: string;
@@ -27,10 +23,7 @@ interface PrismaWarnEvent {
 }
 
 @Injectable()
-export class PrismaService
-	extends PrismaClient
-	implements OnModuleInit, OnModuleDestroy
-{
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
 	constructor(
 		private readonly logger: LoggerService,
 		private readonly configService: AppConfigService,
@@ -42,10 +35,10 @@ export class PrismaService
 				},
 			},
 			log: [
-				{ emit: "event", level: "query" },
-				{ emit: "event", level: "error" },
-				{ emit: "event", level: "info" },
-				{ emit: "event", level: "warn" },
+				{ emit: 'event', level: 'query' },
+				{ emit: 'event', level: 'error' },
+				{ emit: 'event', level: 'info' },
+				{ emit: 'event', level: 'warn' },
 			],
 		});
 
@@ -56,36 +49,32 @@ export class PrismaService
 		// Log database queries in development
 		if (this.configService.isDevelopment) {
 			// ✅ Dùng configService thay vì process.env
-			this.$on("query" as never, (e: PrismaQueryEvent) => {
+			this.$on('query' as never, (e: PrismaQueryEvent) => {
 				const params = e.params ? (JSON.parse(e.params) as unknown[]) : [];
 				this.logger.logDbQuery(e.query, params, e.duration);
 			});
 		}
 
-		this.$on("error" as never, (e: PrismaErrorEvent) => {
-			this.logger.error(`Database error: ${e.message}`, e.target, "Database");
+		this.$on('error' as never, (e: PrismaErrorEvent) => {
+			this.logger.error(`Database error: ${e.message}`, e.target, 'Database');
 		});
 
-		this.$on("info" as never, (e: PrismaInfoEvent) => {
-			this.logger.log(`Database info: ${e.message}`, "Database");
+		this.$on('info' as never, (e: PrismaInfoEvent) => {
+			this.logger.log(`Database info: ${e.message}`, 'Database');
 		});
 
-		this.$on("warn" as never, (e: PrismaWarnEvent) => {
-			this.logger.warn(`Database warning: ${e.message}`, "Database");
+		this.$on('warn' as never, (e: PrismaWarnEvent) => {
+			this.logger.warn(`Database warning: ${e.message}`, 'Database');
 		});
 	}
 
 	async onModuleInit() {
 		try {
 			await this.$connect();
-			this.logger.log("Database connected successfully", "Database");
+			this.logger.log('Database connected successfully', 'Database');
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.stack : String(error);
-			this.logger.error(
-				"Failed to connect to database",
-				errorMessage,
-				"Database",
-			);
+			this.logger.error('Failed to connect to database', errorMessage, 'Database');
 			throw error;
 		}
 	}
@@ -93,14 +82,10 @@ export class PrismaService
 	async onModuleDestroy() {
 		try {
 			await this.$disconnect();
-			this.logger.log("Database disconnected", "Database");
+			this.logger.log('Database disconnected', 'Database');
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.stack : String(error);
-			this.logger.error(
-				"Error disconnecting from database",
-				errorMessage,
-				"Database",
-			);
+			this.logger.error('Error disconnecting from database', errorMessage, 'Database');
 		}
 	}
 }
