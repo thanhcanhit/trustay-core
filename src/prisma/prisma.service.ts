@@ -4,7 +4,8 @@ import {
 	type OnModuleInit,
 } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
-import type { LoggerService } from "../logger/logger.service";
+import type { AppConfigService } from "../config/config.service";
+import type { LoggerService } from "../logger/logger.service"; // ✅ Bỏ 'type' keyword
 
 interface PrismaQueryEvent {
 	query: string;
@@ -30,8 +31,16 @@ export class PrismaService
 	extends PrismaClient
 	implements OnModuleInit, OnModuleDestroy
 {
-	constructor(private readonly logger: LoggerService) {
+	constructor(
+		private readonly logger: LoggerService,
+		private readonly configService: AppConfigService,
+	) {
 		super({
+			datasources: {
+				db: {
+					url: configService.databaseUrl,
+				},
+			},
 			log: [
 				{ emit: "event", level: "query" },
 				{ emit: "event", level: "error" },
@@ -45,7 +54,8 @@ export class PrismaService
 
 	private setupLogging() {
 		// Log database queries in development
-		if (process.env.NODE_ENV === "development") {
+		if (this.configService.isDevelopment) {
+			// ✅ Dùng configService thay vì process.env
 			this.$on("query" as never, (e: PrismaQueryEvent) => {
 				const params = e.params ? (JSON.parse(e.params) as unknown[]) : [];
 				this.logger.logDbQuery(e.query, params, e.duration);
