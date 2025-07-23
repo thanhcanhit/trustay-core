@@ -61,6 +61,61 @@ services:
     networks:
       - trustay-network
 
+  trustay-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: base
+    restart: unless-stopped
+    container_name: trustay-app
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://nestjs:atrustay2025@trustay-postgres:5432/trustay_db
+      - REDIS_URL=redis://trustay-redis:6379
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    depends_on:
+      trustay-postgres:
+        condition: service_healthy
+      trustay-redis:
+        condition: service_healthy
+    working_dir: /usr/src/app
+    command: sh -c "pnpm exec prisma migrate deploy && pnpm exec prisma db seed && pnpm exec nest start --watch"
+    networks:
+      - trustay-network
+    # Health check
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  prisma-studio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: base
+    restart: unless-stopped
+    container_name: prisma-studio
+    environment:
+      - DATABASE_URL=postgresql://nestjs:atrustay2025@trustay-postgres:5432/trustay_db
+    ports:
+      - "5555:5555"
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    depends_on:
+      trustay-postgres:
+        condition: service_healthy
+    working_dir: /usr/src/app
+    command: sh -c "pnpm exec prisma studio --port 5555 --hostname 0.0.0.0"
+    networks:
+      - trustay-network
+
 volumes:
   postgres_data:
     driver: local
