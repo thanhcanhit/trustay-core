@@ -1,7 +1,7 @@
 import { Injectable, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
-import type { AppConfigService } from '../config/config.service';
-import type { LoggerService } from '../logger/logger.service'; // ✅ Bỏ 'type' keyword
+import { AppConfigService } from '@/config/config.service';
+import { LoggerService } from '@/logger/logger.service';
 
 interface PrismaQueryEvent {
 	query: string;
