@@ -55,6 +55,14 @@ enum InvitationStatus {
   expired
 }
 
+enum BillStatus {
+  draft
+  pending
+  paid
+  overdue
+  cancelled
+}
+
 enum PaymentType {
   rent
   deposit
@@ -244,6 +252,7 @@ model Room {
   invitations     RoomInvitation[]
   bookingRequests BookingRequest[]
   rentals         Rental[]
+  monthlyBills    MonthlyBill[]
 
   @@unique([floorId, roomNumber])
   @@index([floorId])
@@ -487,6 +496,7 @@ model Rental {
   owner          User            @relation("RentalOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   payments       Payment[]
   reviews        Review[]
+  monthlyBills   MonthlyBill[]
 
   @@index([roomId])
   @@index([tenantId])
@@ -494,9 +504,77 @@ model Rental {
   @@map("rentals")
 }
 
+// ========================================
+// MONTHLY BILLING SYSTEM
+// ========================================
+
+model MonthlyBill {
+  id              String     @id @default(uuid())
+  rentalId        String     @map("rental_id")
+  roomId          String     @map("room_id")
+  billingPeriod   String     @map("billing_period") // "2025-01" format
+  billingMonth    Int        @map("billing_month") // 1-12
+  billingYear     Int        @map("billing_year")
+  periodStart     DateTime   @map("period_start") @db.Date
+  periodEnd       DateTime   @map("period_end") @db.Date
+  
+  // Totals
+  subtotal        Decimal    @db.Decimal(15, 2)
+  discountAmount  Decimal    @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  taxAmount       Decimal    @default(0) @map("tax_amount") @db.Decimal(15, 2)
+  totalAmount     Decimal    @map("total_amount") @db.Decimal(15, 2)
+  paidAmount      Decimal    @default(0) @map("paid_amount") @db.Decimal(15, 2)
+  remainingAmount Decimal    @map("remaining_amount") @db.Decimal(15, 2)
+  
+  // Status & Dates
+  status          BillStatus @default(draft)
+  dueDate         DateTime   @map("due_date") @db.Date
+  paidDate        DateTime?  @map("paid_date")
+  notes           String?
+  
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  // Relations
+  rental    Rental     @relation(fields: [rentalId], references: [id], onDelete: Cascade)
+  room      Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  billItems BillItem[]
+  payments  Payment[]
+
+  @@unique([rentalId, billingPeriod])
+  @@index([rentalId])
+  @@index([roomId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([billingYear, billingMonth])
+  @@map("monthly_bills")
+}
+
+model BillItem {
+  id            String      @id @default(uuid())
+  monthlyBillId String      @map("monthly_bill_id")
+  itemType      String      @map("item_type") // "rent", "utility", "service", "other"
+  itemName      String      @map("item_name")
+  description   String?
+  quantity      Decimal?    @db.Decimal(10, 2)
+  unitPrice     Decimal?    @map("unit_price") @db.Decimal(15, 2)
+  amount        Decimal     @db.Decimal(15, 2)
+  currency      String      @default("VND")
+  notes         String?
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  // Relations  
+  monthlyBill MonthlyBill @relation(fields: [monthlyBillId], references: [id], onDelete: Cascade)
+
+  @@index([monthlyBillId])
+  @@index([itemType])
+  @@map("bill_items")
+}
+
 model Payment {
   id                   String         @id @default(uuid())
   rentalId             String         @map("rental_id")
+  monthlyBillId        String?        @map("monthly_bill_id")
   payerId              String         @map("payer_id")
   paymentType          PaymentType    @map("payment_type")
   amount               Decimal        @db.Decimal(15, 2)
@@ -511,10 +589,12 @@ model Payment {
   updatedAt            DateTime       @updatedAt @map("updated_at")
 
   // Relations
-  rental Rental @relation(fields: [rentalId], references: [id], onDelete: Cascade)
-  payer  User   @relation(fields: [payerId], references: [id], onDelete: Cascade)
+  rental      Rental       @relation(fields: [rentalId], references: [id], onDelete: Cascade)
+  monthlyBill MonthlyBill? @relation(fields: [monthlyBillId], references: [id], onDelete: SetNull)
+  payer       User         @relation(fields: [payerId], references: [id], onDelete: Cascade)
 
   @@index([rentalId])
+  @@index([monthlyBillId])
   @@index([payerId])
   @@index([paymentStatus])
   @@index([paymentDate])
