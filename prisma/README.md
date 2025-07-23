@@ -13,6 +13,7 @@
   - [Invitation & Booking Management](#invitation--booking-management)
   - [Monthly Billing System](#monthly-billing-system)
   - [Reviews](#reviews)
+  - [Room Search Posts](#room-search-posts)
   - [System Tables](#system-tables)
 - [Enums](#enums)
 - [Relationships](#relationships)
@@ -25,6 +26,8 @@ Truststay là một platform cho thuê phòng trọ tại Việt Nam với kiế
 - **Building → Floor → Room Structure**: Cấu trúc phân cấp phù hợp với nhà trọ Việt Nam
 - **Role-based System**: Phân biệt tenant/landlord/both với xác thực danh tính
 - **Dual Rental Paths**: BookingRequest (tenant initiative) + RoomInvitation (landlord initiative)
+- **Two-way Marketplace**: Landlord đăng phòng + Tenant đăng tìm phòng
+- **Slug-based URLs**: SEO-friendly URLs cho Building và Room detail pages
 - **Monthly Billing System**: Tổng kết hóa đơn hàng tháng với bill items chi tiết
 - **Simplified Cost Management**: Bỏ phức tạp, tập trung cốt lõi
 - **Review System**: Đánh giá 2 chiều giữa tenant và landlord
@@ -33,15 +36,16 @@ Truststay là một platform cho thuê phòng trọ tại Việt Nam với kiế
 
 - **Database**: PostgreSQL 15+
 - **ORM**: Prisma
-- **Primary Keys**: UUID for scalability
+- **Primary Keys**: UUID for scalability, Slug for public-facing resources
+- **Icons**: Lucide React icon names for consistent UI
 - **Optimization**: Removed complex features for MVP focus
 
 ---
 
 ## Database Schema
 
-**Total Tables**: 16 (simplified from 30+)
-**Total Enums**: 10 (reduced from 15+)
+**Total Tables**: 17 (simplified from 30+)
+**Total Enums**: 11 (reduced from 15+)
 **Estimated Storage**: ~2GB (first year), ~10GB (after 3 years)
 
 ---
@@ -113,7 +117,8 @@ Cấu trúc phân cấp Building → Floor → Room phù hợp với nhà trọ 
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `id` | UUID | ✅ | Primary key |
+| `id` | String | ✅ | Primary key (slug format) |
+| `slug` | String | ✅ | SEO-friendly slug (unique) |
 | `ownerId` | UUID | ✅ | Foreign key → users.id |
 | `name` | String | ✅ | Tên tòa nhà |
 | `description` | String | ❌ | Mô tả |
@@ -127,6 +132,8 @@ Cấu trúc phân cấp Building → Floor → Room phù hợp với nhà trọ 
 | `isVerified` | Boolean | ✅ | Đã xác thực |
 | `createdAt` | DateTime | ✅ | Thời gian tạo |
 | `updatedAt` | DateTime | ✅ | Lần update cuối |
+
+**Slug Format**: `nha-tro-minh-phat-quan-9`
 
 #### 📁 `floors`
 
@@ -151,7 +158,8 @@ Cấu trúc phân cấp Building → Floor → Room phù hợp với nhà trọ 
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `id` | UUID | ✅ | Primary key |
+| `id` | String | ✅ | Primary key (slug format) |
+| `slug` | String | ✅ | SEO-friendly slug (unique) |
 | `floorId` | UUID | ✅ | Foreign key → floors.id |
 | `roomNumber` | String | ✅ | Số phòng |
 | `name` | String | ❌ | Tên phòng |
@@ -163,6 +171,8 @@ Cấu trúc phân cấp Building → Floor → Room phù hợp với nhà trọ 
 | `isVerified` | Boolean | ✅ | Đã xác thực |
 | `createdAt` | DateTime | ✅ | Thời gian tạo |
 | `updatedAt` | DateTime | ✅ | Lần update cuối |
+
+**Slug Format**: `nha-tro-minh-phat-phong-101`
 
 **Constraints**: Unique(floorId, roomNumber)
 
@@ -208,7 +218,7 @@ Hệ thống tiện ích đơn giản chỉ sử dụng system amenities.
 | `name` | String | ✅ | Tên tiếng Việt |
 | `nameEn` | String | ✅ | Tên tiếng Anh (unique) |
 | `category` | Enum | ✅ | `basic`, `kitchen`, `bathroom`, `entertainment`, `safety`, `connectivity`, `building` |
-| `iconUrl` | String | ❌ | Link icon |
+| `iconUrl` | String | ❌ | Lucide icon name |
 | `description` | String | ❌ | Mô tả |
 | `isActive` | Boolean | ✅ | Có hiển thị |
 | `sortOrder` | Int | ✅ | Thứ tự hiển thị |
@@ -247,7 +257,7 @@ Hệ thống chi phí đơn giản.
 | `nameEn` | String | ✅ | Tên tiếng Anh |
 | `category` | Enum | ✅ | `utility`, `service`, `parking`, `maintenance` |
 | `defaultUnit` | String | ❌ | Đơn vị mặc định |
-| `iconUrl` | String | ❌ | Link icon |
+| `iconUrl` | String | ❌ | Lucide icon name |
 | `description` | String | ❌ | Mô tả |
 | `isActive` | Boolean | ✅ | Có active |
 | `sortOrder` | Int | ✅ | Thứ tự hiển thị |
@@ -474,6 +484,45 @@ Hệ thống tổng kết hóa đơn hàng tháng với bill items chi tiết.
 
 ---
 
+### Room Search Posts
+
+Hệ thống cho phép tenant đăng bài tìm kiếm phòng trọ.
+
+#### 📁 `room_search_posts`
+
+**Purpose**: Bài đăng tìm kiếm phòng trọ từ tenant
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | UUID | ✅ | Primary key |
+| `tenantId` | UUID | ✅ | Foreign key → users.id |
+| `title` | String | ✅ | Tiêu đề bài đăng |
+| `description` | String | ✅ | Mô tả chi tiết |
+| `preferredDistricts` | String[] | ✅ | Các quận mong muốn |
+| `preferredWards` | String[] | ❌ | Các phường mong muốn |
+| `preferredCity` | String | ✅ | Thành phố mong muốn |
+| `minBudget` | Decimal | ❌ | Ngân sách tối thiểu |
+| `maxBudget` | Decimal | ✅ | Ngân sách tối đa |
+| `currency` | String | ✅ | Đồng tiền |
+| `preferredRoomTypes` | RoomType[] | ✅ | Loại phòng mong muốn |
+| `maxOccupancy` | Int | ❌ | Số người ở tối đa |
+| `minAreaSqm` | Decimal | ❌ | Diện tích tối thiểu |
+| `moveInDate` | Date | ❌ | Ngày dự kiến vào ở |
+| `rentalDuration` | Int | ❌ | Thời gian thuê (tháng) |
+| `requiredAmenities` | String[] | ✅ | Tiện ích cần thiết |
+| `contactPhone` | String | ❌ | SĐT liên hệ |
+| `contactEmail` | String | ❌ | Email liên hệ |
+| `status` | Enum | ✅ | `active`, `paused`, `closed`, `expired` |
+| `isPublic` | Boolean | ✅ | Hiển thị công khai |
+| `autoRenew` | Boolean | ✅ | Tự động gia hạn |
+| `expiresAt` | DateTime | ❌ | Thời gian hết hạn |
+| `viewCount` | Int | ✅ | Số lượt xem |
+| `contactCount` | Int | ✅ | Số lượt liên hệ |
+| `createdAt` | DateTime | ✅ | Thời gian tạo |
+| `updatedAt` | DateTime | ✅ | Lần update cuối |
+
+---
+
 ### System Tables
 
 #### 📁 `notifications`
@@ -576,6 +625,12 @@ Hệ thống tổng kết hóa đơn hàng tháng với bill items chi tiết.
 - `parking`
 - `maintenance`
 
+### SearchPostStatus
+- `active` - Đang hoạt động
+- `paused` - Tạm dừng
+- `closed` - Đã đóng
+- `expired` - Hết hạn
+
 ### Visibility
 - `anyoneCanFind`
 - `anyoneWithLink`
@@ -597,6 +652,8 @@ User (Landlord) → Building → Floor → Room → Room_Amenities → System_Am
                   RoomInvitation/BookingRequest → Rental → MonthlyBill → BillItems
                                                           ↓              ↓
                                                      Payments & Reviews
+
+User (Tenant) → RoomSearchPost (tìm kiếm phòng trọ)
 ```
 
 ### Key Relationships
@@ -607,6 +664,7 @@ User (Landlord) → Building → Floor → Room → Room_Amenities → System_Am
 - **1→N**: User có nhiều BookingRequests (as tenant)
 - **1→N**: User có nhiều Rentals (as tenant hoặc owner)
 - **1→N**: User có nhiều UserAddresses
+- **1→N**: User có nhiều RoomSearchPosts (as tenant)
 
 #### Building Hierarchy
 - **1→N**: Building có nhiều Floors
@@ -655,7 +713,14 @@ User (Landlord) → Building → Floor → Room → Room_Amenities → System_Am
 4. Tenant thanh toán → tạo Payment
 5. Update bill status → paid
 
-#### 5. Active rental
+#### 5. Tenant search post flow
+1. Tenant tạo RoomSearchPost với preferences
+2. Set budget, location, amenities requirements
+3. Landlords xem search posts và liên hệ
+4. Tenant nhận offers và chọn phù hợp
+5. Chuyển sang booking/invitation flow
+
+#### 6. Active rental
 1. Monthly billing cycle
 2. Communication về issues
 3. End rental → Reviews
@@ -729,16 +794,35 @@ WHERE p.rentalId = 'rental-uuid'
 ORDER BY p.paymentDate DESC
 ```
 
+#### Active Room Search Posts
+```sql
+SELECT 
+  rsp.*,
+  u.firstName || ' ' || u.lastName as tenantName,
+  u.phone as tenantPhone
+FROM room_search_posts rsp
+JOIN users u ON rsp.tenantId = u.id
+WHERE rsp.status = 'active'
+  AND rsp.isPublic = true
+  AND (rsp.expiresAt IS NULL OR rsp.expiresAt > NOW())
+  AND 'Quận 9' = ANY(rsp.preferredDistricts)
+  AND rsp.maxBudget >= 3000000
+ORDER BY rsp.createdAt DESC
+```
+
 ---
 
-**Database Version**: 2.1 (With Monthly Billing)
+**Database Version**: 3.0 (Two-way Marketplace with Slug Support)
 **Last Updated**: January 2025
 **Key Changes**: 
-- Simplified from 30+ to 16 tables
-- Building → Floor → Room hierarchy
+- Simplified from 30+ to 17 tables
+- Building → Floor → Room hierarchy with slug-based URLs
 - Merged UserProfile into User
 - Added UserRole and identity verification
 - Dual rental paths (Invitation + BookingRequest)
-- **NEW**: Monthly billing system with detailed bill items
+- **NEW**: Two-way marketplace with RoomSearchPost (tenant → landlord)
+- **NEW**: Slug support for SEO-friendly URLs (Building & Room)
+- **NEW**: Lucide React icon integration
+- Monthly billing system with detailed bill items
 - Enhanced payment tracking with bill linkage
 - Removed complex cost calculations and custom amenities

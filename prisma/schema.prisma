@@ -115,6 +115,13 @@ enum Visibility {
   limited
 }
 
+enum SearchPostStatus {
+  active
+  paused
+  closed
+  expired
+}
+
 // ========================================
 // USER MANAGEMENT
 // ========================================
@@ -155,10 +162,10 @@ model User {
   reviewsGiven        Review[]         @relation("ReviewGiver")
   reviewsReceived     Review[]         @relation("ReviewReceiver")
   notifications       Notification[]
+  roomSearchPosts     RoomSearchPost[]
 
   @@map("users")
 }
-
 
 model UserAddress {
   id           String   @id @default(uuid())
@@ -184,7 +191,8 @@ model UserAddress {
 // ========================================
 
 model Building {
-  id           String   @id @default(uuid())
+  id           String   @id // slug format: "nha-tro-minh-phat-quan-9"
+  slug         String   @unique // auto-generated from name + district
   ownerId      String   @map("owner_id")
   name         String
   description  String?
@@ -206,6 +214,7 @@ model Building {
   @@index([ownerId])
   @@index([district, city])
   @@index([isActive])
+  @@index([slug])
   @@map("buildings")
 }
 
@@ -229,7 +238,8 @@ model Floor {
 }
 
 model Room {
-  id           String   @id @default(uuid())
+  id           String   @id // slug format: "nha-tro-minh-phat-phong-101"
+  slug         String   @unique // auto-generated from building + room number
   floorId      String   @map("floor_id")
   roomNumber   String   @map("room_number")
   name         String?
@@ -258,6 +268,7 @@ model Room {
   @@index([floorId])
   @@index([roomType])
   @@index([isActive])
+  @@index([slug])
   @@map("rooms")
 }
 
@@ -509,31 +520,31 @@ model Rental {
 // ========================================
 
 model MonthlyBill {
-  id              String     @id @default(uuid())
-  rentalId        String     @map("rental_id")
-  roomId          String     @map("room_id")
-  billingPeriod   String     @map("billing_period") // "2025-01" format
-  billingMonth    Int        @map("billing_month") // 1-12
-  billingYear     Int        @map("billing_year")
-  periodStart     DateTime   @map("period_start") @db.Date
-  periodEnd       DateTime   @map("period_end") @db.Date
-  
+  id            String   @id @default(uuid())
+  rentalId      String   @map("rental_id")
+  roomId        String   @map("room_id")
+  billingPeriod String   @map("billing_period") // "2025-01" format
+  billingMonth  Int      @map("billing_month") // 1-12
+  billingYear   Int      @map("billing_year")
+  periodStart   DateTime @map("period_start") @db.Date
+  periodEnd     DateTime @map("period_end") @db.Date
+
   // Totals
-  subtotal        Decimal    @db.Decimal(15, 2)
-  discountAmount  Decimal    @default(0) @map("discount_amount") @db.Decimal(15, 2)
-  taxAmount       Decimal    @default(0) @map("tax_amount") @db.Decimal(15, 2)
-  totalAmount     Decimal    @map("total_amount") @db.Decimal(15, 2)
-  paidAmount      Decimal    @default(0) @map("paid_amount") @db.Decimal(15, 2)
-  remainingAmount Decimal    @map("remaining_amount") @db.Decimal(15, 2)
-  
+  subtotal        Decimal @db.Decimal(15, 2)
+  discountAmount  Decimal @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  taxAmount       Decimal @default(0) @map("tax_amount") @db.Decimal(15, 2)
+  totalAmount     Decimal @map("total_amount") @db.Decimal(15, 2)
+  paidAmount      Decimal @default(0) @map("paid_amount") @db.Decimal(15, 2)
+  remainingAmount Decimal @map("remaining_amount") @db.Decimal(15, 2)
+
   // Status & Dates
-  status          BillStatus @default(draft)
-  dueDate         DateTime   @map("due_date") @db.Date
-  paidDate        DateTime?  @map("paid_date")
-  notes           String?
-  
-  createdAt       DateTime   @default(now()) @map("created_at")
-  updatedAt       DateTime   @updatedAt @map("updated_at")
+  status   BillStatus @default(draft)
+  dueDate  DateTime   @map("due_date") @db.Date
+  paidDate DateTime?  @map("paid_date")
+  notes    String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
   rental    Rental     @relation(fields: [rentalId], references: [id], onDelete: Cascade)
@@ -551,17 +562,17 @@ model MonthlyBill {
 }
 
 model BillItem {
-  id            String      @id @default(uuid())
-  monthlyBillId String      @map("monthly_bill_id")
-  itemType      String      @map("item_type") // "rent", "utility", "service", "other"
-  itemName      String      @map("item_name")
+  id            String   @id @default(uuid())
+  monthlyBillId String   @map("monthly_bill_id")
+  itemType      String   @map("item_type") // "rent", "utility", "service", "other"
+  itemName      String   @map("item_name")
   description   String?
-  quantity      Decimal?    @db.Decimal(10, 2)
-  unitPrice     Decimal?    @map("unit_price") @db.Decimal(15, 2)
-  amount        Decimal     @db.Decimal(15, 2)
-  currency      String      @default("VND")
+  quantity      Decimal? @db.Decimal(10, 2)
+  unitPrice     Decimal? @map("unit_price") @db.Decimal(15, 2)
+  amount        Decimal  @db.Decimal(15, 2)
+  currency      String   @default("VND")
   notes         String?
-  createdAt     DateTime    @default(now()) @map("created_at")
+  createdAt     DateTime @default(now()) @map("created_at")
 
   // Relations  
   monthlyBill MonthlyBill @relation(fields: [monthlyBillId], references: [id], onDelete: Cascade)
@@ -629,6 +640,68 @@ model Review {
   @@index([rentalId])
   @@index([revieweeId])
   @@map("reviews")
+}
+
+// ========================================
+// ROOM SEARCH POSTS
+// ========================================
+
+model RoomSearchPost {
+  id          String @id @default(uuid())
+  tenantId    String @map("tenant_id")
+  title       String
+  description String
+
+  // Location preferences
+  preferredDistricts String[] @map("preferred_districts")
+  preferredWards     String[] @map("preferred_wards")
+  preferredCity      String   @map("preferred_city")
+
+  // Budget preferences
+  minBudget Decimal? @map("min_budget") @db.Decimal(15, 2)
+  maxBudget Decimal  @map("max_budget") @db.Decimal(15, 2)
+  currency  String   @default("VND")
+
+  // Room preferences
+  preferredRoomTypes RoomType[] @map("preferred_room_types")
+  maxOccupancy       Int?       @map("max_occupancy")
+  minAreaSqm         Decimal?   @map("min_area_sqm") @db.Decimal(8, 2)
+
+  // Move-in preferences
+  moveInDate     DateTime? @map("move_in_date") @db.Date
+  rentalDuration Int?      @map("rental_duration") // months
+
+  // Required amenities (JSON array of amenity IDs)
+  requiredAmenities String[] @map("required_amenities")
+
+  // Contact info
+  contactPhone String? @map("contact_phone")
+  contactEmail String? @map("contact_email")
+
+  // Post settings
+  status    SearchPostStatus @default(active)
+  isPublic  Boolean          @default(true) @map("is_public")
+  autoRenew Boolean          @default(false) @map("auto_renew")
+  expiresAt DateTime?        @map("expires_at")
+
+  // Engagement
+  viewCount    Int @default(0) @map("view_count")
+  contactCount Int @default(0) @map("contact_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant User @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([preferredCity])
+  @@index([maxBudget])
+  @@index([moveInDate])
+  @@index([expiresAt])
+  @@index([createdAt])
+  @@map("room_search_posts")
 }
 
 // ========================================

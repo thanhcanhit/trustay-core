@@ -5,10 +5,25 @@ import {
 	Gender,
 	UserRole,
 	RoomType,
+	SearchPostStatus,
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
+
+// Helper function to create slug from text
+function createSlug(text: string): string {
+	return text
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "") // Remove diacritics
+		.replace(/đ/g, "d")
+		.replace(/Đ/g, "d")
+		.replace(/[^a-z0-9\s-]/g, "") // Remove special chars
+		.replace(/\s+/g, "-") // Replace spaces with dashes
+		.replace(/-+/g, "-") // Replace multiple dashes with single
+		.trim();
+}
 
 async function main() {
 	console.log("🌱 Starting database seeding...");
@@ -444,13 +459,21 @@ async function main() {
 	console.log("🏢 Creating sample buildings with floors and rooms...");
 
 	// Building 1
-	const building1 = await prisma.building.create({
-		data: {
+	const buildingName = "Nhà trọ Minh Phát";
+	const buildingDistrict = "Quận 9";
+	const buildingSlug = createSlug(`${buildingName} ${buildingDistrict}`);
+	
+	const building1 = await prisma.building.upsert({
+		where: { id: buildingSlug },
+		update: {},
+		create: {
+			id: buildingSlug,
+			slug: buildingSlug,
 			ownerId: landlord1.id,
-			name: "Nhà trọ Minh Phát",
+			name: buildingName,
 			description: "Nhà trọ cao cấp gần trường Đại học Bách Khoa",
 			addressLine1: "123 Đường Lê Văn Việt",
-			district: "Quận 9",
+			district: buildingDistrict,
 			city: "TP. Hồ Chí Minh",
 			country: "Vietnam",
 			isActive: true,
@@ -459,8 +482,15 @@ async function main() {
 	});
 
 	// Floor 1 of Building 1
-	const floor1B1 = await prisma.floor.create({
-		data: {
+	const floor1B1 = await prisma.floor.upsert({
+		where: { 
+			buildingId_floorNumber: {
+				buildingId: building1.id,
+				floorNumber: 1
+			}
+		},
+		update: {},
+		create: {
 			buildingId: building1.id,
 			floorNumber: 1,
 			name: "Tầng 1",
@@ -470,8 +500,15 @@ async function main() {
 	});
 
 	// Floor 2 of Building 1
-	const floor2B1 = await prisma.floor.create({
-		data: {
+	const floor2B1 = await prisma.floor.upsert({
+		where: { 
+			buildingId_floorNumber: {
+				buildingId: building1.id,
+				floorNumber: 2
+			}
+		},
+		update: {},
+		create: {
 			buildingId: building1.id,
 			floorNumber: 2,
 			name: "Tầng 2",
@@ -553,9 +590,16 @@ async function main() {
 
 	const createdRooms: any[] = [];
 	for (const roomData of roomsData) {
-		const room = await prisma.room.create({
-			data: {
+		// Create room slug: building-name + room-number
+		const roomSlug = createSlug(`${buildingName} phong ${roomData.roomNumber}`);
+		
+		const room = await prisma.room.upsert({
+			where: { id: roomSlug },
+			update: {},
+			create: {
 				...roomData,
+				id: roomSlug,
+				slug: roomSlug,
 				isActive: true,
 				isVerified: true,
 			},
@@ -624,8 +668,10 @@ async function main() {
 	];
 
 	for (const pricingData of pricingsData) {
-		await prisma.roomPricing.create({
-			data: {
+		await prisma.roomPricing.upsert({
+			where: { roomId: pricingData.roomId },
+			update: {},
+			create: {
 				...pricingData,
 				currency: "VND",
 				utilityIncluded: false,
@@ -643,8 +689,15 @@ async function main() {
 
 	for (const room of createdRooms) {
 		for (const amenity of basicAmenities) {
-			await prisma.roomAmenity.create({
-				data: {
+			await prisma.roomAmenity.upsert({
+				where: { 
+					roomId_systemAmenityId: {
+						roomId: room.id,
+						systemAmenityId: amenity.id
+					}
+				},
+				update: {},
+				create: {
 					roomId: room.id,
 					systemAmenityId: amenity.id,
 				},
@@ -657,8 +710,15 @@ async function main() {
 				(a) => a.nameEn === "air_conditioning"
 			);
 			if (acAmenity) {
-				await prisma.roomAmenity.create({
-					data: {
+				await prisma.roomAmenity.upsert({
+					where: { 
+						roomId_systemAmenityId: {
+							roomId: room.id,
+							systemAmenityId: acAmenity.id
+						}
+					},
+					update: {},
+					create: {
 						roomId: room.id,
 						systemAmenityId: acAmenity.id,
 					},
@@ -676,8 +736,15 @@ async function main() {
 
 	for (const room of createdRooms) {
 		if (electricityCost) {
-			await prisma.roomCost.create({
-				data: {
+			await prisma.roomCost.upsert({
+				where: { 
+					roomId_systemCostTypeId: {
+						roomId: room.id,
+						systemCostTypeId: electricityCost.id
+					}
+				},
+				update: {},
+				create: {
 					roomId: room.id,
 					systemCostTypeId: electricityCost.id,
 					baseRate: 4000, // 4k VND per kWh
@@ -687,8 +754,15 @@ async function main() {
 		}
 
 		if (waterCost) {
-			await prisma.roomCost.create({
-				data: {
+			await prisma.roomCost.upsert({
+				where: { 
+					roomId_systemCostTypeId: {
+						roomId: room.id,
+						systemCostTypeId: waterCost.id
+					}
+				},
+				update: {},
+				create: {
 					roomId: room.id,
 					systemCostTypeId: waterCost.id,
 					baseRate: 25000, // 25k VND per m³
@@ -698,16 +772,74 @@ async function main() {
 		}
 	}
 
+	console.log("📝 Creating sample room search posts...");
+	
+	// Sample search posts from tenants
+	const searchPost1 = await prisma.roomSearchPost.upsert({
+		where: { id: "search-post-1" },
+		update: {},
+		create: {
+			id: "search-post-1",
+			tenantId: tenant1.id,
+			title: "Sinh viên IT tìm phòng trọ gần trường ĐH Bách Khoa",
+			description: "Mình là sinh viên năm 3 ngành CNTT, tìm phòng trọ sạch sẽ, yên tĩnh để học tập. Có wifi, điều hòa là tốt nhất.",
+			preferredDistricts: ["Quận 9", "Thủ Đức", "Quận 2"],
+			preferredWards: [],
+			preferredCity: "TP. Hồ Chí Minh",
+			minBudget: 2500000,
+			maxBudget: 4000000,
+			preferredRoomTypes: ["single"],
+			maxOccupancy: 1,
+			minAreaSqm: 20,
+			moveInDate: new Date("2025-02-01"),
+			rentalDuration: 12,
+			requiredAmenities: ["bed", "wifi", "air_conditioning"],
+			contactPhone: "0923456789",
+			contactEmail: "tenant1@truststay.com",
+			status: "active" as SearchPostStatus,
+			autoRenew: true,
+			expiresAt: new Date("2025-03-01")
+		}
+	});
+
+	const searchPost2 = await prisma.roomSearchPost.upsert({
+		where: { id: "search-post-2" },
+		update: {},
+		create: {
+			id: "search-post-2",
+			tenantId: tenant2.id,
+			title: "Nhân viên văn phòng tìm phòng trọ cao cấp",
+			description: "Tìm phòng trọ cao cấp, có đầy đủ tiện nghi, gần khu trung tâm để đi làm thuận tiện. Ngân sách thoải mái.",
+			preferredDistricts: ["Quận 1", "Quận 3", "Quận 10", "Quận Tân Bình"],
+			preferredWards: [],
+			preferredCity: "TP. Hồ Chí Minh",
+			minBudget: 5000000,
+			maxBudget: 8000000,
+			preferredRoomTypes: ["single", "suite"],
+			maxOccupancy: 1,
+			minAreaSqm: 25,
+			moveInDate: new Date("2025-02-15"),
+			rentalDuration: 6,
+			requiredAmenities: ["bed", "wifi", "air_conditioning", "refrigerator"],
+			contactPhone: "0934567890",
+			contactEmail: "tenant2@truststay.com",
+			status: "active" as SearchPostStatus,
+			autoRenew: false,
+			expiresAt: new Date("2025-02-28")
+		}
+	});
+
 	console.log("✅ Database seeding completed successfully!");
 	console.log(`
 📊 Summary:
 - System Amenities: ${createdAmenities.length}
 - System Cost Types: ${createdCostTypes.length}
 - Users: 4 (2 landlords, 2 tenants)
-- Buildings: 1
+- Buildings: 1 (with slug)
 - Floors: 2
-- Rooms: ${createdRooms.length}
+- Rooms: ${createdRooms.length} (with slug)
 - Room Pricing: ${pricingsData.length}
+- Room Search Posts: 2
 
 🔑 Demo Accounts:
 Landlords:
