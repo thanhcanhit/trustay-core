@@ -46,6 +46,9 @@ COPY prisma ./prisma/
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --production && pnpm store prune
 
+# Install ts-node for seed command
+RUN pnpm add ts-node typescript
+
 # Generate Prisma client in production
 RUN pnpm prisma generate
 
