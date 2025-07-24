@@ -52,6 +52,9 @@ RUN pnpm prisma generate
 # Copy built application from build stage
 COPY --from=build --chown=nestjs:nodejs /usr/src/app/dist ./dist
 
+# Create logs directory with proper permissions
+RUN mkdir -p logs && chown -R nestjs:nodejs logs
+
 # Switch to non-root user
 USER nestjs
 
