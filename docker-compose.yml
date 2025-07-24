@@ -9,15 +9,14 @@ services:
       - POSTGRES_USER=nestjs
       - POSTGRES_PASSWORD=atrustay2025
       - POSTGRES_DB=trustay_db
-      # Tối ưu PostgreSQL
+      # PostgreSQL optimization
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Tùy chọn: mount custom PostgreSQL config
-      # - ./postgresql.conf:/etc/postgresql/postgresql.conf
-    ports:
-      - "5432:5432"
-    # Tùy chọn: Giới hạn tài nguyên
+    # Remove port exposure for production
+    # ports:
+    #   - "5432:5432"
+    # Resource limits
     deploy:
       resources:
         limits:
@@ -31,7 +30,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    # Tùy chọn: Network tùy chỉnh
     networks:
       - trustay-network
 
@@ -39,19 +37,20 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     container_name: trustay-redis
-    # Thêm cấu hình Redis
+    # Redis configuration
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
+    # Remove port exposure for production
+    # ports:
+    #   - "6379:6379"
     # Health check
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
-    # Tùy chọn: Giới hạn tài nguyên
+    # Resource limits
     deploy:
       resources:
         limits:
@@ -69,21 +68,18 @@ services:
     restart: unless-stopped
     container_name: trustay-app
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=production
       - DATABASE_URL=postgresql://nestjs:atrustay2025@trustay-postgres:5432/trustay_db
       - REDIS_URL=redis://trustay-redis:6379
     ports:
-      - "3000:3000"
-    volumes:
-      - .:/usr/src/app
-      - /usr/src/app/node_modules
+      - "3000:3000"  # Keep only app port
     depends_on:
       trustay-postgres:
         condition: service_healthy
       trustay-redis:
         condition: service_healthy
     working_dir: /usr/src/app
-    command: sh -c "npx prisma migrate deploy && npx prisma db seed && pnpm run dev"
+    command: sh -c "npx prisma migrate deploy && npx prisma db seed && node dist/main.js"
     networks:
       - trustay-network
     # Health check
@@ -100,7 +96,7 @@ volumes:
   redis_data:
     driver: local
 
-# Tùy chọn: Network riêng biệt
+# Custom network
 networks:
   trustay-network:
     driver: bridge

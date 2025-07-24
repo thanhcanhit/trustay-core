@@ -43,11 +43,8 @@ WORKDIR /usr/src/app
 COPY package.json pnpm-lock.yaml ./
 COPY prisma ./prisma/
 
-# Install production dependencies only
-RUN pnpm install --frozen-lockfile --production && pnpm store prune
-
-# Install ts-node for seed command
-RUN pnpm add ts-node typescript
+# Install all dependencies for seed command
+RUN pnpm install --frozen-lockfile && pnpm store prune
 
 # Generate Prisma client in production
 RUN pnpm prisma generate
