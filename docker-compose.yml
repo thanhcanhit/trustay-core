@@ -9,21 +9,17 @@ services:
       - POSTGRES_USER=nestjs
       - POSTGRES_PASSWORD=atrustay2025
       - POSTGRES_DB=trustay_db
-      # PostgreSQL optimization
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    # Remove port exposure for production
-    # ports:
-    #   - "5432:5432"
-    # Resource limits
+    ports:
+      - "1206:5432"
     deploy:
       resources:
         limits:
           memory: 1G
         reservations:
           memory: 512M
-    # Health check
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nestjs -d trustay_db"]
       interval: 30s
@@ -32,25 +28,20 @@ services:
       start_period: 40s
     networks:
       - trustay-network
+      - coolify
 
   trustay-redis:
     image: redis:7-alpine
     restart: unless-stopped
     container_name: trustay-redis
-    # Redis configuration
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
-    # Remove port exposure for production
-    # ports:
-    #   - "6379:6379"
-    # Health check
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
-    # Resource limits
     deploy:
       resources:
         limits:
@@ -59,6 +50,7 @@ services:
           memory: 128M
     networks:
       - trustay-network
+      - coolify
 
   trustay-app:
     build:
@@ -71,8 +63,18 @@ services:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://nestjs:atrustay2025@trustay-postgres:5432/trustay_db
       - REDIS_URL=redis://trustay-redis:6379
-    ports:
-      - "3000:3000"  # Keep only app port
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.trustay.rule=Host(`core.bondhub.cloud`)"
+      - "traefik.http.routers.trustay.entrypoints=https"
+      - "traefik.http.routers.trustay.tls.certresolver=letsencrypt"
+      - "traefik.http.services.trustay.loadbalancer.server.port=3000"
+
+      # HTTP to HTTPS redirect
+      - "traefik.http.routers.trustay-http.rule=Host(`core.bondhub.cloud`)"
+      - "traefik.http.routers.trustay-http.entrypoints=http"
+      - "traefik.http.routers.trustay-http.middlewares=redirect-to-https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
     depends_on:
       trustay-postgres:
         condition: service_healthy
@@ -82,7 +84,7 @@ services:
     command: sh -c "npx prisma migrate deploy && npx prisma db seed && node dist/main.js"
     networks:
       - trustay-network
-    # Health check
+      - coolify
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
       interval: 30s
@@ -96,7 +98,8 @@ volumes:
   redis_data:
     driver: local
 
-# Custom network
 networks:
   trustay-network:
     driver: bridge
+  coolify:
+    external: true
