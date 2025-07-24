@@ -83,7 +83,7 @@ services:
       trustay-redis:
         condition: service_healthy
     working_dir: /usr/src/app
-    command: sh -c "pnpm exec prisma migrate deploy && pnpm exec prisma db seed && pnpm exec nest start --watch"
+    command: sh -c "npx prisma migrate deploy && npx prisma db seed && pnpm run dev"
     networks:
       - trustay-network
     # Health check

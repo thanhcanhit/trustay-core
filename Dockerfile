@@ -59,4 +59,4 @@ USER nestjs
 EXPOSE 3000
 
 # Start with database migration and app
-CMD ["sh", "-c", "pnpm exec prisma migrate deploy && node dist/main.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
