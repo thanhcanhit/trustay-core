@@ -65,7 +65,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: base
+      target: production
     restart: unless-stopped
     container_name: trustay-app
     environment:
