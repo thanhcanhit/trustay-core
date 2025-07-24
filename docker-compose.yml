@@ -94,28 +94,6 @@ services:
       retries: 3
       start_period: 60s
 
-  prisma-studio:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: base
-    restart: unless-stopped
-    container_name: prisma-studio
-    environment:
-      - DATABASE_URL=postgresql://nestjs:atrustay2025@trustay-postgres:5432/trustay_db
-    ports:
-      - "5555:5555"
-    volumes:
-      - .:/usr/src/app
-      - /usr/src/app/node_modules
-    depends_on:
-      trustay-postgres:
-        condition: service_healthy
-    working_dir: /usr/src/app
-    command: sh -c "pnpm exec prisma studio --port 5555 --hostname 0.0.0.0"
-    networks:
-      - trustay-network
-
 volumes:
   postgres_data:
     driver: local

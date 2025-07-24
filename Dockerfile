@@ -44,7 +44,7 @@ COPY package.json pnpm-lock.yaml ./
 COPY prisma ./prisma/
 
 # Install production dependencies only
-RUN pnpm install --frozen-lockfile --prod && pnpm store prune
+RUN pnpm install --frozen-lockfile --production && pnpm store prune
 
 # Generate Prisma client in production
 RUN pnpm prisma generate
