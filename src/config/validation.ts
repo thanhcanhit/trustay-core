@@ -10,15 +10,6 @@ export const validationSchema = Joi.object({
 
 	// Database
 	DATABASE_URL: Joi.string().required(),
-	DB_HOST: Joi.string().default('localhost'),
-	DB_PORT: Joi.number().port().default(5432),
-	DB_USERNAME: Joi.string().default('postgres'),
-	DB_PASSWORD: Joi.string().when('NODE_ENV', {
-		is: 'production',
-		then: Joi.required(),
-		otherwise: Joi.optional(),
-	}),
-	DB_NAME: Joi.string().default('nestjs_db'),
 
 	// JWT
 	JWT_SECRET: Joi.string().min(32).required(),
