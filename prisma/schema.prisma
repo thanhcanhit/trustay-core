@@ -202,6 +202,8 @@ model Building {
   district     String
   city         String
   country      String   @default("Vietnam")
+  latitude     Decimal? @db.Decimal(10, 7)
+  longitude    Decimal? @db.Decimal(10, 7)
   isActive     Boolean  @default(true) @map("is_active")
   isVerified   Boolean  @default(false) @map("is_verified")
   createdAt    DateTime @default(now()) @map("created_at")
@@ -215,6 +217,7 @@ model Building {
   @@index([district, city])
   @@index([isActive])
   @@index([slug])
+  @@index([latitude, longitude])
   @@map("buildings")
 }
 
@@ -656,6 +659,9 @@ model RoomSearchPost {
   preferredDistricts String[] @map("preferred_districts")
   preferredWards     String[] @map("preferred_wards")
   preferredCity      String   @map("preferred_city")
+  preferredLatitude  Decimal? @map("preferred_latitude") @db.Decimal(10, 7)
+  preferredLongitude Decimal? @map("preferred_longitude") @db.Decimal(10, 7)
+  searchRadiusKm     Decimal? @map("search_radius_km") @db.Decimal(8, 2)
 
   // Budget preferences
   minBudget Decimal? @map("min_budget") @db.Decimal(15, 2)
@@ -701,6 +707,7 @@ model RoomSearchPost {
   @@index([moveInDate])
   @@index([expiresAt])
   @@index([createdAt])
+  @@index([preferredLatitude, preferredLongitude])
   @@map("room_search_posts")
 }
 
@@ -724,4 +731,55 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notifications")
+}
+
+// ========================================
+// LOCATION TABLES
+// ========================================
+model Province {
+  id          String @id @default(cuid())
+  code        String @unique @map("province_code")
+  name        String @map("province_name")
+  nameEn      String? @map("province_name_en")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  districts   District[]
+  
+  @@map("provinces")
+  @@index([code])
+}
+
+model District {
+  id          String @id @default(cuid())
+  code        String @unique @map("district_code")
+  name        String @map("district_name")
+  nameEn      String? @map("district_name_en")
+  provinceId  String @map("province_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  province    Province @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  wards       Ward[]
+  
+  @@map("districts")
+  @@index([code])
+  @@index([provinceId])
+}
+
+model Ward {
+  id          String @id @default(cuid())
+  code        String @unique @map("ward_code")
+  name        String @map("ward_name")
+  nameEn      String? @map("ward_name_en")
+  level       String @map("ward_level") // "Phường", "Xã", "Thị trấn"
+  districtId  String @map("district_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  district    District @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  
+  @@map("wards")
+  @@index([code])
+  @@index([districtId])
 }
