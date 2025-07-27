@@ -44,6 +44,7 @@ export class VerificationService {
 		verificationId: string;
 		expiresInMinutes: number;
 		remainingAttempts: number;
+		smsDisabled?: boolean;
 	}> {
 		if (type === 'email' && !email) {
 			throw new BadRequestException('Email is required for email verification');
