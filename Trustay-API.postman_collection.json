@@ -1,0 +1,786 @@
+{
+  "info": {
+    "_postman_id": "trustay-api-collection",
+    "name": "Trustay API Collection",
+    "description": "Complete API collection for Trustay rental platform with authentication flows",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "trustay-team"
+  },
+  "item": [
+    {
+      "name": "🔐 Authentication",
+      "item": [
+        {
+          "name": "Send Email Verification",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('verificationId', response.verificationId);",
+                  "    console.log('Verification ID saved:', response.verificationId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"email\",\n  \"email\": \"{{testEmail}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/verification/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "verification", "send"]
+            },
+            "description": "Send verification code to email address"
+          },
+          "response": []
+        },
+        {
+          "name": "Send Phone Verification (SMS Disabled)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('verificationId', response.verificationId);",
+                  "    console.log('SMS Disabled Response:', response.message);",
+                  "    pm.test('SMS should be disabled', function () {",
+                  "        pm.expect(response.smsDisabled).to.be.true;",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"phone\",\n  \"phone\": \"{{testPhone}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/verification/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "verification", "send"]
+            },
+            "description": "Attempt phone verification (currently disabled)"
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Email Code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('verificationToken', response.verificationToken);",
+                  "    console.log('Verification Token saved:', response.verificationToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"email\",\n  \"email\": \"{{testEmail}}\",\n  \"code\": \"{{verificationCode}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/verification/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "verification", "verify"]
+            },
+            "description": "Verify email with 6-digit code"
+          },
+          "response": []
+        },
+        {
+          "name": "Register with Verification",
+          "event": [
+            {
+              "listen": "pre-request",
+              "script": {
+                "exec": [
+                  "// Set verification token in header",
+                  "const verificationToken = pm.collectionVariables.get('verificationToken');",
+                  "if (verificationToken) {",
+                  "    pm.request.headers.add({",
+                  "        key: 'X-Verification-Token',",
+                  "        value: verificationToken",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('accessToken', response.access_token);",
+                  "    pm.collectionVariables.set('userId', response.user.id);",
+                  "    console.log('Access Token saved:', response.access_token);",
+                  "    console.log('User ID saved:', response.user.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"{{testPassword}}\",\n  \"firstName\": \"{{testFirstName}}\",\n  \"lastName\": \"{{testLastName}}\",\n  \"phone\": \"{{testPhone}}\",\n  \"gender\": \"{{testGender}}\",\n  \"role\": \"{{testRole}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "register"]
+            },
+            "description": "Complete registration with verified email/phone"
+          },
+          "response": []
+        },
+        {
+          "name": "Register Direct (Development)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('accessToken', response.access_token);",
+                  "    pm.collectionVariables.set('userId', response.user.id);",
+                  "    console.log('Access Token saved:', response.access_token);",
+                  "    console.log('User ID saved:', response.user.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testEmailDev}}\",\n  \"password\": \"{{testPassword}}\",\n  \"firstName\": \"{{testFirstName}}\",\n  \"lastName\": \"{{testLastName}}\",\n  \"phone\": \"{{testPhoneDev}}\",\n  \"gender\": \"{{testGender}}\",\n  \"role\": \"{{testRole}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register-direct",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "register-direct"]
+            },
+            "description": "Direct registration for development (bypasses verification)"
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('accessToken', response.access_token);",
+                  "    pm.collectionVariables.set('userId', response.user.id);",
+                  "    console.log('Login successful. Access Token saved:', response.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{loginEmail}}\",\n  \"password\": \"{{loginPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Login with email and password"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Current User",
+          "event": [
+            {
+              "listen": "pre-request",
+              "script": {
+                "exec": [
+                  "// Auto-set Bearer token from collection variable",
+                  "const token = pm.collectionVariables.get('accessToken');",
+                  "if (token) {",
+                  "    pm.request.headers.add({",
+                  "        key: 'Authorization',",
+                  "        value: `Bearer ${token}`",
+                  "    });",
+                  "} else {",
+                  "    console.warn('No access token found. Please login first.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Get current authenticated user profile"
+          },
+          "response": []
+        },
+        {
+          "name": "Change Password",
+          "event": [
+            {
+              "listen": "pre-request",
+              "script": {
+                "exec": [
+                  "// Auto-set Bearer token",
+                  "const token = pm.collectionVariables.get('accessToken');",
+                  "if (token) {",
+                  "    pm.request.headers.add({",
+                  "        key: 'Authorization',",
+                  "        value: `Bearer ${token}`",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{currentPassword}}\",\n  \"newPassword\": \"{{newPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/change-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "change-password"]
+            },
+            "description": "Change user password"
+          },
+          "response": []
+        },
+        {
+          "name": "Check Password Strength",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"{{testPasswordToCheck}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/check-password-strength",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "check-password-strength"]
+            },
+            "description": "Check password strength and security score"
+          },
+          "response": []
+        },
+        {
+          "name": "Generate Secure Password",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/generate-password?length={{passwordLength}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "generate-password"],
+              "query": [
+                {
+                  "key": "length",
+                  "value": "{{passwordLength}}"
+                }
+              ]
+            },
+            "description": "Generate a secure password with specified length"
+          },
+          "response": []
+        }
+      ],
+      "description": "Authentication and verification endpoints"
+    },
+    {
+      "name": "👤 User Management",
+      "item": [
+        {
+          "name": "Get User Profile",
+          "event": [
+            {
+              "listen": "pre-request",
+              "script": {
+                "exec": [
+                  "// Auto-set Bearer token",
+                  "const token = pm.collectionVariables.get('accessToken');",
+                  "if (token) {",
+                  "    pm.request.headers.add({",
+                  "        key: 'Authorization',",
+                  "        value: `Bearer ${token}`",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "profile"]
+            },
+            "description": "Get authenticated user's profile"
+          },
+          "response": []
+        },
+        {
+          "name": "Update User Profile",
+          "event": [
+            {
+              "listen": "pre-request",
+              "script": {
+                "exec": [
+                  "// Auto-set Bearer token",
+                  "const token = pm.collectionVariables.get('accessToken');",
+                  "if (token) {",
+                  "    pm.request.headers.add({",
+                  "        key: 'Authorization',",
+                  "        value: `Bearer ${token}`",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"{{updatedFirstName}}\",\n  \"lastName\": \"{{updatedLastName}}\",\n  \"phone\": \"{{updatedPhone}}\",\n  \"gender\": \"{{updatedGender}}\",\n  \"bio\": \"{{updatedBio}}\",\n  \"dateOfBirth\": \"{{updatedDateOfBirth}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "profile"]
+            },
+            "description": "Update user profile information"
+          },
+          "response": []
+        }
+      ],
+      "description": "User profile management endpoints"
+    },
+    {
+      "name": "🌍 Location Services",
+      "item": [
+        {
+          "name": "Get All Provinces",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/provinces",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "provinces"]
+            },
+            "description": "Get list of all provinces in Vietnam"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Districts by Province",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/districts?provinceId={{testProvinceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "districts"],
+              "query": [
+                {
+                  "key": "provinceId",
+                  "value": "{{testProvinceId}}"
+                }
+              ]
+            },
+            "description": "Get districts within a specific province"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Wards by District",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/wards?districtId={{testDistrictId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "wards"],
+              "query": [
+                {
+                  "key": "districtId",
+                  "value": "{{testDistrictId}}"
+                }
+              ]
+            },
+            "description": "Get wards within a specific district"
+          },
+          "response": []
+        }
+      ],
+      "description": "Vietnam location data endpoints"
+    },
+    {
+      "name": "🔧 Utilities",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": ["{{baseUrl}}"],
+              "path": [""]
+            },
+            "description": "API health check endpoint"
+          },
+          "response": []
+        },
+        {
+          "name": "API Documentation",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api",
+              "host": ["{{baseUrl}}"],
+              "path": ["api"]
+            },
+            "description": "Swagger API documentation"
+          },
+          "response": []
+        }
+      ],
+      "description": "Utility and documentation endpoints"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global pre-request script",
+          "console.log('🚀 Trustay API Request:', pm.info.requestName);",
+          "",
+          "// Set common headers",
+          "pm.request.headers.add({",
+          "    key: 'User-Agent',",
+          "    value: 'Trustay-Postman-Collection/1.0'",
+          "});",
+          "",
+          "// Log current environment",
+          "console.log('Environment:', pm.collectionVariables.get('environment'));"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global test script",
+          "pm.test('Response time is less than 5000ms', function () {",
+          "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+          "});",
+          "",
+          "pm.test('Response has proper headers', function () {",
+          "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+          "});",
+          "",
+          "// Log response for debugging",
+          "if (pm.response.code >= 400) {",
+          "    console.log('❌ Error Response:', pm.response.json());",
+          "} else {",
+          "    console.log('✅ Success Response');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string",
+      "description": "Base URL for Trustay API"
+    },
+    {
+      "key": "environment",
+      "value": "development",
+      "type": "string",
+      "description": "Current environment (development/production)"
+    },
+    {
+      "key": "testEmail",
+      "value": "test@trustay.life",
+      "type": "string",
+      "description": "Test email for verification"
+    },
+    {
+      "key": "testEmailDev",
+      "value": "dev@trustay.life",
+      "type": "string",
+      "description": "Test email for direct registration"
+    },
+    {
+      "key": "testPhone",
+      "value": "+84901234567",
+      "type": "string",
+      "description": "Test phone number"
+    },
+    {
+      "key": "testPhoneDev",
+      "value": "+84987654321",
+      "type": "string",
+      "description": "Test phone for direct registration"
+    },
+    {
+      "key": "testPassword",
+      "value": "TrustayTest123!",
+      "type": "string",
+      "description": "Test password for registration"
+    },
+    {
+      "key": "testFirstName",
+      "value": "Minh",
+      "type": "string",
+      "description": "Test first name"
+    },
+    {
+      "key": "testLastName",
+      "value": "Nguyễn",
+      "type": "string",
+      "description": "Test last name"
+    },
+    {
+      "key": "testGender",
+      "value": "male",
+      "type": "string",
+      "description": "Test gender (male/female/other)"
+    },
+    {
+      "key": "testRole",
+      "value": "tenant",
+      "type": "string",
+      "description": "Test user role (tenant/landlord)"
+    },
+    {
+      "key": "verificationCode",
+      "value": "123456",
+      "type": "string",
+      "description": "6-digit verification code (check console/email)"
+    },
+    {
+      "key": "loginEmail",
+      "value": "test@trustay.life",
+      "type": "string",
+      "description": "Email for login"
+    },
+    {
+      "key": "loginPassword",
+      "value": "TrustayTest123!",
+      "type": "string",
+      "description": "Password for login"
+    },
+    {
+      "key": "currentPassword",
+      "value": "TrustayTest123!",
+      "type": "string",
+      "description": "Current password for change"
+    },
+    {
+      "key": "newPassword",
+      "value": "NewTrustayPass456!",
+      "type": "string",
+      "description": "New password for change"
+    },
+    {
+      "key": "testPasswordToCheck",
+      "value": "WeakPass",
+      "type": "string",
+      "description": "Password to check strength"
+    },
+    {
+      "key": "passwordLength",
+      "value": "16",
+      "type": "string",
+      "description": "Length for generated password"
+    },
+    {
+      "key": "updatedFirstName",
+      "value": "Minh Updated",
+      "type": "string",
+      "description": "Updated first name"
+    },
+    {
+      "key": "updatedLastName",
+      "value": "Nguyễn Updated",
+      "type": "string",
+      "description": "Updated last name"
+    },
+    {
+      "key": "updatedPhone",
+      "value": "+84909999999",
+      "type": "string",
+      "description": "Updated phone number"
+    },
+    {
+      "key": "updatedGender",
+      "value": "female",
+      "type": "string",
+      "description": "Updated gender"
+    },
+    {
+      "key": "updatedBio",
+      "value": "I'm a Trustay user looking for the perfect rental.",
+      "type": "string",
+      "description": "Updated bio"
+    },
+    {
+      "key": "updatedDateOfBirth",
+      "value": "1995-06-15",
+      "type": "string",
+      "description": "Updated date of birth (YYYY-MM-DD)"
+    },
+    {
+      "key": "testProvinceId",
+      "value": "79",
+      "type": "string",
+      "description": "Test province ID (Ho Chi Minh City)"
+    },
+    {
+      "key": "testDistrictId",
+      "value": "760",
+      "type": "string",
+      "description": "Test district ID (District 1)"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string",
+      "description": "JWT access token (auto-populated)"
+    },
+    {
+      "key": "verificationToken",
+      "value": "",
+      "type": "string",
+      "description": "Verification token (auto-populated)"
+    },
+    {
+      "key": "verificationId",
+      "value": "",
+      "type": "string",
+      "description": "Verification ID (auto-populated)"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string",
+      "description": "Current user ID (auto-populated)"
+    }
+  ]
+}
