@@ -28,7 +28,6 @@ services:
       start_period: 40s
     networks:
       - trustay-network
-      - coolify
 
   trustay-redis:
     image: redis:7-alpine
@@ -50,7 +49,6 @@ services:
           memory: 128M
     networks:
       - trustay-network
-      - coolify
 
   trustay-app:
     build:
@@ -74,7 +72,6 @@ services:
     command: sh -c "npx prisma migrate deploy && npx prisma db seed && node dist/main.js"
     networks:
       - trustay-network
-      - coolify
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
       interval: 30s
@@ -91,5 +88,3 @@ volumes:
 networks:
   trustay-network:
     driver: bridge
-  coolify:
-    external: true
