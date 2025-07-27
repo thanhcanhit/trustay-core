@@ -65,18 +65,6 @@ services:
       - REDIS_URL=${REDIS_URL}
     ports:
       - "3000:3000"
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.trustay.rule=Host(`core.bondhub.cloud`)"
-      - "traefik.http.routers.trustay.entrypoints=https"
-      - "traefik.http.routers.trustay.tls.certresolver=letsencrypt"
-      - "traefik.http.services.trustay.loadbalancer.server.port=3000"
-
-      # HTTP to HTTPS redirect
-      - "traefik.http.routers.trustay-http.rule=Host(`core.bondhub.cloud`)"
-      - "traefik.http.routers.trustay-http.entrypoints=http"
-      - "traefik.http.routers.trustay-http.middlewares=redirect-to-https"
-      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
     depends_on:
       trustay-postgres:
         condition: service_healthy
