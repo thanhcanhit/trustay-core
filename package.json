@@ -21,9 +21,9 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "db:seed": "npx prisma db seed",
     "db:reset": "npx prisma migrate reset && npx prisma db seed",
-    "db:import-admin": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/import-administrative-data.ts",
-    "db:crawl-import": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' scripts/crawl-import.ts import data/crawled_rooms.json",
-    "db:setup-full": "npm run db:import-admin && ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed.ts && npm run db:crawl-import"
+    "db:import-admin": "ts-node scripts/import-administrative-data.ts",
+    "db:crawl-import": "ts-node scripts/crawl-import.ts import data/crawled_rooms.json",
+    "db:setup-full": "npm run db:import-admin && ts-node prisma/seed.ts && npm run db:crawl-import"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -44,7 +44,7 @@
     "winston": "^3.17.0"
   },
   "prisma": {
-    "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
+    "seed": "ts-node prisma/seed.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.1.1",

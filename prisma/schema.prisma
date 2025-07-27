@@ -172,9 +172,9 @@ model UserAddress {
   userId       String   @map("user_id")
   addressLine1 String   @map("address_line_1")
   addressLine2 String?  @map("address_line_2")
-  wardId       String?  @map("ward_id")
-  districtId   String   @map("district_id")
-  provinceId   String   @map("province_id")
+  wardId       Int?     @map("ward_id")
+  districtId   Int      @map("district_id")
+  provinceId   Int      @map("province_id")
   country      String   @default("Vietnam")
   postalCode   String?  @map("postal_code")
   isPrimary    Boolean  @default(false) @map("is_primary")
@@ -204,9 +204,9 @@ model Building {
   description  String?
   addressLine1 String   @map("address_line_1")
   addressLine2 String?  @map("address_line_2")
-  wardId       String?  @map("ward_id")
-  districtId   String   @map("district_id")
-  provinceId   String   @map("province_id")
+  wardId       Int?     @map("ward_id")
+  districtId   Int      @map("district_id")
+  provinceId   Int      @map("province_id")
   country      String   @default("Vietnam")
   latitude     Decimal? @db.Decimal(10, 7)
   longitude    Decimal? @db.Decimal(10, 7)
@@ -749,7 +749,7 @@ model Notification {
 // LOCATION TABLES
 // ========================================
 model Province {
-  id          String @id @default(cuid())
+  id          Int @id @default(autoincrement())
   code        String @unique @map("province_code")
   name        String @map("province_name")
   nameEn      String? @map("province_name_en")
@@ -765,11 +765,11 @@ model Province {
 }
 
 model District {
-  id          String @id @default(cuid())
+  id          Int @id @default(autoincrement())
   code        String @unique @map("district_code")
   name        String @map("district_name")
   nameEn      String? @map("district_name_en")
-  provinceId  String @map("province_id")
+  provinceId  Int @map("province_id")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   
@@ -784,12 +784,12 @@ model District {
 }
 
 model Ward {
-  id          String @id @default(cuid())
+  id          Int @id @default(autoincrement())
   code        String @unique @map("ward_code")
   name        String @map("ward_name")
   nameEn      String? @map("ward_name_en")
   level       String @map("ward_level") // "Phường", "Xã", "Thị trấn"
-  districtId  String @map("district_id")
+  districtId  Int @map("district_id")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   
