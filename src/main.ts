@@ -47,8 +47,16 @@ async function bootstrap() {
 			filter: true,
 			showRequestHeaders: true,
 			tryItOutEnabled: true,
+			operationsSorter: 'method',
+			tagsSorter: 'alpha',
+			defaultModelsExpandDepth: 2,
+			defaultModelExpandDepth: 2,
+			displayOperationId: false,
+			showExtensions: false,
+			showCommonExtensions: false,
+			useUnsafeMarkdown: false,
 		},
-		customSiteTitle: 'TrustStay API Documentation',
+		customSiteTitle: 'TrustStay 2025',
 	});
 
 	// Get port from config
