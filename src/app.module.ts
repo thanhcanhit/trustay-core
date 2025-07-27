@@ -4,6 +4,7 @@ import { AddressModule } from './api/provinces/address/address.module';
 import { DistrictModule } from './api/provinces/district/district.module';
 import { ProvinceModule } from './api/provinces/province/province.module';
 import { WardModule } from './api/provinces/ward/ward.module';
+import { UsersModule } from './api/users/users.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ConfigModule } from './config/config.module';
@@ -19,6 +20,7 @@ import { PrismaModule } from './prisma/prisma.module';
 		DistrictModule,
 		WardModule,
 		AddressModule,
+		UsersModule,
 	],
 	providers: [
 		{
