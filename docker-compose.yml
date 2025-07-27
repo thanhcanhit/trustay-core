@@ -63,6 +63,8 @@ services:
       - NODE_ENV=${NODE_ENV}
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
+    ports:
+      - "3000:3000"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.trustay.rule=Host(`core.bondhub.cloud`)"
