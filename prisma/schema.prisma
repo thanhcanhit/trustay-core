@@ -172,17 +172,23 @@ model UserAddress {
   userId       String   @map("user_id")
   addressLine1 String   @map("address_line_1")
   addressLine2 String?  @map("address_line_2")
-  ward         String?
-  district     String
-  city         String
+  wardId       String?  @map("ward_id")
+  districtId   String   @map("district_id")
+  provinceId   String   @map("province_id")
   country      String   @default("Vietnam")
   postalCode   String?  @map("postal_code")
   isPrimary    Boolean  @default(false) @map("is_primary")
   createdAt    DateTime @default(now()) @map("created_at")
 
   // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ward     Ward?     @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  district District  @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  province Province  @relation(fields: [provinceId], references: [id], onDelete: Cascade)
 
+  @@index([districtId])
+  @@index([provinceId])
+  @@index([wardId])
   @@map("user_addresses")
 }
 
@@ -198,9 +204,9 @@ model Building {
   description  String?
   addressLine1 String   @map("address_line_1")
   addressLine2 String?  @map("address_line_2")
-  ward         String?
-  district     String
-  city         String
+  wardId       String?  @map("ward_id")
+  districtId   String   @map("district_id")
+  provinceId   String   @map("province_id")
   country      String   @default("Vietnam")
   latitude     Decimal? @db.Decimal(10, 7)
   longitude    Decimal? @db.Decimal(10, 7)
@@ -210,14 +216,20 @@ model Building {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   // Relations
-  owner  User    @relation("BuildingOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  floors Floor[]
+  owner    User      @relation("BuildingOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  ward     Ward?     @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  district District  @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  province Province  @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  floors   Floor[]
 
   @@index([ownerId])
-  @@index([district, city])
+  @@index([districtId, provinceId])
   @@index([isActive])
   @@index([slug])
   @@index([latitude, longitude])
+  @@index([districtId])
+  @@index([provinceId])
+  @@index([wardId])
   @@map("buildings")
 }
 
@@ -744,7 +756,9 @@ model Province {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   
-  districts   District[]
+  districts     District[]
+  userAddresses UserAddress[]
+  buildings     Building[]
   
   @@map("provinces")
   @@index([code])
@@ -759,8 +773,10 @@ model District {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   
-  province    Province @relation(fields: [provinceId], references: [id], onDelete: Cascade)
-  wards       Ward[]
+  province      Province      @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  wards         Ward[]
+  userAddresses UserAddress[]
+  buildings     Building[]
   
   @@map("districts")
   @@index([code])
@@ -777,7 +793,9 @@ model Ward {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   
-  district    District @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  district      District      @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  userAddresses UserAddress[]
+  buildings     Building[]
   
   @@map("wards")
   @@index([code])
