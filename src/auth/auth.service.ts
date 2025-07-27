@@ -135,11 +135,29 @@ export class AuthService {
 				.catch((error) => console.error('Failed to send welcome email:', error));
 		}
 
-		// Send welcome SMS if phone was verified
+		// Send welcome SMS if phone was verified (temporarily disabled)
 		if (tokenValidation.phone && user.phone) {
-			this.smsService
-				.sendWelcomeSms(user.phone, user.firstName)
-				.catch((error) => console.error('Failed to send welcome SMS:', error));
+			console.log(`[SMS Disabled] Would send welcome SMS to ${user.phone} for ${user.firstName}`);
+			// this.smsService.sendWelcomeSms(user.phone, user.firstName)
+			// 	.catch((error) => console.error('Failed to send welcome SMS:', error));
+		}
+
+		// Clean up used verification records to prevent reuse
+		if (tokenValidation.email) {
+			await this.prisma.verificationCode.deleteMany({
+				where: {
+					email: tokenValidation.email,
+					type: 'email',
+				},
+			});
+		}
+		if (tokenValidation.phone) {
+			await this.prisma.verificationCode.deleteMany({
+				where: {
+					phone: tokenValidation.phone,
+					type: 'phone',
+				},
+			});
 		}
 
 		// Generate JWT token
@@ -243,6 +261,16 @@ export class AuthService {
 				.sendWelcomeEmail(user.email, user.firstName)
 				.catch((error) => console.error('Failed to send welcome email:', error));
 		}
+
+		// Clean up any existing verification records for this email/phone
+		await this.prisma.verificationCode.deleteMany({
+			where: {
+				OR: [
+					{ email: registerDto.email },
+					...(registerDto.phone ? [{ phone: registerDto.phone }] : []),
+				],
+			},
+		});
 
 		// Generate JWT token
 		const payload = { sub: user.id, email: user.email, role: user.role };

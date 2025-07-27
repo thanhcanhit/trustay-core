@@ -10,6 +10,7 @@ export interface VerificationTokenPayload {
 	email?: string;
 	phone?: string;
 	type: VerificationType;
+	verificationId: string;
 	iat: number;
 	exp: number;
 }
@@ -65,6 +66,36 @@ export class VerificationService {
 			}
 		}
 
+		// Check if email/phone has already been successfully verified
+		if (email) {
+			const existingVerification = await this.prisma.verificationCode.findFirst({
+				where: {
+					email,
+					type: 'email',
+					status: VerificationStatus.verified,
+				},
+			});
+			if (existingVerification) {
+				throw new BadRequestException(
+					'This email has already been verified. Please use a different email or proceed to registration.',
+				);
+			}
+		}
+		if (phone) {
+			const existingVerification = await this.prisma.verificationCode.findFirst({
+				where: {
+					phone,
+					type: 'phone',
+					status: VerificationStatus.verified,
+				},
+			});
+			if (existingVerification) {
+				throw new BadRequestException(
+					'This phone number has already been verified. Please use a different phone or proceed to registration.',
+				);
+			}
+		}
+
 		// Check rate limiting
 		await this.checkRateLimit(type, email, phone);
 
@@ -90,14 +121,21 @@ export class VerificationService {
 		if (type === 'email' && email) {
 			await this.emailService.sendVerificationEmail(email, code);
 		} else if (type === 'phone' && phone) {
-			await this.smsService.sendVerificationSms(phone, code);
+			// SMS temporarily disabled - will be implemented later
+			console.log(`[SMS Disabled] Would send verification code ${code} to ${phone}`);
 		}
 
+		const responseMessage =
+			type === 'phone'
+				? 'SMS verification is temporarily disabled. Please use email verification instead.'
+				: `Verification code sent to ${type} successfully`;
+
 		return {
-			message: `Verification code sent to ${type} successfully`,
+			message: responseMessage,
 			verificationId: verification.id,
 			expiresInMinutes: 5,
 			remainingAttempts: 5,
+			smsDisabled: type === 'phone' ? true : undefined,
 		};
 	}
 
@@ -155,7 +193,7 @@ export class VerificationService {
 			);
 		}
 
-		// Mark as verified
+		// Mark as verified and add verification ID to token for one-time use
 		await this.prisma.verificationCode.update({
 			where: { id: verification.id },
 			data: {
@@ -164,9 +202,10 @@ export class VerificationService {
 			},
 		});
 
-		// Generate verification token (short-lived, 10 minutes)
-		const tokenPayload: Partial<VerificationTokenPayload> = {
+		// Generate verification token (short-lived, 10 minutes) with verification ID
+		const tokenPayload: Partial<VerificationTokenPayload> & { verificationId: string } = {
 			type,
+			verificationId: verification.id,
 			...(email && { email }),
 			...(phone && { phone }),
 		};
@@ -188,7 +227,24 @@ export class VerificationService {
 			const payload = this.jwtService.verify<VerificationTokenPayload>(token);
 
 			// Check if token is from verification flow
-			if (!payload.type || !['email', 'phone'].includes(payload.type)) {
+			if (!payload.type || !['email', 'phone'].includes(payload.type) || !payload.verificationId) {
+				return { isValid: false };
+			}
+
+			// Check if verification record still exists and is verified
+			const verification = await this.prisma.verificationCode.findUnique({
+				where: { id: payload.verificationId },
+			});
+
+			if (!verification || verification.status !== VerificationStatus.verified) {
+				return { isValid: false };
+			}
+
+			// Verify the email/phone matches
+			if (payload.email && verification.email !== payload.email) {
+				return { isValid: false };
+			}
+			if (payload.phone && verification.phone !== payload.phone) {
 				return { isValid: false };
 			}
 

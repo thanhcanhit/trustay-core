@@ -16,14 +16,23 @@ export class VerificationController {
 	})
 	@ApiResponse({
 		status: 200,
-		description: 'Verification code sent successfully',
+		description: 'Verification code sent successfully or SMS disabled notification',
 		schema: {
 			type: 'object',
 			properties: {
-				message: { type: 'string', example: 'Verification code sent to email successfully' },
+				message: {
+					type: 'string',
+					example: 'Verification code sent to email successfully',
+					description: 'Success message or SMS disabled notification',
+				},
 				verificationId: { type: 'string', example: 'clx123456789' },
 				expiresInMinutes: { type: 'number', example: 5 },
 				remainingAttempts: { type: 'number', example: 5 },
+				smsDisabled: {
+					type: 'boolean',
+					example: true,
+					description: 'Present and true when SMS verification is attempted but disabled',
+				},
 			},
 		},
 	})

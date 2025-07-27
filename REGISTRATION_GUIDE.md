@@ -8,6 +8,8 @@ Hướng dẫn đăng ký người dùng với 2 phương thức: **Verification
 
 Flow này yêu cầu xác thực email/phone trước khi đăng ký:
 
+> **📱 Lưu ý:** SMS verification tạm thời bị tắt. Hiện tại chỉ hỗ trợ email verification.
+
 ```mermaid
 sequenceDiagram
     participant FE as Frontend
@@ -51,6 +53,7 @@ sequenceDiagram
 
 ### **Step 1: Send Verification Code**
 
+**Email verification (Available):**
 ```http
 POST /api/verification/send
 Content-Type: application/json
@@ -61,13 +64,35 @@ Content-Type: application/json
 }
 ```
 
-**Response:**
+**Phone verification (Temporarily Disabled):**
+```http
+POST /api/verification/send
+Content-Type: application/json
+
+{
+  "type": "phone",
+  "phone": "+84901234567"
+}
+```
+
+**Response (Email):**
 ```json
 {
   "message": "Verification code sent to email successfully",
   "verificationId": "clx123456789",
   "expiresInMinutes": 5,
   "remainingAttempts": 5
+}
+```
+
+**Response (Phone - SMS Disabled):**
+```json
+{
+  "message": "SMS verification is temporarily disabled. Please use email verification instead.",
+  "verificationId": "clx123456789",
+  "expiresInMinutes": 5,
+  "remainingAttempts": 5,
+  "smsDisabled": true
 }
 ```
 
