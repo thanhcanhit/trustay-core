@@ -50,14 +50,41 @@ export class PasswordService {
 		const errors: string[] = [];
 		let score = 0;
 
-		// Minimum length
+		// Validate length and add score
+		score += this.validateLength(password, errors);
+
+		// Validate character types
+		score += this.validateCharacterTypes(password, errors);
+
+		// Check for common patterns
+		score += this.validateCommonPatterns(password, errors);
+
+		// Ensure score is within bounds
+		score = Math.max(0, Math.min(100, score));
+
+		return {
+			isValid: errors.length === 0 && score >= 60,
+			errors,
+			score,
+		};
+	}
+
+	private validateLength(password: string, errors: string[]): number {
 		if (password.length < 6) {
 			errors.push('Mật khẩu phải có ít nhất 6 ký tự');
-		} else if (password.length >= 8) {
-			score += 20;
-		} else {
-			score += 10;
+			return 0;
 		}
+		if (password.length >= 12) {
+			return 35; // 20 for basic + 15 bonus
+		}
+		if (password.length >= 8) {
+			return 20;
+		}
+		return 10;
+	}
+
+	private validateCharacterTypes(password: string, errors: string[]): number {
+		let score = 0;
 
 		// Contains lowercase
 		if (/[a-z]/.test(password)) {
@@ -87,30 +114,19 @@ export class PasswordService {
 			errors.push('Mật khẩu phải chứa ít nhất 1 ký tự đặc biệt (!@#$%^&*...)');
 		}
 
-		// Length bonus
-		if (password.length >= 12) {
-			score += 15;
-		}
+		return score;
+	}
 
-		// Check for common patterns
+	private validateCommonPatterns(password: string, errors: string[]): number {
 		const commonPatterns = [/123456/, /password/i, /qwerty/i, /admin/i, /letmein/i];
 
 		for (const pattern of commonPatterns) {
 			if (pattern.test(password)) {
 				errors.push('Mật khẩu không được chứa chuỗi phổ biến');
-				score -= 20;
-				break;
+				return -20;
 			}
 		}
-
-		// Ensure score is within bounds
-		score = Math.max(0, Math.min(100, score));
-
-		return {
-			isValid: errors.length === 0 && score >= 60,
-			errors,
-			score,
-		};
+		return 0;
 	}
 
 	/**
@@ -153,7 +169,7 @@ export class PasswordService {
 			// bcrypt hashes contain the salt rounds in the hash itself
 			const currentRounds = parseInt(hashedPassword.split('$')[2]);
 			return currentRounds < this.saltRounds;
-		} catch (error) {
+		} catch {
 			// If we can't parse the hash, assume it needs rehashing
 			return true;
 		}

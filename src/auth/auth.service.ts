@@ -10,8 +10,12 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
+import { PreRegisterDto } from './dto/pre-register.dto';
 import { RegisterDto } from './dto/register.dto';
+import { EmailService } from './services/email.service';
 import { PasswordService } from './services/password.service';
+import { SmsService } from './services/sms.service';
+import { VerificationService } from './services/verification.service';
 
 @Injectable()
 export class AuthService {
@@ -20,9 +24,148 @@ export class AuthService {
 		private readonly jwtService: JwtService,
 		private readonly configService: ConfigService,
 		private readonly passwordService: PasswordService,
+		private readonly verificationService: VerificationService,
+		private readonly emailService: EmailService,
+		private readonly smsService: SmsService,
 	) {}
 
-	async register(registerDto: RegisterDto): Promise<AuthResponseDto> {
+	async preRegister(
+		preRegisterDto: PreRegisterDto,
+		verificationToken: string,
+	): Promise<AuthResponseDto> {
+		// Validate verification token
+		const tokenValidation =
+			await this.verificationService.validateVerificationToken(verificationToken);
+		if (!tokenValidation.isValid) {
+			throw new UnauthorizedException(
+				'Invalid or expired verification token. Please verify your email/phone again.',
+			);
+		}
+
+		// Check that the email/phone matches the verified one
+		if (tokenValidation.email && tokenValidation.email !== preRegisterDto.email) {
+			throw new BadRequestException('Email does not match the verified email');
+		}
+
+		if (tokenValidation.phone && tokenValidation.phone !== preRegisterDto.phone) {
+			throw new BadRequestException('Phone does not match the verified phone');
+		}
+
+		// Ensure required verification is done
+		if (!tokenValidation.email && !tokenValidation.phone) {
+			throw new BadRequestException('Either email or phone must be verified');
+		}
+		// Check if email already exists (double check)
+		const existingUserByEmail = await this.prisma.user.findUnique({
+			where: { email: preRegisterDto.email },
+		});
+
+		if (existingUserByEmail) {
+			throw new ConflictException('Email is already in use');
+		}
+
+		// Check if phone already exists (if provided)
+		if (preRegisterDto.phone) {
+			const existingUserByPhone = await this.prisma.user.findUnique({
+				where: { phone: preRegisterDto.phone },
+			});
+
+			if (existingUserByPhone) {
+				throw new ConflictException('Phone number is already in use');
+			}
+		}
+
+		// Validate password strength
+		const passwordValidation = this.passwordService.validatePasswordStrength(
+			preRegisterDto.password,
+		);
+		if (!passwordValidation.isValid) {
+			throw new BadRequestException({
+				message: 'Password does not meet security requirements',
+				errors: passwordValidation.errors,
+				score: passwordValidation.score,
+			});
+		}
+
+		// Hash password
+		const hashedPassword = await this.passwordService.hashPassword(preRegisterDto.password);
+
+		// Create user with verified email/phone
+		const user = await this.prisma.user.create({
+			data: {
+				email: preRegisterDto.email,
+				passwordHash: hashedPassword,
+				firstName: preRegisterDto.firstName,
+				lastName: preRegisterDto.lastName,
+				phone: preRegisterDto.phone,
+				gender: preRegisterDto.gender,
+				role: preRegisterDto.role,
+				// Set verification status based on what was verified
+				isVerifiedEmail: !!tokenValidation.email,
+				isVerifiedPhone: !!tokenValidation.phone,
+			},
+			select: {
+				id: true,
+				email: true,
+				phone: true,
+				firstName: true,
+				lastName: true,
+				avatarUrl: true,
+				dateOfBirth: true,
+				gender: true,
+				role: true,
+				bio: true,
+				idCardNumber: true,
+				bankAccount: true,
+				bankName: true,
+				isVerifiedPhone: true,
+				isVerifiedEmail: true,
+				isVerifiedIdentity: true,
+				isVerifiedBank: true,
+				lastActiveAt: true,
+				createdAt: true,
+				updatedAt: true,
+			},
+		});
+
+		// Send welcome email if email was verified
+		if (tokenValidation.email) {
+			this.emailService
+				.sendWelcomeEmail(user.email, user.firstName)
+				.catch((error) => console.error('Failed to send welcome email:', error));
+		}
+
+		// Send welcome SMS if phone was verified
+		if (tokenValidation.phone && user.phone) {
+			this.smsService
+				.sendWelcomeSms(user.phone, user.firstName)
+				.catch((error) => console.error('Failed to send welcome SMS:', error));
+		}
+
+		// Generate JWT token
+		const payload = { sub: user.id, email: user.email, role: user.role };
+		const access_token = this.jwtService.sign(payload);
+
+		return {
+			access_token,
+			user,
+			token_type: 'Bearer',
+			expires_in: this.configService.get<number>('JWT_EXPIRES_IN') || 3600,
+		};
+	}
+
+	// Fallback registration without verification (for development/testing)
+	async registerDirectly(registerDto: RegisterDto): Promise<AuthResponseDto> {
+		// Check environment - only allow in development
+		const nodeEnv = this.configService.get<string>('NODE_ENV');
+		const allowDirectRegistration = this.configService.get<boolean>('ALLOW_DIRECT_REGISTRATION');
+
+		if (nodeEnv === 'production' && !allowDirectRegistration) {
+			throw new BadRequestException(
+				'Direct registration is not allowed in production. Please use email/phone verification flow.',
+			);
+		}
+
 		// Check if email already exists
 		const existingUser = await this.prisma.user.findUnique({
 			where: { email: registerDto.email },
@@ -56,7 +199,7 @@ export class AuthService {
 		// Hash password
 		const hashedPassword = await this.passwordService.hashPassword(registerDto.password);
 
-		// Create user
+		// Create user (without verification in development)
 		const user = await this.prisma.user.create({
 			data: {
 				email: registerDto.email,
@@ -65,7 +208,10 @@ export class AuthService {
 				lastName: registerDto.lastName,
 				phone: registerDto.phone,
 				gender: registerDto.gender,
-				role: registerDto.role || 'tenant',
+				role: registerDto.role,
+				// In development, mark as verified if email is provided
+				isVerifiedEmail: nodeEnv === 'development' ? true : false,
+				isVerifiedPhone: nodeEnv === 'development' && !!registerDto.phone ? true : false,
 			},
 			select: {
 				id: true,
@@ -90,6 +236,13 @@ export class AuthService {
 				updatedAt: true,
 			},
 		});
+
+		// Send welcome email if not in test mode
+		if (nodeEnv !== 'test') {
+			this.emailService
+				.sendWelcomeEmail(user.email, user.firstName)
+				.catch((error) => console.error('Failed to send welcome email:', error));
+		}
 
 		// Generate JWT token
 		const payload = { sub: user.id, email: user.email, role: user.role };

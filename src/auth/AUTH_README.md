@@ -22,7 +22,7 @@ Hệ thống authentication của Trustay cung cấp:
 - ✅ **Bảo vệ routes** với JWT Guard
 - ✅ **Quản lý session** với token validation
 - ✅ **Current user context** trong controllers
-- ✅ **Role-based access** (tenant, landlord, both)
+- ✅ **Role-based access** (tenant, landlord)
 
 ## 📦 Cài đặt
 
@@ -131,12 +131,13 @@ Authorization: Bearer <jwt_token>
 - `POST /api/users/verify-email` - Xác thực email
 - `POST /api/users/verify-identity` - Xác thực danh tính
 
-### Admin Endpoints (Không yêu cầu auth)
+### Role System
 
-- `POST /api/admin/users` - Tạo user mới (admin)
-- `GET /api/admin/users` - Danh sách users với pagination
-- `GET /api/admin/users/:id` - Lấy user theo ID
-- `DELETE /api/admin/users/:id` - Xóa user
+Hệ thống có 2 loại người dùng chính:
+- **tenant** - Người thuê trọ 
+- **landlord** - Chủ nhà cho thuê
+
+Role được yêu cầu bắt buộc khi đăng ký và quyết định quyền truy cập trong hệ thống.
 
 ## 🔧 Sử dụng Authentication
 
@@ -287,7 +288,7 @@ src/auth/
 interface JwtPayload {
   sub: string;    // User ID
   email: string;  // User email
-  role: string;   // User role (tenant, landlord, both)
+  role: string;   // User role (tenant, landlord)
 }
 ```
 
@@ -298,7 +299,7 @@ interface CurrentUser {
   email: string;
   firstName: string;
   lastName: string;
-  role: 'tenant' | 'landlord' | 'both';
+  role: 'tenant' | 'landlord';
   isVerifiedEmail: boolean;
   isVerifiedPhone: boolean;
   isVerifiedIdentity: boolean;

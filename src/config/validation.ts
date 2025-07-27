@@ -29,4 +29,7 @@ export const validationSchema = Joi.object({
 	// File Upload (optional)
 	MAX_FILE_SIZE: Joi.number().positive().default(5242880), // 5MB
 	ALLOWED_FILE_TYPES: Joi.string().optional(),
+
+	// Resend
+	RESEND_API_KEY: Joi.string().required(),
 });

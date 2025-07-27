@@ -1,5 +1,22 @@
-import { Body, Controller, Get, Post, Put, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+	BadRequestException,
+	Body,
+	Controller,
+	Get,
+	Headers,
+	Post,
+	Put,
+	Query,
+	UseGuards,
+} from '@nestjs/common';
+import {
+	ApiBearerAuth,
+	ApiHeader,
+	ApiOperation,
+	ApiQuery,
+	ApiResponse,
+	ApiTags,
+} from '@nestjs/swagger';
 import { UserResponseDto } from '../api/users/dto/user-response.dto';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -7,6 +24,7 @@ import { AuthResponseDto } from './dto/auth-response.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { PasswordStrengthResponseDto } from './dto/password-strength-response.dto';
+import { PreRegisterDto } from './dto/pre-register.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
@@ -16,7 +34,16 @@ export class AuthController {
 	constructor(private readonly authService: AuthService) {}
 
 	@Post('register')
-	@ApiOperation({ summary: 'Register a new user' })
+	@ApiOperation({
+		summary: 'Complete user registration with verified email/phone',
+		description:
+			'Register a new user account. Requires a valid verification token obtained from email/phone verification.',
+	})
+	@ApiHeader({
+		name: 'X-Verification-Token',
+		description: 'Verification token obtained from email/phone verification',
+		required: true,
+	})
 	@ApiResponse({
 		status: 201,
 		description: 'User registered successfully',
@@ -24,14 +51,62 @@ export class AuthController {
 	})
 	@ApiResponse({
 		status: 400,
-		description: 'Invalid input data',
+		description: 'Invalid input data or password requirements not met',
+	})
+	@ApiResponse({
+		status: 401,
+		description: 'Invalid or expired verification token',
 	})
 	@ApiResponse({
 		status: 409,
 		description: 'Email or phone already in use',
 	})
-	async register(@Body() registerDto: RegisterDto): Promise<AuthResponseDto> {
-		return this.authService.register(registerDto);
+	async register(
+		@Body() preRegisterDto: PreRegisterDto,
+		@Headers('x-verification-token') verificationToken?: string,
+	): Promise<AuthResponseDto> {
+		if (!verificationToken) {
+			throw new BadRequestException({
+				message: 'Verification token is required',
+				error: 'VERIFICATION_TOKEN_MISSING',
+				details: {
+					step: 'verification_required',
+					instructions: [
+						'1. Call POST /api/verification/send to send verification code',
+						'2. Call POST /api/verification/verify to verify code and get token',
+						'3. Include token in X-Verification-Token header for registration',
+					],
+					alternativeEndpoint: {
+						development: 'POST /api/auth/register-direct (development only)',
+						description: 'Use register-direct for development without verification',
+					},
+				},
+			});
+		}
+		return this.authService.preRegister(preRegisterDto, verificationToken);
+	}
+
+	@Post('register-direct')
+	@ApiOperation({
+		summary: '[DEV ONLY] Direct registration without verification',
+		description:
+			'Register without email/phone verification. Only available in development environment or when ALLOW_DIRECT_REGISTRATION=true.',
+	})
+	@ApiResponse({
+		status: 201,
+		description: 'User registered successfully',
+		type: AuthResponseDto,
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Invalid input data or not allowed in production',
+	})
+	@ApiResponse({
+		status: 409,
+		description: 'Email or phone already in use',
+	})
+	async registerDirect(@Body() registerDto: RegisterDto): Promise<AuthResponseDto> {
+		return this.authService.registerDirectly(registerDto);
 	}
 
 	@Post('login')

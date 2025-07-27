@@ -24,7 +24,6 @@ enum Gender {
 enum UserRole {
   tenant
   landlord
-  both
 }
 
 enum RoomType {
@@ -122,6 +121,19 @@ enum SearchPostStatus {
   expired
 }
 
+enum VerificationType {
+  email
+  phone
+  password_reset
+}
+
+enum VerificationStatus {
+  pending
+  verified
+  expired
+  failed
+}
+
 // ========================================
 // USER MANAGEMENT
 // ========================================
@@ -163,8 +175,36 @@ model User {
   reviewsReceived     Review[]         @relation("ReviewReceiver")
   notifications       Notification[]
   roomSearchPosts     RoomSearchPost[]
+  verificationCodes   VerificationCode[]
 
   @@map("users")
+}
+
+model VerificationCode {
+  id          String             @id @default(uuid())
+  userId      String?            @map("user_id") // Optional vì có thể verify trước khi tạo user
+  email       String?            // Email hoặc phone được verify
+  phone       String?
+  type        VerificationType
+  code        String             // 6-digit verification code
+  status      VerificationStatus @default(pending)
+  attempts    Int                @default(0) // Số lần thử verify
+  maxAttempts Int                @default(5) // Tối đa 5 lần thử
+  expiresAt   DateTime           @map("expires_at")
+  verifiedAt  DateTime?          @map("verified_at")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([phone])
+  @@index([code])
+  @@index([type])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("verification_codes")
 }
 
 model UserAddress {

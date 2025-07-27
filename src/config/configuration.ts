@@ -30,6 +30,9 @@ export interface AppConfig {
 		maxFileSize: number;
 		allowedTypes: string[];
 	};
+	resend: {
+		apiKey: string;
+	};
 }
 
 /**
@@ -63,6 +66,9 @@ const getConfig = (): AppConfig => ({
 	upload: {
 		maxFileSize: parseInt(process.env.MAX_FILE_SIZE ?? '5242880', 10),
 		allowedTypes: process.env.ALLOWED_FILE_TYPES?.split(',') ?? ['image/jpeg', 'image/png'],
+	},
+	resend: {
+		apiKey: process.env.RESEND_API_KEY ?? '',
 	},
 });
 

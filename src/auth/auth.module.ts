@@ -6,8 +6,12 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { EmailService } from './services/email.service';
 import { PasswordService } from './services/password.service';
+import { SmsService } from './services/sms.service';
+import { VerificationService } from './services/verification.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { VerificationController } from './verification.controller';
 
 @Module({
 	imports: [
@@ -24,8 +28,23 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 			inject: [ConfigService],
 		}),
 	],
-	controllers: [AuthController],
-	providers: [AuthService, PasswordService, JwtStrategy, JwtAuthGuard],
-	exports: [AuthService, PasswordService, JwtAuthGuard],
+	controllers: [AuthController, VerificationController],
+	providers: [
+		AuthService,
+		PasswordService,
+		VerificationService,
+		EmailService,
+		SmsService,
+		JwtStrategy,
+		JwtAuthGuard,
+	],
+	exports: [
+		AuthService,
+		PasswordService,
+		VerificationService,
+		EmailService,
+		SmsService,
+		JwtAuthGuard,
+	],
 })
 export class AuthModule {}

@@ -55,11 +55,11 @@ export class RegisterDto {
 	gender?: Gender;
 
 	@ApiProperty({
-		description: 'User role',
+		description: 'User role (required)',
 		enum: UserRole,
-		default: UserRole.tenant,
+		example: 'tenant',
 	})
-	@IsEnum(UserRole)
-	@IsOptional()
-	role?: UserRole;
+	@IsEnum(UserRole, { message: 'Role must be one of: tenant, landlord' })
+	@IsNotEmpty({ message: 'Role is required' })
+	role: UserRole;
 }
