@@ -21,6 +21,8 @@ lerna-debug.log*
 
 # IDEs and editors
 /.idea
+/.claude
+/.cursor
 .project
 .classpath
 .c9/

@@ -1,5 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -8,10 +10,9 @@ import { VerifyIdentityDto } from './dto/verify-identity.dto';
 import { VerifyPhoneDto } from './dto/verify-phone.dto';
 import { UsersService } from './users.service';
 
-// Note: Auth guard would be implemented based on your authentication strategy
-// @UseGuards(JwtAuthGuard) - uncomment when auth is implemented
 @ApiTags('Users')
 @Controller('api/users')
+@UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class UsersController {
 	constructor(private readonly usersService: UsersService) {}
@@ -26,10 +27,8 @@ export class UsersController {
 		status: 404,
 		description: 'User not found',
 	})
-	async getProfile() {
-		// In a real application, get userId from JWT token/auth guard
-		const userId = 'temp-user-id'; // This would come from auth context
-		return this.usersService.getProfile(userId);
+	async getProfile(@CurrentUser() user: any) {
+		return this.usersService.getProfile(user.id);
 	}
 
 	@Put('profile')
@@ -46,10 +45,8 @@ export class UsersController {
 		status: 404,
 		description: 'User not found',
 	})
-	async updateProfile(@Body() updateProfileDto: UpdateProfileDto) {
-		// In a real application, get userId from JWT token/auth guard
-		const userId = 'temp-user-id'; // This would come from auth context
-		return this.usersService.updateProfile(userId, updateProfileDto);
+	async updateProfile(@CurrentUser() user: any, @Body() updateProfileDto: UpdateProfileDto) {
+		return this.usersService.updateProfile(user.id, updateProfileDto);
 	}
 
 	@Post('addresses')
@@ -66,10 +63,8 @@ export class UsersController {
 		status: 404,
 		description: 'User not found',
 	})
-	async createAddress(@Body() createAddressDto: CreateAddressDto) {
-		// In a real application, get userId from JWT token/auth guard
-		const userId = 'temp-user-id'; // This would come from auth context
-		return this.usersService.createAddress(userId, createAddressDto);
+	async createAddress(@CurrentUser() user: any, @Body() createAddressDto: CreateAddressDto) {
+		return this.usersService.createAddress(user.id, createAddressDto);
 	}
 
 	@Put('addresses/:id')
@@ -87,10 +82,12 @@ export class UsersController {
 		status: 404,
 		description: 'Address not found',
 	})
-	async updateAddress(@Param('id') addressId: string, @Body() updateAddressDto: UpdateAddressDto) {
-		// In a real application, get userId from JWT token/auth guard
-		const userId = 'temp-user-id'; // This would come from auth context
-		return this.usersService.updateAddress(userId, addressId, updateAddressDto);
+	async updateAddress(
+		@CurrentUser() user: any,
+		@Param('id') addressId: string,
+		@Body() updateAddressDto: UpdateAddressDto,
+	) {
+		return this.usersService.updateAddress(user.id, addressId, updateAddressDto);
 	}
 
 	@Delete('addresses/:id')
@@ -104,10 +101,8 @@ export class UsersController {
 		status: 404,
 		description: 'Address not found',
 	})
-	async deleteAddress(@Param('id') addressId: string) {
-		// In a real application, get userId from JWT token/auth guard
-		const userId = 'temp-user-id'; // This would come from auth context
-		return this.usersService.deleteAddress(userId, addressId);
+	async deleteAddress(@CurrentUser() user: any, @Param('id') addressId: string) {
+		return this.usersService.deleteAddress(user.id, addressId);
 	}
 
 	@Post('verify-phone')
@@ -124,10 +119,8 @@ export class UsersController {
 		status: 409,
 		description: 'Phone number already in use',
 	})
-	async verifyPhone(@Body() verifyPhoneDto: VerifyPhoneDto) {
-		// In a real application, get userId from JWT token/auth guard
-		const userId = 'temp-user-id'; // This would come from auth context
-		return this.usersService.verifyPhone(userId, verifyPhoneDto);
+	async verifyPhone(@CurrentUser() user: any, @Body() verifyPhoneDto: VerifyPhoneDto) {
+		return this.usersService.verifyPhone(user.id, verifyPhoneDto);
 	}
 
 	@Post('verify-email')
@@ -144,10 +137,8 @@ export class UsersController {
 		status: 409,
 		description: 'Email already in use',
 	})
-	async verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
-		// In a real application, get userId from JWT token/auth guard
-		const userId = 'temp-user-id'; // This would come from auth context
-		return this.usersService.verifyEmail(userId, verifyEmailDto);
+	async verifyEmail(@CurrentUser() user: any, @Body() verifyEmailDto: VerifyEmailDto) {
+		return this.usersService.verifyEmail(user.id, verifyEmailDto);
 	}
 
 	@Post('verify-identity')
@@ -164,9 +155,7 @@ export class UsersController {
 		status: 409,
 		description: 'ID card number already in use',
 	})
-	async verifyIdentity(@Body() verifyIdentityDto: VerifyIdentityDto) {
-		// In a real application, get userId from JWT token/auth guard
-		const userId = 'temp-user-id'; // This would come from auth context
-		return this.usersService.verifyIdentity(userId, verifyIdentityDto);
+	async verifyIdentity(@CurrentUser() user: any, @Body() verifyIdentityDto: VerifyIdentityDto) {
+		return this.usersService.verifyIdentity(user.id, verifyIdentityDto);
 	}
 }
