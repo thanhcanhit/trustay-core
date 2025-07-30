@@ -27,13 +27,16 @@ export class DistrictController {
 		status: 200,
 		description: 'List of districts for the specified province',
 	})
-	findByProvince(
-		@Query('province_id') province_id: string,
-		@Query('provinceId') provinceId: string,
-	) {
-		const id = Number(province_id ?? provinceId);
-		if (isNaN(id)) {
-			throw new BadRequestException('province_id or provinceId must be a valid number');
+	findByProvince(@Query('provinceId', ParseIntPipe) provinceId?: number) {
+		let id: number | undefined = provinceId;
+		if (id === undefined && provinceId !== undefined) {
+			id = Number(provinceId);
+			if (Number.isNaN(id)) {
+				throw new BadRequestException('provinceId must be a valid number');
+			}
+		}
+		if (id === undefined) {
+			throw new BadRequestException('province_id or provinceId must be provided');
 		}
 		return this.districtService.findByProvince(id);
 	}

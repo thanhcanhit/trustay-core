@@ -27,13 +27,16 @@ export class WardController {
 		status: 200,
 		description: 'List of wards for the specified district',
 	})
-	findByDistrict(
-		@Query('district_id') district_id: string,
-		@Query('districtId') districtId: string,
-	) {
-		const id = Number(district_id ?? districtId);
-		if (isNaN(id)) {
-			throw new BadRequestException('district_id or districtId must be a valid number');
+	findByDistrict(@Query('districtId', ParseIntPipe) districtId?: number) {
+		let id: number | undefined = districtId;
+		if (id === undefined && districtId !== undefined) {
+			id = Number(districtId);
+			if (Number.isNaN(id)) {
+				throw new BadRequestException('districtId must be a valid number');
+			}
+		}
+		if (id === undefined) {
+			throw new BadRequestException('district_id or districtId must be provided');
 		}
 		return this.wardService.findByDistrict(id);
 	}
