@@ -7,16 +7,8 @@ import {
 	Post,
 	Put,
 	Query,
-	UseGuards,
 } from '@nestjs/common';
-import {
-	ApiBearerAuth,
-	ApiHeader,
-	ApiOperation,
-	ApiQuery,
-	ApiResponse,
-	ApiTags,
-} from '@nestjs/swagger';
+import { ApiHeader, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { UserResponseDto } from '../api/users/dto/user-response.dto';
 import { AuthService } from './auth.service';
 import { Auth } from './decorators/auth.decorator';
@@ -28,7 +20,6 @@ import { PasswordStrengthResponseDto } from './dto/password-strength-response.dt
 import { PreRegisterDto } from './dto/pre-register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @ApiTags('Authentication')
 @Controller('api/auth')

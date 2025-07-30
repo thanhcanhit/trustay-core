@@ -18,20 +18,55 @@ export class LoggingInterceptor implements NestInterceptor {
 		const response = context.switchToHttp().getResponse<Response>();
 		const startTime = Date.now();
 
-		return next.handle().pipe(
-			tap(() => {
-				const duration = Date.now() - startTime;
-				const { method, originalUrl } = request;
-				const { statusCode } = response;
+		// Extract useful request information
+		const { method, originalUrl, ip, headers, body, query, params } = request;
+		const userAgent = headers['user-agent'];
+		const userId = (request as any).user?.id;
 
-				// Log request
-				this.logger.logApiRequest(
-					method,
-					originalUrl,
-					statusCode,
-					duration,
-					// (request as any).user?.id // If you have auth
-				);
+		// Log incoming request
+		this.logger.log(`${method} ${originalUrl} - Incoming request from ${ip}`, 'HTTP');
+
+		return next.handle().pipe(
+			tap({
+				next: (data) => {
+					const duration = Date.now() - startTime;
+					const { statusCode } = response;
+					const contentLength = response.get('content-length') || 0;
+
+					// Log successful response
+					this.logger.log(
+						`${method} ${originalUrl} - ${statusCode} - ${duration}ms - ${contentLength}b`,
+						'HTTP',
+					);
+
+					// Log detailed request info for debugging
+					if (process.env.NODE_ENV === 'development') {
+						this.logger.debug(
+							`Request details: ${JSON.stringify({
+								method,
+								url: originalUrl,
+								ip,
+								userAgent,
+								userId,
+								query: Object.keys(query).length > 0 ? query : undefined,
+								params: Object.keys(params).length > 0 ? params : undefined,
+								body: method !== 'GET' ? body : undefined,
+							})}`,
+							'HTTP',
+						);
+					}
+				},
+				error: (error) => {
+					const duration = Date.now() - startTime;
+					const { statusCode } = response;
+
+					// Log error response
+					this.logger.error(
+						`${method} ${originalUrl} - ${statusCode} - ${duration}ms - Error: ${error.message}`,
+						error.stack,
+						'HTTP',
+					);
+				},
 			}),
 		);
 	}

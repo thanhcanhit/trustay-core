@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { VerificationType } from '@prisma/client';
-import { IsEmail, IsEnum, IsOptional, IsPhoneNumber, ValidateIf } from 'class-validator';
+import { IsEmail, IsEnum, IsPhoneNumber, ValidateIf } from 'class-validator';
 
 export class SendVerificationDto {
 	@ApiProperty({

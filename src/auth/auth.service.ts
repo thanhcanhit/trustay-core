@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import {
 	BadRequestException,
 	ConflictException,
@@ -7,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import * as crypto from 'crypto';
+import { LoggerService } from '../logger/logger.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
@@ -29,6 +30,7 @@ export class AuthService {
 		private readonly verificationService: VerificationService,
 		private readonly emailService: EmailService,
 		private readonly smsService: SmsService,
+		private readonly logger: LoggerService,
 	) {}
 
 	async preRegister(
@@ -132,16 +134,19 @@ export class AuthService {
 
 		// Send welcome email if email was verified
 		if (tokenValidation.email) {
-			this.emailService
-				.sendWelcomeEmail(user.email, user.firstName)
-				.catch((error) => console.error('Failed to send welcome email:', error));
+			this.emailService.sendWelcomeEmail(user.email, user.firstName).catch((error) => {
+				this.logger.error('Failed to send welcome email', error.stack, 'Auth');
+			});
 		}
 
 		// Send welcome SMS if phone was verified (temporarily disabled)
 		if (tokenValidation.phone && user.phone) {
-			console.log(`[SMS Disabled] Would send welcome SMS to ${user.phone} for ${user.firstName}`);
+			this.logger.log(
+				`SMS Disabled - Would send welcome SMS to ${user.phone} for ${user.firstName}`,
+				'Auth',
+			);
 			// this.smsService.sendWelcomeSms(user.phone, user.firstName)
-			// 	.catch((error) => console.error('Failed to send welcome SMS:', error));
+			// 	.catch((error) => this.logger.error('Failed to send welcome SMS', error.stack, 'Auth'));
 		}
 
 		// Clean up used verification records to prevent reuse
@@ -163,6 +168,12 @@ export class AuthService {
 		}
 
 		// Generate JWT token and refresh token
+		this.logger.logAuthEvent('User pre-registered successfully', user.id, {
+			email: user.email,
+			role: user.role,
+			isVerifiedEmail: user.isVerifiedEmail,
+			isVerifiedPhone: user.isVerifiedPhone,
+		});
 		const payload = { sub: user.id, email: user.email, role: user.role };
 		const access_token = this.jwtService.sign(payload);
 		const refresh_token = await this.generateRefreshToken(user.id);
@@ -350,6 +361,11 @@ export class AuthService {
 		});
 
 		// Generate JWT token and refresh token
+		this.logger.logAuthEvent('User logged in successfully', user.id, {
+			email: user.email,
+			role: user.role,
+			needsRehash,
+		});
 		const payload = { sub: user.id, email: user.email, role: user.role };
 		const access_token = this.jwtService.sign(payload);
 		const refresh_token = await this.generateRefreshToken(user.id);
@@ -423,6 +439,8 @@ export class AuthService {
 				updatedAt: new Date(),
 			},
 		});
+
+		this.logger.logSecurityEvent('Password changed successfully', { userId });
 
 		return { message: 'Password changed successfully' };
 	}

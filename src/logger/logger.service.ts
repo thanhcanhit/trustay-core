@@ -13,13 +13,13 @@ export class LoggerService implements NestLoggerService {
 				format.errors({ stack: true }),
 				format.json(),
 			),
-			defaultMeta: { service: 'nestjs-app' },
+			defaultMeta: { service: 'trustay-api' },
 			transports: [
-				// Console logging
+				// Console logging with better formatting
 				new transports.Console({
 					format: format.combine(
 						format.colorize(),
-						format.simple(),
+						format.timestamp({ format: 'HH:mm:ss' }),
 						format.printf(
 							({
 								timestamp,
@@ -27,16 +27,20 @@ export class LoggerService implements NestLoggerService {
 								message,
 								context,
 								trace,
+								...meta
 							}: {
 								timestamp: string;
 								level: string;
 								message: string;
 								context: string;
 								trace: string;
+								[key: string]: any;
 							}) => {
-								return `${timestamp} [${
-									context || 'Application'
-								}] ${level}: ${message}${trace ? `\n${trace}` : ''}`;
+								const contextStr = context ? `[${context}]` : '[App]';
+								const metaStr = Object.keys(meta).length > 0 ? ` ${JSON.stringify(meta)}` : '';
+								const traceStr = trace ? `\n${trace}` : '';
+
+								return `${timestamp} ${contextStr} ${level}: ${message}${metaStr}${traceStr}`;
 							},
 						),
 					),
@@ -78,7 +82,7 @@ export class LoggerService implements NestLoggerService {
 		this.logger.verbose(message, { context });
 	}
 
-	// Custom methods for specific use cases
+	// Enhanced methods for specific use cases
 	logDbQuery(query: string, params?: unknown[], duration?: number) {
 		this.logger.info('Database Query', {
 			context: 'Database',
@@ -110,6 +114,43 @@ export class LoggerService implements NestLoggerService {
 			context: context || 'Error',
 			stack: error.stack,
 			...additionalInfo,
+		});
+	}
+
+	// New methods for better logging
+	logAuthEvent(event: string, userId?: string, details?: Record<string, unknown>) {
+		this.logger.info(`Auth: ${event}`, {
+			context: 'Auth',
+			userId,
+			...details,
+		});
+	}
+
+	logBusinessEvent(event: string, context?: string, details?: Record<string, unknown>) {
+		this.logger.info(`Business: ${event}`, {
+			context: context || 'Business',
+			...details,
+		});
+	}
+
+	logPerformance(
+		operation: string,
+		duration: number,
+		context?: string,
+		details?: Record<string, unknown>,
+	) {
+		const level = duration > 1000 ? 'warn' : 'info';
+		this.logger[level](`Performance: ${operation} took ${duration}ms`, {
+			context: context || 'Performance',
+			duration,
+			...details,
+		});
+	}
+
+	logSecurityEvent(event: string, details?: Record<string, unknown>) {
+		this.logger.warn(`Security: ${event}`, {
+			context: 'Security',
+			...details,
 		});
 	}
 }

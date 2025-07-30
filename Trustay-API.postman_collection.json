@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "trustay-api-collection",
     "name": "Trustay API Collection",
-    "description": "Complete API collection for Trustay rental platform with authentication flows",
+    "description": "Complete API collection for Trustay rental platform with authentication flows and refresh token support",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "trustay-team"
   },
@@ -11,7 +11,7 @@
       "name": "🔐 Authentication",
       "item": [
         {
-          "name": "Send Email Verification",
+          "name": "📧 Send Email Verification",
           "event": [
             {
               "listen": "test",
@@ -20,7 +20,7 @@
                   "if (pm.response.code === 200) {",
                   "    const response = pm.response.json();",
                   "    pm.collectionVariables.set('verificationId', response.verificationId);",
-                  "    console.log('Verification ID saved:', response.verificationId);",
+                  "    console.log('📧 Verification ID saved:', response.verificationId);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -49,48 +49,7 @@
           "response": []
         },
         {
-          "name": "Send Phone Verification (SMS Disabled)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 200) {",
-                  "    const response = pm.response.json();",
-                  "    pm.collectionVariables.set('verificationId', response.verificationId);",
-                  "    console.log('SMS Disabled Response:', response.message);",
-                  "    pm.test('SMS should be disabled', function () {",
-                  "        pm.expect(response.smsDisabled).to.be.true;",
-                  "    });",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"type\": \"phone\",\n  \"phone\": \"{{testPhone}}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/verification/send",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "verification", "send"]
-            },
-            "description": "Attempt phone verification (currently disabled)"
-          },
-          "response": []
-        },
-        {
-          "name": "Verify Email Code",
+          "name": "✅ Verify Email Code",
           "event": [
             {
               "listen": "test",
@@ -99,7 +58,7 @@
                   "if (pm.response.code === 200) {",
                   "    const response = pm.response.json();",
                   "    pm.collectionVariables.set('verificationToken', response.verificationToken);",
-                  "    console.log('Verification Token saved:', response.verificationToken);",
+                  "    console.log('✅ Verification Token saved:', response.verificationToken);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -128,7 +87,7 @@
           "response": []
         },
         {
-          "name": "Register with Verification",
+          "name": "📝 Register with Verification",
           "event": [
             {
               "listen": "pre-request",
@@ -156,9 +115,9 @@
                   "    pm.collectionVariables.set('refreshToken', response.refresh_token);",
                   "    pm.collectionVariables.set('userId', response.user.id);",
                   "    console.log('✅ Registration successful!');",
-                  "    console.log('Access Token saved:', response.access_token.substring(0, 20) + '...');",
-                  "    console.log('Refresh Token saved:', response.refresh_token ? response.refresh_token.substring(0, 20) + '...' : 'Not provided');",
-                  "    console.log('User ID saved:', response.user.id);",
+                  "    console.log('🔑 Access Token saved:', response.access_token.substring(0, 20) + '...');",
+                  "    console.log('🔄 Refresh Token saved:', response.refresh_token ? response.refresh_token.substring(0, 20) + '...' : 'Not provided');",
+                  "    console.log('👤 User ID saved:', response.user.id);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -187,7 +146,7 @@
           "response": []
         },
         {
-          "name": "Register Direct (Development)",
+          "name": "⚡ Register Direct (Development)",
           "event": [
             {
               "listen": "test",
@@ -199,9 +158,9 @@
                   "    pm.collectionVariables.set('refreshToken', response.refresh_token);",
                   "    pm.collectionVariables.set('userId', response.user.id);",
                   "    console.log('✅ Direct Registration successful!');",
-                  "    console.log('Access Token saved:', response.access_token.substring(0, 20) + '...');",
-                  "    console.log('Refresh Token saved:', response.refresh_token ? response.refresh_token.substring(0, 20) + '...' : 'Not provided');",
-                  "    console.log('User ID saved:', response.user.id);",
+                  "    console.log('🔑 Access Token saved:', response.access_token.substring(0, 20) + '...');",
+                  "    console.log('🔄 Refresh Token saved:', response.refresh_token ? response.refresh_token.substring(0, 20) + '...' : 'Not provided');",
+                  "    console.log('👤 User ID saved:', response.user.id);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -230,7 +189,7 @@
           "response": []
         },
         {
-          "name": "Login",
+          "name": "🔑 Login",
           "event": [
             {
               "listen": "test",
@@ -242,9 +201,9 @@
                   "    pm.collectionVariables.set('refreshToken', response.refresh_token);",
                   "    pm.collectionVariables.set('userId', response.user.id);",
                   "    console.log('✅ Login successful!');",
-                  "    console.log('Access Token saved:', response.access_token.substring(0, 20) + '...');",
-                  "    console.log('Refresh Token saved:', response.refresh_token ? response.refresh_token.substring(0, 20) + '...' : 'Not provided');",
-                  "    console.log('User ID saved:', response.user.id);",
+                  "    console.log('🔑 Access Token saved:', response.access_token.substring(0, 20) + '...');",
+                  "    console.log('🔄 Refresh Token saved:', response.refresh_token ? response.refresh_token.substring(0, 20) + '...' : 'Not provided');",
+                  "    console.log('👤 User ID saved:', response.user.id);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -273,7 +232,7 @@
           "response": []
         },
         {
-          "name": "Get Current User",
+          "name": "👤 Get Current User",
           "request": {
             "method": "GET",
             "header": [],
@@ -282,12 +241,87 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "auth", "me"]
             },
-            "description": "Get current authenticated user profile"
+            "description": "Get current authenticated user profile (auto-auth enabled)"
           },
           "response": []
         },
         {
-          "name": "Change Password",
+          "name": "🔄 Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('accessToken', response.access_token);",
+                  "    pm.collectionVariables.set('refreshToken', response.refresh_token);",
+                  "    console.log('✅ Token refreshed successfully!');",
+                  "    console.log('🔑 New Access Token saved:', response.access_token.substring(0, 20) + '...');",
+                  "    console.log('🔄 New Refresh Token saved:', response.refresh_token.substring(0, 20) + '...');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "refresh"]
+            },
+            "description": "Refresh access token using refresh token"
+          },
+          "response": []
+        },
+        {
+          "name": "🧪 Test Auth Flow",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test that auto-auth is working",
+                  "if (pm.response.code === 200) {",
+                  "    console.log('✅ Auto-authentication working correctly!');",
+                  "    const response = pm.response.json();",
+                  "    console.log('Current user:', response.firstName, response.lastName);",
+                  "} else if (pm.response.code === 401) {",
+                  "    console.log('❌ Authentication failed. Try refreshing token or login again.');",
+                  "} else {",
+                  "    console.log('⚠️ Unexpected response:', pm.response.code);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Test endpoint to verify automatic authentication headers are working"
+          },
+          "response": []
+        },
+        {
+          "name": "🔒 Change Password",
           "request": {
             "method": "PUT",
             "header": [
@@ -305,12 +339,12 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "auth", "change-password"]
             },
-            "description": "Change user password"
+            "description": "Change user password (auto-auth enabled)"
           },
           "response": []
         },
         {
-          "name": "Check Password Strength",
+          "name": "🔍 Check Password Strength",
           "request": {
             "method": "POST",
             "header": [
@@ -333,7 +367,7 @@
           "response": []
         },
         {
-          "name": "Generate Secure Password",
+          "name": "🎲 Generate Secure Password",
           "request": {
             "method": "GET",
             "header": [],
@@ -353,25 +387,7 @@
           "response": []
         },
         {
-          "name": "Refresh Token",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 200) {",
-                  "    const response = pm.response.json();",
-                  "    pm.collectionVariables.set('accessToken', response.access_token);",
-                  "    pm.collectionVariables.set('refreshToken', response.refresh_token);",
-                  "    console.log('✅ Token refreshed successfully!');",
-                  "    console.log('New Access Token saved:', response.access_token.substring(0, 20) + '...');",
-                  "    console.log('New Refresh Token saved:', response.refresh_token.substring(0, 20) + '...');",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
+          "name": "🗑️ Revoke Refresh Token",
           "request": {
             "method": "POST",
             "header": [
@@ -382,30 +398,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\\n  \\\"refreshToken\\\": \\\"{{refreshToken}}\\\"\\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/refresh",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "refresh"]
-            },
-            "description": "Refresh access token using refresh token"
-          },
-          "response": []
-        },
-        {
-          "name": "Revoke Refresh Token",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\\n  \\\"refreshToken\\\": \\\"{{refreshToken}}\\\"\\n}"
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/revoke",
@@ -417,33 +410,17 @@
           "response": []
         },
         {
-          "name": "Revoke All Refresh Tokens",
+          "name": "🗑️ Revoke All Refresh Tokens",
           "event": [
-            {
-              "listen": "pre-request",
-              "script": {
-                "exec": [
-                  "// Auto-set Bearer token",
-                  "const token = pm.collectionVariables.get('accessToken');",
-                  "if (token) {",
-                  "    pm.request.headers.add({",
-                  "        key: 'Authorization',",
-                  "        value: `Bearer ${token}`",
-                  "    });",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            },
             {
               "listen": "test",
               "script": {
                 "exec": [
                   "if (pm.response.code === 200) {",
                   "    console.log('✅ All refresh tokens revoked successfully!');",
-                  "    // Clear tokens from collection variables",
+                  "    // Clear refresh token from collection variables",
                   "    pm.collectionVariables.set('refreshToken', '');",
-                  "    console.log('Refresh token cleared from collection variables.');",
+                  "    console.log('🔄 Refresh token cleared from collection variables.');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -458,12 +435,12 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "auth", "revoke-all"]
             },
-            "description": "Revoke all refresh tokens for current user"
+            "description": "Revoke all refresh tokens for current user (auto-auth enabled)"
           },
           "response": []
         },
         {
-          "name": "🚪 Logout (Clear Tokens)",
+          "name": "🚪 Logout (Clear All Tokens)",
           "event": [
             {
               "listen": "pre-request",
@@ -520,7 +497,7 @@
           "response": []
         }
       ],
-      "description": "Authentication and verification endpoints"
+      "description": "Complete authentication flow with refresh token support and automatic header management"
     },
     {
       "name": "👤 User Management",
@@ -535,7 +512,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "users", "profile"]
             },
-            "description": "Get authenticated user's profile"
+            "description": "Get authenticated user's profile (auto-auth enabled)"
           },
           "response": []
         },
@@ -558,12 +535,12 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "users", "profile"]
             },
-            "description": "Update user profile information"
+            "description": "Update user profile information (auto-auth enabled)"
           },
           "response": []
         }
       ],
-      "description": "User profile management endpoints"
+      "description": "User profile management endpoints with automatic authentication"
     },
     {
       "name": "🌍 Location Services",
@@ -623,7 +600,7 @@
           "response": []
         }
       ],
-      "description": "Vietnam location data endpoints"
+      "description": "Vietnam location data endpoints (public access)"
     },
     {
       "name": "🔧 Utilities",
@@ -672,17 +649,27 @@
           "// Set common headers",
           "pm.request.headers.add({",
           "    key: 'User-Agent',",
-          "    value: 'Trustay-Postman-Collection/1.0'",
+          "    value: 'Trustay-Postman-Collection/2.0'",
           "});",
           "",
           "// Log current environment",
           "console.log('Environment:', pm.collectionVariables.get('environment'));",
           "",
-          "// Auto-refresh token for protected endpoints (not auth endpoints)",
+          "// Auto-refresh token for protected endpoints",
           "const requestName = pm.info.requestName;",
-          "const isAuthEndpoint = requestName.includes('Login') || requestName.includes('Register') || requestName.includes('Verification') || requestName.includes('Refresh') || requestName.includes('Password') || requestName.includes('Health') || requestName.includes('Documentation');",
+          "const requestUrl = pm.request.url.toString();",
           "",
-          "if (!isAuthEndpoint) {",
+          "// Define endpoints that DON'T need authentication",
+          "const publicEndpoints = [",
+          "    'Login', 'Register', 'Verification', 'Password Strength', 'Generate', 'Health', 'Documentation',",
+          "    'Provinces', 'Districts', 'Wards'",
+          "];",
+          "",
+          "const isPublicEndpoint = publicEndpoints.some(endpoint => requestName.includes(endpoint));",
+          "const isRefreshEndpoint = requestName.includes('Refresh') || requestName.includes('Revoke');",
+          "",
+          "// Add auth header to protected endpoints (including /api/auth/me)",
+          "if (!isPublicEndpoint && !isRefreshEndpoint) {",
           "    const accessToken = pm.collectionVariables.get('accessToken');",
           "    const refreshToken = pm.collectionVariables.get('refreshToken');",
           "    ",
@@ -691,7 +678,9 @@
           "            key: 'Authorization',",
           "            value: `Bearer ${accessToken}`",
           "        });",
-          "        console.log('🔐 Auto-added Authorization header');",
+          "        console.log('🔐 Auto-added Authorization header for:', requestName);",
+          "    } else if (pm.request.headers.has('Authorization')) {",
+          "        console.log('🔐 Authorization header already present for:', requestName);",
           "    }",
           "    ",
           "    if (!accessToken && refreshToken) {",
@@ -893,6 +882,12 @@
       "description": "JWT access token (auto-populated)"
     },
     {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string",
+      "description": "JWT refresh token (auto-populated)"
+    },
+    {
       "key": "verificationToken",
       "value": "",
       "type": "string",
@@ -909,12 +904,6 @@
       "value": "",
       "type": "string",
       "description": "Current user ID (auto-populated)"
-    },
-    {
-      "key": "refreshToken",
-      "value": "",
-      "type": "string",
-      "description": "JWT refresh token (auto-populated)"
     }
   ]
 }
