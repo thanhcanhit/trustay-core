@@ -7,10 +7,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { PreRegisterDto } from './dto/pre-register.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { EmailService } from './services/email.service';
 import { PasswordService } from './services/password.service';
@@ -160,15 +162,17 @@ export class AuthService {
 			});
 		}
 
-		// Generate JWT token
+		// Generate JWT token and refresh token
 		const payload = { sub: user.id, email: user.email, role: user.role };
 		const access_token = this.jwtService.sign(payload);
+		const refresh_token = await this.generateRefreshToken(user.id);
 
 		return {
 			access_token,
 			user,
 			token_type: 'Bearer',
 			expires_in: this.configService.get<number>('JWT_EXPIRES_IN') || 3600,
+			refresh_token,
 		};
 	}
 
@@ -272,15 +276,17 @@ export class AuthService {
 			},
 		});
 
-		// Generate JWT token
+		// Generate JWT token and refresh token
 		const payload = { sub: user.id, email: user.email, role: user.role };
 		const access_token = this.jwtService.sign(payload);
+		const refresh_token = await this.generateRefreshToken(user.id);
 
 		return {
 			access_token,
 			user,
 			token_type: 'Bearer',
 			expires_in: this.configService.get<number>('JWT_EXPIRES_IN') || 3600,
+			refresh_token,
 		};
 	}
 
@@ -343,9 +349,10 @@ export class AuthService {
 			data: { lastActiveAt: new Date() },
 		});
 
-		// Generate JWT token
+		// Generate JWT token and refresh token
 		const payload = { sub: user.id, email: user.email, role: user.role };
 		const access_token = this.jwtService.sign(payload);
+		const refresh_token = await this.generateRefreshToken(user.id);
 
 		// Remove password hash from response
 		const { passwordHash, ...userResponse } = user;
@@ -355,6 +362,7 @@ export class AuthService {
 			user: userResponse,
 			token_type: 'Bearer',
 			expires_in: this.configService.get<number>('JWT_EXPIRES_IN') || 3600,
+			refresh_token,
 		};
 	}
 
@@ -443,5 +451,124 @@ export class AuthService {
 			password,
 			strength,
 		};
+	}
+
+	private async generateRefreshToken(userId: string): Promise<string> {
+		const refreshToken = crypto.randomBytes(32).toString('hex');
+		const expiresAt = new Date();
+		expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
+
+		// Clean up existing refresh tokens for this user (optional - allow multiple sessions)
+		await this.prisma.refreshToken.deleteMany({
+			where: { userId },
+		});
+
+		// Create new refresh token
+		await this.prisma.refreshToken.create({
+			data: {
+				userId,
+				token: refreshToken,
+				expiresAt,
+			},
+		});
+
+		return refreshToken;
+	}
+
+	async refreshToken(refreshTokenDto: RefreshTokenDto): Promise<AuthResponseDto> {
+		const { refreshToken } = refreshTokenDto;
+
+		// Find the refresh token
+		const tokenRecord = await this.prisma.refreshToken.findUnique({
+			where: { token: refreshToken },
+			include: {
+				user: {
+					select: {
+						id: true,
+						email: true,
+						phone: true,
+						firstName: true,
+						lastName: true,
+						avatarUrl: true,
+						dateOfBirth: true,
+						gender: true,
+						role: true,
+						bio: true,
+						idCardNumber: true,
+						bankAccount: true,
+						bankName: true,
+						isVerifiedPhone: true,
+						isVerifiedEmail: true,
+						isVerifiedIdentity: true,
+						isVerifiedBank: true,
+						lastActiveAt: true,
+						createdAt: true,
+						updatedAt: true,
+					},
+				},
+			},
+		});
+
+		if (!tokenRecord) {
+			throw new UnauthorizedException('Invalid refresh token');
+		}
+
+		// Check if token is expired
+		if (tokenRecord.expiresAt < new Date()) {
+			// Remove expired token
+			await this.prisma.refreshToken.delete({
+				where: { id: tokenRecord.id },
+			});
+			throw new UnauthorizedException('Refresh token has expired');
+		}
+
+		// Generate new access token
+		const payload = {
+			sub: tokenRecord.user.id,
+			email: tokenRecord.user.email,
+			role: tokenRecord.user.role,
+		};
+		const access_token = this.jwtService.sign(payload);
+
+		// Generate new refresh token
+		const new_refresh_token = await this.generateRefreshToken(tokenRecord.user.id);
+
+		// Update user's last active timestamp
+		await this.prisma.user.update({
+			where: { id: tokenRecord.user.id },
+			data: { lastActiveAt: new Date() },
+		});
+
+		return {
+			access_token,
+			user: tokenRecord.user,
+			token_type: 'Bearer',
+			expires_in: this.configService.get<number>('JWT_EXPIRES_IN') || 3600,
+			refresh_token: new_refresh_token,
+		};
+	}
+
+	async revokeRefreshToken(refreshToken: string): Promise<{ message: string }> {
+		const tokenRecord = await this.prisma.refreshToken.findUnique({
+			where: { token: refreshToken },
+		});
+
+		if (!tokenRecord) {
+			throw new NotFoundException('Refresh token not found');
+		}
+
+		await this.prisma.refreshToken.delete({
+			where: { id: tokenRecord.id },
+		});
+
+		return { message: 'Refresh token revoked successfully' };
+	}
+
+	async revokeAllRefreshTokens(userId: string): Promise<{ message: string }> {
+		await this.prisma.refreshToken.deleteMany({
+			where: { userId },
+		});
+
+		return { message: 'All refresh tokens revoked successfully' };
 	}
 }

@@ -140,6 +140,7 @@ X-Verification-Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6",
   "user": {
     "id": "clx123456789",
     "email": "user@trustay.life",
@@ -325,8 +326,9 @@ export const useRegistration = () => {
       
       const data = await response.json();
       
-      // Save JWT token
+      // Save JWT token and refresh token
       localStorage.setItem('access_token', data.access_token);
+      localStorage.setItem('refresh_token', data.refresh_token);
       
       return data;
     } finally {
@@ -351,6 +353,7 @@ export const useRegistration = () => {
       
       const data = await response.json();
       localStorage.setItem('access_token', data.access_token);
+      localStorage.setItem('refresh_token', data.refresh_token);
       
       return data;
     } finally {
@@ -581,14 +584,131 @@ class AuthService {
 
     const result = await registerResponse.json();
     
-    // Save token securely
+    // Save tokens securely
     await AsyncStorage.setItem('access_token', result.access_token);
+    await AsyncStorage.setItem('refresh_token', result.refresh_token);
     
     return result;
   }
 }
 
 export default new AuthService();
+```
+
+---
+
+## 🔄 Token Management After Registration
+
+Sau khi đăng ký thành công, ứng dụng nhận được cả **access token** và **refresh token**:
+
+### **Access Token**
+- **Thời hạn**: 1 giờ (có thể cấu hình)
+- **Sử dụng**: Gửi kèm trong header `Authorization: Bearer <token>` cho các API calls
+- **Storage**: localStorage (web) hoặc secure storage (mobile)
+
+### **Refresh Token**
+- **Thời hạn**: 7 ngày
+- **Sử dụng**: Làm mới access token khi hết hạn
+- **Storage**: localStorage (web) hoặc AsyncStorage (mobile)
+- **Security**: Tự động rotation (tạo token mới mỗi lần refresh)
+
+### **Token Refresh Flow**
+
+```javascript
+// Auto-refresh implementation
+const makeAuthenticatedRequest = async (url, options = {}) => {
+  let accessToken = localStorage.getItem('access_token');
+  
+  // Try with current access token
+  let response = await fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      'Authorization': `Bearer ${accessToken}`
+    }
+  });
+  
+  // If 401, try to refresh token
+  if (response.status === 401) {
+    const refreshToken = localStorage.getItem('refresh_token');
+    
+    if (refreshToken) {
+      try {
+        const refreshResponse = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken })
+        });
+        
+        if (refreshResponse.ok) {
+          const tokenData = await refreshResponse.json();
+          localStorage.setItem('access_token', tokenData.access_token);
+          localStorage.setItem('refresh_token', tokenData.refresh_token);
+          
+          // Retry original request with new token
+          response = await fetch(url, {
+            ...options,
+            headers: {
+              ...options.headers,
+              'Authorization': `Bearer ${tokenData.access_token}`
+            }
+          });
+        } else {
+          // Refresh failed, redirect to login
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          window.location.href = '/login';
+        }
+      } catch (error) {
+        // Refresh failed, redirect to login
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        window.location.href = '/login';
+      }
+    } else {
+      // No refresh token, redirect to login
+      window.location.href = '/login';
+    }
+  }
+  
+  return response;
+};
+
+// Usage
+const getUserProfile = async () => {
+  const response = await makeAuthenticatedRequest('/api/users/profile');
+  if (response.ok) {
+    return await response.json();
+  }
+};
+```
+
+### **Logout Implementation**
+
+```javascript
+const logout = async () => {
+  const refreshToken = localStorage.getItem('refresh_token');
+  
+  // Revoke refresh token on server
+  if (refreshToken) {
+    try {
+      await fetch('/api/auth/revoke', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken })
+      });
+    } catch (error) {
+      console.log('Failed to revoke token on server');
+    }
+  }
+  
+  // Clear local storage
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  
+  // Redirect to login
+  window.location.href = '/login';
+};
 ```
 
 ---

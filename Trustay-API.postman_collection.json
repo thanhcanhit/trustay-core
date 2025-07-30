@@ -153,8 +153,11 @@
                   "if (pm.response.code === 201) {",
                   "    const response = pm.response.json();",
                   "    pm.collectionVariables.set('accessToken', response.access_token);",
+                  "    pm.collectionVariables.set('refreshToken', response.refresh_token);",
                   "    pm.collectionVariables.set('userId', response.user.id);",
-                  "    console.log('Access Token saved:', response.access_token);",
+                  "    console.log('✅ Registration successful!');",
+                  "    console.log('Access Token saved:', response.access_token.substring(0, 20) + '...');",
+                  "    console.log('Refresh Token saved:', response.refresh_token ? response.refresh_token.substring(0, 20) + '...' : 'Not provided');",
                   "    console.log('User ID saved:', response.user.id);",
                   "}"
                 ],
@@ -193,8 +196,11 @@
                   "if (pm.response.code === 201) {",
                   "    const response = pm.response.json();",
                   "    pm.collectionVariables.set('accessToken', response.access_token);",
+                  "    pm.collectionVariables.set('refreshToken', response.refresh_token);",
                   "    pm.collectionVariables.set('userId', response.user.id);",
-                  "    console.log('Access Token saved:', response.access_token);",
+                  "    console.log('✅ Direct Registration successful!');",
+                  "    console.log('Access Token saved:', response.access_token.substring(0, 20) + '...');",
+                  "    console.log('Refresh Token saved:', response.refresh_token ? response.refresh_token.substring(0, 20) + '...' : 'Not provided');",
                   "    console.log('User ID saved:', response.user.id);",
                   "}"
                 ],
@@ -233,8 +239,12 @@
                   "if (pm.response.code === 200) {",
                   "    const response = pm.response.json();",
                   "    pm.collectionVariables.set('accessToken', response.access_token);",
+                  "    pm.collectionVariables.set('refreshToken', response.refresh_token);",
                   "    pm.collectionVariables.set('userId', response.user.id);",
-                  "    console.log('Login successful. Access Token saved:', response.access_token);",
+                  "    console.log('✅ Login successful!');",
+                  "    console.log('Access Token saved:', response.access_token.substring(0, 20) + '...');",
+                  "    console.log('Refresh Token saved:', response.refresh_token ? response.refresh_token.substring(0, 20) + '...' : 'Not provided');",
+                  "    console.log('User ID saved:', response.user.id);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -264,26 +274,6 @@
         },
         {
           "name": "Get Current User",
-          "event": [
-            {
-              "listen": "pre-request",
-              "script": {
-                "exec": [
-                  "// Auto-set Bearer token from collection variable",
-                  "const token = pm.collectionVariables.get('accessToken');",
-                  "if (token) {",
-                  "    pm.request.headers.add({",
-                  "        key: 'Authorization',",
-                  "        value: `Bearer ${token}`",
-                  "    });",
-                  "} else {",
-                  "    console.warn('No access token found. Please login first.');",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
           "request": {
             "method": "GET",
             "header": [],
@@ -298,24 +288,6 @@
         },
         {
           "name": "Change Password",
-          "event": [
-            {
-              "listen": "pre-request",
-              "script": {
-                "exec": [
-                  "// Auto-set Bearer token",
-                  "const token = pm.collectionVariables.get('accessToken');",
-                  "if (token) {",
-                  "    pm.request.headers.add({",
-                  "        key: 'Authorization',",
-                  "        value: `Bearer ${token}`",
-                  "    });",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
           "request": {
             "method": "PUT",
             "header": [
@@ -379,15 +351,73 @@
             "description": "Generate a secure password with specified length"
           },
           "response": []
-        }
-      ],
-      "description": "Authentication and verification endpoints"
-    },
-    {
-      "name": "👤 User Management",
-      "item": [
+        },
         {
-          "name": "Get User Profile",
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('accessToken', response.access_token);",
+                  "    pm.collectionVariables.set('refreshToken', response.refresh_token);",
+                  "    console.log('✅ Token refreshed successfully!');",
+                  "    console.log('New Access Token saved:', response.access_token.substring(0, 20) + '...');",
+                  "    console.log('New Refresh Token saved:', response.refresh_token.substring(0, 20) + '...');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\\n  \\\"refreshToken\\\": \\\"{{refreshToken}}\\\"\\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "refresh"]
+            },
+            "description": "Refresh access token using refresh token"
+          },
+          "response": []
+        },
+        {
+          "name": "Revoke Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\\n  \\\"refreshToken\\\": \\\"{{refreshToken}}\\\"\\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/revoke",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "revoke"]
+            },
+            "description": "Revoke a specific refresh token"
+          },
+          "response": []
+        },
+        {
+          "name": "Revoke All Refresh Tokens",
           "event": [
             {
               "listen": "pre-request",
@@ -404,8 +434,99 @@
                 ],
                 "type": "text/javascript"
               }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    console.log('✅ All refresh tokens revoked successfully!');",
+                  "    // Clear tokens from collection variables",
+                  "    pm.collectionVariables.set('refreshToken', '');",
+                  "    console.log('Refresh token cleared from collection variables.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
             }
           ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/revoke-all",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "revoke-all"]
+            },
+            "description": "Revoke all refresh tokens for current user"
+          },
+          "response": []
+        },
+        {
+          "name": "🚪 Logout (Clear Tokens)",
+          "event": [
+            {
+              "listen": "pre-request",
+              "script": {
+                "exec": [
+                  "// Try to revoke refresh token before clearing",
+                  "const refreshToken = pm.collectionVariables.get('refreshToken');",
+                  "if (refreshToken) {",
+                  "    console.log('🔓 Attempting to revoke refresh token before logout...');",
+                  "} else {",
+                  "    console.log('⚠️ No refresh token to revoke');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Clear all authentication tokens",
+                  "pm.collectionVariables.set('accessToken', '');",
+                  "pm.collectionVariables.set('refreshToken', '');",
+                  "pm.collectionVariables.set('userId', '');",
+                  "pm.collectionVariables.set('verificationToken', '');",
+                  "pm.collectionVariables.set('verificationId', '');",
+                  "",
+                  "console.log('🚪 Logout completed - All tokens cleared');",
+                  "console.log('You can now register/login with new credentials.');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/revoke",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "revoke"]
+            },
+            "description": "Logout user by revoking refresh token and clearing all stored tokens"
+          },
+          "response": []
+        }
+      ],
+      "description": "Authentication and verification endpoints"
+    },
+    {
+      "name": "👤 User Management",
+      "item": [
+        {
+          "name": "Get User Profile",
           "request": {
             "method": "GET",
             "header": [],
@@ -420,24 +541,6 @@
         },
         {
           "name": "Update User Profile",
-          "event": [
-            {
-              "listen": "pre-request",
-              "script": {
-                "exec": [
-                  "// Auto-set Bearer token",
-                  "const token = pm.collectionVariables.get('accessToken');",
-                  "if (token) {",
-                  "    pm.request.headers.add({",
-                  "        key: 'Authorization',",
-                  "        value: `Bearer ${token}`",
-                  "    });",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
           "request": {
             "method": "PUT",
             "header": [
@@ -573,7 +676,32 @@
           "});",
           "",
           "// Log current environment",
-          "console.log('Environment:', pm.collectionVariables.get('environment'));"
+          "console.log('Environment:', pm.collectionVariables.get('environment'));",
+          "",
+          "// Auto-refresh token for protected endpoints (not auth endpoints)",
+          "const requestName = pm.info.requestName;",
+          "const isAuthEndpoint = requestName.includes('Login') || requestName.includes('Register') || requestName.includes('Verification') || requestName.includes('Refresh') || requestName.includes('Password') || requestName.includes('Health') || requestName.includes('Documentation');",
+          "",
+          "if (!isAuthEndpoint) {",
+          "    const accessToken = pm.collectionVariables.get('accessToken');",
+          "    const refreshToken = pm.collectionVariables.get('refreshToken');",
+          "    ",
+          "    if (accessToken && !pm.request.headers.has('Authorization')) {",
+          "        pm.request.headers.add({",
+          "            key: 'Authorization',",
+          "            value: `Bearer ${accessToken}`",
+          "        });",
+          "        console.log('🔐 Auto-added Authorization header');",
+          "    }",
+          "    ",
+          "    if (!accessToken && refreshToken) {",
+          "        console.log('⚠️ No access token but refresh token available. Consider refreshing token first.');",
+          "    }",
+          "    ",
+          "    if (!accessToken && !refreshToken) {",
+          "        console.log('❌ No authentication tokens available. Please login first.');",
+          "    }",
+          "}"
         ]
       }
     },
@@ -781,6 +909,12 @@
       "value": "",
       "type": "string",
       "description": "Current user ID (auto-populated)"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string",
+      "description": "JWT refresh token (auto-populated)"
     }
   ]
 }

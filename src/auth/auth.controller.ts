@@ -19,12 +19,14 @@ import {
 } from '@nestjs/swagger';
 import { UserResponseDto } from '../api/users/dto/user-response.dto';
 import { AuthService } from './auth.service';
+import { Auth } from './decorators/auth.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { PasswordStrengthResponseDto } from './dto/password-strength-response.dto';
 import { PreRegisterDto } from './dto/pre-register.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
@@ -125,8 +127,7 @@ export class AuthController {
 	}
 
 	@Get('me')
-	@UseGuards(JwtAuthGuard)
-	@ApiBearerAuth()
+	@Auth()
 	@ApiOperation({ summary: 'Get current user profile' })
 	@ApiResponse({
 		status: 200,
@@ -142,8 +143,7 @@ export class AuthController {
 	}
 
 	@Put('change-password')
-	@UseGuards(JwtAuthGuard)
-	@ApiBearerAuth()
+	@Auth()
 	@ApiOperation({ summary: 'Change user password' })
 	@ApiResponse({
 		status: 200,
@@ -191,5 +191,49 @@ export class AuthController {
 	async generateSecurePassword(@Query('length') length?: string) {
 		const passwordLength = length ? parseInt(length, 10) : 12;
 		return this.authService.generateSecurePassword(passwordLength);
+	}
+
+	@Post('refresh')
+	@ApiOperation({ summary: 'Refresh access token using refresh token' })
+	@ApiResponse({
+		status: 200,
+		description: 'Access token refreshed successfully',
+		type: AuthResponseDto,
+	})
+	@ApiResponse({
+		status: 401,
+		description: 'Invalid or expired refresh token',
+	})
+	async refreshToken(@Body() refreshTokenDto: RefreshTokenDto): Promise<AuthResponseDto> {
+		return this.authService.refreshToken(refreshTokenDto);
+	}
+
+	@Post('revoke')
+	@ApiOperation({ summary: 'Revoke a specific refresh token' })
+	@ApiResponse({
+		status: 200,
+		description: 'Refresh token revoked successfully',
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'Refresh token not found',
+	})
+	async revokeRefreshToken(@Body() refreshTokenDto: RefreshTokenDto) {
+		return this.authService.revokeRefreshToken(refreshTokenDto.refreshToken);
+	}
+
+	@Post('revoke-all')
+	@Auth()
+	@ApiOperation({ summary: 'Revoke all refresh tokens for current user' })
+	@ApiResponse({
+		status: 200,
+		description: 'All refresh tokens revoked successfully',
+	})
+	@ApiResponse({
+		status: 401,
+		description: 'Unauthorized',
+	})
+	async revokeAllRefreshTokens(@CurrentUser() user: any) {
+		return this.authService.revokeAllRefreshTokens(user.id);
 	}
 }

@@ -25,4 +25,11 @@ export class AuthResponseDto {
 		example: 3600,
 	})
 	expires_in: number;
+
+	@ApiProperty({
+		description: 'JWT refresh token',
+		example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+		required: false,
+	})
+	refresh_token?: string;
 }

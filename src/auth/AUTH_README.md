@@ -19,7 +19,8 @@ Hệ thống authentication của Trustay cung cấp:
 
 - ✅ **Đăng ký người dùng** với mã hóa mật khẩu
 - ✅ **Đăng nhập** với JWT token
-- ✅ **Bảo vệ routes** với JWT Guard
+- ✅ **Refresh Token** với automatic token renewal
+- ✅ **Bảo vệ routes** với @Auth decorator
 - ✅ **Quản lý session** với token validation
 - ✅ **Current user context** trong controllers
 - ✅ **Role-based access** (tenant, landlord)
@@ -79,6 +80,7 @@ Content-Type: application/json
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6",
   "user": {
     "id": "clx123456789",
     "email": "user@example.com",
@@ -103,7 +105,44 @@ Content-Type: application/json
 }
 ```
 
-#### 3. Lấy thông tin user hiện tại
+#### 3. Làm mới access token
+```http
+POST /api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6"
+}
+```
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a1",
+  "user": { ... },
+  "token_type": "Bearer",
+  "expires_in": 3600
+}
+```
+
+#### 4. Thu hồi refresh token
+```http
+POST /api/auth/revoke
+Content-Type: application/json
+
+{
+  "refreshToken": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6"
+}
+```
+
+#### 5. Thu hồi tất cả refresh tokens
+```http
+POST /api/auth/revoke-all
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+#### 6. Lấy thông tin user hiện tại
 ```http
 GET /api/auth/me
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
@@ -141,15 +180,14 @@ Role được yêu cầu bắt buộc khi đăng ký và quyết định quyền
 
 ## 🔧 Sử dụng Authentication
 
-### 1. Trong Controllers
+### 1. Trong Controllers với @Auth decorator
 
 ```typescript
-import { UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { Auth } from '../../auth/decorators/auth.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 
 @Controller('api/example')
-@UseGuards(JwtAuthGuard) // Bảo vệ toàn bộ controller
+@Auth() // Bảo vệ toàn bộ controller với @Auth decorator
 export class ExampleController {
   
   @Get('profile')
@@ -186,7 +224,7 @@ export class ExampleController {
   }
   
   @Get('private')
-  @UseGuards(JwtAuthGuard) // Chỉ bảo vệ route này
+  @Auth() // Chỉ bảo vệ route này với @Auth decorator
   async privateEndpoint(@CurrentUser() user: any) {
     return { message: 'This is private', user: user.email };
   }
@@ -209,8 +247,9 @@ const register = async (userData) => {
   const data = await response.json();
   
   if (response.ok) {
-    // Lưu token vào localStorage hoặc cookie
+    // Lưu cả access token và refresh token
     localStorage.setItem('access_token', data.access_token);
+    localStorage.setItem('refresh_token', data.refresh_token);
     return data.user;
   } else {
     throw new Error(data.message);
@@ -233,6 +272,7 @@ const login = async (email, password) => {
   
   if (response.ok) {
     localStorage.setItem('access_token', data.access_token);
+    localStorage.setItem('refresh_token', data.refresh_token);
     return data.user;
   } else {
     throw new Error(data.message);
@@ -240,12 +280,37 @@ const login = async (email, password) => {
 };
 ```
 
-#### Gọi protected APIs
+#### Gọi protected APIs với auto-refresh
 ```javascript
+const refreshAccessToken = async () => {
+  const refreshToken = localStorage.getItem('refresh_token');
+  if (!refreshToken) {
+    throw new Error('No refresh token available');
+  }
+
+  const response = await fetch('/api/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken })
+  });
+
+  if (response.ok) {
+    const data = await response.json();
+    localStorage.setItem('access_token', data.access_token);
+    localStorage.setItem('refresh_token', data.refresh_token);
+    return data.access_token;
+  } else {
+    // Refresh token hết hạn
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    throw new Error('Refresh token expired');
+  }
+};
+
 const getProfile = async () => {
-  const token = localStorage.getItem('access_token');
+  let token = localStorage.getItem('access_token');
   
-  const response = await fetch('/api/users/profile', {
+  let response = await fetch('/api/users/profile', {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -253,12 +318,26 @@ const getProfile = async () => {
     }
   });
   
+  if (response.status === 401) {
+    // Token hết hạn, thử refresh
+    try {
+      token = await refreshAccessToken();
+      response = await fetch('/api/users/profile', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        }
+      });
+    } catch (error) {
+      // Redirect to login
+      window.location.href = '/login';
+      return;
+    }
+  }
+  
   if (response.ok) {
     return await response.json();
-  } else if (response.status === 401) {
-    // Token hết hạn hoặc không hợp lệ
-    localStorage.removeItem('access_token');
-    // Redirect to login
   }
 };
 ```
@@ -269,10 +348,12 @@ const getProfile = async () => {
 ```
 src/auth/
 ├── decorators/
+│   ├── auth.decorator.ts            # @Auth decorator (combines guards)
 │   └── current-user.decorator.ts    # Decorator để lấy user hiện tại
 ├── dto/
 │   ├── auth-response.dto.ts         # Response format cho auth
 │   ├── login.dto.ts                 # Validation cho login
+│   ├── refresh-token.dto.ts         # Validation cho refresh token
 │   └── register.dto.ts              # Validation cho register
 ├── guards/
 │   └── jwt-auth.guard.ts            # JWT authentication guard
@@ -316,11 +397,13 @@ interface CurrentUser {
 - **Validation**: Minimum 6 characters required
 - **Storage**: Chỉ lưu password hash, không lưu plain text
 
-### JWT Security
-- **Secret**: Sử dụng environment variable cho JWT_SECRET
-- **Expiration**: Default 1 hour, có thể cấu hình qua JWT_EXPIRES_IN
+### JWT & Refresh Token Security
+- **JWT Secret**: Sử dụng environment variable cho JWT_SECRET
+- **Access Token Expiration**: Default 1 hour, có thể cấu hình qua JWT_EXPIRES_IN
+- **Refresh Token Expiration**: 7 ngày, stored securely trong database
+- **Token Rotation**: Mỗi lần refresh sẽ tạo refresh token mới
 - **Validation**: Verify signature và expiration time
-- **Stateless**: Không lưu session server-side
+- **Revocation**: Có thể thu hồi refresh tokens khi cần thiết
 
 ### API Security
 - **Protected Routes**: Tất cả user endpoints yêu cầu valid JWT
@@ -332,7 +415,10 @@ interface CurrentUser {
 - ✅ Proper error handling
 - ✅ Input validation với class-validator
 - ✅ Swagger documentation
-- ✅ Separation of concerns (admin vs user routes)
+- ✅ Separation of concerns (admin vs user routes)  
+- ✅ Refresh token rotation
+- ✅ Centralized @Auth decorator
+- ✅ Database-stored refresh tokens
 
 ## 📝 Ví dụ sử dụng
 
@@ -367,8 +453,7 @@ const profile = await fetch('/api/users/profile', {
 
 ```typescript
 @Controller('api/bookings')
-@UseGuards(JwtAuthGuard)
-@ApiBearerAuth()
+@Auth()
 export class BookingsController {
   
   @Post()
@@ -393,7 +478,7 @@ export class BookingsController {
 ```typescript
 // Có thể mở rộng thêm role guard
 @Controller('api/admin')
-@UseGuards(JwtAuthGuard, RoleGuard)
+@Auth()
 @Roles('landlord', 'admin')
 export class AdminController {
   // Chỉ landlord hoặc admin mới access được
@@ -405,12 +490,13 @@ export class AdminController {
 Để mở rộng hệ thống authentication:
 
 1. **Role Guards**: Implement role-based access control
-2. **Refresh Tokens**: Add token refresh mechanism
+2. ✅ **Refresh Tokens**: Add token refresh mechanism *(Completed)*
 3. **Password Reset**: Email-based password reset flow
 4. **2FA**: Two-factor authentication
 5. **Social Login**: Google, Facebook OAuth integration
 6. **Rate Limiting**: Prevent brute force attacks
 7. **Session Management**: Track active sessions
+8. **Token Blacklisting**: Advanced token revocation
 
 ## 🚨 Troubleshooting
 
