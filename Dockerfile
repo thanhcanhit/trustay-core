@@ -1,7 +1,7 @@
-# Use Alpine Linux for smaller image size
-FROM node:lts-alpine3.17 AS base
+# Build stage
+FROM node:lts-alpine3.17 AS build
 
-# Install OpenSSL (required by Prisma) and pnpm
+# Install OpenSSL and pnpm
 RUN apk add --no-cache openssl && \
     npm install -g pnpm
 
@@ -11,7 +11,7 @@ WORKDIR /usr/src/app
 COPY package.json pnpm-lock.yaml ./
 COPY prisma ./prisma/
 
-# Install all dependencies
+# Install dependencies
 RUN pnpm install --frozen-lockfile
 
 # Copy source code
@@ -20,11 +20,8 @@ COPY . .
 # Generate Prisma client
 RUN pnpm prisma generate
 
-# Build stage
-FROM base AS build
-
 # Build the application
-RUN pnpm run build
+RUN pnpm build
 
 # Production stage  
 FROM node:lts-alpine3.17 AS production
@@ -55,11 +52,15 @@ COPY --from=build --chown=nestjs:nodejs /usr/src/app/dist ./dist
 # Create logs directory with proper permissions
 RUN mkdir -p logs && chown -R nestjs:nodejs logs
 
+# Copy entrypoint script
+COPY --chown=nestjs:nodejs docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
+
 # Switch to non-root user
 USER nestjs
 
 # Expose port
 EXPOSE 3000
 
-# Start with database migration and app
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+# Use entrypoint script
+ENTRYPOINT ["./docker-entrypoint.sh"]
