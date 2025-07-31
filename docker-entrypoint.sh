@@ -3,6 +3,29 @@ set -e
 
 echo "Starting application deployment..."
 
+# Debug: Show current directory and contents
+echo "Current directory: $(pwd)"
+echo "Directory contents:"
+ls -la
+
+# Debug: Check if dist directory exists
+if [ -d "dist" ]; then
+    echo "✅ dist directory exists"
+    echo "dist directory contents:"
+    ls -la dist/
+else
+    echo "❌ dist directory does not exist"
+    exit 1
+fi
+
+# Debug: Check if main.js exists
+if [ -f "dist/main.js" ]; then
+    echo "✅ dist/main.js exists"
+else
+    echo "❌ dist/main.js does not exist"
+    exit 1
+fi
+
 # Run database migrations
 echo "Running database migrations..."
 if npx prisma migrate deploy; then
