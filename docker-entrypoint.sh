@@ -18,11 +18,21 @@ else
     exit 1
 fi
 
-# Debug: Check if main.js exists
-if [ -f "dist/main.js" ]; then
-    echo "✅ dist/main.js exists"
+# Debug: Check if dist/src directory exists
+if [ -d "dist/src" ]; then
+    echo "✅ dist/src directory exists"
+    echo "dist/src directory contents:"
+    ls -la dist/src/
 else
-    echo "❌ dist/main.js does not exist"
+    echo "❌ dist/src directory does not exist"
+    exit 1
+fi
+
+# Debug: Check if main.js exists in the correct location
+if [ -f "dist/src/main.js" ]; then
+    echo "✅ dist/src/main.js exists"
+else
+    echo "❌ dist/src/main.js does not exist"
     exit 1
 fi
 
@@ -47,4 +57,4 @@ fi
 
 # Start the application
 echo "Starting NestJS application..."
-exec node dist/main.js
+exec node dist/src/main.js
