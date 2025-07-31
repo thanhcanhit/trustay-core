@@ -54,14 +54,21 @@ services:
       - trustay-network
       - coolify
 
-  trustay-pgadmin:
-    image: dpage/pgadmin4:latest
+  trustay-strapi:
+    image: strapi/strapi:latest
     restart: unless-stopped
-    container_name: trustay-pgadmin
+    container_name: trustay-strapi
     environment:
-      - PGADMIN_DEFAULT_EMAIL=admin@trustay.life
-      - PGADMIN_DEFAULT_PASSWORD=atrustay
-      - PGADMIN_CONFIG_SERVER_MODE=False
+      - DATABASE_CLIENT=postgres
+      - DATABASE_HOST=trustay-postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=${POSTGRES_DB}
+      - DATABASE_USERNAME=${POSTGRES_USER}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD}
+      - JWT_SECRET=c29b25725136ad013eb79a3b105dc2339471a25a6e4fe44473e07c4403f549ea
+      - ADMIN_JWT_SECRET=ac639072aee7adb1c0ef1a7b3a0e144cda3c3e05a80767c1363635676f13f95b
+      - API_TOKEN_SALT=bd230508f313e6148f603891badc1108
+      - APP_KEYS=LKIHBg9Tullmg+yWvdivBw==,1r1kfbbcxe7xCPBpwqRSxA==,5hcrrmZo1Y1YWSaF8teC+A==,xY+VlOjuq+cGWPF0skaiyA==
     depends_on:
       trustay-postgres:
         condition: service_healthy
@@ -69,13 +76,13 @@ services:
       - trustay-network
       - coolify
     volumes:
-      - pgadmin_data:/var/lib/pgadmin
+      - strapi_data:/opt/app
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.trustay-pgadmin.rule=Host(`pgadmin.trustay.life`)"
-      - "traefik.http.routers.trustay-pgadmin.entrypoints=https"
-      - "traefik.http.routers.trustay-pgadmin.tls.certresolver=letsencrypt"
-      - "traefik.http.services.trustay-pgadmin.loadbalancer.server.port=80"
+      - "traefik.http.routers.trustay-strapi.rule=Host(`cms.trustay.life`)"
+      - "traefik.http.routers.trustay-strapi.entrypoints=https"
+      - "traefik.http.routers.trustay-strapi.tls.certresolver=letsencrypt"
+      - "traefik.http.services.trustay-strapi.loadbalancer.server.port=1337"
 
   trustay-app:
     build:
@@ -101,7 +108,7 @@ services:
       - coolify
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.trustay-app.rule=Host(`core.trustay.life`)"
+      - "traefik.http.routers.trustay-app.rule=Host(`kore.trustay.life`)"
       - "traefik.http.routers.trustay-app.entrypoints=https"
       - "traefik.http.routers.trustay-app.tls.certresolver=letsencrypt"
       - "traefik.http.services.trustay-app.loadbalancer.server.port=3000"
@@ -117,7 +124,7 @@ volumes:
     driver: local
   redis_data:
     driver: local
-  pgadmin_data:
+  strapi_data:
     driver: local
 
 networks:
