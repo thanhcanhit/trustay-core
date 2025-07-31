@@ -54,21 +54,22 @@ services:
       - trustay-network
       - coolify
 
-  trustay-strapi:
-    image: strapi/strapi:latest
+  trustay-directus:
+    image: directus/directus:latest
     restart: unless-stopped
-    container_name: trustay-strapi
+    container_name: trustay-directus
     environment:
-      - DATABASE_CLIENT=postgres
-      - DATABASE_HOST=trustay-postgres
-      - DATABASE_PORT=5432
-      - DATABASE_NAME=${POSTGRES_DB}
-      - DATABASE_USERNAME=${POSTGRES_USER}
-      - DATABASE_PASSWORD=${POSTGRES_PASSWORD}
-      - JWT_SECRET=c29b25725136ad013eb79a3b105dc2339471a25a6e4fe44473e07c4403f549ea
-      - ADMIN_JWT_SECRET=ac639072aee7adb1c0ef1a7b3a0e144cda3c3e05a80767c1363635676f13f95b
-      - API_TOKEN_SALT=bd230508f313e6148f603891badc1108
-      - APP_KEYS=LKIHBg9Tullmg+yWvdivBw==,1r1kfbbcxe7xCPBpwqRSxA==,5hcrrmZo1Y1YWSaF8teC+A==,xY+VlOjuq+cGWPF0skaiyA==
+      - KEY=255d861b-5ea1-5996-9aa3-922530ec40b1
+      - SECRET=6116487b-cda1-52c2-b5b5-c8022c45e263
+      - DB_CLIENT=pg
+      - DB_HOST=trustay-postgres
+      - DB_PORT=5432
+      - DB_DATABASE=${POSTGRES_DB}
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - ADMIN_EMAIL=admin@trustay.life
+      - ADMIN_PASSWORD=Trustay2025@
+      - PUBLIC_URL=https://cms.trustay.life
     depends_on:
       trustay-postgres:
         condition: service_healthy
@@ -76,13 +77,13 @@ services:
       - trustay-network
       - coolify
     volumes:
-      - strapi_data:/opt/app
+      - directus_data:/directus/uploads
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.trustay-strapi.rule=Host(`cms.trustay.life`)"
-      - "traefik.http.routers.trustay-strapi.entrypoints=https"
-      - "traefik.http.routers.trustay-strapi.tls.certresolver=letsencrypt"
-      - "traefik.http.services.trustay-strapi.loadbalancer.server.port=1337"
+      - "traefik.http.routers.trustay-directus.rule=Host(`cms.trustay.life`)"
+      - "traefik.http.routers.trustay-directus.entrypoints=https"
+      - "traefik.http.routers.trustay-directus.tls.certresolver=letsencrypt"
+      - "traefik.http.services.trustay-directus.loadbalancer.server.port=8055"
 
   trustay-app:
     build:
@@ -124,7 +125,7 @@ volumes:
     driver: local
   redis_data:
     driver: local
-  strapi_data:
+  directus_data:
     driver: local
 
 networks:
