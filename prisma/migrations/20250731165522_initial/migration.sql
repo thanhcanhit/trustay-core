@@ -2,7 +2,7 @@
 CREATE TYPE "Gender" AS ENUM ('male', 'female', 'other');
 
 -- CreateEnum
-CREATE TYPE "UserRole" AS ENUM ('tenant', 'landlord', 'both');
+CREATE TYPE "UserRole" AS ENUM ('tenant', 'landlord');
 
 -- CreateEnum
 CREATE TYPE "RoomType" AS ENUM ('single', 'double', 'suite', 'dormitory');
@@ -43,6 +43,12 @@ CREATE TYPE "Visibility" AS ENUM ('anyoneCanFind', 'anyoneWithLink', 'domainCanF
 -- CreateEnum
 CREATE TYPE "SearchPostStatus" AS ENUM ('active', 'paused', 'closed', 'expired');
 
+-- CreateEnum
+CREATE TYPE "VerificationType" AS ENUM ('email', 'phone', 'password_reset');
+
+-- CreateEnum
+CREATE TYPE "VerificationStatus" AS ENUM ('pending', 'verified', 'expired', 'failed');
+
 -- CreateTable
 CREATE TABLE "users" (
     "id" TEXT NOT NULL,
@@ -72,14 +78,45 @@ CREATE TABLE "users" (
 );
 
 -- CreateTable
+CREATE TABLE "verification_codes" (
+    "id" TEXT NOT NULL,
+    "user_id" TEXT,
+    "email" TEXT,
+    "phone" TEXT,
+    "type" "VerificationType" NOT NULL,
+    "code" TEXT NOT NULL,
+    "status" "VerificationStatus" NOT NULL DEFAULT 'pending',
+    "attempts" INTEGER NOT NULL DEFAULT 0,
+    "maxAttempts" INTEGER NOT NULL DEFAULT 5,
+    "expires_at" TIMESTAMP(3) NOT NULL,
+    "verified_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "verification_codes_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "refresh_tokens" (
+    "id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
+    "token" TEXT NOT NULL,
+    "expires_at" TIMESTAMP(3) NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "refresh_tokens_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "user_addresses" (
     "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "address_line_1" TEXT NOT NULL,
     "address_line_2" TEXT,
-    "ward_id" TEXT,
-    "district_id" TEXT NOT NULL,
-    "province_id" TEXT NOT NULL,
+    "ward_id" INTEGER,
+    "district_id" INTEGER NOT NULL,
+    "province_id" INTEGER NOT NULL,
     "country" TEXT NOT NULL DEFAULT 'Vietnam',
     "postal_code" TEXT,
     "is_primary" BOOLEAN NOT NULL DEFAULT false,
@@ -97,9 +134,9 @@ CREATE TABLE "buildings" (
     "description" TEXT,
     "address_line_1" TEXT NOT NULL,
     "address_line_2" TEXT,
-    "ward_id" TEXT,
-    "district_id" TEXT NOT NULL,
-    "province_id" TEXT NOT NULL,
+    "ward_id" INTEGER,
+    "district_id" INTEGER NOT NULL,
+    "province_id" INTEGER NOT NULL,
     "country" TEXT NOT NULL DEFAULT 'Vietnam',
     "latitude" DECIMAL(10,7),
     "longitude" DECIMAL(10,7),
@@ -449,7 +486,7 @@ CREATE TABLE "notifications" (
 
 -- CreateTable
 CREATE TABLE "provinces" (
-    "id" TEXT NOT NULL,
+    "id" SERIAL NOT NULL,
     "province_code" TEXT NOT NULL,
     "province_name" TEXT NOT NULL,
     "province_name_en" TEXT,
@@ -461,11 +498,11 @@ CREATE TABLE "provinces" (
 
 -- CreateTable
 CREATE TABLE "districts" (
-    "id" TEXT NOT NULL,
+    "id" SERIAL NOT NULL,
     "district_code" TEXT NOT NULL,
     "district_name" TEXT NOT NULL,
     "district_name_en" TEXT,
-    "province_id" TEXT NOT NULL,
+    "province_id" INTEGER NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -474,12 +511,12 @@ CREATE TABLE "districts" (
 
 -- CreateTable
 CREATE TABLE "wards" (
-    "id" TEXT NOT NULL,
+    "id" SERIAL NOT NULL,
     "ward_code" TEXT NOT NULL,
     "ward_name" TEXT NOT NULL,
     "ward_name_en" TEXT,
     "ward_level" TEXT NOT NULL,
-    "district_id" TEXT NOT NULL,
+    "district_id" INTEGER NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -491,6 +528,36 @@ CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "users_phone_key" ON "users"("phone");
+
+-- CreateIndex
+CREATE INDEX "verification_codes_email_idx" ON "verification_codes"("email");
+
+-- CreateIndex
+CREATE INDEX "verification_codes_phone_idx" ON "verification_codes"("phone");
+
+-- CreateIndex
+CREATE INDEX "verification_codes_code_idx" ON "verification_codes"("code");
+
+-- CreateIndex
+CREATE INDEX "verification_codes_type_idx" ON "verification_codes"("type");
+
+-- CreateIndex
+CREATE INDEX "verification_codes_status_idx" ON "verification_codes"("status");
+
+-- CreateIndex
+CREATE INDEX "verification_codes_expires_at_idx" ON "verification_codes"("expires_at");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "refresh_tokens_token_key" ON "refresh_tokens"("token");
+
+-- CreateIndex
+CREATE INDEX "refresh_tokens_user_id_idx" ON "refresh_tokens"("user_id");
+
+-- CreateIndex
+CREATE INDEX "refresh_tokens_token_idx" ON "refresh_tokens"("token");
+
+-- CreateIndex
+CREATE INDEX "refresh_tokens_expires_at_idx" ON "refresh_tokens"("expires_at");
 
 -- CreateIndex
 CREATE INDEX "user_addresses_district_id_idx" ON "user_addresses"("district_id");
@@ -722,6 +789,12 @@ CREATE INDEX "wards_ward_code_idx" ON "wards"("ward_code");
 
 -- CreateIndex
 CREATE INDEX "wards_district_id_idx" ON "wards"("district_id");
+
+-- AddForeignKey
+ALTER TABLE "verification_codes" ADD CONSTRAINT "verification_codes_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "user_addresses" ADD CONSTRAINT "user_addresses_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
