@@ -53,6 +53,7 @@ COPY --from=build --chown=nestjs:nodejs /usr/src/app/dist ./dist
 COPY --from=build --chown=nestjs:nodejs /usr/src/app/scripts ./scripts
 COPY --from=build --chown=nestjs:nodejs /usr/src/app/data ./data
 COPY --from=build --chown=nestjs:nodejs /usr/src/app/prisma/seed.ts ./prisma/seed.ts
+COPY --from=build --chown=nestjs:nodejs /usr/src/app/tsconfig.json ./tsconfig.json
 
 # Create logs directory with proper permissions
 RUN mkdir -p logs && chown -R nestjs:nodejs logs

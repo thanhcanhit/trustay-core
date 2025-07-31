@@ -31,6 +31,10 @@
       "@modules/*": ["src/modules/*"]
     }
   },
-  "include": ["src/**/*", "test/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*", "test/**/*", "scripts/**/*"],
+  "exclude": ["node_modules", "dist"],
+  "ts-node": {
+    "esm": true,
+    "experimentalSpecifierResolution": "node"
+  }
 }
