@@ -71,7 +71,6 @@ COPY --from=build --chown=nestjs:nodejs /usr/src/app/scripts ./scripts
 COPY --from=build --chown=nestjs:nodejs /usr/src/app/data ./data
 COPY --from=build --chown=nestjs:nodejs /usr/src/app/prisma/seed.ts ./prisma/seed.ts
 COPY --from=build --chown=nestjs:nodejs /usr/src/app/tsconfig.json ./tsconfig.json
-COPY --from=build --chown=nestjs:nodejs /usr/src/app/node_modules/.prisma ./node_modules/.prisma
 
 # Verify the main.js file exists in the correct location
 RUN ls -la dist/src/ && test -f dist/src/main.js
