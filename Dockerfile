@@ -49,6 +49,11 @@ RUN pnpm prisma generate
 # Copy built application from build stage
 COPY --from=build --chown=nestjs:nodejs /usr/src/app/dist ./dist
 
+# Copy scripts and data files needed for database operations
+COPY --from=build --chown=nestjs:nodejs /usr/src/app/scripts ./scripts
+COPY --from=build --chown=nestjs:nodejs /usr/src/app/data ./data
+COPY --from=build --chown=nestjs:nodejs /usr/src/app/prisma/seed.ts ./prisma/seed.ts
+
 # Create logs directory with proper permissions
 RUN mkdir -p logs && chown -R nestjs:nodejs logs
 
