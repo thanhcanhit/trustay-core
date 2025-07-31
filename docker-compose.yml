@@ -59,7 +59,7 @@ services:
     restart: unless-stopped
     container_name: trustay-strapi
     environment:
-      - DATABASE_CLIENT=postgres
+      - DATABASE_CLIENT=trustay_db
       - DATABASE_HOST=trustay-postgres
       - DATABASE_PORT=5432
       - DATABASE_NAME=${POSTGRES_DB}
