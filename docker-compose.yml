@@ -28,6 +28,7 @@ services:
       start_period: 40s
     networks:
       - trustay-network
+      - coolify
 
   trustay-redis:
     image: redis:7-alpine
@@ -51,6 +52,30 @@ services:
           memory: 128M
     networks:
       - trustay-network
+      - coolify
+
+  trustay-pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    container_name: trustay-pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@trustay.life
+      - PGADMIN_DEFAULT_PASSWORD=atrustay
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    depends_on:
+      trustay-postgres:
+        condition: service_healthy
+    networks:
+      - trustay-network
+      - coolify
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.trustay-pgadmin.rule=Host(`pgadmin.trustay.life`)"
+      - "traefik.http.routers.trustay-pgadmin.entrypoints=https"
+      - "traefik.http.routers.trustay-pgadmin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.trustay-pgadmin.loadbalancer.server.port=80"
 
   trustay-app:
     build:
@@ -66,8 +91,6 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
       - RUN_SEED=false  # Set to true if you want to run seeding
-    ports:
-      - "3000:3000"
     depends_on:
       trustay-postgres:
         condition: service_healthy
@@ -75,10 +98,11 @@ services:
         condition: service_healthy
     networks:
       - trustay-network
+      - coolify
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.trustay-app.rule=Host(`core.trustay.life`)"
-      - "traefik.http.routers.trustay-app.entrypoints=websecure"
+      - "traefik.http.routers.trustay-app.entrypoints=https"
       - "traefik.http.routers.trustay-app.tls.certresolver=letsencrypt"
       - "traefik.http.services.trustay-app.loadbalancer.server.port=3000"
     healthcheck:
@@ -93,7 +117,11 @@ volumes:
     driver: local
   redis_data:
     driver: local
+  pgadmin_data:
+    driver: local
 
 networks:
   trustay-network:
     driver: bridge
+  coolify:
+    external: true
