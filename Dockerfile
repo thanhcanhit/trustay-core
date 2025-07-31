@@ -59,8 +59,10 @@ WORKDIR /usr/src/app
 COPY package.json pnpm-lock.yaml ./
 COPY prisma ./prisma/
 
-# Install only production dependencies to reduce size
-RUN pnpm install --frozen-lockfile --prod && pnpm store prune
+# Install production dependencies plus ts-node for running TypeScript scripts
+RUN pnpm install --frozen-lockfile --prod && \
+    pnpm add ts-node typescript tsconfig-paths && \
+    pnpm store prune
 
 # Generate Prisma client in production
 RUN pnpm prisma generate
