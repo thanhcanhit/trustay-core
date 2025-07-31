@@ -26,7 +26,7 @@ COPY . .
 RUN pnpm prisma generate
 
 # Build the application and verify the output
-RUN pnpm build && \
+RUN npm run build && \
     ls -la dist/ && \
     test -f dist/main.js
 
