@@ -69,8 +69,8 @@ services:
       - DB_PASSWORD=${POSTGRES_PASSWORD}
       - REDIS_HOST=trustay-redis
       - REDIS_PORT=6379
-      - ADMIN_EMAIL=admin@trustay.life
-      - ADMIN_PASSWORD=Trustay2025@
+      - ADMIN_EMAIL=thanhcanh.dev@gmail.com
+      - ADMIN_PASSWORD=atrustay2025
       - PUBLIC_URL=https://adm.trustay.life
     depends_on:
       trustay-postgres:
