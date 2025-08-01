@@ -56,6 +56,8 @@ services:
     image: directus/directus:latest
     restart: unless-stopped
     container_name: trustay-directus
+    ports:
+      - "8055:8055"
     environment:
       - KEY=255d861b-5ea1-5996-9aa3-922530ec40b1
       - SECRET=6116487b-cda1-52c2-b5b5-c8022c45e263
@@ -65,14 +67,19 @@ services:
       - DB_DATABASE=${POSTGRES_DB}
       - DB_USER=${POSTGRES_USER}
       - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=trustay-redis
+      - REDIS_PORT=6379
       - ADMIN_EMAIL=admin@trustay.life
       - ADMIN_PASSWORD=Trustay2025@
-      - PUBLIC_URL=https://cms.trustay.life
+      - PUBLIC_URL=https://adm.trustay.life
     depends_on:
       trustay-postgres:
         condition: service_healthy
+      trustay-redis:
+        condition: service_healthy
     networks:
       - trustay-network
+      - coolify
     volumes:
       - directus_data:/directus/uploads
 
