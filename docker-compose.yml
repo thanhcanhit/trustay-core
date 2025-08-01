@@ -28,7 +28,6 @@ services:
       start_period: 40s
     networks:
       - trustay-network
-      - coolify
 
   trustay-redis:
     image: redis:7-alpine
@@ -52,7 +51,6 @@ services:
           memory: 128M
     networks:
       - trustay-network
-      - coolify
 
   # trustay-directus:
   #   image: directus/directus:latest
@@ -75,7 +73,6 @@ services:
   #       condition: service_healthy
   #   networks:
   #     - trustay-network
-  #     - coolify
   #   volumes:
   #     - directus_data:/directus/uploads
 
@@ -87,7 +84,7 @@ services:
     restart: unless-stopped
     container_name: trustay-app
     ports:
-      - "2025:3000"
+      - "3000:3000"
     env_file:
       - .env
     environment:
@@ -103,7 +100,6 @@ services:
         condition: service_healthy
     networks:
       - trustay-network
-      - coolify
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
       interval: 30s
@@ -118,3 +114,7 @@ volumes:
     driver: local
   directus_data:
     driver: local
+
+networks:
+  trustay-network:
+    driver: bridge
