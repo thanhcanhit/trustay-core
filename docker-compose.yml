@@ -54,36 +54,30 @@ services:
       - trustay-network
       - coolify
 
-  trustay-directus:
-    image: directus/directus:latest
-    restart: unless-stopped
-    container_name: trustay-directus
-    environment:
-      - KEY=255d861b-5ea1-5996-9aa3-922530ec40b1
-      - SECRET=6116487b-cda1-52c2-b5b5-c8022c45e263
-      - DB_CLIENT=pg
-      - DB_HOST=trustay-postgres
-      - DB_PORT=5432
-      - DB_DATABASE=${POSTGRES_DB}
-      - DB_USER=${POSTGRES_USER}
-      - DB_PASSWORD=${POSTGRES_PASSWORD}
-      - ADMIN_EMAIL=admin@trustay.life
-      - ADMIN_PASSWORD=Trustay2025@
-      - PUBLIC_URL=https://cms.trustay.life
-    depends_on:
-      trustay-postgres:
-        condition: service_healthy
-    networks:
-      - trustay-network
-      - coolify
-    volumes:
-      - directus_data:/directus/uploads
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.trustay-directus.rule=Host(`cms.trustay.life`)"
-      - "traefik.http.routers.trustay-directus.entrypoints=https"
-      - "traefik.http.routers.trustay-directus.tls.certresolver=letsencrypt"
-      - "traefik.http.services.trustay-directus.loadbalancer.server.port=8055"
+  # trustay-directus:
+  #   image: directus/directus:latest
+  #   restart: unless-stopped
+  #   container_name: trustay-directus
+  #   environment:
+  #     - KEY=255d861b-5ea1-5996-9aa3-922530ec40b1
+  #     - SECRET=6116487b-cda1-52c2-b5b5-c8022c45e263
+  #     - DB_CLIENT=pg
+  #     - DB_HOST=trustay-postgres
+  #     - DB_PORT=5432
+  #     - DB_DATABASE=${POSTGRES_DB}
+  #     - DB_USER=${POSTGRES_USER}
+  #     - DB_PASSWORD=${POSTGRES_PASSWORD}
+  #     - ADMIN_EMAIL=admin@trustay.life
+  #     - ADMIN_PASSWORD=Trustay2025@
+  #     - PUBLIC_URL=https://cms.trustay.life
+  #   depends_on:
+  #     trustay-postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - trustay-network
+  #     - coolify
+  #   volumes:
+  #     - directus_data:/directus/uploads
 
   trustay-app:
     build:
@@ -110,12 +104,6 @@ services:
     networks:
       - trustay-network
       - coolify
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.trustay-app.rule=Host(`kore.trustay.life`)"
-      - "traefik.http.routers.trustay-app.entrypoints=https"
-      - "traefik.http.routers.trustay-app.tls.certresolver=letsencrypt"
-      - "traefik.http.services.trustay-app.loadbalancer.server.port=3000"
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
       interval: 30s
@@ -130,9 +118,3 @@ volumes:
     driver: local
   directus_data:
     driver: local
-
-networks:
-  trustay-network:
-    driver: bridge
-  coolify:
-    external: true
