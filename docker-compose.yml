@@ -99,6 +99,7 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
       - RUN_SEED=false  # Set to true if you want to run seeding
+      - FORCE_MIGRATION_BASELINE=false  # Set to true to force baseline resolution
     depends_on:
       trustay-postgres:
         condition: service_healthy

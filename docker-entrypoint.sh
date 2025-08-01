@@ -38,11 +38,57 @@ fi
 
 # Run database migrations
 echo "Running database migrations..."
+
+# Check if we should force baseline resolution
+if [ "$FORCE_MIGRATION_BASELINE" = "true" ]; then
+    echo "🔧 FORCE_MIGRATION_BASELINE is set - attempting to resolve migrations as applied..."
+    
+    # Get the migration name from the migrations directory
+    MIGRATION_NAME=$(ls -1 prisma/migrations/ | grep -v migration_lock.toml | head -1)
+    
+    if [ -n "$MIGRATION_NAME" ]; then
+        echo "📝 Marking migration '$MIGRATION_NAME' as applied..."
+        npx prisma migrate resolve --applied "$MIGRATION_NAME" || echo "⚠️ Migration resolve failed, continuing..."
+    fi
+fi
+
 if npx prisma migrate deploy; then
     echo "✅ Database migrations completed successfully"
 else
-    echo "❌ Database migrations failed"
-    exit 1
+    echo "❌ Database migrations failed, checking if it's a baseline issue..."
+    
+    # Check if the error is P3005 (database not empty)
+    if npx prisma migrate deploy 2>&1 | grep -q "P3005"; then
+        echo "🔧 Detected P3005 error - attempting to resolve by marking migrations as applied..."
+        
+        # Get the migration name from the migrations directory
+        MIGRATION_NAME=$(ls -1 prisma/migrations/ | grep -v migration_lock.toml | head -1)
+        
+        if [ -n "$MIGRATION_NAME" ]; then
+            echo "📝 Marking migration '$MIGRATION_NAME' as applied..."
+            if npx prisma migrate resolve --applied "$MIGRATION_NAME"; then
+                echo "✅ Migration marked as applied successfully"
+                
+                # Try to run migrate deploy again
+                echo "🔄 Retrying database migrations..."
+                if npx prisma migrate deploy; then
+                    echo "✅ Database migrations completed successfully after baseline"
+                else
+                    echo "❌ Database migrations still failed after baseline attempt"
+                    exit 1
+                fi
+            else
+                echo "❌ Failed to mark migration as applied"
+                exit 1
+            fi
+        else
+            echo "❌ No migration found to mark as applied"
+            exit 1
+        fi
+    else
+        echo "❌ Database migrations failed with non-baseline error"
+        exit 1
+    fi
 fi
 
 # Run database seeding (optional)
