@@ -52,29 +52,29 @@ services:
     networks:
       - trustay-network
 
-  # trustay-directus:
-  #   image: directus/directus:latest
-  #   restart: unless-stopped
-  #   container_name: trustay-directus
-  #   environment:
-  #     - KEY=255d861b-5ea1-5996-9aa3-922530ec40b1
-  #     - SECRET=6116487b-cda1-52c2-b5b5-c8022c45e263
-  #     - DB_CLIENT=pg
-  #     - DB_HOST=trustay-postgres
-  #     - DB_PORT=5432
-  #     - DB_DATABASE=${POSTGRES_DB}
-  #     - DB_USER=${POSTGRES_USER}
-  #     - DB_PASSWORD=${POSTGRES_PASSWORD}
-  #     - ADMIN_EMAIL=admin@trustay.life
-  #     - ADMIN_PASSWORD=Trustay2025@
-  #     - PUBLIC_URL=https://cms.trustay.life
-  #   depends_on:
-  #     trustay-postgres:
-  #       condition: service_healthy
-  #   networks:
-  #     - trustay-network
-  #   volumes:
-  #     - directus_data:/directus/uploads
+  trustay-directus:
+    image: directus/directus:latest
+    restart: unless-stopped
+    container_name: trustay-directus
+    environment:
+      - KEY=255d861b-5ea1-5996-9aa3-922530ec40b1
+      - SECRET=6116487b-cda1-52c2-b5b5-c8022c45e263
+      - DB_CLIENT=pg
+      - DB_HOST=trustay-postgres
+      - DB_PORT=5432
+      - DB_DATABASE=${POSTGRES_DB}
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - ADMIN_EMAIL=admin@trustay.life
+      - ADMIN_PASSWORD=Trustay2025@
+      - PUBLIC_URL=https://cms.trustay.life
+    depends_on:
+      trustay-postgres:
+        condition: service_healthy
+    networks:
+      - trustay-network
+    volumes:
+      - directus_data:/directus/uploads
 
   trustay-app:
     build:
