@@ -92,8 +92,8 @@ services:
       target: production
     restart: unless-stopped
     container_name: trustay-app
-    ports: 
-      3000:3000
+    ports:
+      - "2025:3000"
     env_file:
       - .env
     environment:
