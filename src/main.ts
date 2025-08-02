@@ -1,4 +1,4 @@
-import { ValidationPipe } from '@nestjs/common';
+import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -22,6 +22,14 @@ async function bootstrap() {
 		origin: true,
 		methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
 		credentials: true,
+	});
+
+	// Set global prefix for API routes (excluding root and health endpoints)
+	app.setGlobalPrefix('api', {
+		exclude: [
+			{ path: '', method: RequestMethod.GET },
+			{ path: 'health', method: RequestMethod.GET },
+		],
 	});
 
 	// Global validation pipe
@@ -65,7 +73,7 @@ async function bootstrap() {
 	const port = configService.port;
 	const environment = configService.environment;
 
-	await app.listen(port, '0.0.0.0');
+	await app.listen(port);
 
 	loggerService.log(`Trustay core is running on port ${port} in ${environment} mode`, 'Bootstrap');
 	loggerService.log(
