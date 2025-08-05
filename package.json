@@ -22,8 +22,10 @@
     "db:seed": "npx prisma db seed",
     "db:reset": "npx prisma migrate reset && npx prisma db seed",
     "db:import-admin": "node scripts/import-administrative-data.js",
+    "db:import-reference": "node scripts/import-reference-data.js",
+    "db:clear-reference": "node scripts/clear-reference-data.js",
     "db:crawl-import": "node scripts/crawl-import.js import data/crawled_rooms.json",
-    "db:setup-full": "npm run db:import-admin && ts-node --esm prisma/seed.ts && npm run db:crawl-import"
+    "db:setup-full": "npm run db:import-admin && npm run db:import-reference && ts-node --esm prisma/seed.ts && npm run db:crawl-import"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
