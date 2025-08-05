@@ -1,9 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
 	AmenityCategory,
+	BillingCycle,
 	BillStatus,
 	BookingStatus,
 	CostCategory,
+	CostType,
 	Gender,
 	InvitationStatus,
 	PaymentMethod,
@@ -12,6 +14,7 @@ import {
 	RentalStatus,
 	ReviewerType,
 	RoomType,
+	RuleCategory,
 	SearchPostStatus,
 	UserRole,
 	VerificationStatus,
@@ -143,4 +146,22 @@ export class AllEnumsResponseDto {
 		type: [EnumValueDto],
 	})
 	verificationStatuses: EnumValueDto[];
+
+	@ApiProperty({
+		description: 'Cost types',
+		type: [EnumValueDto],
+	})
+	costTypes: EnumValueDto[];
+
+	@ApiProperty({
+		description: 'Billing cycles',
+		type: [EnumValueDto],
+	})
+	billingCycles: EnumValueDto[];
+
+	@ApiProperty({
+		description: 'Rule categories',
+		type: [EnumValueDto],
+	})
+	ruleCategories: EnumValueDto[];
 }

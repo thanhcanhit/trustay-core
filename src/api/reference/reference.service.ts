@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import {
 	AmenityCategory,
+	BillingCycle,
 	BillStatus,
 	BookingStatus,
 	CostCategory,
+	CostType,
 	Gender,
 	InvitationStatus,
 	PaymentMethod,
@@ -12,6 +14,7 @@ import {
 	RentalStatus,
 	ReviewerType,
 	RoomType,
+	RuleCategory,
 	SearchPostStatus,
 	UserRole,
 	VerificationStatus,
@@ -20,7 +23,13 @@ import {
 } from '@prisma/client';
 import { calculatePagination, PaginatedResponseDto, PaginationQueryDto } from '../../common/dto';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AllEnumsResponseDto, EnumValueDto, SystemAmenityDto, SystemCostTypeDto } from './dto';
+import {
+	AllEnumsResponseDto,
+	EnumValueDto,
+	SystemAmenityDto,
+	SystemCostTypeDto,
+	SystemRoomRuleDto,
+} from './dto';
 
 @Injectable()
 export class ReferenceService {
@@ -227,6 +236,21 @@ export class ReferenceService {
 				verified: 'Đã xác thực',
 				expired: 'Đã hết hạn',
 				failed: 'Thất bại',
+			}),
+			costTypes: this.mapEnumToDto(CostType, {
+				fixed: 'Giá cố định',
+				per_unit: 'Theo đơn vị',
+				metered: 'Theo đồng hồ',
+				percentage: 'Theo phần trăm',
+				tiered: 'Bậc thang',
+			}),
+			billingCycles: this.mapEnumToDto(BillingCycle, {
+				daily: 'Hàng ngày',
+				weekly: 'Hàng tuần',
+				monthly: 'Hàng tháng',
+				quarterly: 'Hàng quý',
+				yearly: 'Hàng năm',
+				per_use: 'Theo lần sử dụng',
 			}),
 		};
 	}

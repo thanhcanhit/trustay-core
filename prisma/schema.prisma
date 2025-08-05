@@ -106,6 +106,34 @@ enum CostCategory {
   maintenance
 }
 
+enum RuleCategory {
+  smoking     // Hút thuốc
+  pets        // Thú cưng
+  visitors    // Khách thăm
+  noise       // Tiếng ồn
+  cleanliness // Vệ sinh
+  security    // An ninh
+  usage       // Sử dụng
+  other       // Khác
+}
+
+enum CostType {
+  fixed      // Giá cố định hàng tháng
+  per_unit   // Theo đơn vị (kWh, m³)
+  metered    // Theo đồng hồ
+  percentage // Theo phần trăm
+  tiered     // Bậc thang (khác nhau theo mức sử dụng)
+}
+
+enum BillingCycle {
+  daily
+  weekly
+  monthly
+  quarterly
+  yearly
+  per_use
+}
+
 enum Visibility {
   anyoneCanFind
   anyoneWithLink
@@ -360,16 +388,47 @@ model RoomImage {
   @@map("room_images")
 }
 
-model RoomRule {
-  id        String   @id @default(uuid())
-  roomId    String   @map("room_id")
-  ruleType  String   @map("rule_type") // smoking, pets, visitors, noise, other
-  ruleText  String   @map("rule_text")
-  createdAt DateTime @default(now()) @map("created_at")
+// ========================================
+// SIMPLIFIED ROOM RULES SYSTEM
+// ========================================
+
+model SystemRoomRule {
+  id          String       @id @default(uuid())
+  name        String
+  nameEn      String       @unique @map("name_en")
+  category    RuleCategory
+  ruleType    String       @map("rule_type") // allowed, forbidden, required, conditional
+  description String?
+  iconUrl     String?      @map("icon_url")
+  isActive    Boolean      @default(true) @map("is_active")
+  sortOrder   Int          @default(0) @map("sort_order")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
 
   // Relations
-  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomRules RoomRule[]
 
+  @@index([category])
+  @@index([isActive])
+  @@map("system_room_rules")
+}
+
+model RoomRule {
+  id             String   @id @default(uuid())
+  roomId         String   @map("room_id")
+  systemRuleId   String   @map("system_rule_id")
+  customValue    String?  @map("custom_value")
+  isEnforced     Boolean  @default(true) @map("is_enforced")
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  // Relations
+  room       Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  systemRule SystemRoomRule @relation(fields: [systemRuleId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, systemRuleId])
+  @@index([roomId])
+  @@index([systemRuleId])
   @@map("room_rules")
 }
 
@@ -444,8 +503,29 @@ model RoomCost {
   id               String   @id @default(uuid())
   roomId           String   @map("room_id")
   systemCostTypeId String   @map("system_cost_type_id")
-  baseRate         Decimal  @map("base_rate") @db.Decimal(15, 2)
+  
+  // Flexible pricing fields
+  costType         CostType @default(fixed) @map("cost_type")
+  baseRate         Decimal? @map("base_rate") @db.Decimal(15, 2)
+  unitPrice        Decimal? @map("unit_price") @db.Decimal(15, 2)
+  fixedAmount      Decimal? @map("fixed_amount") @db.Decimal(15, 2)
+  
+  // Additional pricing info
   currency         String   @default("VND")
+  unit             String?  // Override default unit from SystemCostType
+  minimumCharge    Decimal? @map("minimum_charge") @db.Decimal(15, 2)
+  maximumCharge    Decimal? @map("maximum_charge") @db.Decimal(15, 2)
+  
+  // Usage tracking (for metered costs)
+  isMetered        Boolean  @default(false) @map("is_metered")
+  meterReading     Decimal? @map("meter_reading") @db.Decimal(15, 2)
+  lastMeterReading Decimal? @map("last_meter_reading") @db.Decimal(15, 2)
+  
+  // Billing configuration
+  billingCycle     BillingCycle @default(monthly) @map("billing_cycle")
+  includedInRent   Boolean  @default(false) @map("included_in_rent")
+  isOptional       Boolean  @default(false) @map("is_optional")
+  
   notes            String?
   isActive         Boolean  @default(true) @map("is_active")
   createdAt        DateTime @default(now()) @map("created_at")
