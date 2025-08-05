@@ -73,7 +73,7 @@ async function bootstrap() {
 	const port = configService.port;
 	const environment = configService.environment;
 
-	await app.listen(port);
+	await app.listen(port, '0.0.0.0');
 
 	loggerService.log(`Trustay core is running on port ${port} in ${environment} mode`, 'Bootstrap');
 	loggerService.log(

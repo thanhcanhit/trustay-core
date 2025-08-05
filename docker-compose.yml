@@ -52,31 +52,26 @@ services:
     networks:
       - trustay-network
 
-  trustay-baserow:
-    image: baserow/baserow:1.34.5
+
+  trustay-pgweb:
+    image: sosedoff/pgweb
     restart: unless-stopped
-    container_name: trustay-baserow
-    ports:
-      - "8055:80"
-      - "8443:443"
+    container_name: trustay-pgweb
     environment:
-      - BASEROW_PUBLIC_URL=https://adm.trustay.life
-      - DATABASE_HOST=trustay-postgres
-      - DATABASE_PORT=5432
-      - DATABASE_NAME=${POSTGRES_DB}
-      - DATABASE_USER=${POSTGRES_USER}
-      - DATABASE_PASSWORD=${POSTGRES_PASSWORD}
-      - REDIS_URL=redis://trustay-redis:6379/0
-      - SECRET_KEY=${BASEROW_SECRET_KEY}
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@trustay-postgres:5432/${POSTGRES_DB}?sslmode=disable
+
+    ports:
+      - "8081:8080"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pgweb.rule=Host(`pgweb.trustay.life`)"
+      - "traefik.http.routers.pgweb.entrypoints=web"
+      - "traefik.http.services.pgweb.loadbalancer.server.port=8081"
     depends_on:
       trustay-postgres:
         condition: service_healthy
-      trustay-redis:
-        condition: service_healthy
     networks:
       - trustay-network
-    volumes:
-      - baserow_data:/baserow/data
 
   trustay-app:
     build:
@@ -95,6 +90,11 @@ services:
       - REDIS_URL=${REDIS_URL}
       - RUN_SEED=false  # Set to true if you want to run seeding
       - FORCE_MIGRATION_BASELINE=false  # Set to true to force baseline resolution
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.trustay-app.rule=Host(`api.trustay.life`)"
+      - "traefik.http.routers.trustay-app.entrypoints=web"
+      - "traefik.http.services.trustay-app.loadbalancer.server.port=3000"
     depends_on:
       trustay-postgres:
         condition: service_healthy
@@ -113,8 +113,6 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
-    driver: local
-  baserow_data:
     driver: local
 
 networks:
