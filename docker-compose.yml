@@ -61,12 +61,7 @@ services:
       - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@trustay-postgres:5432/${POSTGRES_DB}?sslmode=disable
 
     ports:
-      - "8081:8080"
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.pgweb.rule=Host(`pgweb.trustay.life`)"
-      - "traefik.http.routers.pgweb.entrypoints=web"
-      - "traefik.http.services.pgweb.loadbalancer.server.port=8081"
+      - "8081:8081"
     depends_on:
       trustay-postgres:
         condition: service_healthy
@@ -90,11 +85,6 @@ services:
       - REDIS_URL=${REDIS_URL}
       - RUN_SEED=false  # Set to true if you want to run seeding
       - FORCE_MIGRATION_BASELINE=false  # Set to true to force baseline resolution
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.trustay-app.rule=Host(`api.trustay.life`)"
-      - "traefik.http.routers.trustay-app.entrypoints=web"
-      - "traefik.http.services.trustay-app.loadbalancer.server.port=3000"
     depends_on:
       trustay-postgres:
         condition: service_healthy
