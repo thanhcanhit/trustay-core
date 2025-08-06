@@ -52,7 +52,7 @@ enum InvitationStatus {
   accepted
   declined
   expired
-}
+} 
 
 enum BillStatus {
   draft

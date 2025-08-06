@@ -5,6 +5,12 @@ export class OwnerDto {
 	@ApiProperty()
 	name: string;
 
+	@ApiPropertyOptional()
+	avatarUrl?: string;
+
+	@ApiPropertyOptional()
+	gender?: string;
+
 	@ApiProperty()
 	verifiedPhone: boolean;
 

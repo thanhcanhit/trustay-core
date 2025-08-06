@@ -26,6 +26,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
 	AllEnumsResponseDto,
 	EnumValueDto,
+	EnumValuesDto,
+	SimpleAmenityDto,
+	SimpleCostTypeDto,
+	SimpleRuleDto,
 	SystemAmenityDto,
 	SystemCostTypeDto,
 	SystemRoomRuleDto,
@@ -312,6 +316,87 @@ export class ReferenceService {
 				other: 'Khác',
 			}),
 		};
+	}
+
+	getEnums(): EnumValuesDto {
+		return {
+			gender: Object.values(Gender),
+			userRole: Object.values(UserRole),
+			roomType: Object.values(RoomType),
+			bookingStatus: Object.values(BookingStatus),
+			rentalStatus: Object.values(RentalStatus),
+			invitationStatus: Object.values(InvitationStatus),
+			billStatus: Object.values(BillStatus),
+			paymentType: Object.values(PaymentType),
+			paymentMethod: Object.values(PaymentMethod),
+			paymentStatus: Object.values(PaymentStatus),
+			reviewerType: Object.values(ReviewerType),
+			amenityCategory: Object.values(AmenityCategory),
+			costCategory: Object.values(CostCategory),
+			ruleCategory: Object.values(RuleCategory),
+			costType: Object.values(CostType),
+			billingCycle: Object.values(BillingCycle),
+			visibility: Object.values(Visibility),
+			searchPostStatus: Object.values(SearchPostStatus),
+			verificationType: Object.values(VerificationType),
+			verificationStatus: Object.values(VerificationStatus),
+		};
+	}
+
+	async getAmenities(category?: string): Promise<SimpleAmenityDto[]> {
+		const where: any = { isActive: true };
+		if (category) {
+			where.category = category;
+		}
+
+		return this.prisma.systemAmenity.findMany({
+			where,
+			orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+			select: {
+				id: true,
+				name: true,
+				category: true,
+				iconUrl: true,
+				description: true,
+			},
+		});
+	}
+
+	async getCostTypes(category?: string): Promise<SimpleCostTypeDto[]> {
+		const where: any = { isActive: true };
+		if (category) {
+			where.category = category;
+		}
+
+		return this.prisma.systemCostType.findMany({
+			where,
+			orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+			select: {
+				id: true,
+				name: true,
+				category: true,
+				defaultUnit: true,
+			},
+		});
+	}
+
+	async getRules(category?: string): Promise<SimpleRuleDto[]> {
+		const where: any = { isActive: true };
+		if (category) {
+			where.category = category;
+		}
+
+		return this.prisma.systemRoomRule.findMany({
+			where,
+			orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+			select: {
+				id: true,
+				name: true,
+				category: true,
+				ruleType: true,
+				description: true,
+			},
+		});
 	}
 
 	private mapEnumToDto(enumObject: any, labels: Record<string, string>): EnumValueDto[] {
