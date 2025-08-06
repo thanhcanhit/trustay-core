@@ -5,7 +5,7 @@ import { VerifyCodeDto } from './dto/verify-code.dto';
 import { VerificationService } from './services/verification.service';
 
 @ApiTags('Verification')
-@Controller('api/verification')
+@Controller('verification')
 export class VerificationController {
 	constructor(private readonly verificationService: VerificationService) {}
 

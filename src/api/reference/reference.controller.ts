@@ -4,7 +4,7 @@ import { EnumValuesDto, SimpleAmenityDto, SimpleCostTypeDto, SimpleRuleDto } fro
 import { ReferenceService } from './reference.service';
 
 @ApiTags('Reference Data')
-@Controller('api/reference')
+@Controller('reference')
 export class ReferenceController {
 	constructor(private readonly referenceService: ReferenceService) {}
 

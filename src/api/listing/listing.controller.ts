@@ -5,7 +5,7 @@ import { PaginatedListingResponseDto } from './dto/paginated-listing-response.dt
 import { ListingService } from './listing.service';
 
 @ApiTags('Listings')
-@Controller('api/listings/rooms')
+@Controller('listings/rooms')
 export class ListingController {
 	constructor(private readonly listingService: ListingService) {}
 
