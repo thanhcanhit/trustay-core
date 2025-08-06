@@ -59,6 +59,14 @@ const defaultRoomRules = [
 		description: 'Cho phép nuôi chó dưới 10kg',
 		sortOrder: 7,
 	},
+	{
+		name: 'Cho phép nuôi thú cưng',
+		nameEn: 'pets_allowed',
+		category: 'pets',
+		ruleType: 'allowed',
+		description: 'Được phép nuôi chó, mèo, thú cưng',
+		sortOrder: 8,
+	},
 
 	// VISITORS RULES
 	{
@@ -67,7 +75,7 @@ const defaultRoomRules = [
 		category: 'visitors',
 		ruleType: 'forbidden',
 		description: 'Khách không được phép ở qua đêm',
-		sortOrder: 8,
+		sortOrder: 9,
 	},
 	{
 		name: 'Báo trước khi có khách',
@@ -75,7 +83,7 @@ const defaultRoomRules = [
 		category: 'visitors',
 		ruleType: 'required',
 		description: 'Phải thông báo trước khi có khách đến',
-		sortOrder: 9,
+		sortOrder: 10,
 	},
 	{
 		name: 'Khách chỉ đến giờ hành chính',
@@ -83,7 +91,7 @@ const defaultRoomRules = [
 		category: 'visitors',
 		ruleType: 'conditional',
 		description: 'Khách chỉ được đến từ 8h-22h',
-		sortOrder: 10,
+		sortOrder: 11,
 	},
 	{
 		name: 'Đăng ký khách qua đêm',
@@ -91,7 +99,7 @@ const defaultRoomRules = [
 		category: 'visitors',
 		ruleType: 'required',
 		description: 'Phải đăng ký với chủ nhà nếu khách ở qua đêm',
-		sortOrder: 11,
+		sortOrder: 12,
 	},
 
 	// NOISE RULES
@@ -101,7 +109,7 @@ const defaultRoomRules = [
 		category: 'noise',
 		ruleType: 'required',
 		description: 'Không được gây tiếng ồn sau 22h',
-		sortOrder: 12,
+		sortOrder: 13,
 	},
 	{
 		name: 'Không phát nhạc to',
@@ -109,7 +117,7 @@ const defaultRoomRules = [
 		category: 'noise',
 		ruleType: 'forbidden',
 		description: 'Không được phát nhạc với âm lượng lớn',
-		sortOrder: 13,
+		sortOrder: 14,
 	},
 	{
 		name: 'Không tổ chức tiệc',
@@ -117,7 +125,7 @@ const defaultRoomRules = [
 		category: 'noise',
 		ruleType: 'forbidden',
 		description: 'Không được tổ chức tiệc tùng trong phòng',
-		sortOrder: 14,
+		sortOrder: 15,
 	},
 
 	// CLEANLINESS RULES
@@ -127,7 +135,7 @@ const defaultRoomRules = [
 		category: 'cleanliness',
 		ruleType: 'required',
 		description: 'Phải giữ vệ sinh khu vực chung sau khi sử dụng',
-		sortOrder: 15,
+		sortOrder: 16,
 	},
 	{
 		name: 'Không để rác bừa bãi',
@@ -135,7 +143,7 @@ const defaultRoomRules = [
 		category: 'cleanliness',
 		ruleType: 'forbidden',
 		description: 'Không được để rác bừa bãi trong nhà',
-		sortOrder: 16,
+		sortOrder: 17,
 	},
 	{
 		name: 'Dọn phòng định kỳ',
@@ -143,7 +151,7 @@ const defaultRoomRules = [
 		category: 'cleanliness',
 		ruleType: 'required',
 		description: 'Phải dọn dẹp phòng ít nhất 1 tuần/lần',
-		sortOrder: 17,
+		sortOrder: 18,
 	},
 
 	// SECURITY RULES
@@ -153,7 +161,7 @@ const defaultRoomRules = [
 		category: 'security',
 		ruleType: 'required',
 		description: 'Phải khóa cửa phòng và cửa chính khi ra ngoài',
-		sortOrder: 18,
+		sortOrder: 19,
 	},
 	{
 		name: 'Không sao chép chìa khóa',
@@ -161,7 +169,7 @@ const defaultRoomRules = [
 		category: 'security',
 		ruleType: 'forbidden',
 		description: 'Không được sao chép chìa khóa mà không xin phép',
-		sortOrder: 19,
+		sortOrder: 20,
 	},
 	{
 		name: 'Báo ngay khi mất chìa khóa',
@@ -169,7 +177,7 @@ const defaultRoomRules = [
 		category: 'security',
 		ruleType: 'required',
 		description: 'Phải báo ngay với chủ nhà khi mất chìa khóa',
-		sortOrder: 20,
+		sortOrder: 21,
 	},
 
 	// USAGE RULES
@@ -179,7 +187,7 @@ const defaultRoomRules = [
 		category: 'usage',
 		ruleType: 'forbidden',
 		description: 'Không được nấu ăn trong phòng ngủ',
-		sortOrder: 21,
+		sortOrder: 22,
 	},
 	{
 		name: 'Sử dụng điện tiết kiệm',
@@ -187,7 +195,7 @@ const defaultRoomRules = [
 		category: 'usage',
 		ruleType: 'required',
 		description: 'Tắt điện, nước khi không sử dụng',
-		sortOrder: 22,
+		sortOrder: 23,
 	},
 	{
 		name: 'Không sử dụng thiết bị công suất cao',
@@ -195,7 +203,7 @@ const defaultRoomRules = [
 		category: 'usage',
 		ruleType: 'forbidden',
 		description: 'Không sử dụng máy sưởi, bếp điện công suất lớn',
-		sortOrder: 23,
+		sortOrder: 24,
 	},
 	{
 		name: 'Không thay đổi cấu trúc phòng',
@@ -203,17 +211,33 @@ const defaultRoomRules = [
 		category: 'usage',
 		ruleType: 'forbidden',
 		description: 'Không được thay đổi cấu trúc, sơn tường, đóng đinh',
-		sortOrder: 24,
+		sortOrder: 25,
 	},
 
 	// OTHER RULES
+	{
+		name: 'Chung chủ',
+		nameEn: 'shared_with_landlord',
+		category: 'other',
+		ruleType: 'conditional',
+		description: 'Phòng trọ ở chung với chủ nhà',
+		sortOrder: 26,
+	},
+	{
+		name: 'Không chung chủ',
+		nameEn: 'not_shared_with_landlord',
+		category: 'other',
+		ruleType: 'conditional',
+		description: 'Phòng trọ không ở chung với chủ nhà',
+		sortOrder: 27,
+	},
 	{
 		name: 'Thanh toán đúng hạn',
 		nameEn: 'pay_on_time',
 		category: 'other',
 		ruleType: 'required',
 		description: 'Thanh toán tiền thuê đúng hạn mỗi tháng',
-		sortOrder: 25,
+		sortOrder: 28,
 	},
 	{
 		name: 'Thông báo trước khi chuyển đi',
@@ -221,7 +245,7 @@ const defaultRoomRules = [
 		category: 'other',
 		ruleType: 'required',
 		description: 'Thông báo trước 1 tháng khi muốn chuyển đi',
-		sortOrder: 26,
+		sortOrder: 29,
 	},
 	{
 		name: 'Tôn trọng hàng xóm',
@@ -229,7 +253,7 @@ const defaultRoomRules = [
 		category: 'other',
 		ruleType: 'required',
 		description: 'Tôn trọng và giữ quan hệ tốt với hàng xóm',
-		sortOrder: 27,
+		sortOrder: 30,
 	},
 	{
 		name: 'Không hoạt động kinh doanh',
@@ -237,7 +261,7 @@ const defaultRoomRules = [
 		category: 'other',
 		ruleType: 'forbidden',
 		description: 'Không được sử dụng phòng để kinh doanh',
-		sortOrder: 28,
+		sortOrder: 31,
 	},
 ];
 

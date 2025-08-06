@@ -133,6 +133,55 @@ export class ReferenceService {
 		});
 	}
 
+	async getSystemRoomRules(
+		query?: PaginationQueryDto,
+	): Promise<PaginatedResponseDto<SystemRoomRuleDto>> {
+		const { page = 1, limit = 100, search, sortBy = 'sortOrder', sortOrder = 'asc' } = query || {};
+		const { skip, take } = calculatePagination(page, limit);
+
+		const where: any = {
+			isActive: true,
+		};
+
+		if (search) {
+			where.OR = [
+				{ name: { contains: search, mode: 'insensitive' } },
+				{ nameEn: { contains: search, mode: 'insensitive' } },
+				{ description: { contains: search, mode: 'insensitive' } },
+			];
+		}
+
+		const orderBy: any = {};
+		orderBy[sortBy] = sortOrder;
+
+		const [roomRules, total] = await Promise.all([
+			this.prisma.systemRoomRule.findMany({
+				where,
+				skip,
+				take,
+				orderBy,
+			}),
+			this.prisma.systemRoomRule.count({ where }),
+		]);
+
+		return PaginatedResponseDto.create(roomRules, page, limit, total);
+	}
+
+	async getSystemRoomRulesByCategory(category?: RuleCategory): Promise<SystemRoomRuleDto[]> {
+		const where: any = {
+			isActive: true,
+		};
+
+		if (category) {
+			where.category = category;
+		}
+
+		return this.prisma.systemRoomRule.findMany({
+			where,
+			orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+		});
+	}
+
 	getAllEnums(): AllEnumsResponseDto {
 		return {
 			roomTypes: this.mapEnumToDto(RoomType, {
@@ -251,6 +300,16 @@ export class ReferenceService {
 				quarterly: 'Hàng quý',
 				yearly: 'Hàng năm',
 				per_use: 'Theo lần sử dụng',
+			}),
+			ruleCategories: this.mapEnumToDto(RuleCategory, {
+				smoking: 'Hút thuốc',
+				pets: 'Thú cưng',
+				visitors: 'Khách thăm',
+				noise: 'Tiếng ồn',
+				cleanliness: 'Vệ sinh',
+				security: 'An ninh',
+				usage: 'Sử dụng',
+				other: 'Khác',
 			}),
 		};
 	}

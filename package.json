@@ -21,16 +21,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "db:seed": "npx prisma db seed",
     "db:reset": "npx prisma migrate reset && npx prisma db seed",
-    "db:import-admin": "node scripts/index.js script admin",
-    "db:import-reference": "node scripts/index.js script reference",
-    "db:import-users": "node scripts/index.js script users",
-    "db:clear-reference": "node scripts/clear-reference-data.js",
-    "db:clear-users": "node scripts/import-default-users.js clear",
-    "db:crawl-import": "node scripts/index.js script crawl",
-    "db:import-full": "node scripts/index.js sequence full",
-    "db:import-basic": "node scripts/index.js sequence basic",
-    "db:import-setup": "node scripts/index.js sequence setup",
-    "db:import-data": "node scripts/index.js sequence data"
+    "db:setup": "node scripts/index.js sequence all"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

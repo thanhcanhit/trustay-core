@@ -6,6 +6,20 @@ const prisma = new PrismaClient();
 async function importSystemRoomRules() {
 	console.log('📋 Importing system room rules...');
 
+	// Check if we already have room rules data
+	let existingCount = 0;
+	try {
+		existingCount = await prisma.systemRoomRule.count();
+	} catch (error) {
+		console.log('⚠️ SystemRoomRule table does not exist yet, proceeding with import...');
+	}
+
+	if (existingCount > 0) {
+		console.log(`⏭️ System room rules already exist (${existingCount} rules). Skipping import.`);
+		console.log('✨ Room rules import completed: 0 created, 0 skipped (data exists)\n');
+		return;
+	}
+
 	let successCount = 0;
 	let skipCount = 0;
 

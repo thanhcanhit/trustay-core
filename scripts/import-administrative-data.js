@@ -8,6 +8,16 @@ async function importVietnameseAdministrativeData() {
 	console.log('🚀 Bắt đầu import dữ liệu hành chính Việt Nam...');
 
 	try {
+		// Check if administrative data already exists
+		const existingProvinces = await prisma.province.count();
+		if (existingProvinces > 0) {
+			console.log(
+				`⏭️ Administrative data already exists (${existingProvinces} provinces). Skipping import.`,
+			);
+			console.log('✅ Administrative data import completed (data exists)\n');
+			return;
+		}
+
 		const workbook = XLSX.readFile(path.join(process.cwd(), 'data', 'data.xlsx'));
 		const sheetName = workbook.SheetNames[0];
 		const sheet = workbook.Sheets[sheetName];

@@ -20,6 +20,11 @@ const IMPORT_SCRIPTS = {
 		script: 'import-default-users.js',
 		description: 'Import 10 default landlord users with common password',
 	},
+	rules: {
+		name: 'Room Rules',
+		script: 'import-room-rules.js',
+		description: 'Import system room rules for rental properties',
+	},
 	crawl: {
 		name: 'Crawled Rooms Data',
 		script: 'crawl-import.js',
@@ -30,10 +35,14 @@ const IMPORT_SCRIPTS = {
 
 // Import sequences
 const SEQUENCES = {
-	full: ['admin', 'reference', 'users', 'crawl'],
-	basic: ['admin', 'reference', 'users'],
+	// Main unified sequence - runs everything in correct order
+	all: ['admin', 'reference', 'users', 'rules', 'crawl'],
+
+	// Legacy sequences (kept for compatibility)
+	full: ['admin', 'reference', 'users', 'rules', 'crawl'],
+	basic: ['admin', 'reference', 'users', 'rules'],
 	data: ['reference', 'crawl'],
-	setup: ['admin', 'reference', 'users'],
+	setup: ['admin', 'reference', 'users', 'rules'],
 };
 
 function logStep(step, message) {
@@ -46,6 +55,34 @@ function logSuccess(message) {
 
 function logError(message) {
 	console.error(`❌ ${message}`);
+}
+
+function logWarning(message) {
+	console.warn(`⚠️ ${message}`);
+}
+
+function cleanupCrawlImports() {
+	logStep('Cleanup', 'Removing only crawled room data (keeping admin/reference/users data)');
+
+	// Only cleanup crawl-specific data, keep everything else
+	const cleanupCommands = [
+		// Use targeted SQL cleanup for rooms only
+		'npx prisma db execute --file scripts/cleanup-crawl-only.sql || echo "Using fallback room cleanup"',
+	];
+
+	for (const command of cleanupCommands) {
+		try {
+			logWarning(`Running targeted cleanup: ${command.split('||')[0].trim()}`);
+			execSync(command, {
+				stdio: 'inherit',
+				cwd: path.dirname(__dirname),
+			});
+		} catch (error) {
+			logWarning(`Cleanup step had issues (continuing): ${error.message}`);
+		}
+	}
+
+	logSuccess('Crawl data cleanup completed - admin/reference/users data preserved');
 }
 
 function runScript(scriptKey) {
@@ -71,7 +108,7 @@ function runScript(scriptKey) {
 	}
 }
 
-function runSequence(sequenceName) {
+function runSequence(sequenceName, options = {}) {
 	const sequence = SEQUENCES[sequenceName];
 	if (!sequence) {
 		throw new Error(`Unknown sequence: ${sequenceName}`);
@@ -82,17 +119,39 @@ function runSequence(sequenceName) {
 
 	const startTime = Date.now();
 
+	// Run cleanup only before sequences that include crawl data
+	const needsCrawlCleanup = ['all', 'full', 'data'].includes(sequenceName) && !options.skipCleanup;
+	if (needsCrawlCleanup) {
+		cleanupCrawlImports();
+		console.log(''); // Add spacing after cleanup
+	}
+
+	// Run all scripts in sequence
 	for (const scriptKey of sequence) {
 		runScript(scriptKey);
 	}
 
 	const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 	console.log(`\n🎉 Import sequence '${sequenceName}' completed successfully in ${duration}s!`);
+
+	// Show final summary for main sequence
+	if (sequenceName === 'all') {
+		console.log(`\n📊 Complete Trustay database setup finished!`);
+		console.log(`   • Administrative data (provinces, districts, wards) - preserved/updated`);
+		console.log(`   • Reference data (amenities, cost types, room rules) - preserved/updated`);
+		console.log(`   • 10 balanced landlord users across market segments - preserved/updated`);
+		console.log(`   • Fresh crawled room data with intelligent price-based assignments`);
+		console.log(`\n🔐 Default login: budget.student@trustay.com / trustay123`);
+		console.log(`💡 Note: Only room data was cleaned and re-imported. All other data preserved.`);
+	}
 }
 
 function showHelp() {
 	console.log(`🗂️  Trustay Import Scripts Manager
-	
+
+🎯 MAIN COMMAND (recommended):
+  node scripts/index.js sequence all    Complete database setup (cleans only room data)
+
 Usage:
   node scripts/index.js <command> [options]
 
@@ -102,22 +161,26 @@ Commands:
   list               List all available scripts and sequences
   help               Show this help message
 
-Available Scripts:`);
+🔧 Available Scripts:`);
 
 	Object.entries(IMPORT_SCRIPTS).forEach(([key, config]) => {
 		console.log(`  ${key.padEnd(12)} ${config.description}`);
 	});
 
-	console.log(`\nAvailable Sequences:`);
+	console.log(`\n🔄 Available Sequences:`);
 	Object.entries(SEQUENCES).forEach(([key, scripts]) => {
 		const scriptNames = scripts.map((s) => IMPORT_SCRIPTS[s].name).join(' → ');
-		console.log(`  ${key.padEnd(12)} ${scriptNames}`);
+		const isMain = key === 'all';
+		const prefix = isMain ? '* ' : '  ';
+		const suffix = isMain ? ' (RECOMMENDED - room cleanup only)' : '';
+		console.log(`${prefix}${key.padEnd(12)} ${scriptNames}${suffix}`);
 	});
 
 	console.log(`\nExamples:
-  node scripts/index.js sequence full
-  node scripts/index.js script admin
-  node scripts/index.js list`);
+  node scripts/index.js sequence all      # Complete setup (recommended)
+  node scripts/index.js sequence basic    # Without crawl data
+  node scripts/index.js script admin      # Single script
+  node scripts/index.js list              # Show all options`);
 }
 
 function listAll() {

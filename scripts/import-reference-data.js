@@ -7,6 +7,14 @@ const prisma = new PrismaClient();
 async function importSystemAmenities() {
 	console.log('🏠 Importing system amenities...');
 
+	// Check if amenities data already exists
+	const existingCount = await prisma.systemAmenity.count();
+	if (existingCount > 0) {
+		console.log(`⏭️ System amenities already exist (${existingCount} amenities). Skipping import.`);
+		console.log('✨ Amenities import completed: 0 created, 0 skipped (data exists)\n');
+		return;
+	}
+
 	let successCount = 0;
 	let skipCount = 0;
 
@@ -42,6 +50,16 @@ async function importSystemAmenities() {
 
 async function importSystemCostTypes() {
 	console.log('💰 Importing system cost types...');
+
+	// Check if cost types data already exists
+	const existingCount = await prisma.systemCostType.count();
+	if (existingCount > 0) {
+		console.log(
+			`⏭️ System cost types already exist (${existingCount} cost types). Skipping import.`,
+		);
+		console.log('✨ Cost types import completed: 0 created, 0 skipped (data exists)\n');
+		return;
+	}
 
 	let successCount = 0;
 	let skipCount = 0;

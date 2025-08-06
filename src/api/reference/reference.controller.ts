@@ -1,8 +1,8 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { AmenityCategory, CostCategory } from '@prisma/client';
+import { AmenityCategory, CostCategory, RuleCategory } from '@prisma/client';
 import { PaginatedResponseDto, PaginationQueryDto } from '../../common/dto';
-import { AllEnumsResponseDto, SystemAmenityDto, SystemCostTypeDto } from './dto';
+import { AllEnumsResponseDto, SystemAmenityDto, SystemCostTypeDto, SystemRoomRuleDto } from './dto';
 import { ReferenceService } from './reference.service';
 
 @ApiTags('Reference Data')
@@ -167,5 +167,58 @@ export class ReferenceController {
 	})
 	getCostCategories() {
 		return this.referenceService.getAllEnums().costCategories;
+	}
+
+	// System Room Rules Endpoints
+	@Get('room-rules')
+	@ApiOperation({ summary: 'Get all system room rules with pagination' })
+	@ApiResponse({
+		status: 200,
+		description: 'System room rules retrieved successfully',
+		type: PaginatedResponseDto<SystemRoomRuleDto>,
+	})
+	async getSystemRoomRules(
+		@Query() query: PaginationQueryDto,
+	): Promise<PaginatedResponseDto<SystemRoomRuleDto>> {
+		return this.referenceService.getSystemRoomRules(query);
+	}
+
+	@Get('room-rules/all')
+	@ApiOperation({ summary: 'Get all active system room rules without pagination' })
+	@ApiResponse({
+		status: 200,
+		description: 'All system room rules retrieved successfully',
+		type: [SystemRoomRuleDto],
+	})
+	async getAllSystemRoomRules(): Promise<SystemRoomRuleDto[]> {
+		return this.referenceService.getSystemRoomRulesByCategory();
+	}
+
+	@Get('room-rules/category/:category')
+	@ApiOperation({ summary: 'Get system room rules by category' })
+	@ApiParam({
+		name: 'category',
+		description: 'Rule category',
+		enum: RuleCategory,
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'System room rules by category retrieved successfully',
+		type: [SystemRoomRuleDto],
+	})
+	async getSystemRoomRulesByCategory(
+		@Param('category') category: RuleCategory,
+	): Promise<SystemRoomRuleDto[]> {
+		return this.referenceService.getSystemRoomRulesByCategory(category);
+	}
+
+	@Get('enums/rule-categories')
+	@ApiOperation({ summary: 'Get rule category enum values' })
+	@ApiResponse({
+		status: 200,
+		description: 'Rule categories retrieved successfully',
+	})
+	getRuleCategories() {
+		return this.referenceService.getAllEnums().ruleCategories;
 	}
 }
