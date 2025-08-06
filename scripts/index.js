@@ -2,6 +2,9 @@
 
 const { execSync } = require('child_process');
 const path = require('path');
+const { PrismaClient } = require('@prisma/client');
+
+const prisma = new PrismaClient();
 
 // Import scripts configuration
 const IMPORT_SCRIPTS = {
@@ -61,28 +64,72 @@ function logWarning(message) {
 	console.warn(`⚠️ ${message}`);
 }
 
-function cleanupCrawlImports() {
+async function cleanupCrawlImports() {
 	logStep('Cleanup', 'Removing only crawled room data (keeping admin/reference/users data)');
 
-	// Only cleanup crawl-specific data, keep everything else
-	const cleanupCommands = [
-		// Use targeted SQL cleanup for rooms only
-		'npx prisma db execute --file scripts/cleanup-crawl-only.sql || echo "Using fallback room cleanup"',
-	];
+	try {
+		// Check existing data first
+		const beforeCounts = {
+			roomRules: await prisma.roomRule.count(),
+			roomAmenities: await prisma.roomAmenity.count(),
+			roomCosts: await prisma.roomCost.count(),
+			roomImages: await prisma.roomImage.count(),
+			roomPricing: await prisma.roomPricing.count(),
+			rooms: await prisma.room.count(),
+			floors: await prisma.floor.count(),
+			buildings: await prisma.building.count(),
+		};
 
-	for (const command of cleanupCommands) {
-		try {
-			logWarning(`Running targeted cleanup: ${command.split('||')[0].trim()}`);
-			execSync(command, {
-				stdio: 'inherit',
-				cwd: path.dirname(__dirname),
-			});
-		} catch (error) {
-			logWarning(`Cleanup step had issues (continuing): ${error.message}`);
+		logWarning(
+			`   Before cleanup: ${beforeCounts.rooms} rooms, ${beforeCounts.floors} floors, ${beforeCounts.buildings} buildings`,
+		);
+		logWarning(
+			`   Before cleanup: ${beforeCounts.roomRules} rules, ${beforeCounts.roomAmenities} amenities, ${beforeCounts.roomCosts} costs`,
+		);
+
+		// Delete in correct order due to foreign key constraints
+		logWarning('   Deleting room rules...');
+		const deletedRoomRules = await prisma.roomRule.deleteMany({});
+
+		logWarning('   Deleting room amenities...');
+		const deletedRoomAmenities = await prisma.roomAmenity.deleteMany({});
+
+		logWarning('   Deleting room costs...');
+		const deletedRoomCosts = await prisma.roomCost.deleteMany({});
+
+		logWarning('   Deleting room images...');
+		const deletedRoomImages = await prisma.roomImage.deleteMany({});
+
+		logWarning('   Deleting room pricing...');
+		const deletedRoomPricing = await prisma.roomPricing.deleteMany({});
+
+		logWarning('   Deleting rooms...');
+		const deletedRooms = await prisma.room.deleteMany({});
+
+		logWarning('   Deleting floors...');
+		const deletedFloors = await prisma.floor.deleteMany({});
+
+		logWarning('   Deleting buildings...');
+		const deletedBuildings = await prisma.building.deleteMany({});
+
+		logSuccess(`Crawl data cleanup completed:`);
+		logSuccess(
+			`   • ${deletedRooms.count} rooms, ${deletedFloors.count} floors, ${deletedBuildings.count} buildings`,
+		);
+		logSuccess(
+			`   • ${deletedRoomRules.count} rules, ${deletedRoomAmenities.count} amenities, ${deletedRoomCosts.count} costs`,
+		);
+		logSuccess('Admin/reference/users data preserved');
+
+		// Verify cleanup worked
+		const afterRooms = await prisma.room.count();
+		if (afterRooms > 0) {
+			logWarning(`⚠️ Warning: ${afterRooms} rooms still remain after cleanup!`);
 		}
+	} catch (error) {
+		logError(`Cleanup failed: ${error.message}`);
+		throw error;
 	}
-
-	logSuccess('Crawl data cleanup completed - admin/reference/users data preserved');
 }
 
 function runScript(scriptKey) {
@@ -108,7 +155,7 @@ function runScript(scriptKey) {
 	}
 }
 
-function runSequence(sequenceName, options = {}) {
+async function runSequence(sequenceName, options = {}) {
 	const sequence = SEQUENCES[sequenceName];
 	if (!sequence) {
 		throw new Error(`Unknown sequence: ${sequenceName}`);
@@ -122,7 +169,7 @@ function runSequence(sequenceName, options = {}) {
 	// Run cleanup only before sequences that include crawl data
 	const needsCrawlCleanup = ['all', 'full', 'data'].includes(sequenceName) && !options.skipCleanup;
 	if (needsCrawlCleanup) {
-		cleanupCrawlImports();
+		await cleanupCrawlImports();
 		console.log(''); // Add spacing after cleanup
 	}
 
@@ -207,7 +254,7 @@ function listAll() {
 }
 
 // Main execution
-function main() {
+async function main() {
 	const args = process.argv.slice(2);
 
 	if (args.length === 0) {
@@ -226,7 +273,7 @@ function main() {
 					console.log('Available sequences:', Object.keys(SEQUENCES).join(', '));
 					process.exit(1);
 				}
-				runSequence(target);
+				await runSequence(target);
 				break;
 
 			case 'script':
@@ -256,6 +303,8 @@ function main() {
 	} catch (error) {
 		logError(`Import failed: ${error.message}`);
 		process.exit(1);
+	} finally {
+		await prisma.$disconnect();
 	}
 }
 
