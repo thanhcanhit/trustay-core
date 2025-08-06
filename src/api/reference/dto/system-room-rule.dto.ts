@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RuleCategory } from '@prisma/client';
+import { RuleCategory, RuleType } from '@prisma/client';
 
 export class SystemRoomRuleDto {
 	@ApiProperty({ description: 'Unique identifier' })
@@ -19,16 +19,12 @@ export class SystemRoomRuleDto {
 
 	@ApiProperty({
 		description: 'Rule type',
-		enum: ['allowed', 'forbidden', 'required', 'conditional'],
-		example: 'forbidden',
+		enum: RuleType,
 	})
-	ruleType: string;
+	ruleType: RuleType;
 
 	@ApiPropertyOptional({ description: 'Description of the rule' })
 	description?: string;
-
-	@ApiPropertyOptional({ description: 'Icon URL for the rule' })
-	iconUrl?: string;
 
 	@ApiProperty({ description: 'Whether the rule is active' })
 	isActive: boolean;

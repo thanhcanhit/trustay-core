@@ -17,9 +17,6 @@ export class SystemAmenityDto {
 	})
 	category: AmenityCategory;
 
-	@ApiPropertyOptional({ description: 'Icon URL for the amenity' })
-	iconUrl?: string;
-
 	@ApiPropertyOptional({ description: 'Description of the amenity' })
 	description?: string;
 

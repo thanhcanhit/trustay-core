@@ -7,7 +7,10 @@ export class EnumValuesDto {
 	@ApiProperty({ description: 'User roles', example: ['TENANT', 'LANDLORD'] })
 	userRole: string[];
 
-	@ApiProperty({ description: 'Room types', example: ['SINGLE', 'DOUBLE', 'SUITE', 'DORMITORY'] })
+	@ApiProperty({
+		description: 'Room types',
+		example: ['BOARDING_HOUSE', 'DORMITORY', 'SLEEPBOX', 'APARTMENT', 'WHOLE_HOUSE'],
+	})
 	roomType: string[];
 
 	@ApiProperty({
@@ -82,6 +85,12 @@ export class EnumValuesDto {
 	ruleCategory: string[];
 
 	@ApiProperty({
+		description: 'Rule types',
+		example: ['ALLOWED', 'FORBIDDEN', 'REQUIRED', 'CONDITIONAL'],
+	})
+	ruleType: string[];
+
+	@ApiProperty({
 		description: 'Cost types',
 		example: ['FIXED', 'PER_UNIT', 'METERED', 'PERCENTAGE', 'TIERED'],
 	})
@@ -124,9 +133,6 @@ export class SimpleAmenityDto {
 
 	@ApiProperty()
 	category: string;
-
-	@ApiProperty()
-	iconUrl?: string;
 
 	@ApiProperty()
 	description?: string;

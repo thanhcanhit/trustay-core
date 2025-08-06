@@ -15,6 +15,7 @@ import {
 	ReviewerType,
 	RoomType,
 	RuleCategory,
+	RuleType,
 	SearchPostStatus,
 	UserRole,
 	VerificationStatus,
@@ -190,10 +191,11 @@ export class ReferenceService {
 	getAllEnums(): AllEnumsResponseDto {
 		return {
 			roomTypes: this.mapEnumToDto(RoomType, {
-				single: 'Phòng đơn',
-				double: 'Phòng đôi',
-				suite: 'Phòng suite',
-				dormitory: 'Phòng tập thể',
+				boarding_house: 'Nhà trọ',
+				dormitory: 'Ký túc xá',
+				sleepbox: 'Sleepbox',
+				apartment: 'Chung cư',
+				whole_house: 'Nhà nguyên căn',
 			}),
 			genders: this.mapEnumToDto(Gender, {
 				male: 'Nam',
@@ -335,6 +337,7 @@ export class ReferenceService {
 			amenityCategory: uppercaseArray(AmenityCategory),
 			costCategory: uppercaseArray(CostCategory),
 			ruleCategory: uppercaseArray(RuleCategory),
+			ruleType: uppercaseArray(RuleType),
 			costType: uppercaseArray(CostType),
 			billingCycle: uppercaseArray(BillingCycle),
 			visibility: uppercaseArray(Visibility),
@@ -357,7 +360,6 @@ export class ReferenceService {
 				id: true,
 				name: true,
 				category: true,
-				iconUrl: true,
 				description: true,
 			},
 		});

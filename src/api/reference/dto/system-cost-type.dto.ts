@@ -20,9 +20,6 @@ export class SystemCostTypeDto {
 	@ApiPropertyOptional({ description: 'Default unit for this cost type' })
 	defaultUnit?: string;
 
-	@ApiPropertyOptional({ description: 'Icon URL for the cost type' })
-	iconUrl?: string;
-
 	@ApiPropertyOptional({ description: 'Description of the cost type' })
 	description?: string;
 
