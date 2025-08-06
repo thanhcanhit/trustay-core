@@ -28,8 +28,7 @@ RUN pnpm prisma generate
 # Build the application and verify the output
 RUN pnpm build && \
     ls -la dist/ && \
-    ls -la dist/src/ && \
-    test -f dist/src/main.js
+    test -f dist/main.js
 
 # Clean up unnecessary files to reduce image size
 RUN rm -rf node_modules/.cache && \
@@ -71,11 +70,9 @@ RUN pnpm prisma generate
 COPY --from=build --chown=nestjs:nodejs /usr/src/app/dist ./dist
 COPY --from=build --chown=nestjs:nodejs /usr/src/app/scripts ./scripts
 COPY --from=build --chown=nestjs:nodejs /usr/src/app/data ./data
-COPY --from=build --chown=nestjs:nodejs /usr/src/app/prisma/seed.ts ./prisma/seed.ts
-COPY --from=build --chown=nestjs:nodejs /usr/src/app/tsconfig.json ./tsconfig.json
 
 # Verify the main.js file exists in the correct location
-RUN ls -la dist/src/ && test -f dist/src/main.js
+RUN ls -la dist/ && test -f dist/main.js
 
 # Create logs directory with proper permissions
 RUN mkdir -p logs && chown -R nestjs:nodejs logs
