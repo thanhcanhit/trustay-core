@@ -10,25 +10,9 @@ import {
 	Max,
 	Min,
 } from 'class-validator';
+import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
 
-export class ListingQueryDto {
-	@IsOptional()
-	@Type(() => Number)
-	@IsInt()
-	@Min(1)
-	page?: number = 1;
-
-	@IsOptional()
-	@Type(() => Number)
-	@IsInt()
-	@Min(1)
-	@Max(100)
-	limit?: number = 20;
-
-	@IsOptional()
-	@IsString()
-	search?: string;
-
+export class ListingQueryDto extends PaginationQueryDto {
 	@IsOptional()
 	@IsString()
 	provinceId?: string;
@@ -73,14 +57,4 @@ export class ListingQueryDto {
 	@IsString()
 	@Transform(({ value }) => value === 'true')
 	isVerified?: string;
-
-	@IsOptional()
-	@IsString()
-	@IsEnum(['price', 'area', 'createdAt', 'updatedAt'])
-	sortBy?: string = 'createdAt';
-
-	@IsOptional()
-	@IsString()
-	@IsEnum(['asc', 'desc'])
-	sortOrder?: string = 'desc';
 }

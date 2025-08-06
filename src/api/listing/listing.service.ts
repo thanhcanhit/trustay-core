@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { RoomType } from '@prisma/client';
+import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingQueryDto } from './dto/listing-query.dto';
 import { PaginatedListingResponseDto } from './dto/paginated-listing-response.dto';
@@ -190,13 +191,22 @@ export class ListingService {
 						},
 					},
 					pricing: true,
-					rules: true,
+					rules: {
+						include: {
+							systemRule: {
+								select: {
+									id: true,
+									ruleType: true,
+									name: true,
+									nameEn: true,
+								},
+							},
+						},
+					},
 				},
 			}),
 			this.prisma.room.count({ where }),
 		]);
-
-		const totalPages = Math.ceil(total / limit);
 
 		const formattedRooms = rooms.map((room) => ({
 			id: room.id,
@@ -258,20 +268,14 @@ export class ListingService {
 						priceNegotiable: room.pricing.priceNegotiable,
 					}
 				: undefined,
-			rules: room.rules,
+			rules: room.rules.map((rule) => ({
+				id: rule.id,
+				ruleType: rule.systemRule.ruleType,
+				ruleText: rule.customValue || rule.systemRule.name,
+			})),
 		}));
 
-		return {
-			data: formattedRooms,
-			meta: {
-				page,
-				limit,
-				total,
-				totalPages,
-				hasNext: page < totalPages,
-				hasPrev: page > 1,
-			},
-		};
+		return PaginatedResponseDto.create(formattedRooms, page, limit, total);
 	}
 
 	async getFeaturedListings(limit: number = 10) {
