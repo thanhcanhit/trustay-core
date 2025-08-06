@@ -58,7 +58,6 @@ export class RoomsService {
 								name: true,
 								nameEn: true,
 								category: true,
-								iconUrl: true,
 							},
 						},
 					},

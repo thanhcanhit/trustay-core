@@ -169,7 +169,6 @@ export class ListingService {
 									name: true,
 									nameEn: true,
 									category: true,
-									iconUrl: true,
 								},
 							},
 						},

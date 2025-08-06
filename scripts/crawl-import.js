@@ -522,7 +522,7 @@ async function applyIntelligentRoomRules(roomId, description, price, amenities) 
 						data: {
 							roomId: roomId,
 							systemRuleId: systemRoomRule.id,
-							isActive: true,
+							isEnforced: true,
 						},
 					})
 					.catch(() => {}); // Ignore if already exists
@@ -541,6 +541,9 @@ function getRuleMappingsByTier(priceTier, description) {
 		{ nameEn: 'maintain_common_cleanliness' },
 		{ nameEn: 'lock_door_when_out' },
 		{ nameEn: 'save_electricity' },
+		{ nameEn: 'no_littering' },
+		{ nameEn: 'no_key_duplication' },
+		{ nameEn: 'respect_neighbors' },
 	];
 
 	// Detect shared landlord situation
@@ -555,12 +558,14 @@ function getRuleMappingsByTier(priceTier, description) {
 		conditionalRules.push({ nameEn: 'shared_with_landlord' });
 		conditionalRules.push({ nameEn: 'quiet_after_10pm' });
 		conditionalRules.push({ nameEn: 'notify_before_guests' });
+		conditionalRules.push({ nameEn: 'no_loud_music' });
 	} else if (hasNoSharedLandlord) {
 		conditionalRules.push({ nameEn: 'not_shared_with_landlord' });
 	}
 
 	if (hasFlexibleHours) {
 		// More flexible rules for "giờ giấc tự do"
+		conditionalRules.push({ nameEn: 'guests_office_hours_only' });
 	} else {
 		conditionalRules.push({ nameEn: 'quiet_after_10pm' });
 	}
@@ -574,6 +579,9 @@ function getRuleMappingsByTier(priceTier, description) {
 				{ nameEn: 'no_smoking_indoor' },
 				{ nameEn: 'no_overnight_guests' },
 				{ nameEn: 'no_high_power_devices' },
+				{ nameEn: 'no_cooking_in_bedroom' },
+				{ nameEn: 'no_parties' },
+				{ nameEn: 'no_business_activities' },
 			]);
 	} else if (priceTier === 'ECONOMY') {
 		return baseRules
@@ -582,6 +590,9 @@ function getRuleMappingsByTier(priceTier, description) {
 				{ nameEn: 'small_pets_allowed' },
 				{ nameEn: 'smoking_balcony_only' },
 				{ nameEn: 'register_overnight_guests' },
+				{ nameEn: 'no_high_power_devices' },
+				{ nameEn: 'no_parties' },
+				{ nameEn: 'no_business_activities' },
 			]);
 	} else if (priceTier === 'STANDARD' || priceTier === 'PREMIUM') {
 		return baseRules
@@ -590,11 +601,16 @@ function getRuleMappingsByTier(priceTier, description) {
 				{ nameEn: 'cats_allowed' },
 				{ nameEn: 'smoking_balcony_only' },
 				{ nameEn: 'register_overnight_guests' },
+				{ nameEn: 'regular_room_cleaning' },
+				{ nameEn: 'no_business_activities' },
 			]);
 	} else if (priceTier === 'LUXURY') {
 		return baseRules.concat(conditionalRules).concat([
 			{ nameEn: 'pets_allowed' },
 			{ nameEn: 'smoking_balcony_only' },
+			{ nameEn: 'register_overnight_guests' },
+			{ nameEn: 'regular_room_cleaning' },
+			{ nameEn: 'notice_before_moving' },
 			// More relaxed rules for luxury properties
 		]);
 	}
@@ -638,14 +654,21 @@ function determineRoomType(title, description) {
 	if (content.includes('ở ghép') || content.includes('ghép') || content.includes('ký túc')) {
 		return 'dormitory';
 	}
-	if (content.includes('suite') || content.includes('căn hộ') || content.includes('studio')) {
-		return 'suite';
+	if (content.includes('căn hộ') || content.includes('studio') || content.includes('apartment')) {
+		return 'apartment';
 	}
-	if (content.includes('đôi') || content.includes('2 người') || content.includes('hai người')) {
-		return 'double';
+	if (
+		content.includes('nhà nguyên căn') ||
+		content.includes('nguyên căn') ||
+		content.includes('whole house')
+	) {
+		return 'whole_house';
+	}
+	if (content.includes('sleepbox') || content.includes('sleep box') || content.includes('pod')) {
+		return 'sleepbox';
 	}
 
-	return 'single'; // Default
+	return 'boarding_house'; // Default - most common Vietnamese rental type
 }
 
 async function findOrCreateLocation(addressData) {
@@ -726,26 +749,22 @@ async function findOrCreateLocation(addressData) {
 	};
 }
 
-async function createDummyOwner() {
-	// Check if dummy owner exists
-	let owner = await prisma.user.findFirst({
-		where: { email: 'dummy.owner@truststay.com' },
+async function getRandomLandlord() {
+	// Get existing landlord users (should be imported from default-users script)
+	const landlords = await prisma.user.findMany({
+		where: { role: 'landlord' },
+		select: { id: true, firstName: true, lastName: true, email: true },
 	});
 
-	if (!owner) {
-		owner = await prisma.user.create({
-			data: {
-				email: 'dummy.owner@truststay.com',
-				passwordHash: 'dummy_hash',
-				firstName: 'Dummy',
-				lastName: 'Owner',
-				role: 'landlord',
-				isVerifiedEmail: true,
-			},
-		});
+	if (landlords.length === 0) {
+		throw new Error(
+			'No landlord users found. Please run: node scripts/import-default-users.js first',
+		);
 	}
 
-	return owner.id;
+	// Return random landlord
+	const randomIndex = Math.floor(Math.random() * landlords.length);
+	return landlords[randomIndex];
 }
 
 async function importCrawledData(filePath) {
@@ -758,8 +777,20 @@ async function importCrawledData(filePath) {
 
 		console.log(`📊 Tổng số records: ${crawledData.length}`);
 
-		// Get or create dummy owner
-		const ownerId = await createDummyOwner();
+		// Get list of existing landlords
+		const existingLandlords = await prisma.user.findMany({
+			where: { role: 'landlord' },
+			select: { id: true, firstName: true, lastName: true, email: true },
+		});
+
+		if (existingLandlords.length === 0) {
+			console.log(
+				'❌ No landlord users found. Please run: node scripts/import-default-users.js first',
+			);
+			process.exit(1);
+		}
+
+		console.log(`👥 Found ${existingLandlords.length} existing landlord users`);
 
 		// Process data in batches
 		const batchSize = 10;
@@ -781,6 +812,10 @@ async function importCrawledData(filePath) {
 						},
 					);
 
+					// Get random landlord for this building
+					const randomLandlord =
+						existingLandlords[Math.floor(Math.random() * existingLandlords.length)];
+
 					// Create building
 					const buildingSlug = generateSlug(
 						`${item.poster_full_name}-${locationData.district.name}`,
@@ -795,9 +830,9 @@ async function importCrawledData(filePath) {
 							data: {
 								id: buildingSlug,
 								slug: buildingSlug,
-								ownerId: ownerId,
+								ownerId: randomLandlord.id,
 								name: `Nhà trọ ${item.poster_full_name}`,
-								description: `Nhà trọ được quản lý bởi ${item.poster_full_name}`,
+								description: `Nhà trọ được quản lý bởi ${randomLandlord.firstName} ${randomLandlord.lastName}`,
 								addressLine1: item.full_address_normalized?.street_name || item.full_address,
 								wardId: locationData.ward?.id,
 								districtId: locationData.district.id,
@@ -808,6 +843,10 @@ async function importCrawledData(filePath) {
 								isVerified: false,
 							},
 						});
+
+						console.log(
+							`🏢 Building assigned to: ${randomLandlord.firstName} ${randomLandlord.lastName} (${randomLandlord.email})`,
+						);
 					}
 
 					// Create floor (default floor 1)
