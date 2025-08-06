@@ -3,153 +3,47 @@ import { RoomType } from '@prisma/client';
 
 export class LocationDto {
 	@ApiProperty()
-	province: {
-		id: number;
-		name: string;
-		code: string;
-	};
+	provinceId: number;
 
 	@ApiProperty()
-	district: {
-		id: number;
-		name: string;
-		code: string;
-	};
+	provinceName: string;
+
+	@ApiProperty()
+	districtId: number;
+
+	@ApiProperty()
+	districtName: string;
 
 	@ApiPropertyOptional()
-	ward?: {
-		id: number;
-		name: string;
-		code: string;
-	};
-}
-
-export class BuildingOwnerDto {
-	@ApiProperty()
-	id: string;
-
-	@ApiProperty()
-	firstName: string;
-
-	@ApiProperty()
-	lastName: string;
+	wardId?: number;
 
 	@ApiPropertyOptional()
-	phone?: string;
-
-	@ApiProperty()
-	isVerifiedPhone: boolean;
-
-	@ApiProperty()
-	isVerifiedEmail: boolean;
-
-	@ApiProperty()
-	isVerifiedIdentity: boolean;
-}
-
-export class BuildingDto {
-	@ApiProperty()
-	id: string;
-
-	@ApiProperty()
-	name: string;
-
-	@ApiPropertyOptional()
-	description?: string;
-
-	@ApiProperty()
-	addressLine1: string;
-
-	@ApiPropertyOptional()
-	addressLine2?: string;
-
-	@ApiPropertyOptional()
-	latitude?: string;
-
-	@ApiPropertyOptional()
-	longitude?: string;
-
-	@ApiProperty()
-	isVerified: boolean;
-
-	@ApiProperty({ type: BuildingOwnerDto })
-	owner: BuildingOwnerDto;
-
-	@ApiProperty({ type: LocationDto })
-	location: LocationDto;
-}
-
-export class FloorDto {
-	@ApiProperty()
-	floorNumber: number;
-
-	@ApiProperty({ type: BuildingDto })
-	building: BuildingDto;
+	wardName?: string;
 }
 
 export class RoomImageDto {
 	@ApiProperty()
-	id: string;
-
-	@ApiProperty()
-	imageUrl: string;
+	url: string;
 
 	@ApiPropertyOptional()
-	altText?: string;
-
-	@ApiProperty()
-	sortOrder: number;
+	alt?: string;
 
 	@ApiProperty()
 	isPrimary: boolean;
-}
-
-export class SystemAmenityDto {
-	@ApiProperty()
-	id: string;
 
 	@ApiProperty()
-	name: string;
-
-	@ApiProperty()
-	nameEn: string;
-
-	@ApiProperty()
-	category: string;
-
-	@ApiPropertyOptional()
-	iconUrl?: string;
+	sortOrder: number;
 }
 
 export class RoomAmenityDto {
 	@ApiProperty()
 	id: string;
 
-	@ApiPropertyOptional()
-	customValue?: string;
-
-	@ApiPropertyOptional()
-	notes?: string;
-
-	@ApiProperty({ type: SystemAmenityDto })
-	systemAmenity: SystemAmenityDto;
-}
-
-export class SystemCostTypeDto {
-	@ApiProperty()
-	id: string;
-
 	@ApiProperty()
 	name: string;
 
 	@ApiProperty()
-	nameEn: string;
-
-	@ApiProperty()
 	category: string;
-
-	@ApiPropertyOptional()
-	defaultUnit?: string;
 }
 
 export class RoomCostDto {
@@ -157,54 +51,21 @@ export class RoomCostDto {
 	id: string;
 
 	@ApiProperty()
-	baseRate: string;
+	name: string;
 
 	@ApiProperty()
-	currency: string;
-
-	@ApiPropertyOptional()
-	notes?: string;
-
-	@ApiProperty({ type: SystemCostTypeDto })
-	systemCostType: SystemCostTypeDto;
+	value: string;
 }
 
 export class RoomPricingDto {
 	@ApiProperty()
-	id: string;
-
-	@ApiProperty()
 	basePriceMonthly: string;
-
-	@ApiProperty()
-	currency: string;
 
 	@ApiProperty()
 	depositAmount: string;
 
 	@ApiProperty()
-	depositMonths: number;
-
-	@ApiProperty()
 	utilityIncluded: boolean;
-
-	@ApiPropertyOptional()
-	utilityCostMonthly?: string;
-
-	@ApiPropertyOptional()
-	cleaningFee?: string;
-
-	@ApiPropertyOptional()
-	serviceFeePercentage?: string;
-
-	@ApiProperty()
-	minimumStayMonths: number;
-
-	@ApiPropertyOptional()
-	maximumStayMonths?: number;
-
-	@ApiProperty()
-	priceNegotiable: boolean;
 }
 
 export class RoomRuleDto {
@@ -212,10 +73,10 @@ export class RoomRuleDto {
 	id: string;
 
 	@ApiProperty()
-	ruleType: string;
+	name: string;
 
 	@ApiProperty()
-	ruleText: string;
+	type: string;
 }
 
 export class ListingItemDto {
@@ -227,9 +88,6 @@ export class ListingItemDto {
 
 	@ApiPropertyOptional()
 	name?: string;
-
-	@ApiPropertyOptional()
-	description?: string;
 
 	@ApiProperty({ enum: RoomType })
 	roomType: RoomType;
@@ -244,13 +102,13 @@ export class ListingItemDto {
 	isVerified: boolean;
 
 	@ApiProperty()
-	createdAt: Date;
+	buildingName: string;
 
 	@ApiProperty()
-	updatedAt: Date;
+	address: string;
 
-	@ApiProperty({ type: FloorDto })
-	floor: FloorDto;
+	@ApiProperty({ type: LocationDto })
+	location: LocationDto;
 
 	@ApiProperty({ type: [RoomImageDto] })
 	images: RoomImageDto[];

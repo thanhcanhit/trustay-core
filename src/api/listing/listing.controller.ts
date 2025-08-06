@@ -1,11 +1,11 @@
-import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ListingQueryDto } from './dto/listing-query.dto';
 import { PaginatedListingResponseDto } from './dto/paginated-listing-response.dto';
 import { ListingService } from './listing.service';
 
-@ApiTags('Listings')
-@Controller('api/listings')
+@ApiTags('Room Listings')
+@Controller('api/rooms')
 export class ListingController {
 	constructor(private readonly listingService: ListingService) {}
 
@@ -45,53 +45,5 @@ export class ListingController {
 	})
 	async getListings(@Query() query: ListingQueryDto): Promise<PaginatedListingResponseDto> {
 		return this.listingService.findAllListings(query);
-	}
-
-	@Get('featured')
-	@ApiOperation({ summary: 'Get featured rental rooms' })
-	@ApiQuery({ name: 'limit', required: false, description: 'Number of featured rooms to return' })
-	@ApiResponse({
-		status: 200,
-		description: 'Featured listings retrieved successfully',
-	})
-	async getFeaturedListings(@Query('limit') limit?: string) {
-		const limitNum = limit ? parseInt(limit, 10) : 10;
-		return this.listingService.getFeaturedListings(limitNum);
-	}
-
-	@Get('nearby')
-	@ApiOperation({ summary: 'Get nearby rental rooms based on coordinates' })
-	@ApiQuery({ name: 'latitude', required: true, description: 'Latitude coordinate' })
-	@ApiQuery({ name: 'longitude', required: true, description: 'Longitude coordinate' })
-	@ApiQuery({
-		name: 'radius',
-		required: false,
-		description: 'Search radius in kilometers (default: 5)',
-	})
-	@ApiQuery({ name: 'limit', required: false, description: 'Number of rooms to return' })
-	@ApiResponse({
-		status: 200,
-		description: 'Nearby listings retrieved successfully',
-	})
-	@ApiResponse({
-		status: 400,
-		description: 'Invalid coordinates provided',
-	})
-	async getNearbyListings(
-		@Query('latitude') latitude: string,
-		@Query('longitude') longitude: string,
-		@Query('radius') radius?: string,
-		@Query('limit') limit?: string,
-	) {
-		const lat = parseFloat(latitude);
-		const lng = parseFloat(longitude);
-		const radiusKm = radius ? parseFloat(radius) : 5;
-		const limitNum = limit ? parseInt(limit, 10) : 20;
-
-		if (isNaN(lat) || isNaN(lng)) {
-			throw new BadRequestException('Invalid coordinates provided');
-		}
-
-		return this.listingService.getNearbyListings(lat, lng, radiusKm, limitNum);
 	}
 }

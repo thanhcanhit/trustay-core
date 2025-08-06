@@ -1,15 +1,6 @@
 import { RoomType } from '@prisma/client';
-import { Transform, Type } from 'class-transformer';
-import {
-	IsBoolean,
-	IsEnum,
-	IsInt,
-	IsNumber,
-	IsOptional,
-	IsString,
-	Max,
-	Min,
-} from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
 
 export class ListingQueryDto extends PaginationQueryDto {
