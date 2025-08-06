@@ -1,20 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RoomType } from '@prisma/client';
 
-export class OwnerDto {
-	@ApiProperty()
-	name: string;
-
-	@ApiProperty()
-	verifiedPhone: boolean;
-
-	@ApiProperty()
-	verifiedEmail: boolean;
-
-	@ApiProperty()
-	verifiedIdentity: boolean;
-}
-
 export class LocationDto {
 	@ApiProperty()
 	provinceId: number;
@@ -33,6 +19,29 @@ export class LocationDto {
 
 	@ApiPropertyOptional()
 	wardName?: string;
+}
+
+export class BuildingOwnerDto {
+	@ApiProperty()
+	id: string;
+
+	@ApiProperty()
+	firstName: string;
+
+	@ApiProperty()
+	lastName: string;
+
+	@ApiPropertyOptional()
+	phone?: string;
+
+	@ApiProperty()
+	isVerifiedPhone: boolean;
+
+	@ApiProperty()
+	isVerifiedEmail: boolean;
+
+	@ApiProperty()
+	isVerifiedIdentity: boolean;
 }
 
 export class RoomImageDto {
@@ -58,6 +67,12 @@ export class RoomAmenityDto {
 
 	@ApiProperty()
 	category: string;
+
+	@ApiPropertyOptional()
+	customValue?: string;
+
+	@ApiPropertyOptional()
+	notes?: string;
 }
 
 export class RoomCostDto {
@@ -69,6 +84,12 @@ export class RoomCostDto {
 
 	@ApiProperty()
 	value: string;
+
+	@ApiProperty()
+	category: string;
+
+	@ApiPropertyOptional()
+	notes?: string;
 }
 
 export class RoomPricingDto {
@@ -79,7 +100,22 @@ export class RoomPricingDto {
 	depositAmount: string;
 
 	@ApiProperty()
+	depositMonths: number;
+
+	@ApiProperty()
 	utilityIncluded: boolean;
+
+	@ApiPropertyOptional()
+	utilityCostMonthly?: string;
+
+	@ApiProperty()
+	minimumStayMonths: number;
+
+	@ApiPropertyOptional()
+	maximumStayMonths?: number;
+
+	@ApiProperty()
+	priceNegotiable: boolean;
 }
 
 export class RoomRuleDto {
@@ -91,9 +127,18 @@ export class RoomRuleDto {
 
 	@ApiProperty()
 	type: string;
+
+	@ApiPropertyOptional()
+	customValue?: string;
+
+	@ApiPropertyOptional()
+	notes?: string;
+
+	@ApiProperty()
+	isEnforced: boolean;
 }
 
-export class ListingItemDto {
+export class RoomDetailDto {
 	@ApiProperty()
 	id: string;
 
@@ -102,6 +147,9 @@ export class ListingItemDto {
 
 	@ApiPropertyOptional()
 	name?: string;
+
+	@ApiPropertyOptional()
+	description?: string;
 
 	@ApiProperty({ enum: RoomType })
 	roomType: RoomType;
@@ -116,19 +164,34 @@ export class ListingItemDto {
 	isVerified: boolean;
 
 	@ApiProperty()
-	buildingName: string;
+	isActive: boolean;
 
 	@ApiProperty()
-	buildingVerified: boolean;
+	floorNumber: number;
+
+	@ApiProperty()
+	buildingName: string;
+
+	@ApiPropertyOptional()
+	buildingDescription?: string;
 
 	@ApiProperty()
 	address: string;
 
-	@ApiProperty({ type: OwnerDto })
-	owner: OwnerDto;
+	@ApiPropertyOptional()
+	addressLine2?: string;
+
+	@ApiPropertyOptional()
+	latitude?: string;
+
+	@ApiPropertyOptional()
+	longitude?: string;
 
 	@ApiProperty({ type: LocationDto })
 	location: LocationDto;
+
+	@ApiProperty({ type: BuildingOwnerDto })
+	owner: BuildingOwnerDto;
 
 	@ApiProperty({ type: [RoomImageDto] })
 	images: RoomImageDto[];
@@ -144,4 +207,7 @@ export class ListingItemDto {
 
 	@ApiProperty({ type: [RoomRuleDto] })
 	rules: RoomRuleDto[];
+
+	@ApiProperty()
+	lastUpdated: Date;
 }

@@ -4,8 +4,8 @@ import { ListingQueryDto } from './dto/listing-query.dto';
 import { PaginatedListingResponseDto } from './dto/paginated-listing-response.dto';
 import { ListingService } from './listing.service';
 
-@ApiTags('Room Listings')
-@Controller('api/rooms')
+@ApiTags('Listings')
+@Controller('api/listings/rooms')
 export class ListingController {
 	constructor(private readonly listingService: ListingService) {}
 
