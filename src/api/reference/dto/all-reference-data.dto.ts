@@ -1,116 +1,116 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class EnumValuesDto {
-	@ApiProperty({ description: 'Gender options', example: ['male', 'female', 'other'] })
+	@ApiProperty({ description: 'Gender options', example: ['MALE', 'FEMALE', 'OTHER'] })
 	gender: string[];
 
-	@ApiProperty({ description: 'User roles', example: ['tenant', 'landlord'] })
+	@ApiProperty({ description: 'User roles', example: ['TENANT', 'LANDLORD'] })
 	userRole: string[];
 
-	@ApiProperty({ description: 'Room types', example: ['single', 'double', 'suite', 'dormitory'] })
+	@ApiProperty({ description: 'Room types', example: ['SINGLE', 'DOUBLE', 'SUITE', 'DORMITORY'] })
 	roomType: string[];
 
 	@ApiProperty({
 		description: 'Booking statuses',
-		example: ['pending', 'approved', 'rejected', 'cancelled'],
+		example: ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'],
 	})
 	bookingStatus: string[];
 
 	@ApiProperty({
 		description: 'Rental statuses',
-		example: ['active', 'terminated', 'expired', 'pending_renewal'],
+		example: ['ACTIVE', 'TERMINATED', 'EXPIRED', 'PENDING_RENEWAL'],
 	})
 	rentalStatus: string[];
 
 	@ApiProperty({
 		description: 'Invitation statuses',
-		example: ['pending', 'accepted', 'declined', 'expired'],
+		example: ['PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED'],
 	})
 	invitationStatus: string[];
 
 	@ApiProperty({
 		description: 'Bill statuses',
-		example: ['draft', 'pending', 'paid', 'overdue', 'cancelled'],
+		example: ['DRAFT', 'PENDING', 'PAID', 'OVERDUE', 'CANCELLED'],
 	})
 	billStatus: string[];
 
 	@ApiProperty({
 		description: 'Payment types',
-		example: ['rent', 'deposit', 'utility', 'fee', 'refund'],
+		example: ['RENT', 'DEPOSIT', 'UTILITY', 'FEE', 'REFUND'],
 	})
 	paymentType: string[];
 
 	@ApiProperty({
 		description: 'Payment methods',
-		example: ['bank_transfer', 'cash', 'e_wallet', 'card'],
+		example: ['BANK_TRANSFER', 'CASH', 'E_WALLET', 'CARD'],
 	})
 	paymentMethod: string[];
 
 	@ApiProperty({
 		description: 'Payment statuses',
-		example: ['pending', 'completed', 'failed', 'refunded'],
+		example: ['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED'],
 	})
 	paymentStatus: string[];
 
-	@ApiProperty({ description: 'Reviewer types', example: ['tenant', 'owner'] })
+	@ApiProperty({ description: 'Reviewer types', example: ['TENANT', 'OWNER'] })
 	reviewerType: string[];
 
 	@ApiProperty({
 		description: 'Amenity categories',
 		example: [
-			'basic',
-			'kitchen',
-			'bathroom',
-			'entertainment',
-			'safety',
-			'connectivity',
-			'building',
+			'BASIC',
+			'KITCHEN',
+			'BATHROOM',
+			'ENTERTAINMENT',
+			'SAFETY',
+			'CONNECTIVITY',
+			'BUILDING',
 		],
 	})
 	amenityCategory: string[];
 
 	@ApiProperty({
 		description: 'Cost categories',
-		example: ['utility', 'service', 'parking', 'maintenance'],
+		example: ['UTILITY', 'SERVICE', 'PARKING', 'MAINTENANCE'],
 	})
 	costCategory: string[];
 
 	@ApiProperty({
 		description: 'Rule categories',
-		example: ['smoking', 'pets', 'visitors', 'noise', 'cleanliness', 'security', 'usage', 'other'],
+		example: ['SMOKING', 'PETS', 'VISITORS', 'NOISE', 'CLEANLINESS', 'SECURITY', 'USAGE', 'OTHER'],
 	})
 	ruleCategory: string[];
 
 	@ApiProperty({
 		description: 'Cost types',
-		example: ['fixed', 'per_unit', 'metered', 'percentage', 'tiered'],
+		example: ['FIXED', 'PER_UNIT', 'METERED', 'PERCENTAGE', 'TIERED'],
 	})
 	costType: string[];
 
 	@ApiProperty({
 		description: 'Billing cycles',
-		example: ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'per_use'],
+		example: ['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY', 'PER_USE'],
 	})
 	billingCycle: string[];
 
 	@ApiProperty({
 		description: 'Visibility options',
-		example: ['anyoneCanFind', 'anyoneWithLink', 'domainCanFind', 'domainWithLink', 'limited'],
+		example: ['ANYONECANFIND', 'ANYONEWITHLINK', 'DOMAINCANFIND', 'DOMAINWITHLINK', 'LIMITED'],
 	})
 	visibility: string[];
 
 	@ApiProperty({
 		description: 'Search post statuses',
-		example: ['active', 'paused', 'closed', 'expired'],
+		example: ['ACTIVE', 'PAUSED', 'CLOSED', 'EXPIRED'],
 	})
 	searchPostStatus: string[];
 
-	@ApiProperty({ description: 'Verification types', example: ['email', 'phone', 'password_reset'] })
+	@ApiProperty({ description: 'Verification types', example: ['EMAIL', 'PHONE', 'PASSWORD_RESET'] })
 	verificationType: string[];
 
 	@ApiProperty({
 		description: 'Verification statuses',
-		example: ['pending', 'verified', 'expired', 'failed'],
+		example: ['PENDING', 'VERIFIED', 'EXPIRED', 'FAILED'],
 	})
 	verificationStatus: string[];
 }

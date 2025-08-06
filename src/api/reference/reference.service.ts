@@ -22,6 +22,7 @@ import {
 	Visibility,
 } from '@prisma/client';
 import { calculatePagination, PaginatedResponseDto, PaginationQueryDto } from '../../common/dto';
+import { uppercaseArray } from '../../common/utils/enum.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
 	AllEnumsResponseDto,
@@ -320,26 +321,26 @@ export class ReferenceService {
 
 	getEnums(): EnumValuesDto {
 		return {
-			gender: Object.values(Gender),
-			userRole: Object.values(UserRole),
-			roomType: Object.values(RoomType),
-			bookingStatus: Object.values(BookingStatus),
-			rentalStatus: Object.values(RentalStatus),
-			invitationStatus: Object.values(InvitationStatus),
-			billStatus: Object.values(BillStatus),
-			paymentType: Object.values(PaymentType),
-			paymentMethod: Object.values(PaymentMethod),
-			paymentStatus: Object.values(PaymentStatus),
-			reviewerType: Object.values(ReviewerType),
-			amenityCategory: Object.values(AmenityCategory),
-			costCategory: Object.values(CostCategory),
-			ruleCategory: Object.values(RuleCategory),
-			costType: Object.values(CostType),
-			billingCycle: Object.values(BillingCycle),
-			visibility: Object.values(Visibility),
-			searchPostStatus: Object.values(SearchPostStatus),
-			verificationType: Object.values(VerificationType),
-			verificationStatus: Object.values(VerificationStatus),
+			gender: uppercaseArray(Gender),
+			userRole: uppercaseArray(UserRole),
+			roomType: uppercaseArray(RoomType),
+			bookingStatus: uppercaseArray(BookingStatus),
+			rentalStatus: uppercaseArray(RentalStatus),
+			invitationStatus: uppercaseArray(InvitationStatus),
+			billStatus: uppercaseArray(BillStatus),
+			paymentType: uppercaseArray(PaymentType),
+			paymentMethod: uppercaseArray(PaymentMethod),
+			paymentStatus: uppercaseArray(PaymentStatus),
+			reviewerType: uppercaseArray(ReviewerType),
+			amenityCategory: uppercaseArray(AmenityCategory),
+			costCategory: uppercaseArray(CostCategory),
+			ruleCategory: uppercaseArray(RuleCategory),
+			costType: uppercaseArray(CostType),
+			billingCycle: uppercaseArray(BillingCycle),
+			visibility: uppercaseArray(Visibility),
+			searchPostStatus: uppercaseArray(SearchPostStatus),
+			verificationType: uppercaseArray(VerificationType),
+			verificationStatus: uppercaseArray(VerificationStatus),
 		};
 	}
 
