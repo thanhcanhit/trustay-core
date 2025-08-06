@@ -27,10 +27,11 @@ enum UserRole {
 }
 
 enum RoomType {
-  single
-  double
-  suite
-  dormitory
+  boarding_house // Nhà trọ
+  dormitory // Ký túc xá
+  sleepbox // Sleepbox
+  apartment // Chung cư
+  whole_house // Nhà nguyên căn
 }
 
 enum BookingStatus {
@@ -106,6 +107,41 @@ enum CostCategory {
   maintenance
 }
 
+enum RuleCategory {
+  smoking // Hút thuốc
+  pets // Thú cưng
+  visitors // Khách thăm
+  noise // Tiếng ồn
+  cleanliness // Vệ sinh
+  security // An ninh
+  usage // Sử dụng
+  other // Khác
+}
+
+enum RuleType {
+  allowed // Được phép
+  forbidden // Cấm
+  required // Bắt buộc
+  conditional // Có điều kiện
+}
+
+enum CostType {
+  fixed // Giá cố định hàng tháng
+  per_unit // Theo đơn vị (kWh, m³)
+  metered // Theo đồng hồ
+  percentage // Theo phần trăm
+  tiered // Bậc thang (khác nhau theo mức sử dụng)
+}
+
+enum BillingCycle {
+  daily
+  weekly
+  monthly
+  quarterly
+  yearly
+  per_use
+}
+
 enum Visibility {
   anyoneCanFind
   anyoneWithLink
@@ -164,15 +200,15 @@ model User {
 
   // Relations
   addresses           UserAddress[]
-  ownedBuildings      Building[]       @relation("BuildingOwner")
+  ownedBuildings      Building[]         @relation("BuildingOwner")
   bookingRequests     BookingRequest[]
-  rentalsAsTenant     Rental[]         @relation("RentalTenant")
-  rentalsAsOwner      Rental[]         @relation("RentalOwner")
+  rentalsAsTenant     Rental[]           @relation("RentalTenant")
+  rentalsAsOwner      Rental[]           @relation("RentalOwner")
   payments            Payment[]
-  sentInvitations     RoomInvitation[] @relation("InvitationSender")
-  receivedInvitations RoomInvitation[] @relation("InvitationReceiver")
-  reviewsGiven        Review[]         @relation("ReviewGiver")
-  reviewsReceived     Review[]         @relation("ReviewReceiver")
+  sentInvitations     RoomInvitation[]   @relation("InvitationSender")
+  receivedInvitations RoomInvitation[]   @relation("InvitationReceiver")
+  reviewsGiven        Review[]           @relation("ReviewGiver")
+  reviewsReceived     Review[]           @relation("ReviewReceiver")
   notifications       Notification[]
   roomSearchPosts     RoomSearchPost[]
   verificationCodes   VerificationCode[]
@@ -184,10 +220,10 @@ model User {
 model VerificationCode {
   id          String             @id @default(uuid())
   userId      String?            @map("user_id") // Optional vì có thể verify trước khi tạo user
-  email       String?            // Email hoặc phone được verify
+  email       String? // Email hoặc phone được verify
   phone       String?
   type        VerificationType
-  code        String             // 6-digit verification code
+  code        String // 6-digit verification code
   status      VerificationStatus @default(pending)
   attempts    Int                @default(0) // Số lần thử verify
   maxAttempts Int                @default(5) // Tối đa 5 lần thử
@@ -239,10 +275,10 @@ model UserAddress {
   createdAt    DateTime @default(now()) @map("created_at")
 
   // Relations
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ward     Ward?     @relation(fields: [wardId], references: [id], onDelete: SetNull)
-  district District  @relation(fields: [districtId], references: [id], onDelete: Cascade)
-  province Province  @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ward     Ward?    @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  district District @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  province Province @relation(fields: [provinceId], references: [id], onDelete: Cascade)
 
   @@index([districtId])
   @@index([provinceId])
@@ -274,10 +310,10 @@ model Building {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   // Relations
-  owner    User      @relation("BuildingOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  ward     Ward?     @relation(fields: [wardId], references: [id], onDelete: SetNull)
-  district District  @relation(fields: [districtId], references: [id], onDelete: Cascade)
-  province Province  @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  owner    User     @relation("BuildingOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  ward     Ward?    @relation(fields: [wardId], references: [id], onDelete: SetNull)
+  district District @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  province Province @relation(fields: [provinceId], references: [id], onDelete: Cascade)
   floors   Floor[]
 
   @@index([ownerId])
@@ -360,16 +396,46 @@ model RoomImage {
   @@map("room_images")
 }
 
-model RoomRule {
-  id        String   @id @default(uuid())
-  roomId    String   @map("room_id")
-  ruleType  String   @map("rule_type") // smoking, pets, visitors, noise, other
-  ruleText  String   @map("rule_text")
-  createdAt DateTime @default(now()) @map("created_at")
+// ========================================
+// SIMPLIFIED ROOM RULES SYSTEM
+// ========================================
+
+model SystemRoomRule {
+  id          String       @id @default(uuid())
+  name        String
+  nameEn      String       @unique @map("name_en")
+  category    RuleCategory
+  ruleType    RuleType     @default(allowed)
+  description String?
+  isActive    Boolean      @default(true) @map("is_active")
+  sortOrder   Int          @default(0) @map("sort_order")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
 
   // Relations
-  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomRules RoomRule[]
 
+  @@index([category])
+  @@index([isActive])
+  @@map("system_room_rules")
+}
+
+model RoomRule {
+  id           String   @id @default(uuid())
+  roomId       String   @map("room_id")
+  systemRuleId String   @map("system_rule_id")
+  customValue  String?  @map("custom_value")
+  isEnforced   Boolean  @default(true) @map("is_enforced")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  room       Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  systemRule SystemRoomRule @relation(fields: [systemRuleId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, systemRuleId])
+  @@index([roomId])
+  @@index([systemRuleId])
   @@map("room_rules")
 }
 
@@ -382,7 +448,6 @@ model SystemAmenity {
   name        String
   nameEn      String          @unique @map("name_en")
   category    AmenityCategory
-  iconUrl     String?         @map("icon_url")
   description String?
   isActive    Boolean         @default(true) @map("is_active")
   sortOrder   Int             @default(0) @map("sort_order")
@@ -425,7 +490,6 @@ model SystemCostType {
   nameEn      String       @unique @map("name_en")
   category    CostCategory
   defaultUnit String?      @map("default_unit")
-  iconUrl     String?      @map("icon_url")
   description String?
   isActive    Boolean      @default(true) @map("is_active")
   sortOrder   Int          @default(0) @map("sort_order")
@@ -441,15 +505,36 @@ model SystemCostType {
 }
 
 model RoomCost {
-  id               String   @id @default(uuid())
-  roomId           String   @map("room_id")
-  systemCostTypeId String   @map("system_cost_type_id")
-  baseRate         Decimal  @map("base_rate") @db.Decimal(15, 2)
-  currency         String   @default("VND")
-  notes            String?
-  isActive         Boolean  @default(true) @map("is_active")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  id               String @id @default(uuid())
+  roomId           String @map("room_id")
+  systemCostTypeId String @map("system_cost_type_id")
+
+  // Flexible pricing fields
+  costType    CostType @default(fixed) @map("cost_type")
+  baseRate    Decimal? @map("base_rate") @db.Decimal(15, 2)
+  unitPrice   Decimal? @map("unit_price") @db.Decimal(15, 2)
+  fixedAmount Decimal? @map("fixed_amount") @db.Decimal(15, 2)
+
+  // Additional pricing info
+  currency      String   @default("VND")
+  unit          String? // Override default unit from SystemCostType
+  minimumCharge Decimal? @map("minimum_charge") @db.Decimal(15, 2)
+  maximumCharge Decimal? @map("maximum_charge") @db.Decimal(15, 2)
+
+  // Usage tracking (for metered costs)
+  isMetered        Boolean  @default(false) @map("is_metered")
+  meterReading     Decimal? @map("meter_reading") @db.Decimal(15, 2)
+  lastMeterReading Decimal? @map("last_meter_reading") @db.Decimal(15, 2)
+
+  // Billing configuration
+  billingCycle   BillingCycle @default(monthly) @map("billing_cycle")
+  includedInRent Boolean      @default(false) @map("included_in_rent")
+  isOptional     Boolean      @default(false) @map("is_optional")
+
+  notes     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
   room           Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
@@ -807,55 +892,55 @@ model Notification {
 // LOCATION TABLES
 // ========================================
 model Province {
-  id          Int @id @default(autoincrement())
-  code        String @unique @map("province_code")
-  name        String @map("province_name")
-  nameEn      String? @map("province_name_en")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  
+  id        Int      @id @default(autoincrement())
+  code      String   @unique @map("province_code")
+  name      String   @map("province_name")
+  nameEn    String?  @map("province_name_en")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
   districts     District[]
   userAddresses UserAddress[]
   buildings     Building[]
-  
-  @@map("provinces")
+
   @@index([code])
+  @@map("provinces")
 }
 
 model District {
-  id          Int @id @default(autoincrement())
-  code        String @unique @map("district_code")
-  name        String @map("district_name")
-  nameEn      String? @map("district_name_en")
-  provinceId  Int @map("province_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  
+  id         Int      @id @default(autoincrement())
+  code       String   @unique @map("district_code")
+  name       String   @map("district_name")
+  nameEn     String?  @map("district_name_en")
+  provinceId Int      @map("province_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
   province      Province      @relation(fields: [provinceId], references: [id], onDelete: Cascade)
   wards         Ward[]
   userAddresses UserAddress[]
   buildings     Building[]
-  
-  @@map("districts")
+
   @@index([code])
   @@index([provinceId])
+  @@map("districts")
 }
 
 model Ward {
-  id          Int @id @default(autoincrement())
-  code        String @unique @map("ward_code")
-  name        String @map("ward_name")
-  nameEn      String? @map("ward_name_en")
-  level       String @map("ward_level") // "Phường", "Xã", "Thị trấn"
-  districtId  Int @map("district_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  
+  id         Int      @id @default(autoincrement())
+  code       String   @unique @map("ward_code")
+  name       String   @map("ward_name")
+  nameEn     String?  @map("ward_name_en")
+  level      String   @map("ward_level") // "Phường", "Xã", "Thị trấn"
+  districtId Int      @map("district_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
   district      District      @relation(fields: [districtId], references: [id], onDelete: Cascade)
   userAddresses UserAddress[]
   buildings     Building[]
-  
-  @@map("wards")
+
   @@index([code])
   @@index([districtId])
+  @@map("wards")
 }

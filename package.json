@@ -19,11 +19,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "db:seed": "npx prisma db seed",
-    "db:reset": "npx prisma migrate reset && npx prisma db seed",
-    "db:import-admin": "node scripts/import-administrative-data.js",
-    "db:crawl-import": "node scripts/crawl-import.js import data/crawled_rooms.json",
-    "db:setup-full": "npm run db:import-admin && ts-node --esm prisma/seed.ts && npm run db:crawl-import"
+    "db:setup": "node scripts/index.js sequence all"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -48,9 +44,6 @@
     "resend": "^4.7.0",
     "rxjs": "^7.8.1",
     "winston": "^3.17.0"
-  },
-  "prisma": {
-    "seed": "ts-node --esm prisma/seed.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.1.1",

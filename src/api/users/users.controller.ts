@@ -11,7 +11,7 @@ import { VerifyPhoneDto } from './dto/verify-phone.dto';
 import { UsersService } from './users.service';
 
 @ApiTags('Users')
-@Controller('api/users')
+@Controller('users')
 @Auth()
 export class UsersController {
 	constructor(private readonly usersService: UsersService) {}
