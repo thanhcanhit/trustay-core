@@ -79,6 +79,13 @@ services:
       - "3000:3000"
     env_file:
       - .env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.trustay-app.loadbalancer.server.port=3000"
+      - "traefik.http.routers.trustay-app.rule=Host(\`api.trustay.life\`)"
+      - "traefik.http.routers.trustay-app.entrypoints=websecure"
+      - "traefik.http.routers.trustay-app.tls=true"
+      - "traefik.http.routers.trustay-app.tls.certresolver=letsencrypt"
     environment:
       - NODE_ENV=${NODE_ENV}
       - DATABASE_URL=${DATABASE_URL}
@@ -93,7 +100,7 @@ services:
     networks:
       - trustay-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://0.0.0.0:3000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
