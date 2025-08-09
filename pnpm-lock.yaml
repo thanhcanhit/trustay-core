@@ -74,6 +74,9 @@ importers:
       winston:
         specifier: ^3.17.0
         version: 3.17.0
+      xlsx:
+        specifier: ^0.18.5
+        version: 0.18.5
     devDependencies:
       '@biomejs/biome':
         specifier: 2.1.1
@@ -156,9 +159,6 @@ importers:
       typescript-eslint:
         specifier: ^8.20.0
         version: 8.37.0(eslint@9.31.0(jiti@2.4.2))(typescript@5.8.3)
-      xlsx:
-        specifier: ^0.18.5
-        version: 0.18.5
 
 packages:
 
