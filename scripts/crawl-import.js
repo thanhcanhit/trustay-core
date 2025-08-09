@@ -671,15 +671,18 @@ function determineRoomType(title, description) {
 	return 'boarding_house'; // Default - most common Vietnamese rental type
 }
 
-async function findOrCreateLocation(addressData) {
-	const { ward, district, city } = addressData || {};
+async function findOrCreateLocation(addressData, province, district) {
+	// Use direct province and district from data if provided
+	const cityName = province || addressData?.city || 'Thành phố Hồ Chí Minh';
+	const districtName = district || addressData?.district;
+	const { ward } = addressData || {};
 
 	// Find province (city) with better matching
-	let province = await prisma.province.findFirst({
+	let provinceRecord = await prisma.province.findFirst({
 		where: {
 			OR: [
-				{ name: { equals: city, mode: 'insensitive' } },
-				{ name: { contains: city, mode: 'insensitive' } },
+				{ name: { equals: cityName, mode: 'insensitive' } },
+				{ name: { contains: cityName, mode: 'insensitive' } },
 				{ name: { contains: 'Hồ Chí Minh', mode: 'insensitive' } },
 				{ name: { contains: 'Hà Nội', mode: 'insensitive' } },
 				{ name: { contains: 'Đà Nẵng', mode: 'insensitive' } },
@@ -688,33 +691,39 @@ async function findOrCreateLocation(addressData) {
 		},
 	});
 
-	if (!province) {
+	if (!provinceRecord) {
 		// Create province if not exists
 		const provinceCode = randomUUID().slice(0, 6);
-		province = await prisma.province.create({
+		provinceRecord = await prisma.province.create({
 			data: {
 				code: provinceCode,
-				name: city || 'Thành phố Hồ Chí Minh',
-				nameEn: city === 'Thành phố Hồ Chí Minh' ? 'Ho Chi Minh City' : city,
+				name: cityName,
+				nameEn: cityName === 'Thành phố Hồ Chí Minh' ? 'Ho Chi Minh City' : cityName,
 			},
 		});
 	}
 
 	// Find district
-	let districtRecord = await prisma.district.findFirst({
-		where: {
-			AND: [{ name: { contains: district, mode: 'insensitive' } }, { provinceId: province.id }],
-		},
-	});
+	let districtRecord = null;
+	if (districtName) {
+		districtRecord = await prisma.district.findFirst({
+			where: {
+				AND: [
+					{ name: { contains: districtName, mode: 'insensitive' } },
+					{ provinceId: provinceRecord.id },
+				],
+			},
+		});
+	}
 
-	if (!districtRecord) {
+	if (!districtRecord && districtName) {
 		// Create district if not exists
 		const districtCode = randomUUID().slice(0, 8);
 		districtRecord = await prisma.district.create({
 			data: {
 				code: districtCode,
-				name: district,
-				provinceId: province.id,
+				name: districtName,
+				provinceId: provinceRecord.id,
 			},
 		});
 	}
@@ -743,7 +752,7 @@ async function findOrCreateLocation(addressData) {
 	}
 
 	return {
-		province,
+		province: provinceRecord,
 		district: districtRecord,
 		ward: wardRecord,
 	};
@@ -803,13 +812,15 @@ async function importCrawledData(filePath) {
 
 			for (const item of batch) {
 				try {
-					// Find or create location data
+					// Find or create location data using direct province/district from item
 					const locationData = await findOrCreateLocation(
 						item.full_address_normalized || {
-							city: 'Thành phố Hồ Chí Minh',
-							district: 'Quận 1',
+							city: item.province || 'Thành phố Hồ Chí Minh',
+							district: item.district || 'Quận 1',
 							ward: null,
 						},
+						item.province,
+						item.district,
 					);
 
 					// Get random landlord for this building
@@ -898,8 +909,9 @@ async function importCrawledData(filePath) {
 						},
 					});
 
-					// Create room pricing - Fix price normalization
-					const priceNumeric = item.official_price_normalized.price_numeric;
+					// Create room pricing - Use new price_numeric field if available
+					const priceNumeric =
+						item.price_numeric || item.official_price_normalized?.price_numeric || 0;
 					// If price looks too small (< 100,000), it might be missing zeros
 					const actualPrice =
 						priceNumeric < 100000 && priceNumeric > 0 ? priceNumeric * 1000 : priceNumeric;
@@ -908,7 +920,7 @@ async function importCrawledData(filePath) {
 						data: {
 							roomId: room.id,
 							basePriceMonthly: actualPrice,
-							currency: item.official_price_normalized.currency,
+							currency: item.official_price_normalized?.currency || 'VND',
 							depositAmount: actualPrice, // Default 1 month deposit
 							depositMonths: 1,
 							utilityIncluded:
@@ -921,17 +933,35 @@ async function importCrawledData(filePath) {
 						},
 					});
 
-					// Create room image
-					if (item.image_url) {
-						await prisma.roomImage.create({
-							data: {
-								roomId: room.id,
-								imageUrl: item.image_url,
-								altText: item.title,
-								sortOrder: 0,
-								isPrimary: true,
-							},
-						});
+					// Create room images - Handle both single image_url and images array
+					const imagesToProcess = [];
+
+					// Check if images array exists (new format)
+					if (item.images && Array.isArray(item.images) && item.images.length > 0) {
+						imagesToProcess.push(...item.images);
+					} else if (item.main_image) {
+						// Use main_image as fallback
+						imagesToProcess.push(item.main_image);
+					} else if (item.image_url) {
+						// Use legacy image_url as last resort
+						imagesToProcess.push(item.image_url);
+					}
+
+					// Create image records
+					for (let i = 0; i < Math.min(imagesToProcess.length, 20); i++) {
+						// Limit to 20 images
+						const imageUrl = imagesToProcess[i];
+						if (imageUrl && imageUrl.startsWith('http')) {
+							await prisma.roomImage.create({
+								data: {
+									roomId: room.id,
+									imageUrl: imageUrl,
+									altText: item.title,
+									sortOrder: i,
+									isPrimary: i === 0, // First image is primary
+								},
+							});
+						}
 					}
 
 					// Enhanced intelligent amenities, cost types, and room rules mapping
@@ -978,14 +1008,16 @@ async function validateCrawledData(filePath) {
 
 		console.log(`📊 Total records: ${data.length}`);
 
-		// Validate required fields
-		const requiredFields = [
-			'id',
-			'title',
-			'full_address',
+		// Validate required fields - Updated for new data structure
+		const requiredFields = ['id', 'title', 'full_address', 'poster_full_name'];
+
+		// Optional fields that should be present in either old or new format
+		const optionalFields = [
 			'coordinates',
 			'official_price_normalized',
-			'poster_full_name',
+			'price_numeric',
+			'province',
+			'district',
 		];
 
 		let validRecords = 0;
@@ -994,11 +1026,23 @@ async function validateCrawledData(filePath) {
 		for (const item of data) {
 			const missingFields = requiredFields.filter((field) => !item[field]);
 
-			if (missingFields.length === 0) {
+			// Check if has at least some price information
+			const hasPriceInfo =
+				item.price_numeric || item.official_price_normalized?.price_numeric || item.price;
+
+			// Check if has location info
+			const hasLocationInfo =
+				(item.province && item.district) || item.coordinates || item.full_address;
+
+			if (missingFields.length === 0 && hasPriceInfo && hasLocationInfo) {
 				validRecords++;
 			} else {
 				invalidRecords++;
-				console.warn(`⚠️ Record ${item.id} missing fields:`, missingFields);
+				const issues = [];
+				if (missingFields.length > 0) issues.push(`Missing: ${missingFields.join(', ')}`);
+				if (!hasPriceInfo) issues.push('No price information');
+				if (!hasLocationInfo) issues.push('No location information');
+				console.warn(`⚠️ Record ${item.id} issues:`, issues.join('; '));
 			}
 		}
 
