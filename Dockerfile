@@ -48,6 +48,11 @@ COPY --from=build --chown=nestjs:nodejs /usr/src/app/dist ./dist
 COPY --chown=nestjs:nodejs docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
+# Create logs directory with proper permissions
+RUN mkdir -p logs && \
+    chown -R nestjs:nodejs logs && \
+    chmod 755 logs
+
 # Switch to non-root user
 USER nestjs
 
