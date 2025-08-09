@@ -5,6 +5,7 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import { UploadService } from '../../common/services/upload.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -18,7 +19,10 @@ import { VerifyPhoneDto } from './dto/verify-phone.dto';
 
 @Injectable()
 export class UsersService {
-	constructor(private readonly prisma: PrismaService) {}
+	constructor(
+		private readonly prisma: PrismaService,
+		private readonly uploadService: UploadService,
+	) {}
 
 	async createUser(createUserDto: CreateUserDto) {
 		// Check if email already exists
@@ -606,6 +610,60 @@ export class UsersService {
 
 		return {
 			message: 'Identity verified successfully',
+			user: updatedUser,
+		};
+	}
+
+	async updateAvatar(userId: string, file: Express.Multer.File) {
+		if (!file) {
+			throw new BadRequestException('No file uploaded');
+		}
+
+		if (!file.mimetype.startsWith('image/')) {
+			throw new BadRequestException('File must be an image');
+		}
+
+		const maxSize = 5 * 1024 * 1024; // 5MB for avatars
+		if (file.size > maxSize) {
+			throw new BadRequestException('Avatar file size must be less than 5MB');
+		}
+
+		const user = await this.prisma.user.findUnique({
+			where: { id: userId },
+		});
+
+		if (!user) {
+			throw new NotFoundException('User not found');
+		}
+
+		// Delete old avatar if exists (auto cleanup)
+		if (user.avatarUrl) {
+			await this.uploadService.deleteUserAvatar(userId);
+		}
+
+		// Upload new avatar
+		const uploadResult = await this.uploadService.uploadImage(file, {
+			altText: 'User avatar',
+		});
+
+		// Update user avatar URL
+		const updatedUser = await this.prisma.user.update({
+			where: { id: userId },
+			data: {
+				avatarUrl: uploadResult.imagePath,
+				updatedAt: new Date(),
+			},
+			select: {
+				id: true,
+				firstName: true,
+				lastName: true,
+				avatarUrl: true,
+				updatedAt: true,
+			},
+		});
+
+		return {
+			message: 'Avatar uploaded successfully',
 			user: updatedUser,
 		};
 	}
