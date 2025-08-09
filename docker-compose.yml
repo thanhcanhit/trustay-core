@@ -79,13 +79,6 @@ services:
       - "3000:3000"
     env_file:
       - .env
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.services.trustay-app.loadbalancer.server.port=3000"
-      - "traefik.http.routers.trustay-app.rule=Host(\`api.trustay.life\`)"
-      - "traefik.http.routers.trustay-app.entrypoints=websecure"
-      - "traefik.http.routers.trustay-app.tls=true"
-      - "traefik.http.routers.trustay-app.tls.certresolver=letsencrypt"
     environment:
       - NODE_ENV=${NODE_ENV}
       - DATABASE_URL=${DATABASE_URL}
