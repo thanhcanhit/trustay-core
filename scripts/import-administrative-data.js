@@ -18,7 +18,7 @@ async function importVietnameseAdministrativeData() {
 			return;
 		}
 
-		const workbook = XLSX.readFile(path.join(process.cwd(), 'data', 'data.xlsx'));
+		const workbook = XLSX.readFile(path.join(__dirname, 'data', 'data.xlsx'));
 		const sheetName = workbook.SheetNames[0];
 		const sheet = workbook.Sheets[sheetName];
 		const data = XLSX.utils.sheet_to_json(sheet);
@@ -183,7 +183,7 @@ async function validateDataBeforeImport() {
 	console.log('🔍 Kiểm tra dữ liệu trước khi import...');
 
 	try {
-		const workbook = XLSX.readFile(path.join(process.cwd(), 'data', 'data.xlsx'));
+		const workbook = XLSX.readFile(path.join(__dirname, 'data', 'data.xlsx'));
 		const sheetName = workbook.SheetNames[0];
 		const sheet = workbook.Sheets[sheetName];
 		const data = XLSX.utils.sheet_to_json(sheet);

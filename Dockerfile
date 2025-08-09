@@ -44,6 +44,9 @@ RUN npm install -g pnpm && \
 # Copy built application from build stage
 COPY --from=build --chown=nestjs:nodejs /usr/src/app/dist ./dist
 
+# Copy scripts directory for database setup
+COPY --chown=nestjs:nodejs scripts ./scripts
+
 # Copy entrypoint script
 COPY --chown=nestjs:nodejs docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
