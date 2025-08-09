@@ -10,6 +10,7 @@ import { RoomsModule } from './api/rooms/rooms.module';
 import { UsersModule } from './api/users/users.module';
 import { AppController } from './app.controller';
 import { AuthModule } from './auth/auth.module';
+import { CommonModule } from './common/common.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ConfigModule } from './config/config.module';
@@ -21,6 +22,7 @@ import { PrismaModule } from './prisma/prisma.module';
 		ConfigModule,
 		LoggerModule,
 		PrismaModule,
+		CommonModule,
 		ProvinceModule,
 		DistrictModule,
 		WardModule,

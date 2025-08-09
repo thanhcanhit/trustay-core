@@ -2,6 +2,7 @@ import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { AppConfigService } from './config/config.service';
 import { LoggerService } from './logger/logger.service';
@@ -17,6 +18,11 @@ async function bootstrap() {
 	// Use custom logger
 	app.useLogger(loggerService);
 
+	// Serve static files for uploaded images
+	app.useStaticAssets(join(__dirname, '..', 'uploads'), {
+		prefix: '/images/',
+	});
+
 	// Enable CORS
 	app.enableCors({
 		origin: true,
@@ -24,11 +30,12 @@ async function bootstrap() {
 		credentials: true,
 	});
 
-	// Set global prefix for API routes (excluding root and health endpoints)
+	// Set global prefix for API routes (excluding root, health, and images endpoints)
 	app.setGlobalPrefix('api', {
 		exclude: [
 			{ path: '', method: RequestMethod.GET },
 			{ path: 'health', method: RequestMethod.GET },
+			{ path: 'images/(.*)', method: RequestMethod.GET },
 		],
 	});
 
