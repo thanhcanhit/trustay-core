@@ -1,5 +1,23 @@
-import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+	Body,
+	Controller,
+	Delete,
+	Get,
+	Param,
+	Post,
+	Put,
+	UploadedFile,
+	UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+	ApiBody,
+	ApiConsumes,
+	ApiOperation,
+	ApiParam,
+	ApiResponse,
+	ApiTags,
+} from '@nestjs/swagger';
 import { Auth } from '../../auth/decorators/auth.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { CreateAddressDto } from './dto/create-address.dto';
@@ -156,5 +174,34 @@ export class UsersController {
 	})
 	async verifyIdentity(@CurrentUser() user: any, @Body() verifyIdentityDto: VerifyIdentityDto) {
 		return this.usersService.verifyIdentity(user.id, verifyIdentityDto);
+	}
+
+	@Put('avatar')
+	@UseInterceptors(FileInterceptor('file'))
+	@ApiOperation({ summary: 'Upload/update user avatar' })
+	@ApiConsumes('multipart/form-data')
+	@ApiBody({
+		schema: {
+			type: 'object',
+			properties: {
+				file: {
+					type: 'string',
+					format: 'binary',
+					description: 'Avatar image file',
+				},
+			},
+			required: ['file'],
+		},
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Avatar uploaded/updated successfully',
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Invalid file or user not found',
+	})
+	async updateAvatar(@CurrentUser() user: any, @UploadedFile() file: Express.Multer.File) {
+		return this.usersService.updateAvatar(user.id, file);
 	}
 }
