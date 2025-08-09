@@ -51,10 +51,10 @@ COPY --chown=nestjs:nodejs scripts ./scripts
 COPY --chown=nestjs:nodejs docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
-# Create logs directory with proper permissions
-RUN mkdir -p logs && \
-    chown -R nestjs:nodejs logs && \
-    chmod 755 logs
+# Create logs and uploads directories with proper permissions
+RUN mkdir -p logs uploads && \
+    chown -R nestjs:nodejs logs uploads && \
+    chmod 755 logs uploads
 
 # Switch to non-root user
 USER nestjs
