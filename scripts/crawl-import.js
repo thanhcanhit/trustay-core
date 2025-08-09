@@ -1061,7 +1061,7 @@ async function validateCrawledData(filePath) {
 if (require.main === module) {
 	const args = process.argv.slice(2);
 	const command = args[0] || 'import';
-	const filePath = args[1] || path.join(process.cwd(), 'data', 'crawled_rooms.json');
+	const filePath = args[1] || path.join(__dirname, 'data', 'crawled_rooms.json');
 
 	if (command === 'validate') {
 		validateCrawledData(filePath).catch(console.error);

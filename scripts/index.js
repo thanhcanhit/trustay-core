@@ -31,7 +31,7 @@ const IMPORT_SCRIPTS = {
 	crawl: {
 		name: 'Crawled Rooms Data',
 		script: 'crawl-import.js',
-		args: 'import data/crawled_rooms.json',
+		args: 'import scripts/data/crawled_rooms.json',
 		description: 'Import crawled room listings from JSON file',
 	},
 };
