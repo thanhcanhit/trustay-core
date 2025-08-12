@@ -7,6 +7,7 @@ export class RoomsService {
 	constructor(private readonly prisma: PrismaService) {}
 
 	async getRoomBySlug(slug: string): Promise<RoomDetailDto> {
+		// Find room type by slug
 		const room = await this.prisma.room.findFirst({
 			where: {
 				slug: slug,
@@ -32,6 +33,16 @@ export class RoomsService {
 							},
 						},
 					},
+				},
+				roomInstances: {
+					select: {
+						id: true,
+						roomNumber: true,
+						isOccupied: true,
+						isActive: true,
+					},
+					where: { isActive: true },
+					orderBy: { roomNumber: 'asc' },
 				},
 				images: {
 					select: {
@@ -120,6 +131,8 @@ export class RoomsService {
 			roomType: room.roomType,
 			areaSqm: room.areaSqm?.toString(),
 			maxOccupancy: room.maxOccupancy,
+			totalRooms: room.totalRooms,
+			availableRooms: room.availableRooms,
 			isVerified: room.isVerified,
 			isActive: room.isActive,
 			floorNumber: room.floorNumber,
@@ -146,6 +159,12 @@ export class RoomsService {
 				isVerifiedEmail: room.building.owner.isVerifiedEmail,
 				isVerifiedIdentity: room.building.owner.isVerifiedIdentity,
 			},
+			roomInstances: room.roomInstances.map((instance) => ({
+				id: instance.id,
+				roomNumber: instance.roomNumber,
+				isOccupied: instance.isOccupied,
+				isActive: instance.isActive,
+			})),
 			images: room.images.map((image) => ({
 				url: image.imageUrl,
 				alt: image.altText,
