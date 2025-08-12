@@ -898,7 +898,8 @@ async function importCrawledData(filePath) {
 						data: {
 							id: roomSlug,
 							slug: roomSlug,
-							floorId: floor.id,
+							buildingId: building.id,
+							floorNumber: floor.floorNumber,
 							roomNumber: roomNumber,
 							name: item.title,
 							description: item.detailed_description || item.description,

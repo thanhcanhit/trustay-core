@@ -76,12 +76,11 @@ async function cleanupCrawlImports() {
 			roomImages: await prisma.roomImage.count(),
 			roomPricing: await prisma.roomPricing.count(),
 			rooms: await prisma.room.count(),
-			floors: await prisma.floor.count(),
 			buildings: await prisma.building.count(),
 		};
 
 		logWarning(
-			`   Before cleanup: ${beforeCounts.rooms} rooms, ${beforeCounts.floors} floors, ${beforeCounts.buildings} buildings`,
+			`   Before cleanup: ${beforeCounts.rooms} rooms, ${beforeCounts.buildings} buildings`,
 		);
 		logWarning(
 			`   Before cleanup: ${beforeCounts.roomRules} rules, ${beforeCounts.roomAmenities} amenities, ${beforeCounts.roomCosts} costs`,
@@ -106,16 +105,11 @@ async function cleanupCrawlImports() {
 		logWarning('   Deleting rooms...');
 		const deletedRooms = await prisma.room.deleteMany({});
 
-		logWarning('   Deleting floors...');
-		const deletedFloors = await prisma.floor.deleteMany({});
-
 		logWarning('   Deleting buildings...');
 		const deletedBuildings = await prisma.building.deleteMany({});
 
 		logSuccess(`Crawl data cleanup completed:`);
-		logSuccess(
-			`   • ${deletedRooms.count} rooms, ${deletedFloors.count} floors, ${deletedBuildings.count} buildings`,
-		);
+		logSuccess(`   • ${deletedRooms.count} rooms, ${deletedBuildings.count} buildings`);
 		logSuccess(
 			`   • ${deletedRoomRules.count} rules, ${deletedRoomAmenities.count} amenities, ${deletedRoomCosts.count} costs`,
 		);

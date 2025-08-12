@@ -314,7 +314,7 @@ model Building {
   ward     Ward?    @relation(fields: [wardId], references: [id], onDelete: SetNull)
   district District @relation(fields: [districtId], references: [id], onDelete: Cascade)
   province Province @relation(fields: [provinceId], references: [id], onDelete: Cascade)
-  floors   Floor[]
+  rooms    Room[]
 
   @@index([ownerId])
   @@index([districtId, provinceId])
@@ -327,29 +327,12 @@ model Building {
   @@map("buildings")
 }
 
-model Floor {
-  id          String   @id @default(uuid())
-  buildingId  String   @map("building_id")
-  floorNumber Int      @map("floor_number")
-  name        String?
-  description String?
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  rooms    Room[]
-
-  @@unique([buildingId, floorNumber])
-  @@index([buildingId])
-  @@map("floors")
-}
 
 model Room {
   id           String   @id // slug format: "nha-tro-minh-phat-phong-101"
   slug         String   @unique // auto-generated from building + room number
-  floorId      String   @map("floor_id")
+  buildingId   String   @map("building_id")
+  floorNumber  Int?     @map("floor_number")
   roomNumber   String   @map("room_number")
   name         String?
   description  String?
@@ -362,7 +345,7 @@ model Room {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   // Relations
-  floor           Floor            @relation(fields: [floorId], references: [id], onDelete: Cascade)
+  building        Building         @relation(fields: [buildingId], references: [id], onDelete: Cascade)
   amenities       RoomAmenity[]
   costs           RoomCost[]
   images          RoomImage[]
@@ -373,8 +356,8 @@ model Room {
   rentals         Rental[]
   monthlyBills    MonthlyBill[]
 
-  @@unique([floorId, roomNumber])
-  @@index([floorId])
+  @@unique([buildingId, roomNumber])
+  @@index([buildingId])
   @@index([roomType])
   @@index([isActive])
   @@index([slug])
