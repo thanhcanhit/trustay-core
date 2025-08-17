@@ -829,13 +829,19 @@ async function getRandomLandlord() {
 	return landlords[randomIndex];
 }
 
-async function importCrawledData(filePath) {
+async function importCrawledData(filePath, limitRecords = null) {
 	console.log('🚀 Bắt đầu import dữ liệu crawled...');
 
 	try {
 		// Read JSON file
 		const rawData = fs.readFileSync(filePath, 'utf-8');
-		const crawledData = JSON.parse(rawData);
+		let crawledData = JSON.parse(rawData);
+
+		// Limit records if specified
+		if (limitRecords && limitRecords > 0) {
+			crawledData = crawledData.slice(0, limitRecords);
+			console.log(`📊 Limiting to first ${limitRecords} records`);
+		}
 
 		console.log(`📊 Tổng số records: ${crawledData.length}`);
 
@@ -937,6 +943,55 @@ async function importCrawledData(filePath) {
 						continue;
 					}
 
+					// Extract area from crawled data or estimate based on price
+					const extractAreaSqm = (areaString) => {
+						if (!areaString) return null;
+						// Extract number from strings like "20m²", "18m²", "45m²"
+						const match = areaString.match(/(\d+(?:\.\d+)?)/);
+						return match ? parseFloat(match[1]) : null;
+					};
+
+					const estimateAreaFromPrice = (price, roomType) => {
+						// Estimate area based on price and room type
+						// These are reasonable estimates for Vietnam market
+						const pricePerSqm = {
+							boarding_house: 150000, // 150k VND per sqm for nhà trọ
+							dormitory: 100000, // 100k VND per sqm for ký túc xá
+							apartment: 250000, // 250k VND per sqm for apartment
+							whole_house: 200000, // 200k VND per sqm for whole house
+							sleepbox: 80000, // 80k VND per sqm for sleepbox
+						};
+
+						const ratePerSqm = pricePerSqm[roomType] || pricePerSqm['boarding_house'];
+						const estimatedArea = Math.round(price / ratePerSqm);
+
+						// Apply reasonable bounds based on room type
+						const bounds = {
+							boarding_house: { min: 12, max: 35 },
+							dormitory: { min: 8, max: 20 },
+							apartment: { min: 20, max: 80 },
+							whole_house: { min: 40, max: 150 },
+							sleepbox: { min: 6, max: 15 },
+						};
+
+						const { min, max } = bounds[roomType] || bounds['boarding_house'];
+						return Math.max(min, Math.min(max, estimatedArea));
+					};
+
+					let areaSqm = extractAreaSqm(item.official_area || item.area);
+
+					// If no area data found, estimate from price
+					if (!areaSqm) {
+						const priceNumeric =
+							item.price_numeric || item.official_price_normalized?.price_numeric || 0;
+						if (priceNumeric > 0) {
+							areaSqm = estimateAreaFromPrice(priceNumeric, roomType);
+							console.log(
+								`   📐 Estimated area: ${areaSqm}m² (price: ${priceNumeric.toLocaleString()} VND)`,
+							);
+						}
+					}
+
 					// Create room type (not individual room)
 					const room = await prisma.room.create({
 						data: {
@@ -947,6 +1002,7 @@ async function importCrawledData(filePath) {
 							name: item.title,
 							description: item.detailed_description || item.description,
 							roomType: roomType,
+							areaSqm: areaSqm, // Add area data
 							maxOccupancy: roomType === 'dormitory' ? 4 : 2,
 							totalRooms: 1, // Default 1 room of this type
 							isActive: true,
@@ -1131,8 +1187,21 @@ if (require.main === module) {
 
 	if (command === 'validate') {
 		validateCrawledData(filePath).catch(console.error);
+	} else if (command === 'import-sample') {
+		// Import sample data (100 records)
+		console.log('📦 Importing sample data (100 records)...');
+		validateCrawledData(filePath)
+			.then((isValid) => {
+				if (isValid) {
+					return importCrawledData(filePath, 100);
+				} else {
+					console.error('❌ Data validation failed, stopping import');
+					process.exit(1);
+				}
+			})
+			.catch(console.error);
 	} else if (command === 'import') {
-		// Validate first, then import
+		// Validate first, then import all
 		validateCrawledData(filePath)
 			.then((isValid) => {
 				if (isValid) {
@@ -1146,7 +1215,8 @@ if (require.main === module) {
 	} else {
 		console.log('Usage:');
 		console.log('  node crawl-import.js validate [file-path]');
-		console.log('  node crawl-import.js import [file-path]');
+		console.log('  node crawl-import.js import-sample [file-path]  - Import first 100 records');
+		console.log('  node crawl-import.js import [file-path]         - Import all records');
 	}
 }
 

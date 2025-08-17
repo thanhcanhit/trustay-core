@@ -19,7 +19,11 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "db:setup": "node scripts/index.js sequence all"
+    "db:setup": "node scripts/index.js sequence all",
+    "db:setup-sample": "node scripts/index.js sequence sample",
+    "db:import-sample": "node scripts/index.js script crawl-sample",
+    "db:validate-data": "node scripts/crawl-import.js validate",
+    "db:import-full": "node scripts/crawl-import.js import"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
