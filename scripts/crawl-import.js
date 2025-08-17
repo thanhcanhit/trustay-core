@@ -672,24 +672,54 @@ function determineRoomType(title, description) {
 }
 
 async function findOrCreateLocation(addressData, province, district) {
-	// Use direct province and district from data if provided
-	const cityName = province || addressData?.city || 'Thành phố Hồ Chí Minh';
-	const districtName = district || addressData?.district;
+	// Parse location from crawled data: "Quận 7, Hồ Chí Minh"
+	let cityName, districtName;
+
+	if (addressData?.location) {
+		const parts = addressData.location.split(',').map((p) => p.trim());
+		if (parts.length >= 2) {
+			districtName = parts[0]; // "Quận 7"
+			cityName = parts[1]; // "Hồ Chí Minh"
+			// Normalize city name
+			if (cityName.includes('Hồ Chí Minh') || cityName.includes('HCM')) {
+				cityName = 'Thành phố Hồ Chí Minh';
+			} else if (cityName.includes('Hà Nội')) {
+				cityName = 'Thành phố Hà Nội';
+			}
+		} else {
+			cityName = 'Thành phố Hồ Chí Minh';
+			districtName = parts[0] || 'Quận 1';
+		}
+	} else {
+		cityName = province || addressData?.city || 'Thành phố Hồ Chí Minh';
+		districtName = district || addressData?.district;
+	}
+
 	const { ward } = addressData || {};
 
-	// Find province (city) with better matching
+	// Find province (city) - search exactly in database
 	let provinceRecord = await prisma.province.findFirst({
 		where: {
 			OR: [
 				{ name: { equals: cityName, mode: 'insensitive' } },
-				{ name: { contains: cityName, mode: 'insensitive' } },
 				{ name: { contains: 'Hồ Chí Minh', mode: 'insensitive' } },
 				{ name: { contains: 'Hà Nội', mode: 'insensitive' } },
-				{ name: { contains: 'Đà Nẵng', mode: 'insensitive' } },
-				{ name: { contains: 'Cần Thơ', mode: 'insensitive' } },
 			],
 		},
 	});
+
+	// If not found and it's HCM, try different variations
+	if (!provinceRecord && cityName.includes('Hồ Chí Minh')) {
+		provinceRecord = await prisma.province.findFirst({
+			where: {
+				OR: [
+					{ name: { contains: 'Hồ Chí Minh', mode: 'insensitive' } },
+					{ name: { contains: 'Ho Chi Minh', mode: 'insensitive' } },
+					{ code: '79' }, // HCM province code
+				],
+			},
+		});
+	}
 
 	if (!provinceRecord) {
 		// Create province if not exists
@@ -703,17 +733,40 @@ async function findOrCreateLocation(addressData, province, district) {
 		});
 	}
 
-	// Find district
+	// Find district with better matching
 	let districtRecord = null;
-	if (districtName) {
+	if (districtName && provinceRecord) {
+		// Try exact match first
 		districtRecord = await prisma.district.findFirst({
 			where: {
 				AND: [
-					{ name: { contains: districtName, mode: 'insensitive' } },
+					{ name: { equals: districtName, mode: 'insensitive' } },
 					{ provinceId: provinceRecord.id },
 				],
 			},
 		});
+
+		// If not found, try partial match
+		if (!districtRecord) {
+			districtRecord = await prisma.district.findFirst({
+				where: {
+					AND: [
+						{
+							name: {
+								contains: districtName.replace('Quận ', '').replace('Huyện ', ''),
+								mode: 'insensitive',
+							},
+						},
+						{ provinceId: provinceRecord.id },
+					],
+				},
+			});
+		}
+
+		// Debug log
+		if (!districtRecord) {
+			console.log(`⚠️ District not found: ${districtName} in ${cityName}`);
+		}
 	}
 
 	if (!districtRecord && districtName) {
@@ -812,15 +865,14 @@ async function importCrawledData(filePath) {
 
 			for (const item of batch) {
 				try {
-					// Find or create location data using direct province/district from item
+					// Find or create location data from item.location
 					const locationData = await findOrCreateLocation(
-						item.full_address_normalized || {
-							city: item.province || 'Thành phố Hồ Chí Minh',
-							district: item.district || 'Quận 1',
+						{
+							location: item.location, // "Quận 7, Hồ Chí Minh"
 							ward: null,
 						},
-						item.province,
-						item.district,
+						null,
+						null,
 					);
 
 					// Get random landlord for this building
@@ -894,19 +946,30 @@ async function importCrawledData(filePath) {
 						continue;
 					}
 
+					// Create room type (not individual room)
 					const room = await prisma.room.create({
 						data: {
 							id: roomSlug,
 							slug: roomSlug,
 							buildingId: building.id,
 							floorNumber: floor.floorNumber,
-							roomNumber: roomNumber,
 							name: item.title,
 							description: item.detailed_description || item.description,
 							roomType: roomType,
-							maxOccupancy: roomType === 'dormitory' ? 4 : roomType === 'double' ? 2 : 1,
+							maxOccupancy: roomType === 'dormitory' ? 4 : 2,
+							totalRooms: 1, // Default 1 room of this type
 							isActive: true,
 							isVerified: false,
+						},
+					});
+
+					// Create room instance
+					const roomInstance = await prisma.roomInstance.create({
+						data: {
+							roomId: room.id,
+							roomNumber: roomNumber,
+							isOccupied: false,
+							isActive: true,
 						},
 					});
 
