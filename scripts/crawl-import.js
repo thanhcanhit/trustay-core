@@ -783,7 +783,7 @@ async function findOrCreateLocation(addressData, province, district) {
 
 	// Find ward if provided
 	let wardRecord = null;
-	if (ward) {
+	if (ward && districtRecord) {
 		wardRecord = await prisma.ward.findFirst({
 			where: {
 				AND: [{ name: { contains: ward, mode: 'insensitive' } }, { districtId: districtRecord.id }],
@@ -865,11 +865,14 @@ async function importCrawledData(filePath) {
 
 			for (const item of batch) {
 				try {
-					// Find or create location data from item.location
+					// Extract location data from new crawled format
 					const locationData = await findOrCreateLocation(
 						{
-							location: item.location, // "Quận 7, Hồ Chí Minh"
-							ward: null,
+							location: item.location, // "Gò Vấp, Hồ Chí Minh"
+							ward: item.ward || item.full_address_normalized?.ward, // "Phườdng 5"
+							district: item.district || item.full_address_normalized?.district, // "Quận Gò Vấp"
+							city: item.province || item.full_address_normalized?.city, // "Hồ Chí Minh"
+							full_address: item.full_address,
 						},
 						null,
 						null,
@@ -896,12 +899,16 @@ async function importCrawledData(filePath) {
 								ownerId: randomLandlord.id,
 								name: `Nhà trọ ${item.poster_full_name}`,
 								description: `Nhà trọ được quản lý bởi ${randomLandlord.firstName} ${randomLandlord.lastName}`,
-								addressLine1: item.full_address_normalized?.street_name || item.full_address,
+								addressLine1:
+									item.full_address_normalized?.street_name ||
+									item.full_address_normalized?.components?.[0] ||
+									item.full_address,
+								addressLine2: item.full_address_normalized?.street_number,
 								wardId: locationData.ward?.id,
 								districtId: locationData.district.id,
 								provinceId: locationData.province.id,
-								latitude: item.coordinates?.latitude,
-								longitude: item.coordinates?.longitude,
+								latitude: item.latitude || item.coordinates?.latitude,
+								longitude: item.longitude || item.coordinates?.longitude,
 								isActive: true,
 								isVerified: false,
 							},
@@ -912,23 +919,7 @@ async function importCrawledData(filePath) {
 						);
 					}
 
-					// Create floor (default floor 1)
-					let floor = await prisma.floor.findFirst({
-						where: {
-							buildingId: building.id,
-							floorNumber: 1,
-						},
-					});
-
-					if (!floor) {
-						floor = await prisma.floor.create({
-							data: {
-								buildingId: building.id,
-								floorNumber: 1,
-								name: 'Tầng 1',
-							},
-						});
-					}
+					// No need to create floor - Room connects directly to Building
 
 					// Create room
 					const roomNumber = extractRoomNumber(item.full_address, item.title, building.id);
@@ -952,7 +943,7 @@ async function importCrawledData(filePath) {
 							id: roomSlug,
 							slug: roomSlug,
 							buildingId: building.id,
-							floorNumber: floor.floorNumber,
+							floorNumber: 1, // Default floor number
 							name: item.title,
 							description: item.detailed_description || item.description,
 							roomType: roomType,
@@ -963,22 +954,21 @@ async function importCrawledData(filePath) {
 						},
 					});
 
-					// Create room instance
+					// Create room instance with new status field
 					const roomInstance = await prisma.roomInstance.create({
 						data: {
 							roomId: room.id,
 							roomNumber: roomNumber,
-							isOccupied: false,
+							status: 'available', // Use new status field
 							isActive: true,
 						},
 					});
 
-					// Create room pricing - Use new price_numeric field if available
+					// Create room pricing - Use new price_numeric field (more reliable)
 					const priceNumeric =
 						item.price_numeric || item.official_price_normalized?.price_numeric || 0;
-					// If price looks too small (< 100,000), it might be missing zeros
-					const actualPrice =
-						priceNumeric < 100000 && priceNumeric > 0 ? priceNumeric * 1000 : priceNumeric;
+					// Price should already be in correct VND format from new crawl data
+					const actualPrice = priceNumeric;
 
 					await prisma.roomPricing.create({
 						data: {
@@ -1029,7 +1019,12 @@ async function importCrawledData(filePath) {
 					}
 
 					// Enhanced intelligent amenities, cost types, and room rules mapping
-					await applyIntelligentReferences(room.id, item, actualPrice);
+					// Pass amenities array directly from new crawl data structure
+					const enhancedItem = {
+						...item,
+						amenities: item.amenities || [], // New crawl data has amenities array
+					};
+					await applyIntelligentReferences(room.id, enhancedItem, actualPrice);
 
 					successCount++;
 					console.log(`✅ Imported room: ${room.slug}`);
@@ -1073,15 +1068,19 @@ async function validateCrawledData(filePath) {
 		console.log(`📊 Total records: ${data.length}`);
 
 		// Validate required fields - Updated for new data structure
-		const requiredFields = ['id', 'title', 'full_address', 'poster_full_name'];
+		const requiredFields = ['id', 'title', 'poster_full_name'];
 
-		// Optional fields that should be present in either old or new format
+		// Optional fields that should be present in new format
 		const optionalFields = [
-			'coordinates',
+			'full_address',
+			'full_address_normalized',
 			'official_price_normalized',
 			'price_numeric',
 			'province',
 			'district',
+			'ward',
+			'amenities',
+			'images',
 		];
 
 		let validRecords = 0;
@@ -1094,9 +1093,12 @@ async function validateCrawledData(filePath) {
 			const hasPriceInfo =
 				item.price_numeric || item.official_price_normalized?.price_numeric || item.price;
 
-			// Check if has location info
+			// Check if has location info - updated for new structure
 			const hasLocationInfo =
-				(item.province && item.district) || item.coordinates || item.full_address;
+				(item.province && item.district) ||
+				item.full_address_normalized?.district ||
+				item.location ||
+				item.full_address;
 
 			if (missingFields.length === 0 && hasPriceInfo && hasLocationInfo) {
 				validRecords++;
