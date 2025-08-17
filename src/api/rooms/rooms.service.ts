@@ -38,7 +38,7 @@ export class RoomsService {
 					select: {
 						id: true,
 						roomNumber: true,
-						isOccupied: true,
+						status: true,
 						isActive: true,
 					},
 					where: { isActive: true },
@@ -132,7 +132,8 @@ export class RoomsService {
 			areaSqm: room.areaSqm?.toString(),
 			maxOccupancy: room.maxOccupancy,
 			totalRooms: room.totalRooms,
-			availableRooms: room.availableRooms,
+			availableRooms: room.roomInstances.filter((instance) => instance.status === 'available')
+				.length,
 			isVerified: room.isVerified,
 			isActive: room.isActive,
 			floorNumber: room.floorNumber,
@@ -162,7 +163,7 @@ export class RoomsService {
 			roomInstances: room.roomInstances.map((instance) => ({
 				id: instance.id,
 				roomNumber: instance.roomNumber,
-				isOccupied: instance.isOccupied,
+				isOccupied: instance.status === 'occupied',
 				isActive: instance.isActive,
 			})),
 			images: room.images.map((image) => ({

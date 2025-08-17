@@ -170,6 +170,14 @@ enum VerificationStatus {
   failed
 }
 
+enum RoomStatus {
+  available     // Phòng trống, sẵn sàng cho thuê
+  occupied      // Phòng đã có người ở
+  maintenance   // Phòng đang sửa chữa/bảo trì
+  reserved      // Phòng đã được đặt cọc nhưng chưa vào ở
+  unavailable   // Phòng tạm thời không cho thuê
+}
+
 // ========================================
 // USER MANAGEMENT
 // ========================================
@@ -328,20 +336,20 @@ model Building {
 }
 
 model Room {
-  id             String   @id @default(uuid())
-  slug           String   @unique // auto-generated from building + room type
-  buildingId     String   @map("building_id")
-  floorNumber    Int?     @map("floor_number")
+  id             String     @id @default(uuid())
+  slug           String     @unique // auto-generated from building + room type
+  buildingId     String     @map("building_id")
+  floorNumber    Int?       @map("floor_number")
   name           String // Tên loại phòng: "Phòng VIP", "Phòng thường"
   description    String?
-  roomType       RoomType @map("room_type")
-  areaSqm        Decimal? @map("area_sqm") @db.Decimal(8, 2)
-  maxOccupancy   Int      @default(1) @map("max_occupancy")
-  totalRooms     Int      @map("total_rooms") // Tổng số phòng loại này
-  isActive       Boolean  @default(true) @map("is_active")
-  isVerified     Boolean  @default(false) @map("is_verified")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  roomType       RoomType   @map("room_type")
+  areaSqm        Decimal?   @map("area_sqm") @db.Decimal(8, 2)
+  maxOccupancy   Int        @default(1) @map("max_occupancy")
+  totalRooms     Int        @map("total_rooms") // Tổng số phòng loại này
+  isActive       Boolean    @default(true) @map("is_active")
+  isVerified     Boolean    @default(false) @map("is_verified")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
 
   // Relations
   building      Building       @relation(fields: [buildingId], references: [id], onDelete: Cascade)
@@ -360,14 +368,14 @@ model Room {
 }
 
 model RoomInstance {
-  id         String   @id @default(uuid())
-  roomId     String   @map("room_id") // Reference to Room (room type)
-  roomNumber String   @map("room_number") // Số phòng cụ thể: "101", "102"
-  isOccupied Boolean  @default(false) @map("is_occupied")
-  isActive   Boolean  @default(true) @map("is_active")
+  id         String     @id @default(uuid())
+  roomId     String     @map("room_id") // Reference to Room (room type)
+  roomNumber String     @map("room_number") // Số phòng cụ thể: "101", "102"
+  status     RoomStatus @default(available)
+  isActive   Boolean    @default(true) @map("is_active")
   notes      String? // Ghi chú riêng cho phòng này
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
 
   // Relations
   room            Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
@@ -378,7 +386,7 @@ model RoomInstance {
 
   @@unique([roomId, roomNumber]) // Unique room number within same room type
   @@index([roomId])
-  @@index([isOccupied])
+  @@index([status])
   @@index([isActive])
   @@map("room_instances")
 }

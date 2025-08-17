@@ -32,9 +32,14 @@ export class ListingService {
 
 		const where: any = {
 			isActive: true,
-			floor: {
-				building: {
+			building: {
+				isActive: true,
+			},
+			// Only show rooms that have at least one available room instance
+			roomInstances: {
+				some: {
 					isActive: true,
+					status: 'available',
 				},
 			},
 		};
@@ -44,25 +49,23 @@ export class ListingService {
 				{ name: { contains: search, mode: 'insensitive' } },
 				{ description: { contains: search, mode: 'insensitive' } },
 				{
-					floor: {
-						building: {
-							name: { contains: search, mode: 'insensitive' },
-						},
+					building: {
+						name: { contains: search, mode: 'insensitive' },
 					},
 				},
 			];
 		}
 
 		if (provinceId) {
-			where.floor.building.provinceId = parseInt(provinceId);
+			where.building.provinceId = parseInt(provinceId);
 		}
 
 		if (districtId) {
-			where.floor.building.districtId = parseInt(districtId);
+			where.building.districtId = parseInt(districtId);
 		}
 
 		if (wardId) {
-			where.floor.building.wardId = parseInt(wardId);
+			where.building.wardId = parseInt(wardId);
 		}
 
 		if (roomType) {
@@ -119,33 +122,41 @@ export class ListingService {
 				take: limit,
 				orderBy,
 				include: {
-					floor: {
+					building: {
 						select: {
-							floorNumber: true,
-							building: {
+							id: true,
+							name: true,
+							addressLine1: true,
+							addressLine2: true,
+							isVerified: true,
+							province: { select: { id: true, name: true, code: true } },
+							district: { select: { id: true, name: true, code: true } },
+							ward: { select: { id: true, name: true, code: true } },
+							owner: {
 								select: {
-									id: true,
-									name: true,
-									addressLine1: true,
-									addressLine2: true,
-									isVerified: true,
-									province: { select: { id: true, name: true, code: true } },
-									district: { select: { id: true, name: true, code: true } },
-									ward: { select: { id: true, name: true, code: true } },
-									owner: {
-										select: {
-											firstName: true,
-											lastName: true,
-											avatarUrl: true,
-											gender: true,
-											isVerifiedPhone: true,
-											isVerifiedEmail: true,
-											isVerifiedIdentity: true,
-										},
-									},
+									firstName: true,
+									lastName: true,
+									avatarUrl: true,
+									gender: true,
+									isVerifiedPhone: true,
+									isVerifiedEmail: true,
+									isVerifiedIdentity: true,
 								},
 							},
 						},
+					},
+					roomInstances: {
+						select: {
+							id: true,
+							roomNumber: true,
+							status: true,
+							isActive: true,
+						},
+						where: {
+							isActive: true,
+							status: 'available',
+						},
+						take: 1, // Just need to know if any available
 					},
 					images: {
 						select: {
@@ -233,24 +244,25 @@ export class ListingService {
 			areaSqm: room.areaSqm?.toString(),
 			maxOccupancy: room.maxOccupancy,
 			isVerified: room.isVerified,
-			buildingName: room.floor.building.name,
-			buildingVerified: room.floor.building.isVerified,
-			address: room.floor.building.addressLine1,
+			buildingName: room.building.name,
+			buildingVerified: room.building.isVerified,
+			address: room.building.addressLine1,
+			availableRooms: room.roomInstances.length, // Number of available room instances
 			owner: {
-				name: `${room.floor.building.owner.firstName} ${room.floor.building.owner.lastName}`,
-				avatarUrl: room.floor.building.owner.avatarUrl,
-				gender: room.floor.building.owner.gender,
-				verifiedPhone: room.floor.building.owner.isVerifiedPhone,
-				verifiedEmail: room.floor.building.owner.isVerifiedEmail,
-				verifiedIdentity: room.floor.building.owner.isVerifiedIdentity,
+				name: `${room.building.owner.firstName} ${room.building.owner.lastName}`,
+				avatarUrl: room.building.owner.avatarUrl,
+				gender: room.building.owner.gender,
+				verifiedPhone: room.building.owner.isVerifiedPhone,
+				verifiedEmail: room.building.owner.isVerifiedEmail,
+				verifiedIdentity: room.building.owner.isVerifiedIdentity,
 			},
 			location: {
-				provinceId: room.floor.building.province.id,
-				provinceName: room.floor.building.province.name,
-				districtId: room.floor.building.district.id,
-				districtName: room.floor.building.district.name,
-				wardId: room.floor.building.ward?.id,
-				wardName: room.floor.building.ward?.name,
+				provinceId: room.building.province.id,
+				provinceName: room.building.province.name,
+				districtId: room.building.district.id,
+				districtName: room.building.district.name,
+				wardId: room.building.ward?.id,
+				wardName: room.building.ward?.name,
 			},
 			images: room.images.map((image) => ({
 				url: image.imageUrl,
