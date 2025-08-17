@@ -19,7 +19,7 @@ async function bootstrap() {
 	app.useLogger(loggerService);
 
 	// Serve static files for uploaded images
-	app.useStaticAssets(join(__dirname, '..', 'uploads'), {
+	app.useStaticAssets(join(__dirname, '..', 'uploads', 'images'), {
 		prefix: '/images/',
 	});
 
