@@ -138,6 +138,20 @@ export class RoomRuleDto {
 	isEnforced: boolean;
 }
 
+export class RoomInstanceDto {
+	@ApiProperty()
+	id: string;
+
+	@ApiProperty()
+	roomNumber: string;
+
+	@ApiProperty()
+	isOccupied: boolean;
+
+	@ApiProperty()
+	isActive: boolean;
+}
+
 export class RoomDetailDto {
 	@ApiProperty()
 	id: string;
@@ -161,13 +175,19 @@ export class RoomDetailDto {
 	maxOccupancy: number;
 
 	@ApiProperty()
+	totalRooms: number;
+
+	@ApiProperty()
+	availableRooms: number;
+
+	@ApiProperty()
 	isVerified: boolean;
 
 	@ApiProperty()
 	isActive: boolean;
 
-	@ApiProperty()
-	floorNumber: number;
+	@ApiPropertyOptional()
+	floorNumber?: number;
 
 	@ApiProperty()
 	buildingName: string;
@@ -192,6 +212,9 @@ export class RoomDetailDto {
 
 	@ApiProperty({ type: BuildingOwnerDto })
 	owner: BuildingOwnerDto;
+
+	@ApiProperty({ type: [RoomInstanceDto] })
+	roomInstances: RoomInstanceDto[];
 
 	@ApiProperty({ type: [RoomImageDto] })
 	images: RoomImageDto[];

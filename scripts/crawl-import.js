@@ -672,24 +672,54 @@ function determineRoomType(title, description) {
 }
 
 async function findOrCreateLocation(addressData, province, district) {
-	// Use direct province and district from data if provided
-	const cityName = province || addressData?.city || 'Thành phố Hồ Chí Minh';
-	const districtName = district || addressData?.district;
+	// Parse location from crawled data: "Quận 7, Hồ Chí Minh"
+	let cityName, districtName;
+
+	if (addressData?.location) {
+		const parts = addressData.location.split(',').map((p) => p.trim());
+		if (parts.length >= 2) {
+			districtName = parts[0]; // "Quận 7"
+			cityName = parts[1]; // "Hồ Chí Minh"
+			// Normalize city name
+			if (cityName.includes('Hồ Chí Minh') || cityName.includes('HCM')) {
+				cityName = 'Thành phố Hồ Chí Minh';
+			} else if (cityName.includes('Hà Nội')) {
+				cityName = 'Thành phố Hà Nội';
+			}
+		} else {
+			cityName = 'Thành phố Hồ Chí Minh';
+			districtName = parts[0] || 'Quận 1';
+		}
+	} else {
+		cityName = province || addressData?.city || 'Thành phố Hồ Chí Minh';
+		districtName = district || addressData?.district;
+	}
+
 	const { ward } = addressData || {};
 
-	// Find province (city) with better matching
+	// Find province (city) - search exactly in database
 	let provinceRecord = await prisma.province.findFirst({
 		where: {
 			OR: [
 				{ name: { equals: cityName, mode: 'insensitive' } },
-				{ name: { contains: cityName, mode: 'insensitive' } },
 				{ name: { contains: 'Hồ Chí Minh', mode: 'insensitive' } },
 				{ name: { contains: 'Hà Nội', mode: 'insensitive' } },
-				{ name: { contains: 'Đà Nẵng', mode: 'insensitive' } },
-				{ name: { contains: 'Cần Thơ', mode: 'insensitive' } },
 			],
 		},
 	});
+
+	// If not found and it's HCM, try different variations
+	if (!provinceRecord && cityName.includes('Hồ Chí Minh')) {
+		provinceRecord = await prisma.province.findFirst({
+			where: {
+				OR: [
+					{ name: { contains: 'Hồ Chí Minh', mode: 'insensitive' } },
+					{ name: { contains: 'Ho Chi Minh', mode: 'insensitive' } },
+					{ code: '79' }, // HCM province code
+				],
+			},
+		});
+	}
 
 	if (!provinceRecord) {
 		// Create province if not exists
@@ -703,17 +733,40 @@ async function findOrCreateLocation(addressData, province, district) {
 		});
 	}
 
-	// Find district
+	// Find district with better matching
 	let districtRecord = null;
-	if (districtName) {
+	if (districtName && provinceRecord) {
+		// Try exact match first
 		districtRecord = await prisma.district.findFirst({
 			where: {
 				AND: [
-					{ name: { contains: districtName, mode: 'insensitive' } },
+					{ name: { equals: districtName, mode: 'insensitive' } },
 					{ provinceId: provinceRecord.id },
 				],
 			},
 		});
+
+		// If not found, try partial match
+		if (!districtRecord) {
+			districtRecord = await prisma.district.findFirst({
+				where: {
+					AND: [
+						{
+							name: {
+								contains: districtName.replace('Quận ', '').replace('Huyện ', ''),
+								mode: 'insensitive',
+							},
+						},
+						{ provinceId: provinceRecord.id },
+					],
+				},
+			});
+		}
+
+		// Debug log
+		if (!districtRecord) {
+			console.log(`⚠️ District not found: ${districtName} in ${cityName}`);
+		}
 	}
 
 	if (!districtRecord && districtName) {
@@ -730,7 +783,7 @@ async function findOrCreateLocation(addressData, province, district) {
 
 	// Find ward if provided
 	let wardRecord = null;
-	if (ward) {
+	if (ward && districtRecord) {
 		wardRecord = await prisma.ward.findFirst({
 			where: {
 				AND: [{ name: { contains: ward, mode: 'insensitive' } }, { districtId: districtRecord.id }],
@@ -776,13 +829,19 @@ async function getRandomLandlord() {
 	return landlords[randomIndex];
 }
 
-async function importCrawledData(filePath) {
+async function importCrawledData(filePath, limitRecords = null) {
 	console.log('🚀 Bắt đầu import dữ liệu crawled...');
 
 	try {
 		// Read JSON file
 		const rawData = fs.readFileSync(filePath, 'utf-8');
-		const crawledData = JSON.parse(rawData);
+		let crawledData = JSON.parse(rawData);
+
+		// Limit records if specified
+		if (limitRecords && limitRecords > 0) {
+			crawledData = crawledData.slice(0, limitRecords);
+			console.log(`📊 Limiting to first ${limitRecords} records`);
+		}
 
 		console.log(`📊 Tổng số records: ${crawledData.length}`);
 
@@ -812,15 +871,17 @@ async function importCrawledData(filePath) {
 
 			for (const item of batch) {
 				try {
-					// Find or create location data using direct province/district from item
+					// Extract location data from new crawled format
 					const locationData = await findOrCreateLocation(
-						item.full_address_normalized || {
-							city: item.province || 'Thành phố Hồ Chí Minh',
-							district: item.district || 'Quận 1',
-							ward: null,
+						{
+							location: item.location, // "Gò Vấp, Hồ Chí Minh"
+							ward: item.ward || item.full_address_normalized?.ward, // "Phườdng 5"
+							district: item.district || item.full_address_normalized?.district, // "Quận Gò Vấp"
+							city: item.province || item.full_address_normalized?.city, // "Hồ Chí Minh"
+							full_address: item.full_address,
 						},
-						item.province,
-						item.district,
+						null,
+						null,
 					);
 
 					// Get random landlord for this building
@@ -844,12 +905,16 @@ async function importCrawledData(filePath) {
 								ownerId: randomLandlord.id,
 								name: `Nhà trọ ${item.poster_full_name}`,
 								description: `Nhà trọ được quản lý bởi ${randomLandlord.firstName} ${randomLandlord.lastName}`,
-								addressLine1: item.full_address_normalized?.street_name || item.full_address,
+								addressLine1:
+									item.full_address_normalized?.street_name ||
+									item.full_address_normalized?.components?.[0] ||
+									item.full_address,
+								addressLine2: item.full_address_normalized?.street_number,
 								wardId: locationData.ward?.id,
 								districtId: locationData.district.id,
 								provinceId: locationData.province.id,
-								latitude: item.coordinates?.latitude,
-								longitude: item.coordinates?.longitude,
+								latitude: item.latitude || item.coordinates?.latitude,
+								longitude: item.longitude || item.coordinates?.longitude,
 								isActive: true,
 								isVerified: false,
 							},
@@ -860,23 +925,7 @@ async function importCrawledData(filePath) {
 						);
 					}
 
-					// Create floor (default floor 1)
-					let floor = await prisma.floor.findFirst({
-						where: {
-							buildingId: building.id,
-							floorNumber: 1,
-						},
-					});
-
-					if (!floor) {
-						floor = await prisma.floor.create({
-							data: {
-								buildingId: building.id,
-								floorNumber: 1,
-								name: 'Tầng 1',
-							},
-						});
-					}
+					// No need to create floor - Room connects directly to Building
 
 					// Create room
 					const roomNumber = extractRoomNumber(item.full_address, item.title, building.id);
@@ -894,27 +943,88 @@ async function importCrawledData(filePath) {
 						continue;
 					}
 
+					// Extract area from crawled data or estimate based on price
+					const extractAreaSqm = (areaString) => {
+						if (!areaString) return null;
+						// Extract number from strings like "20m²", "18m²", "45m²"
+						const match = areaString.match(/(\d+(?:\.\d+)?)/);
+						return match ? parseFloat(match[1]) : null;
+					};
+
+					const estimateAreaFromPrice = (price, roomType) => {
+						// Estimate area based on price and room type
+						// These are reasonable estimates for Vietnam market
+						const pricePerSqm = {
+							boarding_house: 150000, // 150k VND per sqm for nhà trọ
+							dormitory: 100000, // 100k VND per sqm for ký túc xá
+							apartment: 250000, // 250k VND per sqm for apartment
+							whole_house: 200000, // 200k VND per sqm for whole house
+							sleepbox: 80000, // 80k VND per sqm for sleepbox
+						};
+
+						const ratePerSqm = pricePerSqm[roomType] || pricePerSqm['boarding_house'];
+						const estimatedArea = Math.round(price / ratePerSqm);
+
+						// Apply reasonable bounds based on room type
+						const bounds = {
+							boarding_house: { min: 12, max: 35 },
+							dormitory: { min: 8, max: 20 },
+							apartment: { min: 20, max: 80 },
+							whole_house: { min: 40, max: 150 },
+							sleepbox: { min: 6, max: 15 },
+						};
+
+						const { min, max } = bounds[roomType] || bounds['boarding_house'];
+						return Math.max(min, Math.min(max, estimatedArea));
+					};
+
+					let areaSqm = extractAreaSqm(item.official_area || item.area);
+
+					// If no area data found, estimate from price
+					if (!areaSqm) {
+						const priceNumeric =
+							item.price_numeric || item.official_price_normalized?.price_numeric || 0;
+						if (priceNumeric > 0) {
+							areaSqm = estimateAreaFromPrice(priceNumeric, roomType);
+							console.log(
+								`   📐 Estimated area: ${areaSqm}m² (price: ${priceNumeric.toLocaleString()} VND)`,
+							);
+						}
+					}
+
+					// Create room type (not individual room)
 					const room = await prisma.room.create({
 						data: {
 							id: roomSlug,
 							slug: roomSlug,
-							floorId: floor.id,
-							roomNumber: roomNumber,
+							buildingId: building.id,
+							floorNumber: 1, // Default floor number
 							name: item.title,
 							description: item.detailed_description || item.description,
 							roomType: roomType,
-							maxOccupancy: roomType === 'dormitory' ? 4 : roomType === 'double' ? 2 : 1,
+							areaSqm: areaSqm, // Add area data
+							maxOccupancy: roomType === 'dormitory' ? 4 : 2,
+							totalRooms: 1, // Default 1 room of this type
 							isActive: true,
 							isVerified: false,
 						},
 					});
 
-					// Create room pricing - Use new price_numeric field if available
+					// Create room instance with new status field
+					const roomInstance = await prisma.roomInstance.create({
+						data: {
+							roomId: room.id,
+							roomNumber: roomNumber,
+							status: 'available', // Use new status field
+							isActive: true,
+						},
+					});
+
+					// Create room pricing - Use new price_numeric field (more reliable)
 					const priceNumeric =
 						item.price_numeric || item.official_price_normalized?.price_numeric || 0;
-					// If price looks too small (< 100,000), it might be missing zeros
-					const actualPrice =
-						priceNumeric < 100000 && priceNumeric > 0 ? priceNumeric * 1000 : priceNumeric;
+					// Price should already be in correct VND format from new crawl data
+					const actualPrice = priceNumeric;
 
 					await prisma.roomPricing.create({
 						data: {
@@ -965,7 +1075,12 @@ async function importCrawledData(filePath) {
 					}
 
 					// Enhanced intelligent amenities, cost types, and room rules mapping
-					await applyIntelligentReferences(room.id, item, actualPrice);
+					// Pass amenities array directly from new crawl data structure
+					const enhancedItem = {
+						...item,
+						amenities: item.amenities || [], // New crawl data has amenities array
+					};
+					await applyIntelligentReferences(room.id, enhancedItem, actualPrice);
 
 					successCount++;
 					console.log(`✅ Imported room: ${room.slug}`);
@@ -1009,15 +1124,19 @@ async function validateCrawledData(filePath) {
 		console.log(`📊 Total records: ${data.length}`);
 
 		// Validate required fields - Updated for new data structure
-		const requiredFields = ['id', 'title', 'full_address', 'poster_full_name'];
+		const requiredFields = ['id', 'title', 'poster_full_name'];
 
-		// Optional fields that should be present in either old or new format
+		// Optional fields that should be present in new format
 		const optionalFields = [
-			'coordinates',
+			'full_address',
+			'full_address_normalized',
 			'official_price_normalized',
 			'price_numeric',
 			'province',
 			'district',
+			'ward',
+			'amenities',
+			'images',
 		];
 
 		let validRecords = 0;
@@ -1030,9 +1149,12 @@ async function validateCrawledData(filePath) {
 			const hasPriceInfo =
 				item.price_numeric || item.official_price_normalized?.price_numeric || item.price;
 
-			// Check if has location info
+			// Check if has location info - updated for new structure
 			const hasLocationInfo =
-				(item.province && item.district) || item.coordinates || item.full_address;
+				(item.province && item.district) ||
+				item.full_address_normalized?.district ||
+				item.location ||
+				item.full_address;
 
 			if (missingFields.length === 0 && hasPriceInfo && hasLocationInfo) {
 				validRecords++;
@@ -1065,8 +1187,21 @@ if (require.main === module) {
 
 	if (command === 'validate') {
 		validateCrawledData(filePath).catch(console.error);
+	} else if (command === 'import-sample') {
+		// Import sample data (100 records)
+		console.log('📦 Importing sample data (100 records)...');
+		validateCrawledData(filePath)
+			.then((isValid) => {
+				if (isValid) {
+					return importCrawledData(filePath, 100);
+				} else {
+					console.error('❌ Data validation failed, stopping import');
+					process.exit(1);
+				}
+			})
+			.catch(console.error);
 	} else if (command === 'import') {
-		// Validate first, then import
+		// Validate first, then import all
 		validateCrawledData(filePath)
 			.then((isValid) => {
 				if (isValid) {
@@ -1080,7 +1215,8 @@ if (require.main === module) {
 	} else {
 		console.log('Usage:');
 		console.log('  node crawl-import.js validate [file-path]');
-		console.log('  node crawl-import.js import [file-path]');
+		console.log('  node crawl-import.js import-sample [file-path]  - Import first 100 records');
+		console.log('  node crawl-import.js import [file-path]         - Import all records');
 	}
 }
 

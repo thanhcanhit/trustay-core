@@ -7,35 +7,42 @@ export class RoomsService {
 	constructor(private readonly prisma: PrismaService) {}
 
 	async getRoomBySlug(slug: string): Promise<RoomDetailDto> {
+		// Find room type by slug
 		const room = await this.prisma.room.findFirst({
 			where: {
 				slug: slug,
 				isActive: true,
 			},
 			include: {
-				floor: {
+				building: {
 					include: {
-						building: {
-							include: {
-								province: { select: { id: true, name: true, code: true } },
-								district: { select: { id: true, name: true, code: true } },
-								ward: { select: { id: true, name: true, code: true } },
-								owner: {
-									select: {
-										id: true,
-										firstName: true,
-										lastName: true,
-										avatarUrl: true,
-										gender: true,
-										phone: true,
-										isVerifiedPhone: true,
-										isVerifiedEmail: true,
-										isVerifiedIdentity: true,
-									},
-								},
+						province: { select: { id: true, name: true, code: true } },
+						district: { select: { id: true, name: true, code: true } },
+						ward: { select: { id: true, name: true, code: true } },
+						owner: {
+							select: {
+								id: true,
+								firstName: true,
+								lastName: true,
+								avatarUrl: true,
+								gender: true,
+								phone: true,
+								isVerifiedPhone: true,
+								isVerifiedEmail: true,
+								isVerifiedIdentity: true,
 							},
 						},
 					},
+				},
+				roomInstances: {
+					select: {
+						id: true,
+						roomNumber: true,
+						status: true,
+						isActive: true,
+					},
+					where: { isActive: true },
+					orderBy: { roomNumber: 'asc' },
 				},
 				images: {
 					select: {
@@ -124,32 +131,41 @@ export class RoomsService {
 			roomType: room.roomType,
 			areaSqm: room.areaSqm?.toString(),
 			maxOccupancy: room.maxOccupancy,
+			totalRooms: room.totalRooms,
+			availableRooms: room.roomInstances.filter((instance) => instance.status === 'available')
+				.length,
 			isVerified: room.isVerified,
 			isActive: room.isActive,
-			floorNumber: room.floor.floorNumber,
-			buildingName: room.floor.building.name,
-			buildingDescription: room.floor.building.description,
-			address: room.floor.building.addressLine1,
-			addressLine2: room.floor.building.addressLine2,
-			latitude: room.floor.building.latitude?.toString(),
-			longitude: room.floor.building.longitude?.toString(),
+			floorNumber: room.floorNumber,
+			buildingName: room.building.name,
+			buildingDescription: room.building.description,
+			address: room.building.addressLine1,
+			addressLine2: room.building.addressLine2,
+			latitude: room.building.latitude?.toString(),
+			longitude: room.building.longitude?.toString(),
 			location: {
-				provinceId: room.floor.building.province.id,
-				provinceName: room.floor.building.province.name,
-				districtId: room.floor.building.district.id,
-				districtName: room.floor.building.district.name,
-				wardId: room.floor.building.ward?.id,
-				wardName: room.floor.building.ward?.name,
+				provinceId: room.building.province.id,
+				provinceName: room.building.province.name,
+				districtId: room.building.district.id,
+				districtName: room.building.district.name,
+				wardId: room.building.ward?.id,
+				wardName: room.building.ward?.name,
 			},
 			owner: {
-				id: room.floor.building.owner.id,
-				firstName: room.floor.building.owner.firstName,
-				lastName: room.floor.building.owner.lastName,
-				phone: room.floor.building.owner.phone,
-				isVerifiedPhone: room.floor.building.owner.isVerifiedPhone,
-				isVerifiedEmail: room.floor.building.owner.isVerifiedEmail,
-				isVerifiedIdentity: room.floor.building.owner.isVerifiedIdentity,
+				id: room.building.owner.id,
+				firstName: room.building.owner.firstName,
+				lastName: room.building.owner.lastName,
+				phone: room.building.owner.phone,
+				isVerifiedPhone: room.building.owner.isVerifiedPhone,
+				isVerifiedEmail: room.building.owner.isVerifiedEmail,
+				isVerifiedIdentity: room.building.owner.isVerifiedIdentity,
 			},
+			roomInstances: room.roomInstances.map((instance) => ({
+				id: instance.id,
+				roomNumber: instance.roomNumber,
+				isOccupied: instance.status === 'occupied',
+				isActive: instance.isActive,
+			})),
 			images: room.images.map((image) => ({
 				url: image.imageUrl,
 				alt: image.altText,

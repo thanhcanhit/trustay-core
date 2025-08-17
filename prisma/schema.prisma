@@ -170,6 +170,14 @@ enum VerificationStatus {
   failed
 }
 
+enum RoomStatus {
+  available     // Phòng trống, sẵn sàng cho thuê
+  occupied      // Phòng đã có người ở
+  maintenance   // Phòng đang sửa chữa/bảo trì
+  reserved      // Phòng đã được đặt cọc nhưng chưa vào ở
+  unavailable   // Phòng tạm thời không cho thuê
+}
+
 // ========================================
 // USER MANAGEMENT
 // ========================================
@@ -314,7 +322,7 @@ model Building {
   ward     Ward?    @relation(fields: [wardId], references: [id], onDelete: SetNull)
   district District @relation(fields: [districtId], references: [id], onDelete: Cascade)
   province Province @relation(fields: [provinceId], references: [id], onDelete: Cascade)
-  floors   Floor[]
+  rooms    Room[]
 
   @@index([ownerId])
   @@index([districtId, provinceId])
@@ -327,58 +335,60 @@ model Building {
   @@map("buildings")
 }
 
-model Floor {
-  id          String   @id @default(uuid())
-  buildingId  String   @map("building_id")
-  floorNumber Int      @map("floor_number")
-  name        String?
-  description String?
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+model Room {
+  id             String     @id @default(uuid())
+  slug           String     @unique // auto-generated from building + room type
+  buildingId     String     @map("building_id")
+  floorNumber    Int?       @map("floor_number")
+  name           String // Tên loại phòng: "Phòng VIP", "Phòng thường"
+  description    String?
+  roomType       RoomType   @map("room_type")
+  areaSqm        Decimal?   @map("area_sqm") @db.Decimal(8, 2)
+  maxOccupancy   Int        @default(1) @map("max_occupancy")
+  totalRooms     Int        @map("total_rooms") // Tổng số phòng loại này
+  isActive       Boolean    @default(true) @map("is_active")
+  isVerified     Boolean    @default(false) @map("is_verified")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
 
   // Relations
-  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  rooms    Room[]
+  building      Building       @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  roomInstances RoomInstance[] // Các phòng cụ thể
+  amenities     RoomAmenity[]
+  costs         RoomCost[]
+  images        RoomImage[]
+  rules         RoomRule[]
+  pricing       RoomPricing?
 
-  @@unique([buildingId, floorNumber])
   @@index([buildingId])
-  @@map("floors")
+  @@index([roomType])
+  @@index([isActive])
+  @@index([slug])
+  @@map("rooms")
 }
 
-model Room {
-  id           String   @id // slug format: "nha-tro-minh-phat-phong-101"
-  slug         String   @unique // auto-generated from building + room number
-  floorId      String   @map("floor_id")
-  roomNumber   String   @map("room_number")
-  name         String?
-  description  String?
-  roomType     RoomType @map("room_type")
-  areaSqm      Decimal? @map("area_sqm") @db.Decimal(8, 2)
-  maxOccupancy Int      @default(1) @map("max_occupancy")
-  isActive     Boolean  @default(true) @map("is_active")
-  isVerified   Boolean  @default(false) @map("is_verified")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+model RoomInstance {
+  id         String     @id @default(uuid())
+  roomId     String     @map("room_id") // Reference to Room (room type)
+  roomNumber String     @map("room_number") // Số phòng cụ thể: "101", "102"
+  status     RoomStatus @default(available)
+  isActive   Boolean    @default(true) @map("is_active")
+  notes      String? // Ghi chú riêng cho phòng này
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
 
   // Relations
-  floor           Floor            @relation(fields: [floorId], references: [id], onDelete: Cascade)
-  amenities       RoomAmenity[]
-  costs           RoomCost[]
-  images          RoomImage[]
-  rules           RoomRule[]
-  pricing         RoomPricing?
+  room            Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
   invitations     RoomInvitation[]
   bookingRequests BookingRequest[]
   rentals         Rental[]
   monthlyBills    MonthlyBill[]
 
-  @@unique([floorId, roomNumber])
-  @@index([floorId])
-  @@index([roomType])
+  @@unique([roomId, roomNumber]) // Unique room number within same room type
+  @@index([roomId])
+  @@index([status])
   @@index([isActive])
-  @@index([slug])
-  @@map("rooms")
+  @@map("room_instances")
 }
 
 model RoomImage {
@@ -393,6 +403,7 @@ model RoomImage {
   // Relations
   room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
+  @@index([roomId])
   @@map("room_images")
 }
 
@@ -579,7 +590,7 @@ model RoomPricing {
 
 model RoomInvitation {
   id             String           @id @default(uuid())
-  roomId         String           @map("room_id")
+  roomInstanceId String           @map("room_instance_id")
   senderId       String           @map("sender_id") // Landlord
   recipientId    String?          @map("recipient_id") // Tenant (optional if not registered)
   recipientEmail String?          @map("recipient_email") // For users not yet registered
@@ -595,12 +606,12 @@ model RoomInvitation {
   updatedAt      DateTime         @updatedAt @map("updated_at")
 
   // Relations
-  room      Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  sender    User    @relation("InvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
-  recipient User?   @relation("InvitationReceiver", fields: [recipientId], references: [id], onDelete: Cascade)
-  rental    Rental?
+  roomInstance RoomInstance @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
+  sender       User         @relation("InvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient    User?        @relation("InvitationReceiver", fields: [recipientId], references: [id], onDelete: Cascade)
+  rental       Rental?
 
-  @@index([roomId])
+  @@index([roomInstanceId])
   @@index([senderId])
   @@index([recipientId])
   @@index([status])
@@ -614,7 +625,7 @@ model RoomInvitation {
 
 model BookingRequest {
   id             String        @id @default(uuid())
-  roomId         String        @map("room_id")
+  roomInstanceId String        @map("room_instance_id")
   tenantId       String        @map("tenant_id")
   moveInDate     DateTime      @map("move_in_date") @db.Date
   moveOutDate    DateTime?     @map("move_out_date") @db.Date
@@ -629,11 +640,11 @@ model BookingRequest {
   updatedAt      DateTime      @updatedAt @map("updated_at")
 
   // Relations
-  room   Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  tenant User    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  rental Rental?
+  roomInstance RoomInstance @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
+  tenant       User         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rental       Rental?
 
-  @@index([roomId])
+  @@index([roomInstanceId])
   @@index([tenantId])
   @@index([status])
   @@map("booking_requests")
@@ -643,7 +654,7 @@ model Rental {
   id                    String       @id @default(uuid())
   bookingRequestId      String?      @unique @map("booking_request_id")
   invitationId          String?      @unique @map("invitation_id")
-  roomId                String       @map("room_id")
+  roomInstanceId        String       @map("room_instance_id")
   tenantId              String       @map("tenant_id")
   ownerId               String       @map("owner_id")
   contractStartDate     DateTime     @map("contract_start_date") @db.Date
@@ -660,14 +671,14 @@ model Rental {
   // Relations
   bookingRequest BookingRequest? @relation(fields: [bookingRequestId], references: [id])
   invitation     RoomInvitation? @relation(fields: [invitationId], references: [id])
-  room           Room            @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomInstance   RoomInstance    @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
   tenant         User            @relation("RentalTenant", fields: [tenantId], references: [id], onDelete: Cascade)
   owner          User            @relation("RentalOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   payments       Payment[]
   reviews        Review[]
   monthlyBills   MonthlyBill[]
 
-  @@index([roomId])
+  @@index([roomInstanceId])
   @@index([tenantId])
   @@index([status])
   @@map("rentals")
@@ -678,14 +689,14 @@ model Rental {
 // ========================================
 
 model MonthlyBill {
-  id            String   @id @default(uuid())
-  rentalId      String   @map("rental_id")
-  roomId        String   @map("room_id")
-  billingPeriod String   @map("billing_period") // "2025-01" format
-  billingMonth  Int      @map("billing_month") // 1-12
-  billingYear   Int      @map("billing_year")
-  periodStart   DateTime @map("period_start") @db.Date
-  periodEnd     DateTime @map("period_end") @db.Date
+  id             String   @id @default(uuid())
+  rentalId       String   @map("rental_id")
+  roomInstanceId String   @map("room_instance_id")
+  billingPeriod  String   @map("billing_period") // "2025-01" format
+  billingMonth   Int      @map("billing_month") // 1-12
+  billingYear    Int      @map("billing_year")
+  periodStart    DateTime @map("period_start") @db.Date
+  periodEnd      DateTime @map("period_end") @db.Date
 
   // Totals
   subtotal        Decimal @db.Decimal(15, 2)
@@ -705,14 +716,14 @@ model MonthlyBill {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  rental    Rental     @relation(fields: [rentalId], references: [id], onDelete: Cascade)
-  room      Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  billItems BillItem[]
-  payments  Payment[]
+  rental       Rental       @relation(fields: [rentalId], references: [id], onDelete: Cascade)
+  roomInstance RoomInstance @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
+  billItems    BillItem[]
+  payments     Payment[]
 
   @@unique([rentalId, billingPeriod])
   @@index([rentalId])
-  @@index([roomId])
+  @@index([roomInstanceId])
   @@index([status])
   @@index([dueDate])
   @@index([billingYear, billingMonth])

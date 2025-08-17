@@ -34,12 +34,21 @@ const IMPORT_SCRIPTS = {
 		args: 'import scripts/data/crawled_rooms.json',
 		description: 'Import crawled room listings from JSON file',
 	},
+	'crawl-sample': {
+		name: 'Sample Crawled Rooms Data',
+		script: 'crawl-import.js',
+		args: 'import-sample scripts/data/crawled_rooms.json',
+		description: 'Import first 100 crawled room listings for testing',
+	},
 };
 
 // Import sequences
 const SEQUENCES = {
 	// Main unified sequence - runs everything in correct order
 	all: ['admin', 'reference', 'users', 'rules', 'crawl'],
+
+	// Sample/testing sequences
+	sample: ['admin', 'reference', 'users', 'rules', 'crawl-sample'],
 
 	// Legacy sequences (kept for compatibility)
 	full: ['admin', 'reference', 'users', 'rules', 'crawl'],
@@ -76,12 +85,11 @@ async function cleanupCrawlImports() {
 			roomImages: await prisma.roomImage.count(),
 			roomPricing: await prisma.roomPricing.count(),
 			rooms: await prisma.room.count(),
-			floors: await prisma.floor.count(),
 			buildings: await prisma.building.count(),
 		};
 
 		logWarning(
-			`   Before cleanup: ${beforeCounts.rooms} rooms, ${beforeCounts.floors} floors, ${beforeCounts.buildings} buildings`,
+			`   Before cleanup: ${beforeCounts.rooms} rooms, ${beforeCounts.buildings} buildings`,
 		);
 		logWarning(
 			`   Before cleanup: ${beforeCounts.roomRules} rules, ${beforeCounts.roomAmenities} amenities, ${beforeCounts.roomCosts} costs`,
@@ -106,16 +114,11 @@ async function cleanupCrawlImports() {
 		logWarning('   Deleting rooms...');
 		const deletedRooms = await prisma.room.deleteMany({});
 
-		logWarning('   Deleting floors...');
-		const deletedFloors = await prisma.floor.deleteMany({});
-
 		logWarning('   Deleting buildings...');
 		const deletedBuildings = await prisma.building.deleteMany({});
 
 		logSuccess(`Crawl data cleanup completed:`);
-		logSuccess(
-			`   • ${deletedRooms.count} rooms, ${deletedFloors.count} floors, ${deletedBuildings.count} buildings`,
-		);
+		logSuccess(`   • ${deletedRooms.count} rooms, ${deletedBuildings.count} buildings`);
 		logSuccess(
 			`   • ${deletedRoomRules.count} rules, ${deletedRoomAmenities.count} amenities, ${deletedRoomCosts.count} costs`,
 		);
@@ -167,7 +170,8 @@ async function runSequence(sequenceName, options = {}) {
 	const startTime = Date.now();
 
 	// Run cleanup only before sequences that include crawl data
-	const needsCrawlCleanup = ['all', 'full', 'data'].includes(sequenceName) && !options.skipCleanup;
+	const needsCrawlCleanup =
+		['all', 'full', 'data', 'sample'].includes(sequenceName) && !options.skipCleanup;
 	if (needsCrawlCleanup) {
 		await cleanupCrawlImports();
 		console.log(''); // Add spacing after cleanup
@@ -181,7 +185,7 @@ async function runSequence(sequenceName, options = {}) {
 	const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 	console.log(`\n🎉 Import sequence '${sequenceName}' completed successfully in ${duration}s!`);
 
-	// Show final summary for main sequence
+	// Show final summary for main sequences
 	if (sequenceName === 'all') {
 		console.log(`\n📊 Complete Trustay database setup finished!`);
 		console.log(`   • Administrative data (provinces, districts, wards) - preserved/updated`);
@@ -190,14 +194,23 @@ async function runSequence(sequenceName, options = {}) {
 		console.log(`   • Fresh crawled room data with intelligent price-based assignments`);
 		console.log(`\n🔐 Default login: budget.student@trustay.com / trustay123`);
 		console.log(`💡 Note: Only room data was cleaned and re-imported. All other data preserved.`);
+	} else if (sequenceName === 'sample') {
+		console.log(`\n📊 Sample Trustay database setup finished!`);
+		console.log(`   • Administrative data (provinces, districts, wards) - preserved/updated`);
+		console.log(`   • Reference data (amenities, cost types, room rules) - preserved/updated`);
+		console.log(`   • 10 balanced landlord users across market segments - preserved/updated`);
+		console.log(`   • 100 sample crawled rooms with area estimation and intelligent assignments`);
+		console.log(`\n🔐 Default login: budget.student@trustay.com / trustay123`);
+		console.log(`💡 Note: Sample data for testing. Use 'sequence all' for full import.`);
 	}
 }
 
 function showHelp() {
 	console.log(`🗂️  Trustay Import Scripts Manager
 
-🎯 MAIN COMMAND (recommended):
-  node scripts/index.js sequence all    Complete database setup (cleans only room data)
+🎯 RECOMMENDED COMMANDS:
+  node scripts/index.js sequence sample    Sample setup (100 rooms for testing)
+  node scripts/index.js sequence all       Complete database setup (all crawled data)
 
 Usage:
   node scripts/index.js <command> [options]
@@ -224,9 +237,10 @@ Commands:
 	});
 
 	console.log(`\nExamples:
-  node scripts/index.js sequence all      # Complete setup (recommended)
-  node scripts/index.js sequence basic    # Without crawl data
-  node scripts/index.js script admin      # Single script
+  node scripts/index.js sequence sample   # Sample setup (100 rooms, fast)
+  node scripts/index.js sequence all      # Complete setup (all 2000 rooms)
+  node scripts/index.js sequence basic    # Setup without room data
+  node scripts/index.js script crawl-sample # Just 100 sample rooms
   node scripts/index.js list              # Show all options`);
 }
 

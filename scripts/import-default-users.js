@@ -241,11 +241,7 @@ async function assignRoomsToLandlords() {
 	// Get all rooms without owners or with dummy owners
 	const unassignedRooms = await prisma.room.findMany({
 		include: {
-			floor: {
-				include: {
-					building: true,
-				},
-			},
+			building: true,
 		},
 	});
 
@@ -280,7 +276,7 @@ async function assignRoomsToLandlords() {
 			try {
 				// Update building owner
 				await prisma.building.update({
-					where: { id: room.floor.building.id },
+					where: { id: room.building.id },
 					data: { ownerId: landlord.id },
 				});
 
