@@ -65,12 +65,26 @@ export class BuildingResponseDto {
 
 	@ApiPropertyOptional({ example: 10.7626 })
 	@Expose()
-	@Transform(({ value }) => (value ? parseFloat(value.toString()) : null))
+	@Transform(({ value }) => {
+		if (value === null || value === undefined) return undefined;
+		try {
+			return parseFloat(value.toString());
+		} catch {
+			return undefined;
+		}
+	})
 	latitude?: number;
 
 	@ApiPropertyOptional({ example: 106.6834 })
 	@Expose()
-	@Transform(({ value }) => (value ? parseFloat(value.toString()) : null))
+	@Transform(({ value }) => {
+		if (value === null || value === undefined) return undefined;
+		try {
+			return parseFloat(value.toString());
+		} catch {
+			return undefined;
+		}
+	})
 	longitude?: number;
 
 	@ApiProperty({ example: true })

@@ -253,7 +253,14 @@ export class RoomResponseDto {
 
 	@ApiPropertyOptional({ example: 25.5 })
 	@Expose()
-	@Transform(({ value }) => (value ? parseFloat(value.toString()) : null))
+	@Transform(({ value }) => {
+		if (value === null || value === undefined) return undefined;
+		try {
+			return parseFloat(value.toString());
+		} catch {
+			return undefined;
+		}
+	})
 	areaSqm?: number;
 
 	@ApiPropertyOptional({ example: 2 })

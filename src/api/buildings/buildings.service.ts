@@ -114,13 +114,9 @@ export class BuildingsService {
 				ward: { select: { name: true } },
 				district: { select: { name: true } },
 				province: { select: { name: true } },
-				rooms: {
-					include: {
-						roomInstances: {
-							select: {
-								status: true,
-							},
-						},
+				_count: {
+					select: {
+						rooms: true,
 					},
 				},
 			},
@@ -389,8 +385,35 @@ export class BuildingsService {
 				return count + availableInstances;
 			}, 0) || undefined;
 
-		const response = plainToClass(BuildingResponseDto, {
-			...building,
+		// Safely handle undefined values for Decimal fields and exclude rooms array
+		const safeBuilding = {
+			id: building.id,
+			slug: building.slug,
+			ownerId: building.ownerId,
+			name: building.name,
+			description: building.description,
+			addressLine1: building.addressLine1,
+			addressLine2: building.addressLine2,
+			wardId: building.wardId,
+			districtId: building.districtId,
+			provinceId: building.provinceId,
+			country: building.country,
+			latitude:
+				building.latitude !== null && building.latitude !== undefined
+					? building.latitude
+					: undefined,
+			longitude:
+				building.longitude !== null && building.longitude !== undefined
+					? building.longitude
+					: undefined,
+			isActive: building.isActive,
+			isVerified: building.isVerified,
+			createdAt: building.createdAt,
+			updatedAt: building.updatedAt,
+			owner: building.owner,
+			ward: building.ward,
+			district: building.district,
+			province: building.province,
 			location: {
 				wardName: building.ward?.name,
 				districtName: building.district?.name,
@@ -398,7 +421,9 @@ export class BuildingsService {
 			},
 			roomCount,
 			availableRoomCount,
-		});
+		};
+
+		const response = plainToClass(BuildingResponseDto, safeBuilding);
 
 		return response;
 	}
