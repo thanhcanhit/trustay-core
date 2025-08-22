@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { BuildingModule } from './api/buildings/building.module';
 import { ListingModule } from './api/listing/listing.module';
 import { AddressModule } from './api/provinces/address/address.module';
 import { DistrictModule } from './api/provinces/district/district.module';
@@ -29,6 +30,7 @@ import { PrismaModule } from './prisma/prisma.module';
 		AddressModule,
 		UsersModule,
 		AuthModule,
+		BuildingModule,
 		ListingModule,
 		ReferenceModule,
 		RoomsModule,

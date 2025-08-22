@@ -2,6 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
+const { defaultAmenities } = require('./data/default-amenities');
 
 const prisma = new PrismaClient();
 
@@ -44,7 +45,7 @@ function getPriceTier(price) {
 	return 'BUDGET';
 }
 
-// Enhanced amenities mapping with price-based intelligence
+// Enhanced amenities mapping with price-based intelligence - ONLY use default amenities
 async function applyIntelligentAmenities(roomId, description, existingAmenities, price) {
 	const priceTier = getPriceTier(price);
 	const amenityMappings = getAmenityMappingsByTier(priceTier);
@@ -67,48 +68,31 @@ async function applyIntelligentAmenities(roomId, description, existingAmenities,
 	const detectedAmenities = [];
 
 	for (const mapping of amenityMappings) {
-		let hasAmenity = false;
-
 		// Check keywords in combined text
-		if (mapping.keywords.some((keyword) => combinedText.includes(keyword))) {
-			hasAmenity = true;
-		}
-
-		// Price-based inference for high-value amenities
-		if (mapping.priceInference && priceTier === mapping.priceInference) {
-			hasAmenity = true;
-		}
+		const hasAmenity = mapping.keywords.some((keyword) => combinedText.includes(keyword));
 
 		if (hasAmenity) {
 			try {
-				// Find or create system amenity
-				let systemAmenity = await prisma.systemAmenity.findUnique({
+				// ONLY find existing system amenity from default-amenities.js - DO NOT create new
+				const systemAmenity = await prisma.systemAmenity.findUnique({
 					where: { nameEn: mapping.nameEn },
 				});
 
-				if (!systemAmenity) {
-					systemAmenity = await prisma.systemAmenity.create({
-						data: {
-							name: mapping.name,
-							nameEn: mapping.nameEn,
-							category: mapping.category,
-							isActive: true,
-							sortOrder: mapping.sortOrder || 999,
-						},
-					});
+				if (systemAmenity) {
+					// Add to room
+					await prisma.roomAmenity
+						.create({
+							data: {
+								roomId: roomId,
+								systemAmenityId: systemAmenity.id,
+							},
+						})
+						.catch(() => {}); // Ignore if already exists
+
+					detectedAmenities.push(mapping.nameEn);
+				} else {
+					console.warn(`⚠️ SystemAmenity not found: ${mapping.nameEn}`);
 				}
-
-				// Add to room
-				await prisma.roomAmenity
-					.create({
-						data: {
-							roomId: roomId,
-							systemAmenityId: systemAmenity.id,
-						},
-					})
-					.catch(() => {}); // Ignore if already exists
-
-				detectedAmenities.push(mapping.nameEn);
 			} catch (error) {
 				console.error(`Error adding amenity ${mapping.nameEn}:`, error);
 			}
@@ -119,304 +103,32 @@ async function applyIntelligentAmenities(roomId, description, existingAmenities,
 }
 
 function getAmenityMappingsByTier(priceTier) {
-	const baseAmenities = [
-		// Basic amenities - common across all tiers
-		{ keywords: ['giường'], name: 'Giường', nameEn: 'bed', category: 'basic', sortOrder: 1 },
-		{
-			keywords: ['tủ quần áo', 'tủ đồ'],
-			name: 'Tủ quần áo',
-			nameEn: 'wardrobe',
-			category: 'basic',
-			sortOrder: 2,
-		},
-		{
-			keywords: ['bàn học', 'bàn làm việc'],
-			name: 'Bàn học',
-			nameEn: 'desk',
-			category: 'basic',
-			sortOrder: 3,
-		},
-		{ keywords: ['cửa sổ'], name: 'Cửa sổ', nameEn: 'window', category: 'basic', sortOrder: 4 },
-
-		// Kitchen amenities
-		{
-			keywords: ['bếp', 'nấu ăn', 'có kệ bếp'],
-			name: 'Bếp gas',
-			nameEn: 'gas_stove',
-			category: 'kitchen',
-			sortOrder: 10,
-		},
-		{
-			keywords: ['tủ lạnh'],
-			name: 'Tủ lạnh',
-			nameEn: 'refrigerator',
-			category: 'kitchen',
-			sortOrder: 11,
-		},
-		{
-			keywords: ['nồi cơm điện'],
-			name: 'Nồi cơm điện',
-			nameEn: 'rice_cooker',
-			category: 'kitchen',
-			sortOrder: 12,
-		},
-
-		// Bathroom amenities
-		{
-			keywords: ['vòi sen', 'tắm'],
-			name: 'Vòi sen',
-			nameEn: 'shower',
-			category: 'bathroom',
-			sortOrder: 15,
-		},
-		{
-			keywords: ['nước nóng', 'bình nóng lạnh'],
-			name: 'Nước nóng',
-			nameEn: 'hot_water',
-			category: 'bathroom',
-			sortOrder: 16,
-		},
-		{
-			keywords: ['máy giặt', 'có máy giặt'],
-			name: 'Máy giặt',
-			nameEn: 'washing_machine',
-			category: 'bathroom',
-			sortOrder: 17,
-		},
-
-		// Connectivity
-		{
-			keywords: ['wifi', 'internet', 'mạng'],
-			name: 'Internet',
-			nameEn: 'wifi',
-			category: 'connectivity',
-			sortOrder: 20,
-		},
-
-		// Building amenities
-		{
-			keywords: ['thang máy', 'có thang máy'],
-			name: 'Thang máy',
-			nameEn: 'elevator',
-			category: 'building',
-			sortOrder: 25,
-		},
-		{
-			keywords: ['có hầm để xe', 'chỗ để xe', 'gửi xe'],
-			name: 'Bãi đỗ xe',
-			nameEn: 'parking',
-			category: 'building',
-			sortOrder: 26,
-		},
-		{
-			keywords: ['có bảo vệ', 'bảo vệ 24/24', 'an ninh'],
-			name: 'Camera an ninh',
-			nameEn: 'security_camera',
-			category: 'safety',
-			sortOrder: 30,
-		},
+	// Create keyword mapping for default amenities only
+	const amenityKeywordMap = [
+		// Map từ default-amenities.js với keywords phù hợp
+		{ keywords: ['đầy đủ nội thất', 'full nội thất', 'nội thất'], nameEn: 'fully_furnished' },
+		{ keywords: ['có gác', 'gác xép', 'gác lửng'], nameEn: 'has_loft' },
+		{ keywords: ['máy lạnh', 'điều hòa', 'có máy lạnh'], nameEn: 'has_air_conditioning' },
+		{ keywords: ['tủ lạnh', 'có tủ lạnh'], nameEn: 'has_refrigerator' },
+		{ keywords: ['có kệ bếp', 'bếp', 'nấu ăn'], nameEn: 'has_kitchen_shelf' },
+		{ keywords: ['vệ sinh riêng', 'toilet riêng', 'wc riêng'], nameEn: 'private_bathroom' },
+		{ keywords: ['nước nóng', 'bình nóng lạnh', 'có nước nóng'], nameEn: 'has_hot_water' },
+		{ keywords: ['máy giặt', 'có máy giặt'], nameEn: 'has_washing_machine' },
+		{ keywords: ['thang máy', 'có thang máy'], nameEn: 'has_elevator' },
+		{ keywords: ['hầm để xe', 'chỗ để xe', 'gửi xe', 'bãi đỗ'], nameEn: 'has_parking_garage' },
+		{ keywords: ['wifi', 'internet', 'mạng'], nameEn: 'has_wifi' },
+		{ keywords: ['bảo vệ 24/24', 'bảo vệ', 'an ninh 24'], nameEn: 'has_security_24_7' },
+		{ keywords: ['camera an ninh', 'camera', 'an ninh'], nameEn: 'security_camera' },
+		{ keywords: ['không chung chủ'], nameEn: 'no_shared_landlord' },
+		{ keywords: ['giờ giấc tự do', 'tự do giờ giấc'], nameEn: 'flexible_hours' },
+		{ keywords: ['gần trường', 'gần đại học', 'gần học'], nameEn: 'near_school' },
+		{ keywords: ['gần chợ', 'gần siêu thị', 'gần market'], nameEn: 'near_market' },
+		{ keywords: ['gần khu công nghiệp', 'gần kcn'], nameEn: 'near_industrial_area' },
+		{ keywords: ['ban công', 'có ban công'], nameEn: 'balcony' },
+		{ keywords: ['sân phơi', 'chỗ phơi đồ'], nameEn: 'drying_area' },
 	];
 
-	// Add tier-specific amenities
-	if (priceTier === 'BUDGET') {
-		return baseAmenities.concat([
-			{
-				keywords: ['quạt trần', 'quạt'],
-				name: 'Quạt trần',
-				nameEn: 'ceiling_fan',
-				category: 'basic',
-				sortOrder: 5,
-			},
-		]);
-	} else if (priceTier === 'ECONOMY') {
-		return baseAmenities.concat([
-			{
-				keywords: ['quạt trần', 'quạt'],
-				name: 'Quạt trần',
-				nameEn: 'ceiling_fan',
-				category: 'basic',
-				sortOrder: 5,
-			},
-			{
-				keywords: ['máy lạnh', 'điều hòa', 'có máy lạnh'],
-				name: 'Điều hòa',
-				nameEn: 'air_conditioning',
-				category: 'basic',
-				sortOrder: 6,
-			},
-			{
-				keywords: ['tv', 'tivi', 'tê vi'],
-				name: 'TV',
-				nameEn: 'television',
-				category: 'entertainment',
-				sortOrder: 31,
-			},
-		]);
-	} else if (priceTier === 'STANDARD') {
-		return baseAmenities.concat([
-			{
-				keywords: ['máy lạnh', 'điều hòa', 'có máy lạnh'],
-				name: 'Điều hòa',
-				nameEn: 'air_conditioning',
-				category: 'basic',
-				sortOrder: 6,
-			},
-			{
-				keywords: ['ban công'],
-				name: 'Ban công',
-				nameEn: 'balcony',
-				category: 'basic',
-				sortOrder: 7,
-			},
-			{
-				keywords: ['tv', 'tivi', 'tê vi'],
-				name: 'TV',
-				nameEn: 'television',
-				category: 'entertainment',
-				sortOrder: 31,
-			},
-			{
-				keywords: ['lò vi sóng'],
-				name: 'Lò vi sóng',
-				nameEn: 'microwave',
-				category: 'kitchen',
-				sortOrder: 13,
-			},
-			{
-				keywords: ['có gác', 'gác xép'],
-				name: 'Sân thượng',
-				nameEn: 'rooftop',
-				category: 'building',
-				sortOrder: 27,
-			},
-		]);
-	} else if (priceTier === 'PREMIUM') {
-		return baseAmenities.concat([
-			{
-				keywords: ['máy lạnh', 'điều hòa', 'có máy lạnh'],
-				name: 'Điều hòa',
-				nameEn: 'air_conditioning',
-				category: 'basic',
-				sortOrder: 6,
-			},
-			{
-				keywords: ['ban công'],
-				name: 'Ban công',
-				nameEn: 'balcony',
-				category: 'basic',
-				sortOrder: 7,
-			},
-			{
-				keywords: ['tv', 'tivi', 'tê vi'],
-				name: 'TV',
-				nameEn: 'television',
-				category: 'entertainment',
-				sortOrder: 31,
-			},
-			{
-				keywords: ['lò vi sóng'],
-				name: 'Lò vi sóng',
-				nameEn: 'microwave',
-				category: 'kitchen',
-				sortOrder: 13,
-			},
-			{
-				keywords: ['có gác', 'gác xép'],
-				name: 'Sân thượng',
-				nameEn: 'rooftop',
-				category: 'building',
-				sortOrder: 27,
-			},
-			{
-				keywords: ['khóa vân tay', 'khóa từ'],
-				name: 'Khóa vân tay',
-				nameEn: 'fingerprint_lock',
-				category: 'safety',
-				sortOrder: 32,
-			},
-			// Price-based inference for premium amenities
-			{
-				keywords: [],
-				name: 'Internet cáp quang',
-				nameEn: 'fiber_internet',
-				category: 'connectivity',
-				priceInference: 'PREMIUM',
-				sortOrder: 21,
-			},
-		]);
-	} else if (priceTier === 'LUXURY') {
-		return baseAmenities.concat([
-			{
-				keywords: ['máy lạnh', 'điều hòa', 'có máy lạnh'],
-				name: 'Điều hòa',
-				nameEn: 'air_conditioning',
-				category: 'basic',
-				sortOrder: 6,
-			},
-			{
-				keywords: ['ban công'],
-				name: 'Ban công',
-				nameEn: 'balcony',
-				category: 'basic',
-				sortOrder: 7,
-			},
-			{
-				keywords: ['tv', 'tivi', 'tê vi'],
-				name: 'TV',
-				nameEn: 'television',
-				category: 'entertainment',
-				sortOrder: 31,
-			},
-			{
-				keywords: ['lò vi sóng'],
-				name: 'Lò vi sóng',
-				nameEn: 'microwave',
-				category: 'kitchen',
-				sortOrder: 13,
-			},
-			{
-				keywords: ['có gác', 'gác xép'],
-				name: 'Sân thượng',
-				nameEn: 'rooftop',
-				category: 'building',
-				sortOrder: 27,
-			},
-			{
-				keywords: ['khóa vân tay', 'khóa từ'],
-				name: 'Khóa vân tay',
-				nameEn: 'fingerprint_lock',
-				category: 'safety',
-				sortOrder: 32,
-			},
-			// Luxury amenities with price inference
-			{
-				keywords: [],
-				name: 'Internet cáp quang',
-				nameEn: 'fiber_internet',
-				category: 'connectivity',
-				priceInference: 'LUXURY',
-				sortOrder: 21,
-			},
-			{
-				keywords: [],
-				name: 'Báo cháy',
-				nameEn: 'fire_alarm',
-				category: 'safety',
-				priceInference: 'LUXURY',
-				sortOrder: 33,
-			},
-			{
-				keywords: [],
-				name: 'Khu giặt chung',
-				nameEn: 'laundry_area',
-				category: 'building',
-				priceInference: 'LUXURY',
-				sortOrder: 28,
-			},
-		]);
-	}
-
-	return baseAmenities;
+	return amenityKeywordMap;
 }
 
 // Apply intelligent cost types based on amenities and price tier
