@@ -603,6 +603,350 @@
       "description": "Vietnam location data endpoints (public access)"
     },
     {
+      "name": "🏢 Buildings Management",
+      "item": [
+        {
+          "name": "🏗️ Create Building",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('buildingId', response.data.id);",
+                  "    pm.collectionVariables.set('buildingSlug', response.data.slug);",
+                  "    console.log('🏗️ Building created successfully!');",
+                  "    console.log('🏢 Building ID saved:', response.data.id);",
+                  "    console.log('🔗 Building Slug saved:', response.data.slug);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{buildingName}}\",\n  \"description\": \"{{buildingDescription}}\",\n  \"addressLine1\": \"{{buildingAddress}}\",\n  \"addressLine2\": \"{{buildingAddress2}}\",\n  \"wardId\": {{buildingWardId}},\n  \"districtId\": {{buildingDistrictId}},\n  \"provinceId\": {{buildingProvinceId}},\n  \"country\": \"Vietnam\",\n  \"latitude\": {{buildingLatitude}},\n  \"longitude\": {{buildingLongitude}},\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/buildings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "buildings"]
+            },
+            "description": "Create a new building (requires landlord role)"
+          },
+          "response": []
+        },
+        {
+          "name": "🏢 Get Building Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/buildings/{{buildingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "buildings", "{{buildingId}}"]
+            },
+            "description": "Get detailed information about a building"
+          },
+          "response": []
+        },
+        {
+          "name": "✏️ Update Building",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{buildingNameUpdated}}\",\n  \"description\": \"{{buildingDescriptionUpdated}}\",\n  \"addressLine1\": \"{{buildingAddressUpdated}}\",\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/buildings/{{buildingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "buildings", "{{buildingId}}"]
+            },
+            "description": "Update building information (owner only)"
+          },
+          "response": []
+        },
+        {
+          "name": "📋 List My Buildings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/buildings?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "buildings"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Get list of buildings owned by current user with pagination"
+          },
+          "response": []
+        },
+        {
+          "name": "🗑️ Delete Building",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/buildings/{{buildingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "buildings", "{{buildingId}}"]
+            },
+            "description": "Delete a building (cannot delete if there are active rentals)"
+          },
+          "response": []
+        }
+      ],
+      "description": "Building management endpoints for landlords"
+    },
+    {
+      "name": "🏠 Rooms Management",
+      "item": [
+        {
+          "name": "🏗️ Create Room Type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('roomId', response.data.id);",
+                  "    pm.collectionVariables.set('roomSlug', response.data.slug);",
+                  "    console.log('🏠 Room type created successfully!');",
+                  "    console.log('🆔 Room ID saved:', response.data.id);",
+                  "    console.log('🔗 Room Slug saved:', response.data.slug);",
+                  "    console.log('🚪 Room instances created:', response.data.totalRooms);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{roomName}}\",\n  \"description\": \"{{roomDescription}}\",\n  \"roomType\": \"{{roomType}}\",\n  \"areaSqm\": {{roomAreaSqm}},\n  \"maxOccupancy\": {{roomMaxOccupancy}},\n  \"totalRooms\": {{roomTotalRooms}},\n  \"floorNumber\": {{roomFloorNumber}},\n  \"roomNumberPrefix\": \"{{roomNumberPrefix}}\",\n  \"roomNumberStart\": {{roomNumberStart}},\n  \"pricing\": {\n    \"basePriceMonthly\": {{roomBasePriceMonthly}},\n    \"depositAmount\": {{roomDepositAmount}},\n    \"depositMonths\": {{roomDepositMonths}},\n    \"utilityIncluded\": {{roomUtilityIncluded}},\n    \"utilityCostMonthly\": {{roomUtilityCostMonthly}},\n    \"cleaningFee\": {{roomCleaningFee}},\n    \"serviceFeePercentage\": {{roomServiceFeePercentage}},\n    \"minimumStayMonths\": {{roomMinimumStayMonths}},\n    \"maximumStayMonths\": {{roomMaximumStayMonths}},\n    \"priceNegotiable\": {{roomPriceNegotiable}}\n  },\n  \"amenities\": [\n    {\n      \"systemAmenityId\": \"{{amenityId1}}\",\n      \"customValue\": \"{{amenityValue1}}\",\n      \"notes\": \"{{amenityNotes1}}\"\n    },\n    {\n      \"systemAmenityId\": \"{{amenityId2}}\",\n      \"customValue\": \"{{amenityValue2}}\",\n      \"notes\": \"{{amenityNotes2}}\"\n    }\n  ],\n  \"costs\": [\n    {\n      \"systemCostTypeId\": \"{{costTypeId1}}\",\n      \"value\": {{costValue1}},\n      \"costType\": \"{{costType1}}\",\n      \"unit\": \"{{costUnit1}}\",\n      \"billingCycle\": \"{{costBillingCycle1}}\",\n      \"includedInRent\": {{costIncludedInRent1}},\n      \"isOptional\": {{costIsOptional1}},\n      \"notes\": \"{{costNotes1}}\"\n    },\n    {\n      \"systemCostTypeId\": \"{{costTypeId2}}\",\n      \"value\": {{costValue2}},\n      \"costType\": \"{{costType2}}\",\n      \"unit\": \"{{costUnit2}}\",\n      \"billingCycle\": \"{{costBillingCycle2}}\",\n      \"includedInRent\": {{costIncludedInRent2}},\n      \"isOptional\": {{costIsOptional2}},\n      \"notes\": \"{{costNotes2}}\"\n    }\n  ],\n  \"rules\": [\n    {\n      \"systemRuleId\": \"{{ruleId1}}\",\n      \"customValue\": \"{{ruleValue1}}\",\n      \"isEnforced\": {{ruleIsEnforced1}},\n      \"notes\": \"{{ruleNotes1}}\"\n    },\n    {\n      \"systemRuleId\": \"{{ruleId2}}\",\n      \"customValue\": \"{{ruleValue2}}\",\n      \"isEnforced\": {{ruleIsEnforced2}},\n      \"notes\": \"{{ruleNotes2}}\"\n    }\n  ],\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/rooms/{{buildingId}}/rooms",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "rooms", "{{buildingId}}", "rooms"]
+            },
+            "description": "Create room type with automatic room instance generation"
+          },
+          "response": []
+        },
+        {
+          "name": "🏠 Get Room Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/rooms/{{roomId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "rooms", "{{roomId}}"]
+            },
+            "description": "Get detailed room type information with pricing, amenities, costs, rules"
+          },
+          "response": []
+        },
+        {
+          "name": "🔍 Get Room by Slug",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/rooms/{{roomSlug}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "rooms", "{{roomSlug}}"]
+            },
+            "description": "Get room details using slug (public endpoint for search)"
+          },
+          "response": []
+        },
+        {
+          "name": "✏️ Update Room Type (OVERRIDE Mode)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{roomNameUpdated}}\",\n  \"description\": \"{{roomDescriptionUpdated}}\",\n  \"areaSqm\": {{roomAreaSqmUpdated}},\n  \"totalRooms\": {{roomTotalRoomsUpdated}},\n  \"pricing\": {\n    \"basePriceMonthly\": {{roomBasePriceMonthlyUpdated}},\n    \"depositAmount\": {{roomDepositAmountUpdated}},\n    \"isNegotiable\": {{roomIsNegotiableUpdated}}\n  },\n  \"amenities\": [\n    {\n      \"systemAmenityId\": \"{{amenityId1Updated}}\",\n      \"customValue\": \"{{amenityValue1Updated}}\",\n      \"notes\": \"{{amenityNotes1Updated}}\"\n    },\n    {\n      \"systemAmenityId\": \"{{amenityId3}}\",\n      \"customValue\": \"{{amenityValue3}}\",\n      \"notes\": \"{{amenityNotes3}}\"\n    }\n  ],\n  \"costs\": [\n    {\n      \"systemCostTypeId\": \"{{costTypeId1}}\",\n      \"value\": {{costValue1Updated}},\n      \"costType\": \"{{costType1}}\",\n      \"unit\": \"{{costUnit1}}\",\n      \"isMandatory\": {{costIsMandatory1}},\n      \"isIncludedInRent\": {{costIncludedInRent1}},\n      \"notes\": \"{{costNotes1Updated}}\"\n    }\n  ],\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/rooms/{{roomId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "rooms", "{{roomId}}"]
+            },
+            "description": "Update room type - amenities/costs/rules arrays will COMPLETELY OVERRIDE existing data"
+          },
+          "response": []
+        },
+        {
+          "name": "📋 List Rooms by Building",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/rooms/building/{{buildingId}}/rooms?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "rooms", "building", "{{buildingId}}", "rooms"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Get list of room types in a building with pagination"
+          },
+          "response": []
+        },
+        {
+          "name": "🚪 Get Room Instances by Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.data.instances.length > 0) {",
+                  "        pm.collectionVariables.set('roomInstanceId', response.data.instances[0].id);",
+                  "        console.log('🚪 Room Instance ID saved:', response.data.instances[0].id);",
+                  "    }",
+                  "    console.log('📊 Status Counts:', JSON.stringify(response.data.statusCounts, null, 2));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/rooms/{{roomId}}/instances/status?status={{filterStatus}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "rooms", "{{roomId}}", "instances", "status"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "{{filterStatus}}",
+                  "description": "Filter by status: available, occupied, maintenance, reserved, unavailable"
+                }
+              ]
+            },
+            "description": "Get room instances with status filter and statistics"
+          },
+          "response": []
+        },
+        {
+          "name": "🔧 Update Single Room Instance Status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"{{newRoomStatus}}\",\n  \"reason\": \"{{statusChangeReason}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/rooms/instance/{{roomInstanceId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "rooms", "instance", "{{roomInstanceId}}", "status"]
+            },
+            "description": "Update status of a single room instance with business logic validation"
+          },
+          "response": []
+        },
+        {
+          "name": "🔧 Bulk Update Room Instance Status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomInstanceIds\": [\"{{roomInstanceId1}}\", \"{{roomInstanceId2}}\", \"{{roomInstanceId3}}\"],\n  \"status\": \"{{bulkNewStatus}}\",\n  \"reason\": \"{{bulkStatusReason}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/rooms/{{roomId}}/instances/status/bulk",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "rooms", "{{roomId}}", "instances", "status", "bulk"]
+            },
+            "description": "Update status of multiple room instances at once (atomic operation)"
+          },
+          "response": []
+        },
+        {
+          "name": "🗑️ Delete Room Type",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/rooms/{{roomId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "rooms", "{{roomId}}"]
+            },
+            "description": "Delete room type and all instances (cannot delete if there are active rentals)"
+          },
+          "response": []
+        }
+      ],
+      "description": "Room type and instance management with complex CRUD operations"
+    },
+    {
       "name": "🔧 Utilities",
       "item": [
         {
@@ -662,7 +1006,7 @@
           "// Define endpoints that DON'T need authentication",
           "const publicEndpoints = [",
           "    'Login', 'Register', 'Verification', 'Password Strength', 'Generate', 'Health', 'Documentation',",
-          "    'Provinces', 'Districts', 'Wards'",
+          "    'Provinces', 'Districts', 'Wards', 'Get Room by Slug'",
           "];",
           "",
           "const isPublicEndpoint = publicEndpoints.some(endpoint => requestName.includes(endpoint));",
@@ -733,15 +1077,15 @@
     },
     {
       "key": "testEmail",
-      "value": "test@trustay.life",
+      "value": "budget.student@trustay.com",
       "type": "string",
-      "description": "Test email for verification"
+      "description": "Test email for verification (existing landlord user)"
     },
     {
       "key": "testEmailDev",
-      "value": "dev@trustay.life",
+      "value": "landlord.dev@trustay.life",
       "type": "string",
-      "description": "Test email for direct registration"
+      "description": "Test email for direct registration (landlord)"
     },
     {
       "key": "testPhone",
@@ -757,9 +1101,9 @@
     },
     {
       "key": "testPassword",
-      "value": "TrustayTest123!",
+      "value": "trustay123",
       "type": "string",
-      "description": "Test password for registration"
+      "description": "Test password for registration (matches existing user)"
     },
     {
       "key": "testFirstName",
@@ -781,9 +1125,9 @@
     },
     {
       "key": "testRole",
-      "value": "tenant",
+      "value": "landlord",
       "type": "string",
-      "description": "Test user role (tenant/landlord)"
+      "description": "Test user role (tenant/landlord) - SET TO 'landlord' for building/room management"
     },
     {
       "key": "verificationCode",
@@ -793,19 +1137,19 @@
     },
     {
       "key": "loginEmail",
-      "value": "test@trustay.life",
+      "value": "budget.student@trustay.com",
       "type": "string",
-      "description": "Email for login"
+      "description": "Email for login (existing user)"
     },
     {
       "key": "loginPassword",
-      "value": "TrustayTest123!",
+      "value": "trustay123",
       "type": "string",
-      "description": "Password for login"
+      "description": "Password for login (existing user)"
     },
     {
       "key": "currentPassword",
-      "value": "TrustayTest123!",
+      "value": "trustay123",
       "type": "string",
       "description": "Current password for change"
     },
@@ -867,13 +1211,13 @@
       "key": "testProvinceId",
       "value": "79",
       "type": "string",
-      "description": "Test province ID (Ho Chi Minh City)"
+      "description": "Test province ID (Thành phố Hồ Chí Minh)"
     },
     {
       "key": "testDistrictId",
-      "value": "760",
+      "value": "769",
       "type": "string",
-      "description": "Test district ID (District 1)"
+      "description": "Test district ID (Thủ Đức, HCMC)"
     },
     {
       "key": "accessToken",
@@ -904,6 +1248,546 @@
       "value": "",
       "type": "string",
       "description": "Current user ID (auto-populated)"
+    },
+    {
+      "key": "buildingId",
+      "value": "",
+      "type": "string",
+      "description": "Building ID (auto-populated after creation)"
+    },
+    {
+      "key": "buildingSlug",
+      "value": "",
+      "type": "string",
+      "description": "Building slug (auto-populated after creation)"
+    },
+    {
+      "key": "buildingName",
+      "value": "Nhà trọ Minh Phát",
+      "type": "string",
+      "description": "Building name for creation"
+    },
+    {
+      "key": "buildingDescription",
+      "value": "Nhà trọ cao cấp tại Thủ Đức, gần trường Đại học Bách Khoa và Đại học Quốc gia, đầy đủ tiện nghi hiện đại",
+      "type": "string",
+      "description": "Building description (Thu Duc area, near universities)"
+    },
+    {
+      "key": "buildingAddress",
+      "value": "123 Võ Văn Ngân, Phường Linh Chiểu",
+      "type": "string",
+      "description": "Building primary address in Ho Chi Minh City"
+    },
+    {
+      "key": "buildingAddress2",
+      "value": "Hẻm 458",
+      "type": "string",
+      "description": "Building secondary address"
+    },
+    {
+      "key": "buildingWardId",
+      "value": "26734",
+      "type": "string",
+      "description": "Ward ID for building location (Phường Linh Chiểu, Thủ Đức, HCMC)"
+    },
+    {
+      "key": "buildingDistrictId",
+      "value": "769",
+      "type": "string",
+      "description": "District ID for building location (Thủ Đức, HCMC)"
+    },
+    {
+      "key": "buildingProvinceId",
+      "value": "79",
+      "type": "string",
+      "description": "Province ID for building location (Thành phố Hồ Chí Minh)"
+    },
+    {
+      "key": "buildingLatitude",
+      "value": "10.8505",
+      "type": "string",
+      "description": "Building latitude coordinate (Thu Duc area, HCMC)"
+    },
+    {
+      "key": "buildingLongitude",
+      "value": "106.7717",
+      "type": "string",
+      "description": "Building longitude coordinate (Thu Duc area, HCMC)"
+    },
+    {
+      "key": "buildingNameUpdated",
+      "value": "Nhà trọ Minh Phát Premium",
+      "type": "string",
+      "description": "Updated building name"
+    },
+    {
+      "key": "buildingDescriptionUpdated",
+      "value": "Nhà trọ cao cấp đã được nâng cấp hoàn toàn với trang thiết bị hiện đại",
+      "type": "string",
+      "description": "Updated building description"
+    },
+    {
+      "key": "buildingAddressUpdated",
+      "value": "125 Võ Văn Ngân",
+      "type": "string",
+      "description": "Updated building address"
+    },
+    {
+      "key": "roomId",
+      "value": "",
+      "type": "string",
+      "description": "Room type ID (auto-populated after creation)"
+    },
+    {
+      "key": "roomSlug",
+      "value": "",
+      "type": "string",
+      "description": "Room slug (auto-populated after creation)"
+    },
+    {
+      "key": "roomName",
+      "value": "Phòng VIP",
+      "type": "string",
+      "description": "Room type name"
+    },
+    {
+      "key": "roomDescription",
+      "value": "Phòng cao cấp với đầy đủ tiện nghi, view đẹp",
+      "type": "string",
+      "description": "Room type description"
+    },
+    {
+      "key": "roomType",
+      "value": "boarding_house",
+      "type": "string",
+      "description": "Room type enum: boarding_house, apartment, house, studio"
+    },
+    {
+      "key": "roomAreaSqm",
+      "value": "25.5",
+      "type": "string",
+      "description": "Room area in square meters"
+    },
+    {
+      "key": "roomMaxOccupancy",
+      "value": "2",
+      "type": "string",
+      "description": "Maximum occupancy"
+    },
+    {
+      "key": "roomTotalRooms",
+      "value": "5",
+      "type": "string",
+      "description": "Total room instances to create"
+    },
+    {
+      "key": "roomFloorNumber",
+      "value": "1",
+      "type": "string",
+      "description": "Floor number"
+    },
+    {
+      "key": "roomNumberPrefix",
+      "value": "A",
+      "type": "string",
+      "description": "Room number prefix"
+    },
+    {
+      "key": "roomNumberStart",
+      "value": "101",
+      "type": "string",
+      "description": "Starting room number"
+    },
+    {
+      "key": "roomBasePriceMonthly",
+      "value": "3500000",
+      "type": "string",
+      "description": "Base monthly rent price (VND)"
+    },
+    {
+      "key": "roomDepositAmount",
+      "value": "7000000",
+      "type": "string",
+      "description": "Deposit amount (VND)"
+    },
+    {
+      "key": "roomDepositMonths",
+      "value": "2",
+      "type": "string",
+      "description": "Number of months for deposit"
+    },
+    {
+      "key": "roomUtilityIncluded",
+      "value": "false",
+      "type": "string",
+      "description": "Whether utilities are included"
+    },
+    {
+      "key": "roomUtilityCostMonthly",
+      "value": "500000",
+      "type": "string",
+      "description": "Monthly utility cost if separate"
+    },
+    {
+      "key": "roomCleaningFee",
+      "value": "200000",
+      "type": "string",
+      "description": "One-time cleaning fee"
+    },
+    {
+      "key": "roomServiceFeePercentage",
+      "value": "5.0",
+      "type": "string",
+      "description": "Service fee percentage"
+    },
+    {
+      "key": "roomMinimumStayMonths",
+      "value": "3",
+      "type": "string",
+      "description": "Minimum stay duration"
+    },
+    {
+      "key": "roomMaximumStayMonths",
+      "value": "24",
+      "type": "string",
+      "description": "Maximum stay duration"
+    },
+    {
+      "key": "roomPriceNegotiable",
+      "value": "true",
+      "type": "string",
+      "description": "Whether price is negotiable"
+    },
+    {
+      "key": "amenityId1",
+      "value": "sample-amenity-id-1",
+      "type": "string",
+      "description": "System amenity ID 1 (replace with actual ID)"
+    },
+    {
+      "key": "amenityValue1",
+      "value": "2 chiếc Daikin inverter",
+      "type": "string",
+      "description": "Custom amenity value 1"
+    },
+    {
+      "key": "amenityNotes1",
+      "value": "Điều hòa mới 100%, bảo hành 3 năm",
+      "type": "string",
+      "description": "Amenity notes 1"
+    },
+    {
+      "key": "amenityId2",
+      "value": "sample-amenity-id-2",
+      "type": "string",
+      "description": "System amenity ID 2 (replace with actual ID)"
+    },
+    {
+      "key": "amenityValue2",
+      "value": "Viettel Fiber 100Mbps",
+      "type": "string",
+      "description": "Custom amenity value 2"
+    },
+    {
+      "key": "amenityNotes2",
+      "value": "Tốc độ ổn định 24/7",
+      "type": "string",
+      "description": "Amenity notes 2"
+    },
+    {
+      "key": "costTypeId1",
+      "value": "sample-cost-type-id-1",
+      "type": "string",
+      "description": "System cost type ID 1 (replace with actual ID)"
+    },
+    {
+      "key": "costValue1",
+      "value": "3500",
+      "type": "string",
+      "description": "Cost value 1"
+    },
+    {
+      "key": "costType1",
+      "value": "per_unit",
+      "type": "string",
+      "description": "Cost type: fixed, per_unit, percentage, metered, tiered"
+    },
+    {
+      "key": "costUnit1",
+      "value": "kWh",
+      "type": "string",
+      "description": "Cost unit 1"
+    },
+    {
+      "key": "costBillingCycle1",
+      "value": "monthly",
+      "type": "string",
+      "description": "Billing cycle: monthly, quarterly, yearly"
+    },
+    {
+      "key": "costIncludedInRent1",
+      "value": "false",
+      "type": "string",
+      "description": "Whether cost is included in rent"
+    },
+    {
+      "key": "costIsOptional1",
+      "value": "false",
+      "type": "string",
+      "description": "Whether cost is optional"
+    },
+    {
+      "key": "costNotes1",
+      "value": "Giá điện theo EVN, đọc công tơ cuối tháng",
+      "type": "string",
+      "description": "Cost notes 1"
+    },
+    {
+      "key": "costTypeId2",
+      "value": "sample-cost-type-id-2",
+      "type": "string",
+      "description": "System cost type ID 2 (replace with actual ID)"
+    },
+    {
+      "key": "costValue2",
+      "value": "25000",
+      "type": "string",
+      "description": "Cost value 2"
+    },
+    {
+      "key": "costType2",
+      "value": "per_unit",
+      "type": "string",
+      "description": "Cost type 2"
+    },
+    {
+      "key": "costUnit2",
+      "value": "m³",
+      "type": "string",
+      "description": "Cost unit 2"
+    },
+    {
+      "key": "costBillingCycle2",
+      "value": "monthly",
+      "type": "string",
+      "description": "Billing cycle 2"
+    },
+    {
+      "key": "costIncludedInRent2",
+      "value": "false",
+      "type": "string",
+      "description": "Whether cost 2 is included in rent"
+    },
+    {
+      "key": "costIsOptional2",
+      "value": "false",
+      "type": "string",
+      "description": "Whether cost 2 is optional"
+    },
+    {
+      "key": "costNotes2",
+      "value": "Nước sạch Saigon Water",
+      "type": "string",
+      "description": "Cost notes 2"
+    },
+    {
+      "key": "ruleId1",
+      "value": "sample-rule-id-1",
+      "type": "string",
+      "description": "System rule ID 1 (replace with actual ID)"
+    },
+    {
+      "key": "ruleValue1",
+      "value": "Tối đa 2 người/phòng",
+      "type": "string",
+      "description": "Custom rule value 1"
+    },
+    {
+      "key": "ruleIsEnforced1",
+      "value": "true",
+      "type": "string",
+      "description": "Whether rule 1 is enforced"
+    },
+    {
+      "key": "ruleNotes1",
+      "value": "Quá số lượng sẽ tính phụ phí",
+      "type": "string",
+      "description": "Rule notes 1"
+    },
+    {
+      "key": "ruleId2",
+      "value": "sample-rule-id-2",
+      "type": "string",
+      "description": "System rule ID 2 (replace with actual ID)"
+    },
+    {
+      "key": "ruleValue2",
+      "value": "Không hút thuốc trong phòng",
+      "type": "string",
+      "description": "Custom rule value 2"
+    },
+    {
+      "key": "ruleIsEnforced2",
+      "value": "true",
+      "type": "string",
+      "description": "Whether rule 2 is enforced"
+    },
+    {
+      "key": "ruleNotes2",
+      "value": "Vi phạm 3 lần sẽ chấm dứt hợp đồng",
+      "type": "string",
+      "description": "Rule notes 2"
+    },
+    {
+      "key": "roomNameUpdated",
+      "value": "Phòng VIP Deluxe",
+      "type": "string",
+      "description": "Updated room name"
+    },
+    {
+      "key": "roomDescriptionUpdated",
+      "value": "Phòng cao cấp được nâng cấp hoàn toàn với trang thiết bị hiện đại",
+      "type": "string",
+      "description": "Updated room description"
+    },
+    {
+      "key": "roomAreaSqmUpdated",
+      "value": "28.5",
+      "type": "string",
+      "description": "Updated room area"
+    },
+    {
+      "key": "roomTotalRoomsUpdated",
+      "value": "8",
+      "type": "string",
+      "description": "Updated total rooms (can only increase)"
+    },
+    {
+      "key": "roomBasePriceMonthlyUpdated",
+      "value": "3800000",
+      "type": "string",
+      "description": "Updated base monthly price"
+    },
+    {
+      "key": "roomDepositAmountUpdated",
+      "value": "7600000",
+      "type": "string",
+      "description": "Updated deposit amount"
+    },
+    {
+      "key": "roomIsNegotiableUpdated",
+      "value": "false",
+      "type": "string",
+      "description": "Updated negotiability"
+    },
+    {
+      "key": "amenityId1Updated",
+      "value": "sample-amenity-id-1",
+      "type": "string",
+      "description": "Updated system amenity ID 1"
+    },
+    {
+      "key": "amenityValue1Updated",
+      "value": "3 chiếc LG inverter",
+      "type": "string",
+      "description": "Updated custom amenity value 1"
+    },
+    {
+      "key": "amenityNotes1Updated",
+      "value": "Điều hòa mới 100%, tiết kiệm điện",
+      "type": "string",
+      "description": "Updated amenity notes 1"
+    },
+    {
+      "key": "amenityId3",
+      "value": "sample-amenity-id-3",
+      "type": "string",
+      "description": "New system amenity ID 3"
+    },
+    {
+      "key": "amenityValue3",
+      "value": "Tủ lạnh Samsung 180L",
+      "type": "string",
+      "description": "New amenity value 3"
+    },
+    {
+      "key": "amenityNotes3",
+      "value": "Tủ lạnh mới, tiết kiệm điện",
+      "type": "string",
+      "description": "New amenity notes 3"
+    },
+    {
+      "key": "costValue1Updated",
+      "value": "4000",
+      "type": "string",
+      "description": "Updated cost value 1"
+    },
+    {
+      "key": "costIsMandatory1",
+      "value": "true",
+      "type": "string",
+      "description": "Whether cost 1 is mandatory"
+    },
+    {
+      "key": "costNotes1Updated",
+      "value": "Giá điện tăng theo EVN",
+      "type": "string",
+      "description": "Updated cost notes 1"
+    },
+    {
+      "key": "roomInstanceId",
+      "value": "",
+      "type": "string",
+      "description": "Room instance ID (auto-populated)"
+    },
+    {
+      "key": "roomInstanceId1",
+      "value": "",
+      "type": "string",
+      "description": "Room instance ID 1 for bulk operations"
+    },
+    {
+      "key": "roomInstanceId2",
+      "value": "",
+      "type": "string",
+      "description": "Room instance ID 2 for bulk operations"
+    },
+    {
+      "key": "roomInstanceId3",
+      "value": "",
+      "type": "string",
+      "description": "Room instance ID 3 for bulk operations"
+    },
+    {
+      "key": "filterStatus",
+      "value": "available",
+      "type": "string",
+      "description": "Filter status: available, occupied, maintenance, reserved, unavailable"
+    },
+    {
+      "key": "newRoomStatus",
+      "value": "maintenance",
+      "type": "string",
+      "description": "New room instance status"
+    },
+    {
+      "key": "statusChangeReason",
+      "value": "Sửa chữa điều hòa và sơn lại tường",
+      "type": "string",
+      "description": "Reason for status change"
+    },
+    {
+      "key": "bulkNewStatus",
+      "value": "maintenance",
+      "type": "string",
+      "description": "New status for bulk update"
+    },
+    {
+      "key": "bulkStatusReason",
+      "value": "Bảo trì định kỳ tòa nhà",
+      "type": "string",
+      "description": "Reason for bulk status change"
     }
   ]
 }
