@@ -5,12 +5,12 @@ import { Expose, Transform, Type } from 'class-transformer';
 export class RoomPricingResponseDto {
 	@ApiProperty({ example: 3500000 })
 	@Expose()
-	@Transform(({ value }) => parseFloat(value.toString()))
+	@Transform(({ value }) => (value ? parseFloat(value.toString()) : 0))
 	basePriceMonthly: number;
 
 	@ApiProperty({ example: 7000000 })
 	@Expose()
-	@Transform(({ value }) => parseFloat(value.toString()))
+	@Transform(({ value }) => (value ? parseFloat(value.toString()) : 0))
 	depositAmount: number;
 
 	@ApiProperty({ example: 2 })

@@ -129,8 +129,6 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	}
 
 	@Get(':roomId')
-	@UseGuards(JwtAuthGuard)
-	@ApiBearerAuth()
 	@ApiOperation({
 		summary: 'Lấy thông tin chi tiết room type',
 		description:
@@ -160,8 +158,12 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		return ApiResponseDto.success(room, 'Room retrieved successfully');
 	}
 
-	@Get(':slug')
-	@ApiOperation({ summary: 'Get room details by slug' })
+	@Get('public/slug/:slug')
+	@ApiOperation({
+		summary: 'Get room details by slug (Public API)',
+		description:
+			'Public endpoint for users to browse room details without authentication. Returns comprehensive room information including pricing, amenities, and availability.',
+	})
 	@ApiParam({
 		name: 'slug',
 		description: 'Room slug identifier',
@@ -177,6 +179,30 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		description: 'Room not found',
 	})
 	async getRoomBySlug(@Param('slug') slug: string): Promise<RoomDetailDto> {
+		return this.roomsService.getRoomBySlug(slug);
+	}
+
+	@Get('public/:slug')
+	@ApiOperation({
+		summary: 'Get room details by slug (Public API - Alternative)',
+		description:
+			'Alternative public endpoint for backward compatibility. Returns comprehensive room information including pricing, amenities, and availability.',
+	})
+	@ApiParam({
+		name: 'slug',
+		description: 'Room slug identifier',
+		example: 'nguyen-thi-c-nhungbinh-tan-phong-an3570',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Room details retrieved successfully',
+		type: RoomDetailDto,
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'Room not found',
+	})
+	async getRoomBySlugAlt(@Param('slug') slug: string): Promise<RoomDetailDto> {
 		return this.roomsService.getRoomBySlug(slug);
 	}
 
