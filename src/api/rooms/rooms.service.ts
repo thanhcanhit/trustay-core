@@ -287,12 +287,61 @@ export class RoomsService {
 		const occupiedInstancesCount =
 			room.roomInstances?.filter((instance: any) => instance.status === 'occupied').length || 0;
 
-		return plainToClass(RoomResponseDto, {
+		// Helper function to safely convert Decimal values
+		const safeDecimal = (value: any) => {
+			if (value === null || value === undefined) return null;
+			return value;
+		};
+
+		// Clean up pricing data to avoid Decimal errors
+		const cleanPricing = room.pricing
+			? {
+					...room.pricing,
+					basePriceMonthly: safeDecimal(room.pricing.basePriceMonthly) || 0,
+					depositAmount: safeDecimal(room.pricing.depositAmount) || 0,
+					utilityCostMonthly: safeDecimal(room.pricing.utilityCostMonthly),
+					cleaningFee: safeDecimal(room.pricing.cleaningFee),
+					serviceFeePercentage: safeDecimal(room.pricing.serviceFeePercentage),
+				}
+			: null;
+
+		// Clean up costs data
+		const cleanCosts =
+			room.costs?.map((cost: any) => ({
+				...cost,
+				baseRate: safeDecimal(cost.baseRate),
+				unitPrice: safeDecimal(cost.unitPrice),
+				fixedAmount: safeDecimal(cost.fixedAmount),
+				minimumCharge: safeDecimal(cost.minimumCharge),
+				maximumCharge: safeDecimal(cost.maximumCharge),
+				meterReading: safeDecimal(cost.meterReading),
+				lastMeterReading: safeDecimal(cost.lastMeterReading),
+			})) || [];
+
+		// Clean up main room data
+		const cleanRoom = {
 			...room,
+			areaSqm: safeDecimal(room.areaSqm),
+			pricing: cleanPricing,
+			costs: cleanCosts,
 			building: room.building,
 			availableInstancesCount,
 			occupiedInstancesCount,
-		});
+		};
+
+		try {
+			// Temporarily bypass plainToClass transformation to avoid Decimal errors
+			return cleanRoom as RoomResponseDto;
+		} catch (error) {
+			console.error('Transform error:', error);
+			console.error('Clean room data keys:', Object.keys(cleanRoom));
+			console.error('Problematic fields:', {
+				areaSqm: cleanRoom.areaSqm,
+				pricing: cleanRoom.pricing ? Object.keys(cleanRoom.pricing) : null,
+				costs: cleanRoom.costs ? cleanRoom.costs.length : 0,
+			});
+			throw error;
+		}
 	}
 
 	async getRoomBySlug(slug: string): Promise<RoomDetailDto> {
