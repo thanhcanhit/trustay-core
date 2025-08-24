@@ -221,6 +221,7 @@ model User {
   roomSearchPosts     RoomSearchPost[]
   verificationCodes   VerificationCode[]
   refreshTokens       RefreshToken[]
+  roomRequests        RoomRequest[]
 
   @@map("users")
 }
@@ -465,9 +466,10 @@ model SystemAmenity {
   createdAt   DateTime        @default(now()) @map("created_at")
   updatedAt   DateTime        @updatedAt @map("updated_at")
 
-  // Relations
+    // Relations
   roomAmenities RoomAmenity[]
-
+  roomRequestAmenities RoomRequestAmenity[]
+  
   @@index([category])
   @@index([isActive])
   @@map("system_amenities")
@@ -875,6 +877,83 @@ model RoomSearchPost {
   @@index([createdAt])
   @@index([preferredLatitude, preferredLongitude])
   @@map("room_search_posts")
+}
+
+// ========================================
+// ROOM REQUEST (BÀI ĐĂNG TÌM TRỌ)
+// ========================================
+
+model RoomRequest {
+  id          String @id @default(uuid())
+  title       String
+  description String
+  slug        String   @unique @map("slug")
+  
+  // Thông tin người đăng
+  requesterId String @map("requester_id")
+  
+  // Vị trí mong muốn
+  preferredDistrict String? @map("preferred_district")
+  preferredWard     String? @map("preferred_ward")
+  preferredCity    String  @map("preferred_city")
+  
+  // Ngân sách
+  minBudget Decimal? @map("min_budget") @db.Decimal(15, 2)
+  maxBudget Decimal  @map("max_budget") @db.Decimal(15, 2)
+  currency  String   @default("VND")
+  
+  // Loại phòng mong muốn
+  preferredRoomType RoomType? @map("preferred_room_type")
+  
+  // Số người ở
+  occupancy Int? // Số người sẽ ở trong phòng
+  
+  // Thời gian dự định vào ở
+  moveInDate DateTime? @map("move_in_date") @db.Date
+  
+  // Trạng thái bài đăng
+  status    SearchPostStatus @default(active)
+  isPublic  Boolean          @default(true) @map("is_public")
+  expiresAt DateTime?        @map("expires_at")
+  
+  // Thống kê tương tác
+  viewCount    Int @default(0) @map("view_count")
+  contactCount Int @default(0) @map("contact_count")
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  requester User @relation(fields: [requesterId], references: [id], onDelete: Cascade)
+  amenities RoomRequestAmenity[]
+  
+  @@index([requesterId])
+  @@index([status])
+  @@index([preferredCity])
+  @@index([maxBudget])
+  @@index([moveInDate])
+  @@index([expiresAt])
+  @@index([createdAt])
+  @@map("room_requests")
+}
+
+model RoomRequestAmenity {
+  id                String   @id @default(uuid())
+  roomRequestId     String   @map("room_request_id")
+  systemAmenityId   String   @map("system_amenity_id")
+  isRequired        Boolean  @default(false) @map("is_required") // Tiện ích bắt buộc hay không
+  customValue       String?  @map("custom_value") // Giá trị tùy chỉnh nếu có
+  notes             String? // Ghi chú về yêu cầu cụ thể
+  createdAt         DateTime @default(now()) @map("created_at")
+  
+  // Relations
+  roomRequest   RoomRequest   @relation(fields: [roomRequestId], references: [id], onDelete: Cascade)
+  systemAmenity SystemAmenity @relation(fields: [systemAmenityId], references: [id], onDelete: Cascade)
+  
+  @@unique([roomRequestId, systemAmenityId])
+  @@index([roomRequestId])
+  @@index([systemAmenityId])
+  @@map("room_request_amenities")
 }
 
 // ========================================
