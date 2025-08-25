@@ -28,19 +28,19 @@ export class CreateRoomRequestDto {
 	@IsString()
 	slug: string;
 
-	@ApiPropertyOptional({ description: 'Quận/huyện mong muốn' })
+	@ApiPropertyOptional({ description: 'ID quận/huyện mong muốn' })
 	@IsOptional()
-	@IsString()
-	preferredDistrict?: string;
+	@IsNumber()
+	preferredDistrictId?: number;
 
-	@ApiPropertyOptional({ description: 'Phường/xã mong muốn' })
+	@ApiPropertyOptional({ description: 'ID phường/xã mong muốn' })
 	@IsOptional()
-	@IsString()
-	preferredWard?: string;
+	@IsNumber()
+	preferredWardId?: number;
 
-	@ApiProperty({ description: 'Thành phố mong muốn' })
-	@IsString()
-	preferredCity: string;
+	@ApiProperty({ description: 'ID tỉnh/thành phố mong muốn' })
+	@IsNumber()
+	preferredProvinceId: number;
 
 	@ApiPropertyOptional({ description: 'Ngân sách tối thiểu' })
 	@IsOptional()

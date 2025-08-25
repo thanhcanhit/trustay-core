@@ -893,9 +893,9 @@ model RoomRequest {
   requesterId String @map("requester_id")
   
   // Vị trí mong muốn
-  preferredDistrict String? @map("preferred_district")
-  preferredWard     String? @map("preferred_ward")
-  preferredCity    String  @map("preferred_city")
+  preferredDistrictId Int? @map("preferred_district_id")
+  preferredWardId     Int? @map("preferred_ward_id")
+  preferredProvinceId Int  @map("preferred_province_id")
   
   // Ngân sách
   minBudget Decimal? @map("min_budget") @db.Decimal(15, 2)
@@ -927,9 +927,16 @@ model RoomRequest {
   requester User @relation(fields: [requesterId], references: [id], onDelete: Cascade)
   amenities RoomRequestAmenity[]
   
+  // Relations
+  preferredProvince Province? @relation(fields: [preferredProvinceId], references: [id], onDelete: SetNull)
+  preferredDistrict District? @relation(fields: [preferredDistrictId], references: [id], onDelete: SetNull)
+  preferredWard     Ward?     @relation(fields: [preferredWardId], references: [id], onDelete: SetNull)
+
   @@index([requesterId])
   @@index([status])
-  @@index([preferredCity])
+  @@index([preferredProvinceId])
+  @@index([preferredDistrictId])
+  @@index([preferredWardId])
   @@index([maxBudget])
   @@index([moveInDate])
   @@index([expiresAt])
@@ -992,6 +999,7 @@ model Province {
   districts     District[]
   userAddresses UserAddress[]
   buildings     Building[]
+  roomRequests  RoomRequest[]
 
   @@index([code])
   @@map("provinces")
@@ -1010,6 +1018,7 @@ model District {
   wards         Ward[]
   userAddresses UserAddress[]
   buildings     Building[]
+  roomRequests  RoomRequest[]
 
   @@index([code])
   @@index([provinceId])
@@ -1029,6 +1038,7 @@ model Ward {
   district      District      @relation(fields: [districtId], references: [id], onDelete: Cascade)
   userAddresses UserAddress[]
   buildings     Building[]
+  roomRequests  RoomRequest[]
 
   @@index([code])
   @@index([districtId])

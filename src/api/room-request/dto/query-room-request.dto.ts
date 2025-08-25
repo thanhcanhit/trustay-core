@@ -10,23 +10,23 @@ import {
 	Max,
 	Min,
 } from 'class-validator';
-import { PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
 
 export class QueryRoomRequestDto extends PaginationQueryDto {
-	@ApiPropertyOptional({ description: 'Lọc theo thành phố' })
+	@ApiPropertyOptional({ description: 'Lọc theo ID tỉnh/thành phố' })
 	@IsOptional()
-	@IsString()
-	city?: string;
+	@IsNumber()
+	provinceId?: number;
 
-	@ApiPropertyOptional({ description: 'Lọc theo quận/huyện' })
+	@ApiPropertyOptional({ description: 'Lọc theo ID quận/huyện' })
 	@IsOptional()
-	@IsString()
-	district?: string;
+	@IsNumber()
+	districtId?: number;
 
-	@ApiPropertyOptional({ description: 'Lọc theo phường/xã' })
+	@ApiPropertyOptional({ description: 'Lọc theo ID phường/xã' })
 	@IsOptional()
-	@IsString()
-	ward?: string;
+	@IsNumber()
+	wardId?: number;
 
 	@ApiPropertyOptional({ description: 'Ngân sách tối thiểu' })
 	@IsOptional()

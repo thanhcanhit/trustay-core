@@ -7,6 +7,7 @@ import { DistrictModule } from './api/provinces/district/district.module';
 import { ProvinceModule } from './api/provinces/province/province.module';
 import { WardModule } from './api/provinces/ward/ward.module';
 import { ReferenceModule } from './api/reference/reference.module';
+import { RoomRequestModule } from './api/room-request/room-request.module';
 import { RoomsModule } from './api/rooms/rooms.module';
 import { UsersModule } from './api/users/users.module';
 import { AppController } from './app.controller';
@@ -17,7 +18,6 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ConfigModule } from './config/config.module';
 import { LoggerModule } from './logger/logger.module';
 import { PrismaModule } from './prisma/prisma.module';
-import { RoomRequestModule } from './room-request/room-request.module';
 
 @Module({
 	imports: [

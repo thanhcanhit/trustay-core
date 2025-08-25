@@ -5,13 +5,8 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import { Prisma, RoomRequest, RoomRequestAmenity, SearchPostStatus } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
-import {
-	CreateRoomRequestDto,
-	QueryRoomRequestDto,
-	RoomRequestResponseDto,
-	UpdateRoomRequestDto,
-} from './dto';
+import { PrismaService } from '../../prisma/prisma.service';
+import { CreateRoomRequestDto, RoomRequestResponseDto, UpdateRoomRequestDto } from './dto';
 
 @Injectable()
 export class RoomRequestService {
@@ -74,97 +69,31 @@ export class RoomRequestService {
 						},
 					},
 				},
+				preferredProvince: {
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
+					},
+				},
+				preferredDistrict: {
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
+					},
+				},
+				preferredWard: {
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
+					},
+				},
 			},
 		});
 
 		return this.mapToResponseDto(roomRequest);
-	}
-
-	async findAll(
-		query: QueryRoomRequestDto,
-	): Promise<{ data: RoomRequestResponseDto[]; total: number; page: number; limit: number }> {
-		const {
-			page = 1,
-			limit = 20,
-			search,
-			city,
-			district,
-			ward,
-			minBudget,
-			maxBudget,
-			roomType,
-			occupancy,
-			status,
-			isPublic,
-			requesterId,
-			sortBy = 'createdAt',
-			sortOrder = 'desc',
-		} = query;
-
-		const where: Prisma.RoomRequestWhereInput = {
-			...(search && {
-				OR: [
-					{ title: { contains: search, mode: 'insensitive' } },
-					{ description: { contains: search, mode: 'insensitive' } },
-				],
-			}),
-			...(city && { preferredCity: { contains: city, mode: 'insensitive' } }),
-			...(district && { preferredDistrict: { contains: district, mode: 'insensitive' } }),
-			...(ward && { preferredWard: { contains: ward, mode: 'insensitive' } }),
-			...(minBudget !== undefined && { maxBudget: { gte: minBudget } }),
-			...(maxBudget !== undefined && { maxBudget: { lte: maxBudget } }),
-			...(roomType && { preferredRoomType: roomType }),
-			...(occupancy && { occupancy: occupancy }),
-			...(status && { status }),
-			...(isPublic !== undefined && { isPublic }),
-			...(requesterId && { requesterId }),
-		};
-
-		const orderBy: Prisma.RoomRequestOrderByWithRelationInput = {
-			[sortBy]: sortOrder,
-		};
-
-		const [data, total] = await Promise.all([
-			this.prisma.roomRequest.findMany({
-				where,
-				orderBy,
-				skip: (page - 1) * limit,
-				take: limit,
-				include: {
-					requester: {
-						select: {
-							id: true,
-							firstName: true,
-							lastName: true,
-							email: true,
-							phone: true,
-							avatarUrl: true,
-						},
-					},
-					amenities: {
-						include: {
-							systemAmenity: {
-								select: {
-									id: true,
-									name: true,
-									nameEn: true,
-									category: true,
-									description: true,
-								},
-							},
-						},
-					},
-				},
-			}),
-			this.prisma.roomRequest.count({ where }),
-		]);
-
-		return {
-			data: data.map((item) => this.mapToResponseDto(item)),
-			total,
-			page,
-			limit,
-		};
 	}
 
 	async findOne(id: string): Promise<RoomRequestResponseDto> {
@@ -192,6 +121,27 @@ export class RoomRequestService {
 								description: true,
 							},
 						},
+					},
+				},
+				preferredProvince: {
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
+					},
+				},
+				preferredDistrict: {
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
+					},
+				},
+				preferredWard: {
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
 					},
 				},
 			},
@@ -284,6 +234,27 @@ export class RoomRequestService {
 						},
 					},
 				},
+				preferredProvince: {
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
+					},
+				},
+				preferredDistrict: {
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
+					},
+				},
+				preferredWard: {
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
+					},
+				},
 			},
 		});
 
@@ -363,6 +334,27 @@ export class RoomRequestService {
 						},
 					},
 				},
+				preferredProvince: {
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
+					},
+				},
+				preferredDistrict: {
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
+					},
+				},
+				preferredWard: {
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
+					},
+				},
 			},
 		});
 
@@ -376,9 +368,9 @@ export class RoomRequestService {
 			description: roomRequest.description,
 			slug: roomRequest.slug,
 			requesterId: roomRequest.requesterId,
-			preferredDistrict: roomRequest.preferredDistrict,
-			preferredWard: roomRequest.preferredWard,
-			preferredCity: roomRequest.preferredCity,
+			preferredDistrictId: roomRequest.preferredDistrictId,
+			preferredWardId: roomRequest.preferredWardId,
+			preferredProvinceId: roomRequest.preferredProvinceId,
 			minBudget: roomRequest.minBudget,
 			maxBudget: roomRequest.maxBudget,
 			currency: roomRequest.currency,
@@ -394,6 +386,9 @@ export class RoomRequestService {
 			updatedAt: roomRequest.updatedAt,
 			requester: roomRequest.requester,
 			amenities: roomRequest.amenities,
+			preferredProvince: roomRequest.preferredProvince,
+			preferredDistrict: roomRequest.preferredDistrict,
+			preferredWard: roomRequest.preferredWard,
 		};
 	}
 }

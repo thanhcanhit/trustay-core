@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 
 @Injectable()
@@ -24,5 +24,25 @@ export class WardService {
 		});
 
 		return wards;
+	}
+
+	async findOne(id: number) {
+		const ward = await this.prisma.ward.findUnique({
+			where: { id },
+			select: {
+				id: true,
+				code: true,
+				name: true,
+				nameEn: true,
+				level: true,
+				districtId: true,
+			},
+		});
+
+		if (!ward) {
+			throw new NotFoundException(`Ward with ID ${id} not found`);
+		}
+
+		return ward;
 	}
 }

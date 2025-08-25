@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 
 @Injectable()
@@ -23,5 +23,24 @@ export class DistrictService {
 		});
 
 		return districts;
+	}
+
+	async findOne(id: number) {
+		const district = await this.prisma.district.findUnique({
+			where: { id },
+			select: {
+				id: true,
+				code: true,
+				name: true,
+				nameEn: true,
+				provinceId: true,
+			},
+		});
+
+		if (!district) {
+			throw new NotFoundException(`District with ID ${id} not found`);
+		}
+
+		return district;
 	}
 }

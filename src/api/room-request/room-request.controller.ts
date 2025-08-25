@@ -20,14 +20,9 @@ import {
 	ApiTags,
 } from '@nestjs/swagger';
 import { SearchPostStatus, User } from '@prisma/client';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import {
-	CreateRoomRequestDto,
-	QueryRoomRequestDto,
-	RoomRequestResponseDto,
-	UpdateRoomRequestDto,
-} from './dto';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { CreateRoomRequestDto, RoomRequestResponseDto, UpdateRoomRequestDto } from './dto';
 import { RoomRequestService } from './room-request.service';
 
 @ApiTags('Room Requests')
@@ -51,51 +46,6 @@ export class RoomRequestController {
 		@CurrentUser() user: User,
 	): Promise<RoomRequestResponseDto> {
 		return this.roomRequestService.create(createRoomRequestDto, user.id);
-	}
-
-	@Get()
-	@ApiOperation({ summary: 'Lấy danh sách bài đăng tìm trọ' })
-	@ApiResponse({
-		status: 200,
-		description: 'Lấy danh sách thành công',
-		schema: {
-			type: 'object',
-			properties: {
-				data: {
-					type: 'array',
-					items: { $ref: '#/components/schemas/RoomRequestResponseDto' },
-				},
-				total: { type: 'number' },
-				page: { type: 'number' },
-				limit: { type: 'number' },
-			},
-		},
-	})
-	@ApiQuery({ name: 'page', required: false, type: Number, default: 1 })
-	@ApiQuery({ name: 'limit', required: false, type: Number, default: 20 })
-	@ApiQuery({ name: 'search', required: false, type: String })
-	@ApiQuery({ name: 'city', required: false, type: String })
-	@ApiQuery({ name: 'district', required: false, type: String })
-	@ApiQuery({ name: 'ward', required: false, type: String })
-	@ApiQuery({ name: 'minBudget', required: false, type: Number })
-	@ApiQuery({ name: 'maxBudget', required: false, type: Number })
-	@ApiQuery({
-		name: 'roomType',
-		required: false,
-		enum: ['boarding_house', 'dormitory', 'sleepbox', 'apartment', 'whole_house'],
-	})
-	@ApiQuery({ name: 'occupancy', required: false, type: Number })
-	@ApiQuery({ name: 'status', required: false, enum: ['active', 'paused', 'closed', 'expired'] })
-	@ApiQuery({ name: 'isPublic', required: false, type: Boolean })
-	@ApiQuery({ name: 'requesterId', required: false, type: String })
-	@ApiQuery({
-		name: 'sortBy',
-		required: false,
-		enum: ['createdAt', 'updatedAt', 'maxBudget', 'viewCount', 'contactCount'],
-	})
-	@ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'] })
-	async findAll(@Query() query: QueryRoomRequestDto) {
-		return this.roomRequestService.findAll(query);
 	}
 
 	@Get(':id')

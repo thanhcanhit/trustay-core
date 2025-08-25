@@ -50,14 +50,14 @@ export class RoomRequestResponseDto {
 	@ApiProperty({ description: 'ID của người đăng' })
 	requesterId: string;
 
-	@ApiPropertyOptional({ description: 'Quận/huyện mong muốn' })
-	preferredDistrict?: string;
+	@ApiPropertyOptional({ description: 'ID quận/huyện mong muốn' })
+	preferredDistrictId?: number;
 
-	@ApiPropertyOptional({ description: 'Phường/xã mong muốn' })
-	preferredWard?: string;
+	@ApiPropertyOptional({ description: 'ID phường/xã mong muốn' })
+	preferredWardId?: number;
 
-	@ApiProperty({ description: 'Thành phố mong muốn' })
-	preferredCity: string;
+	@ApiProperty({ description: 'ID tỉnh/thành phố mong muốn' })
+	preferredProvinceId: number;
 
 	@ApiPropertyOptional({ description: 'Ngân sách tối thiểu' })
 	minBudget?: Decimal;
@@ -110,4 +110,25 @@ export class RoomRequestResponseDto {
 
 	@ApiProperty({ description: 'Danh sách tiện ích mong muốn' })
 	amenities: RoomRequestAmenityResponseDto[];
+
+	@ApiPropertyOptional({ description: 'Thông tin tỉnh/thành phố' })
+	preferredProvince?: {
+		id: number;
+		name: string;
+		nameEn?: string;
+	};
+
+	@ApiPropertyOptional({ description: 'Thông tin quận/huyện' })
+	preferredDistrict?: {
+		id: number;
+		name: string;
+		nameEn?: string;
+	};
+
+	@ApiPropertyOptional({ description: 'Thông tin phường/xã' })
+	preferredWard?: {
+		id: number;
+		name: string;
+		nameEn?: string;
+	};
 }

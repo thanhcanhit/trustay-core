@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 import { Test, TestingModule } from '@nestjs/testing';
 import { RoomType, SearchPostStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { CreateRoomRequestDto, QueryRoomRequestDto, UpdateRoomRequestDto } from './dto';
 import { RoomRequestService } from './room-request.service';
 

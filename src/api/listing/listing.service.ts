@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ListingQueryDto } from './dto/listing-query.dto';
+import { ListingQueryDto, RoomRequestSearchDto } from './dto/listing-query.dto';
 import { PaginatedListingResponseDto } from './dto/paginated-listing-response.dto';
 
 @Injectable()
@@ -295,5 +296,138 @@ export class ListingService {
 		}));
 
 		return PaginatedResponseDto.create(formattedRooms, page, limit, total);
+	}
+
+	async findAllRoomRequests(query: RoomRequestSearchDto): Promise<any> {
+		const {
+			page = 1,
+			limit = 20,
+			search,
+			provinceId,
+			districtId,
+			wardId,
+			minBudget,
+			maxBudget,
+			roomType,
+			occupancy,
+			status,
+			isPublic,
+			requesterId,
+			sortBy = 'createdAt',
+			sortOrder = 'desc',
+		} = query;
+
+		const where: Prisma.RoomRequestWhereInput = {
+			...(search && {
+				OR: [
+					{ title: { contains: search, mode: 'insensitive' } },
+					{ description: { contains: search, mode: 'insensitive' } },
+				],
+			}),
+			...(provinceId && { preferredProvinceId: parseInt(provinceId) }),
+			...(districtId && { preferredDistrictId: parseInt(districtId) }),
+			...(wardId && { preferredWardId: parseInt(wardId) }),
+			...(minBudget !== undefined && { maxBudget: { gte: parseFloat(minBudget) } }),
+			...(maxBudget !== undefined && { maxBudget: { lte: parseFloat(maxBudget) } }),
+			...(roomType && { preferredRoomType: roomType }),
+			...(occupancy && { occupancy: parseInt(occupancy) }),
+			...(status && { status }),
+			...(isPublic !== undefined && { isPublic: isPublic === 'true' }),
+			...(requesterId && { requesterId }),
+		};
+
+		const orderBy: Prisma.RoomRequestOrderByWithRelationInput = {
+			[sortBy]: sortOrder,
+		};
+
+		const [data, total] = await Promise.all([
+			this.prisma.roomRequest.findMany({
+				where,
+				orderBy,
+				skip: (page - 1) * limit,
+				take: limit,
+				include: {
+					requester: {
+						select: {
+							id: true,
+							firstName: true,
+							lastName: true,
+							email: true,
+							phone: true,
+							avatarUrl: true,
+						},
+					},
+					amenities: {
+						include: {
+							systemAmenity: {
+								select: {
+									id: true,
+									name: true,
+									nameEn: true,
+									category: true,
+									description: true,
+								},
+							},
+						},
+					},
+					preferredProvince: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+						},
+					},
+					preferredDistrict: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+						},
+					},
+					preferredWard: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+						},
+					},
+				},
+			}),
+			this.prisma.roomRequest.count({ where }),
+		]);
+
+		return {
+			data: data.map((item) => ({
+				id: item.id,
+				title: item.title,
+				description: item.description,
+				slug: item.slug,
+				requesterId: item.requesterId,
+				preferredDistrictId: item.preferredDistrictId,
+				preferredWardId: item.preferredWardId,
+				preferredProvinceId: item.preferredProvinceId,
+				minBudget: item.minBudget,
+				maxBudget: item.maxBudget,
+				currency: item.currency,
+				preferredRoomType: item.preferredRoomType,
+				occupancy: item.occupancy,
+				moveInDate: item.moveInDate,
+				status: item.status,
+				isPublic: item.isPublic,
+				expiresAt: item.expiresAt,
+				viewCount: item.viewCount,
+				contactCount: item.contactCount,
+				createdAt: item.createdAt,
+				updatedAt: item.updatedAt,
+				requester: item.requester,
+				amenities: item.amenities,
+				preferredProvince: item.preferredProvince,
+				preferredDistrict: item.preferredDistrict,
+				preferredWard: item.preferredWard,
+			})),
+			total,
+			page,
+			limit,
+		};
 	}
 }
