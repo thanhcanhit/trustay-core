@@ -1,17 +1,16 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { RoomType, SearchPostStatus } from '@prisma/client';
-import { Decimal } from '@prisma/client/runtime/library';
+// Decimal not used in these tests
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateRoomRequestDto, QueryRoomRequestDto, UpdateRoomRequestDto } from './dto';
-import { RoomRequestService } from './room-request.service';
+import { RoomRequestService } from './room-seeking-post.service';
 
 describe('RoomRequestService', () => {
 	let service: RoomRequestService;
-	let prismaService: PrismaService;
 
 	const mockPrismaService = {
-		roomRequest: {
+		roomSeekingPost: {
 			create: jest.fn(),
 			findMany: jest.fn(),
 			count: jest.fn(),
@@ -34,7 +33,6 @@ describe('RoomRequestService', () => {
 		}).compile();
 
 		service = module.get<RoomRequestService>(RoomRequestService);
-		prismaService = module.get<PrismaService>(PrismaService);
 	});
 
 	afterEach(() => {
@@ -50,7 +48,7 @@ describe('RoomRequestService', () => {
 			title: 'Tìm trọ gần trường ĐH',
 			description: 'Cần phòng gần trường ĐH',
 			slug: 'tim-tro-gan-truong-dh',
-			preferredCity: 'TP.HCM',
+			preferredProvinceId: 1,
 			maxBudget: 5000000,
 			currency: 'VND',
 			preferredRoomType: RoomType.apartment,
@@ -80,13 +78,13 @@ describe('RoomRequestService', () => {
 				amenities: [],
 			};
 
-			mockPrismaService.roomRequest.findUnique.mockResolvedValue(null);
-			mockPrismaService.roomRequest.create.mockResolvedValue(mockCreatedRequest);
+			mockPrismaService.roomSeekingPost.findUnique.mockResolvedValue(null);
+			mockPrismaService.roomSeekingPost.create.mockResolvedValue(mockCreatedRequest);
 
 			const result = await service.create(createDto, mockUser.id);
 
 			expect(result).toEqual(mockCreatedRequest);
-			expect(mockPrismaService.roomRequest.create).toHaveBeenCalledWith({
+			expect(mockPrismaService.roomSeekingPost.create).toHaveBeenCalledWith({
 				data: {
 					...createDto,
 					requesterId: mockUser.id,
@@ -94,10 +92,7 @@ describe('RoomRequestService', () => {
 					currency: 'VND',
 					isPublic: true,
 					amenities: {
-						create: [
-							{ systemAmenityId: 'amenity-1', isRequired: false },
-							{ systemAmenityId: 'amenity-2', isRequired: false },
-						],
+						connect: [{ id: 'amenity-1' }, { id: 'amenity-2' }],
 					},
 				},
 				include: expect.any(Object),
@@ -105,7 +100,7 @@ describe('RoomRequestService', () => {
 		});
 
 		it('should throw BadRequestException if slug already exists', async () => {
-			mockPrismaService.roomRequest.findUnique.mockResolvedValue({ id: 'existing-request' });
+			mockPrismaService.roomSeekingPost.findUnique.mockResolvedValue({ id: 'existing-request' });
 
 			await expect(service.create(createDto, mockUser.id)).rejects.toThrow(BadRequestException);
 		});
@@ -116,7 +111,6 @@ describe('RoomRequestService', () => {
 			page: 1,
 			limit: 20,
 			search: 'trọ',
-			city: 'TP.HCM',
 			sortBy: 'createdAt',
 			sortOrder: 'desc',
 		};
@@ -131,8 +125,8 @@ describe('RoomRequestService', () => {
 				},
 			];
 
-			mockPrismaService.roomRequest.findMany.mockResolvedValue(mockRequests);
-			mockPrismaService.roomRequest.count.mockResolvedValue(1);
+			mockPrismaService.roomSeekingPost.findMany.mockResolvedValue(mockRequests);
+			mockPrismaService.roomSeekingPost.count.mockResolvedValue(1);
 
 			const result = await service.findAll(queryDto);
 
@@ -157,20 +151,20 @@ describe('RoomRequestService', () => {
 				amenities: [],
 			};
 
-			mockPrismaService.roomRequest.findUnique.mockResolvedValue(mockRequest);
-			mockPrismaService.roomRequest.update.mockResolvedValue(mockRequest);
+			mockPrismaService.roomSeekingPost.findUnique.mockResolvedValue(mockRequest);
+			mockPrismaService.roomSeekingPost.update.mockResolvedValue(mockRequest);
 
 			const result = await service.findOne(requestId);
 
 			expect(result).toEqual(mockRequest);
-			expect(mockPrismaService.roomRequest.update).toHaveBeenCalledWith({
+			expect(mockPrismaService.roomSeekingPost.update).toHaveBeenCalledWith({
 				where: { id: requestId },
 				data: { viewCount: { increment: 1 } },
 			});
 		});
 
 		it('should throw NotFoundException if room request not found', async () => {
-			mockPrismaService.roomRequest.findUnique.mockResolvedValue(null);
+			mockPrismaService.roomSeekingPost.findUnique.mockResolvedValue(null);
 
 			await expect(service.findOne(requestId)).rejects.toThrow(NotFoundException);
 		});
@@ -194,9 +188,9 @@ describe('RoomRequestService', () => {
 				amenities: [],
 			};
 
-			mockPrismaService.roomRequest.findUnique.mockResolvedValue(mockExistingRequest);
-			mockPrismaService.roomRequest.findFirst.mockResolvedValue(null);
-			mockPrismaService.roomRequest.update.mockResolvedValue(mockUpdatedRequest);
+			mockPrismaService.roomSeekingPost.findUnique.mockResolvedValue(mockExistingRequest);
+			mockPrismaService.roomSeekingPost.findFirst.mockResolvedValue(null);
+			mockPrismaService.roomSeekingPost.update.mockResolvedValue(mockUpdatedRequest);
 
 			const result = await service.update(requestId, updateDto, mockUser.id);
 
@@ -206,7 +200,7 @@ describe('RoomRequestService', () => {
 		it('should throw ForbiddenException if user is not the owner', async () => {
 			const mockExistingRequest = { requesterId: 'other-user' };
 
-			mockPrismaService.roomRequest.findUnique.mockResolvedValue(mockExistingRequest);
+			mockPrismaService.roomSeekingPost.findUnique.mockResolvedValue(mockExistingRequest);
 
 			await expect(service.update(requestId, updateDto, mockUser.id)).rejects.toThrow(
 				ForbiddenException,
@@ -221,12 +215,12 @@ describe('RoomRequestService', () => {
 		it('should delete room request successfully', async () => {
 			const mockExistingRequest = { requesterId: mockUser.id };
 
-			mockPrismaService.roomRequest.findUnique.mockResolvedValue(mockExistingRequest);
-			mockPrismaService.roomRequest.delete.mockResolvedValue({});
+			mockPrismaService.roomSeekingPost.findUnique.mockResolvedValue(mockExistingRequest);
+			mockPrismaService.roomSeekingPost.delete.mockResolvedValue({});
 
 			await service.remove(requestId, mockUser.id);
 
-			expect(mockPrismaService.roomRequest.delete).toHaveBeenCalledWith({
+			expect(mockPrismaService.roomSeekingPost.delete).toHaveBeenCalledWith({
 				where: { id: requestId },
 			});
 		});
@@ -234,7 +228,7 @@ describe('RoomRequestService', () => {
 		it('should throw ForbiddenException if user is not the owner', async () => {
 			const mockExistingRequest = { requesterId: 'other-user' };
 
-			mockPrismaService.roomRequest.findUnique.mockResolvedValue(mockExistingRequest);
+			mockPrismaService.roomSeekingPost.findUnique.mockResolvedValue(mockExistingRequest);
 
 			await expect(service.remove(requestId, mockUser.id)).rejects.toThrow(ForbiddenException);
 		});
@@ -244,11 +238,11 @@ describe('RoomRequestService', () => {
 		const requestId = 'request-1';
 
 		it('should increment contact count successfully', async () => {
-			mockPrismaService.roomRequest.update.mockResolvedValue({});
+			mockPrismaService.roomSeekingPost.update.mockResolvedValue({});
 
 			await service.incrementContactCount(requestId);
 
-			expect(mockPrismaService.roomRequest.update).toHaveBeenCalledWith({
+			expect(mockPrismaService.roomSeekingPost.update).toHaveBeenCalledWith({
 				where: { id: requestId },
 				data: { contactCount: { increment: 1 } },
 			});
@@ -269,8 +263,8 @@ describe('RoomRequestService', () => {
 				amenities: [],
 			};
 
-			mockPrismaService.roomRequest.findUnique.mockResolvedValue(mockExistingRequest);
-			mockPrismaService.roomRequest.update.mockResolvedValue(mockUpdatedRequest);
+			mockPrismaService.roomSeekingPost.findUnique.mockResolvedValue(mockExistingRequest);
+			mockPrismaService.roomSeekingPost.update.mockResolvedValue(mockUpdatedRequest);
 
 			const result = await service.updateStatus(requestId, newStatus, mockUser.id);
 
@@ -280,7 +274,7 @@ describe('RoomRequestService', () => {
 		it('should throw ForbiddenException if user is not the owner', async () => {
 			const mockExistingRequest = { requesterId: 'other-user' };
 
-			mockPrismaService.roomRequest.findUnique.mockResolvedValue(mockExistingRequest);
+			mockPrismaService.roomSeekingPost.findUnique.mockResolvedValue(mockExistingRequest);
 
 			await expect(service.updateStatus(requestId, newStatus, mockUser.id)).rejects.toThrow(
 				ForbiddenException,

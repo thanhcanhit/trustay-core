@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RoomType, SearchPostStatus } from '@prisma/client';
-import { Decimal } from '@prisma/client/runtime/library';
+import { RoomType } from '@prisma/client';
 import {
 	IsArray,
 	IsBoolean,
@@ -9,7 +8,6 @@ import {
 	IsNumber,
 	IsOptional,
 	IsString,
-	IsUrl,
 	IsUUID,
 	Max,
 	Min,
@@ -85,7 +83,7 @@ export class CreateRoomRequestDto {
 	@IsDateString()
 	expiresAt?: string;
 
-	@ApiPropertyOptional({ description: 'Danh sách ID tiện ích mong muốn' })
+	@ApiPropertyOptional({ description: 'Danh sách ID tiện ích mong muốn (SystemAmenity IDs)' })
 	@IsOptional()
 	@IsArray()
 	@IsUUID('4', { each: true })

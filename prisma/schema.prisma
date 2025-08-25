@@ -221,7 +221,7 @@ model User {
   roomSearchPosts     RoomSearchPost[]
   verificationCodes   VerificationCode[]
   refreshTokens       RefreshToken[]
-  roomRequests        RoomRequest[]
+  roomRequests        RoomSeekingPost[]
 
   @@map("users")
 }
@@ -468,7 +468,7 @@ model SystemAmenity {
 
     // Relations
   roomAmenities RoomAmenity[]
-  roomRequestAmenities RoomRequestAmenity[]
+  roomRequestAmenities RoomSeekingPost[]
   
   @@index([category])
   @@index([isActive])
@@ -883,7 +883,7 @@ model RoomSearchPost {
 // ROOM REQUEST (BÀI ĐĂNG TÌM TRỌ)
 // ========================================
 
-model RoomRequest {
+model RoomSeekingPost {
   id          String @id @default(uuid())
   title       String
   description String
@@ -925,7 +925,7 @@ model RoomRequest {
   
   // Relations
   requester User @relation(fields: [requesterId], references: [id], onDelete: Cascade)
-  amenities RoomRequestAmenity[]
+  amenities SystemAmenity[]
   
   // Relations
   preferredProvince Province? @relation(fields: [preferredProvinceId], references: [id], onDelete: SetNull)
@@ -942,25 +942,6 @@ model RoomRequest {
   @@index([expiresAt])
   @@index([createdAt])
   @@map("room_requests")
-}
-
-model RoomRequestAmenity {
-  id                String   @id @default(uuid())
-  roomRequestId     String   @map("room_request_id")
-  systemAmenityId   String   @map("system_amenity_id")
-  isRequired        Boolean  @default(false) @map("is_required") // Tiện ích bắt buộc hay không
-  customValue       String?  @map("custom_value") // Giá trị tùy chỉnh nếu có
-  notes             String? // Ghi chú về yêu cầu cụ thể
-  createdAt         DateTime @default(now()) @map("created_at")
-  
-  // Relations
-  roomRequest   RoomRequest   @relation(fields: [roomRequestId], references: [id], onDelete: Cascade)
-  systemAmenity SystemAmenity @relation(fields: [systemAmenityId], references: [id], onDelete: Cascade)
-  
-  @@unique([roomRequestId, systemAmenityId])
-  @@index([roomRequestId])
-  @@index([systemAmenityId])
-  @@map("room_request_amenities")
 }
 
 // ========================================
@@ -999,7 +980,7 @@ model Province {
   districts     District[]
   userAddresses UserAddress[]
   buildings     Building[]
-  roomRequests  RoomRequest[]
+  roomRequests  RoomSeekingPost[]
 
   @@index([code])
   @@map("provinces")
@@ -1018,7 +999,7 @@ model District {
   wards         Ward[]
   userAddresses UserAddress[]
   buildings     Building[]
-  roomRequests  RoomRequest[]
+  roomRequests  RoomSeekingPost[]
 
   @@index([code])
   @@index([provinceId])
@@ -1038,7 +1019,7 @@ model Ward {
   district      District      @relation(fields: [districtId], references: [id], onDelete: Cascade)
   userAddresses UserAddress[]
   buildings     Building[]
-  roomRequests  RoomRequest[]
+  roomRequests  RoomSeekingPost[]
 
   @@index([code])
   @@index([districtId])

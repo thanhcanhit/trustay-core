@@ -317,7 +317,7 @@ export class ListingService {
 			sortOrder = 'desc',
 		} = query;
 
-		const where: Prisma.RoomRequestWhereInput = {
+		const where: Prisma.RoomSeekingPostWhereInput = {
 			...(search && {
 				OR: [
 					{ title: { contains: search, mode: 'insensitive' } },
@@ -336,12 +336,12 @@ export class ListingService {
 			...(requesterId && { requesterId }),
 		};
 
-		const orderBy: Prisma.RoomRequestOrderByWithRelationInput = {
+		const orderBy: Prisma.RoomSeekingPostOrderByWithRelationInput = {
 			[sortBy]: sortOrder,
 		};
 
 		const [data, total] = await Promise.all([
-			this.prisma.roomRequest.findMany({
+			this.prisma.roomSeekingPost.findMany({
 				where,
 				orderBy,
 				skip: (page - 1) * limit,
@@ -358,16 +358,12 @@ export class ListingService {
 						},
 					},
 					amenities: {
-						include: {
-							systemAmenity: {
-								select: {
-									id: true,
-									name: true,
-									nameEn: true,
-									category: true,
-									description: true,
-								},
-							},
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+							category: true,
+							description: true,
 						},
 					},
 					preferredProvince: {
@@ -393,7 +389,7 @@ export class ListingService {
 					},
 				},
 			}),
-			this.prisma.roomRequest.count({ where }),
+			this.prisma.roomSeekingPost.count({ where }),
 		]);
 
 		return {

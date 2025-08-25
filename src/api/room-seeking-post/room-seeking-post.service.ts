@@ -4,13 +4,103 @@ import {
 	Injectable,
 	NotFoundException,
 } from '@nestjs/common';
-import { Prisma, RoomRequest, RoomRequestAmenity, SearchPostStatus } from '@prisma/client';
+import { SearchPostStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateRoomRequestDto, RoomRequestResponseDto, UpdateRoomRequestDto } from './dto';
+import {
+	CreateRoomRequestDto,
+	QueryRoomRequestDto,
+	RoomRequestResponseDto,
+	UpdateRoomRequestDto,
+} from './dto';
 
 @Injectable()
 export class RoomRequestService {
 	constructor(private readonly prisma: PrismaService) {}
+
+	async findAll(query: QueryRoomRequestDto): Promise<{
+		data: RoomRequestResponseDto[];
+		total: number;
+		page: number;
+		limit: number;
+	}> {
+		const {
+			page = 1,
+			limit = 20,
+			sortBy = 'createdAt',
+			sortOrder = 'desc',
+			search,
+			provinceId,
+			districtId,
+			wardId,
+			minBudget,
+			maxBudget,
+			roomType,
+			occupancy,
+			status,
+			isPublic,
+			requesterId,
+		} = query;
+
+		const where: any = {
+			...(typeof requesterId === 'string' && { requesterId }),
+			...(typeof isPublic === 'boolean' && { isPublic }),
+			...(status && { status }),
+			...(typeof occupancy === 'number' && { occupancy }),
+			...(roomType && { preferredRoomType: roomType }),
+			...(typeof provinceId === 'number' && { preferredProvinceId: provinceId }),
+			...(typeof districtId === 'number' && { preferredDistrictId: districtId }),
+			...(typeof wardId === 'number' && { preferredWardId: wardId }),
+			...(typeof minBudget === 'number' && { maxBudget: { gte: minBudget } }),
+			...(typeof maxBudget === 'number' && { maxBudget: { lte: maxBudget } }),
+			...(search && {
+				OR: [
+					{ title: { contains: search, mode: 'insensitive' } },
+					{ description: { contains: search, mode: 'insensitive' } },
+				],
+			}),
+		};
+
+		const [items, total] = await Promise.all([
+			this.prisma.roomSeekingPost.findMany({
+				where,
+				orderBy: { [sortBy]: sortOrder },
+				skip: (page - 1) * limit,
+				take: limit,
+				include: {
+					requester: {
+						select: {
+							id: true,
+							firstName: true,
+							lastName: true,
+							email: true,
+							phone: true,
+							avatarUrl: true,
+						},
+					},
+					amenities: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+							category: true,
+							description: true,
+						},
+					},
+					preferredProvince: { select: { id: true, name: true, nameEn: true } },
+					preferredDistrict: { select: { id: true, name: true, nameEn: true } },
+					preferredWard: { select: { id: true, name: true, nameEn: true } },
+				},
+			}),
+			this.prisma.roomSeekingPost.count({ where }),
+		]);
+
+		return {
+			data: items.map((it) => this.mapToResponseDto(it)),
+			total,
+			page,
+			limit,
+		};
+	}
 
 	async create(
 		createRoomRequestDto: CreateRoomRequestDto,
@@ -19,7 +109,7 @@ export class RoomRequestService {
 		const { amenityIds, ...roomRequestData } = createRoomRequestDto;
 
 		// Kiểm tra slug đã tồn tại chưa
-		const existingRequest = await this.prisma.roomRequest.findUnique({
+		const existingRequest = await this.prisma.roomSeekingPost.findUnique({
 			where: { slug: roomRequestData.slug },
 		});
 
@@ -28,7 +118,7 @@ export class RoomRequestService {
 		}
 
 		// Tạo room request với amenities
-		const roomRequest = await this.prisma.roomRequest.create({
+		const roomRequest = await this.prisma.roomSeekingPost.create({
 			data: {
 				...roomRequestData,
 				requesterId,
@@ -38,10 +128,7 @@ export class RoomRequestService {
 				amenities:
 					amenityIds && amenityIds.length > 0
 						? {
-								create: amenityIds.map((amenityId) => ({
-									systemAmenityId: amenityId,
-									isRequired: false,
-								})),
+								connect: amenityIds.map((amenityId) => ({ id: amenityId })),
 							}
 						: undefined,
 			},
@@ -57,16 +144,12 @@ export class RoomRequestService {
 					},
 				},
 				amenities: {
-					include: {
-						systemAmenity: {
-							select: {
-								id: true,
-								name: true,
-								nameEn: true,
-								category: true,
-								description: true,
-							},
-						},
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
+						category: true,
+						description: true,
 					},
 				},
 				preferredProvince: {
@@ -97,7 +180,7 @@ export class RoomRequestService {
 	}
 
 	async findOne(id: string): Promise<RoomRequestResponseDto> {
-		const roomRequest = await this.prisma.roomRequest.findUnique({
+		const roomRequest = await this.prisma.roomSeekingPost.findUnique({
 			where: { id },
 			include: {
 				requester: {
@@ -111,16 +194,12 @@ export class RoomRequestService {
 					},
 				},
 				amenities: {
-					include: {
-						systemAmenity: {
-							select: {
-								id: true,
-								name: true,
-								nameEn: true,
-								category: true,
-								description: true,
-							},
-						},
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
+						category: true,
+						description: true,
 					},
 				},
 				preferredProvince: {
@@ -152,7 +231,7 @@ export class RoomRequestService {
 		}
 
 		// Tăng view count
-		await this.prisma.roomRequest.update({
+		await this.prisma.roomSeekingPost.update({
 			where: { id },
 			data: { viewCount: { increment: 1 } },
 		});
@@ -166,7 +245,7 @@ export class RoomRequestService {
 		requesterId: string,
 	): Promise<RoomRequestResponseDto> {
 		// Kiểm tra quyền sở hữu
-		const existingRequest = await this.prisma.roomRequest.findUnique({
+		const existingRequest = await this.prisma.roomSeekingPost.findUnique({
 			where: { id },
 			select: { requesterId: true },
 		});
@@ -183,7 +262,7 @@ export class RoomRequestService {
 
 		// Kiểm tra slug mới nếu có thay đổi
 		if (updateData.slug) {
-			const slugExists = await this.prisma.roomRequest.findFirst({
+			const slugExists = await this.prisma.roomSeekingPost.findFirst({
 				where: {
 					slug: updateData.slug,
 					id: { not: id },
@@ -196,17 +275,13 @@ export class RoomRequestService {
 		}
 
 		// Cập nhật room request
-		const updatedRequest = await this.prisma.roomRequest.update({
+		const updatedRequest = await this.prisma.roomSeekingPost.update({
 			where: { id },
 			data: {
 				...updateData,
 				...(amenityIds && {
 					amenities: {
-						deleteMany: {},
-						create: amenityIds.map((amenityId) => ({
-							systemAmenityId: amenityId,
-							isRequired: false,
-						})),
+						set: amenityIds.map((amenityId) => ({ id: amenityId })),
 					},
 				}),
 			},
@@ -222,16 +297,12 @@ export class RoomRequestService {
 					},
 				},
 				amenities: {
-					include: {
-						systemAmenity: {
-							select: {
-								id: true,
-								name: true,
-								nameEn: true,
-								category: true,
-								description: true,
-							},
-						},
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
+						category: true,
+						description: true,
 					},
 				},
 				preferredProvince: {
@@ -263,7 +334,7 @@ export class RoomRequestService {
 
 	async remove(id: string, requesterId: string): Promise<void> {
 		// Kiểm tra quyền sở hữu
-		const existingRequest = await this.prisma.roomRequest.findUnique({
+		const existingRequest = await this.prisma.roomSeekingPost.findUnique({
 			where: { id },
 			select: { requesterId: true },
 		});
@@ -276,13 +347,13 @@ export class RoomRequestService {
 			throw new ForbiddenException('Bạn không có quyền xóa bài đăng này');
 		}
 
-		await this.prisma.roomRequest.delete({
+		await this.prisma.roomSeekingPost.delete({
 			where: { id },
 		});
 	}
 
 	async incrementContactCount(id: string): Promise<void> {
-		await this.prisma.roomRequest.update({
+		await this.prisma.roomSeekingPost.update({
 			where: { id },
 			data: { contactCount: { increment: 1 } },
 		});
@@ -294,7 +365,7 @@ export class RoomRequestService {
 		requesterId: string,
 	): Promise<RoomRequestResponseDto> {
 		// Kiểm tra quyền sở hữu
-		const existingRequest = await this.prisma.roomRequest.findUnique({
+		const existingRequest = await this.prisma.roomSeekingPost.findUnique({
 			where: { id },
 			select: { requesterId: true },
 		});
@@ -307,7 +378,7 @@ export class RoomRequestService {
 			throw new ForbiddenException('Bạn không có quyền thay đổi trạng thái bài đăng này');
 		}
 
-		const updatedRequest = await this.prisma.roomRequest.update({
+		const updatedRequest = await this.prisma.roomSeekingPost.update({
 			where: { id },
 			data: { status },
 			include: {
@@ -322,16 +393,12 @@ export class RoomRequestService {
 					},
 				},
 				amenities: {
-					include: {
-						systemAmenity: {
-							select: {
-								id: true,
-								name: true,
-								nameEn: true,
-								category: true,
-								description: true,
-							},
-						},
+					select: {
+						id: true,
+						name: true,
+						nameEn: true,
+						category: true,
+						description: true,
 					},
 				},
 				preferredProvince: {

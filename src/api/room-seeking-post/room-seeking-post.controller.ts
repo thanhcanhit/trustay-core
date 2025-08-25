@@ -23,7 +23,7 @@ import { SearchPostStatus, User } from '@prisma/client';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CreateRoomRequestDto, RoomRequestResponseDto, UpdateRoomRequestDto } from './dto';
-import { RoomRequestService } from './room-request.service';
+import { RoomRequestService } from './room-seeking-post.service';
 
 @ApiTags('Room Requests')
 @Controller('room-requests')

@@ -2,38 +2,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AmenityCategory, RoomType, SearchPostStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 
-export class RoomRequestAmenityResponseDto {
-	@ApiProperty({ description: 'ID của tiện ích' })
-	id: string;
-
-	@ApiProperty({ description: 'ID của bài đăng' })
-	roomRequestId: string;
-
-	@ApiProperty({ description: 'ID của tiện ích hệ thống' })
-	systemAmenityId: string;
-
-	@ApiProperty({ description: 'Tiện ích có bắt buộc hay không' })
-	isRequired: boolean;
-
-	@ApiPropertyOptional({ description: 'Giá trị tùy chỉnh' })
-	customValue?: string;
-
-	@ApiPropertyOptional({ description: 'Ghi chú' })
-	notes?: string;
-
-	@ApiProperty({ description: 'Thời gian tạo' })
-	createdAt: Date;
-
-	@ApiProperty({ description: 'Thông tin tiện ích hệ thống' })
-	systemAmenity: {
-		id: string;
-		name: string;
-		nameEn: string;
-		category: AmenityCategory;
-		description?: string;
-	};
-}
-
 export class RoomRequestResponseDto {
 	@ApiProperty({ description: 'ID của bài đăng' })
 	id: string;
@@ -108,8 +76,14 @@ export class RoomRequestResponseDto {
 		avatarUrl?: string;
 	};
 
-	@ApiProperty({ description: 'Danh sách tiện ích mong muốn' })
-	amenities: RoomRequestAmenityResponseDto[];
+	@ApiProperty({ description: 'Danh sách tiện ích mong muốn (SystemAmenity)' })
+	amenities: Array<{
+		id: string;
+		name: string;
+		nameEn: string;
+		category: AmenityCategory;
+		description?: string;
+	}>;
 
 	@ApiPropertyOptional({ description: 'Thông tin tỉnh/thành phố' })
 	preferredProvince?: {
