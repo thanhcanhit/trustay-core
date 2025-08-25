@@ -4,10 +4,10 @@ import { RoomType, SearchPostStatus } from '@prisma/client';
 // Decimal not used in these tests
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateRoomRequestDto, QueryRoomRequestDto, UpdateRoomRequestDto } from './dto';
-import { RoomRequestService } from './room-seeking-post.service';
+import { RoomSeekingPostService } from './room-seeking-post.service';
 
 describe('RoomRequestService', () => {
-	let service: RoomRequestService;
+	let service: RoomSeekingPostService;
 
 	const mockPrismaService = {
 		roomSeekingPost: {
@@ -24,7 +24,7 @@ describe('RoomRequestService', () => {
 	beforeEach(async () => {
 		const module: TestingModule = await Test.createTestingModule({
 			providers: [
-				RoomRequestService,
+				RoomSeekingPostService,
 				{
 					provide: PrismaService,
 					useValue: mockPrismaService,
@@ -32,7 +32,7 @@ describe('RoomRequestService', () => {
 			],
 		}).compile();
 
-		service = module.get<RoomRequestService>(RoomRequestService);
+		service = module.get<RoomSeekingPostService>(RoomSeekingPostService);
 	});
 
 	afterEach(() => {

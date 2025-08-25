@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
-import { RoomRequestController } from './room-seeking-post.controller';
-import { RoomRequestService } from './room-seeking-post.service';
+import { RoomSeekingPostController } from './room-seeking-post.controller';
+import { RoomSeekingPostService } from './room-seeking-post.service';
 
 @Module({
 	imports: [PrismaModule],
-	controllers: [RoomRequestController],
-	providers: [RoomRequestService],
-	exports: [RoomRequestService],
+	controllers: [RoomSeekingPostController],
+	providers: [RoomSeekingPostService],
+	exports: [RoomSeekingPostService],
 })
-export class RoomRequestModule {}
+export class RoomSeekingPostModule {}

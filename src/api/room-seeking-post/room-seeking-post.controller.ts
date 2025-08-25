@@ -8,27 +8,19 @@ import {
 	Param,
 	Patch,
 	Post,
-	Query,
 	UseGuards,
 } from '@nestjs/common';
-import {
-	ApiBearerAuth,
-	ApiOperation,
-	ApiParam,
-	ApiQuery,
-	ApiResponse,
-	ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { SearchPostStatus, User } from '@prisma/client';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CreateRoomRequestDto, RoomRequestResponseDto, UpdateRoomRequestDto } from './dto';
-import { RoomRequestService } from './room-seeking-post.service';
+import { RoomSeekingPostService } from './room-seeking-post.service';
 
-@ApiTags('Room Requests')
-@Controller('room-requests')
-export class RoomRequestController {
-	constructor(private readonly roomRequestService: RoomRequestService) {}
+@ApiTags('Room Seeking Posts')
+@Controller('room-seeking-posts')
+export class RoomSeekingPostController {
+	constructor(private readonly roomRequestService: RoomSeekingPostService) {}
 
 	@Post()
 	@UseGuards(JwtAuthGuard)

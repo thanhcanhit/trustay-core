@@ -7,7 +7,7 @@ import { DistrictModule } from './api/provinces/district/district.module';
 import { ProvinceModule } from './api/provinces/province/province.module';
 import { WardModule } from './api/provinces/ward/ward.module';
 import { ReferenceModule } from './api/reference/reference.module';
-import { RoomRequestModule } from './api/room-seeking-post/room-seeking-post.module';
+import { RoomSeekingPostModule } from './api/room-seeking-post/room-seeking-post.module';
 import { RoomsModule } from './api/rooms/rooms.module';
 import { UsersModule } from './api/users/users.module';
 import { AppController } from './app.controller';
@@ -35,7 +35,7 @@ import { PrismaModule } from './prisma/prisma.module';
 		ListingModule,
 		ReferenceModule,
 		RoomsModule,
-		RoomRequestModule,
+		RoomSeekingPostModule,
 	],
 	controllers: [AppController],
 	providers: [

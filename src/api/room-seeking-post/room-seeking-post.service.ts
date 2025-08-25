@@ -14,7 +14,7 @@ import {
 } from './dto';
 
 @Injectable()
-export class RoomRequestService {
+export class RoomSeekingPostService {
 	constructor(private readonly prisma: PrismaService) {}
 
 	async findAll(query: QueryRoomRequestDto): Promise<{
