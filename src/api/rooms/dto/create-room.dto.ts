@@ -1,13 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { BillingCycle, CostType, RoomType } from '@prisma/client';
-import { Transform, Type } from 'class-transformer';
+import { Type } from 'class-transformer';
 import {
 	IsArray,
 	IsBoolean,
-	IsDecimal,
 	IsEnum,
 	IsInt,
 	IsNotEmpty,
+	IsNumber,
 	IsOptional,
 	IsString,
 	Max,
@@ -22,8 +22,8 @@ export class CreateRoomPricingDto {
 		description: 'Giá thuê hàng tháng (VND)',
 		example: 3500000,
 	})
-	@Transform(({ value }) => parseFloat(value))
-	@IsDecimal({ decimal_digits: '0,2' })
+	@Type(() => Number)
+	@IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
 	@Min(0)
 	basePriceMonthly: number;
 
@@ -31,8 +31,8 @@ export class CreateRoomPricingDto {
 		description: 'Số tiền cọc (VND)',
 		example: 7000000,
 	})
-	@Transform(({ value }) => parseFloat(value))
-	@IsDecimal({ decimal_digits: '0,2' })
+	@Type(() => Number)
+	@IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
 	@Min(0)
 	depositAmount: number;
 
@@ -61,8 +61,8 @@ export class CreateRoomPricingDto {
 		example: 500000,
 	})
 	@IsOptional()
-	@Transform(({ value }) => (value ? parseFloat(value) : undefined))
-	@IsDecimal({ decimal_digits: '0,2' })
+	@Type(() => Number)
+	@IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
 	@Min(0)
 	utilityCostMonthly?: number;
 
@@ -71,8 +71,8 @@ export class CreateRoomPricingDto {
 		example: 200000,
 	})
 	@IsOptional()
-	@Transform(({ value }) => (value ? parseFloat(value) : undefined))
-	@IsDecimal({ decimal_digits: '0,2' })
+	@Type(() => Number)
+	@IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
 	@Min(0)
 	cleaningFee?: number;
 
@@ -81,8 +81,8 @@ export class CreateRoomPricingDto {
 		example: 5.0,
 	})
 	@IsOptional()
-	@Transform(({ value }) => (value ? parseFloat(value) : undefined))
-	@IsDecimal({ decimal_digits: '0,2' })
+	@Type(() => Number)
+	@IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
 	@Min(0)
 	@Max(100)
 	serviceFeePercentage?: number;
@@ -159,8 +159,8 @@ export class CreateRoomCostDto {
 		description: 'Giá trị chi phí (VND)',
 		example: 100000,
 	})
-	@Transform(({ value }) => parseFloat(value))
-	@IsDecimal({ decimal_digits: '0,2' })
+	@Type(() => Number)
+	@IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 4 })
 	@Min(0)
 	value: number;
 
@@ -294,8 +294,8 @@ export class CreateRoomDto {
 		example: 25.5,
 	})
 	@IsOptional()
-	@Transform(({ value }) => (value ? parseFloat(value) : undefined))
-	@IsDecimal({ decimal_digits: '0,2' })
+	@Type(() => Number)
+	@IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
 	@Min(1)
 	@Max(1000)
 	areaSqm?: number;

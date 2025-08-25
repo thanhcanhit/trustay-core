@@ -4,9 +4,9 @@ import { Type } from 'class-transformer';
 import {
 	IsArray,
 	IsBoolean,
-	IsDecimal,
 	IsEnum,
 	IsInt,
+	IsNumber,
 	IsOptional,
 	IsString,
 	IsUUID,
@@ -23,7 +23,8 @@ export class UpdateRoomPricingDto {
 		minimum: 100000,
 	})
 	@IsOptional()
-	@IsDecimal({ decimal_digits: '0,2' })
+	@Type(() => Number)
+	@IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
 	@Min(100000)
 	basePriceMonthly?: number;
 
@@ -33,7 +34,8 @@ export class UpdateRoomPricingDto {
 		minimum: 0,
 	})
 	@IsOptional()
-	@IsDecimal({ decimal_digits: '0,2' })
+	@Type(() => Number)
+	@IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
 	@Min(0)
 	depositAmount?: number;
 
@@ -83,7 +85,8 @@ export class UpdateRoomPricingDto {
 		maximum: 50,
 	})
 	@IsOptional()
-	@IsDecimal({ decimal_digits: '0,2' })
+	@Type(() => Number)
+	@IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
 	@Min(0)
 	advancePaymentDiscount?: number;
 
@@ -151,7 +154,8 @@ export class UpdateRoomCostDto {
 		minimum: 0,
 	})
 	@IsOptional()
-	@IsDecimal({ decimal_digits: '0,4' })
+	@Type(() => Number)
+	@IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 4 })
 	@Min(0)
 	value?: number;
 
@@ -292,7 +296,8 @@ export class UpdateRoomDto {
 		maximum: 1000,
 	})
 	@IsOptional()
-	@IsDecimal({ decimal_digits: '0,2' })
+	@Type(() => Number)
+	@IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
 	@Min(1)
 	areaSqm?: number;
 
