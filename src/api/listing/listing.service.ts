@@ -394,11 +394,11 @@ export class ListingService {
 		}
 
 		if (minBudget !== undefined && minBudget !== null) {
-			where.maxBudget = { gte: minBudget };
+			where.minBudget = { lte: minBudget };
 		}
 
 		if (maxBudget !== undefined && maxBudget !== null) {
-			where.minBudget = { lte: maxBudget };
+			where.maxBudget = { gte: maxBudget };
 		}
 
 		if (roomType) {
