@@ -1,3 +1,4 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { RoomType, SearchPostStatus } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
@@ -41,6 +42,11 @@ export class RoomRequestSearchDto extends PaginationQueryDto {
 	@Min(1)
 	occupancy?: number;
 
+	@ApiPropertyOptional({
+		description: 'Tiện ích mong muốn (comma-separated)',
+		type: String,
+		example: 'uuid1,uuid2,uuid3',
+	})
 	@IsOptional()
 	@IsString()
 	amenities?: string;
@@ -57,6 +63,15 @@ export class RoomRequestSearchDto extends PaginationQueryDto {
 	@IsOptional()
 	@IsString()
 	requesterId?: string;
+
+	@ApiPropertyOptional({
+		description: 'Ngày dự định vào ở',
+		type: String,
+		example: '2025-03-01',
+	})
+	@IsOptional()
+	@Type(() => Date)
+	moveInDate?: Date;
 }
 
 export class ListingQueryDto extends PaginationQueryDto {
@@ -103,6 +118,11 @@ export class ListingQueryDto extends PaginationQueryDto {
 	@Min(0)
 	maxArea?: number;
 
+	@ApiPropertyOptional({
+		description: 'Tiện ích yêu cầu (comma-separated)',
+		type: String,
+		example: 'uuid1,uuid2,uuid3',
+	})
 	@IsOptional()
 	@IsString()
 	amenities?: string;
@@ -121,4 +141,35 @@ export class ListingQueryDto extends PaginationQueryDto {
 	@IsOptional()
 	@IsString()
 	requesterId?: string;
+
+	@ApiPropertyOptional({
+		description: 'Vĩ độ để tìm kiếm theo khoảng cách',
+		type: Number,
+		example: 10.7769,
+	})
+	@IsOptional()
+	@Type(() => Number)
+	@IsNumber()
+	latitude?: number;
+
+	@ApiPropertyOptional({
+		description: 'Kinh độ để tìm kiếm theo khoảng cách',
+		type: Number,
+		example: 106.7009,
+	})
+	@IsOptional()
+	@Type(() => Number)
+	@IsNumber()
+	longitude?: number;
+
+	@ApiPropertyOptional({
+		description: 'Bán kính tìm kiếm (km)',
+		type: Number,
+		example: 5,
+	})
+	@IsOptional()
+	@Type(() => Number)
+	@IsNumber()
+	@Min(0.1)
+	radius?: number;
 }
