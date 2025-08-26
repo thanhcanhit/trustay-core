@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ListingQueryDto } from './dto/listing-query.dto';
+import { ListingQueryDto, RoomRequestSearchDto } from './dto/listing-query.dto';
 import { PaginatedListingResponseDto } from './dto/paginated-listing-response.dto';
 
 @Injectable()
@@ -24,6 +25,9 @@ export class ListingService {
 			amenities,
 			maxOccupancy,
 			isVerified,
+			latitude,
+			longitude,
+			radius,
 			sortBy = 'createdAt',
 			sortOrder = 'desc',
 		} = query;
@@ -57,15 +61,15 @@ export class ListingService {
 		}
 
 		if (provinceId) {
-			where.building.provinceId = parseInt(provinceId);
+			where.building.provinceId = provinceId;
 		}
 
 		if (districtId) {
-			where.building.districtId = parseInt(districtId);
+			where.building.districtId = districtId;
 		}
 
 		if (wardId) {
-			where.building.wardId = parseInt(wardId);
+			where.building.wardId = wardId;
 		}
 
 		if (roomType) {
@@ -73,36 +77,58 @@ export class ListingService {
 		}
 
 		if (maxOccupancy) {
-			where.maxOccupancy = { lte: parseInt(maxOccupancy) };
+			where.maxOccupancy = { lte: maxOccupancy };
 		}
 
 		if (isVerified !== undefined) {
-			where.isVerified = isVerified === 'true';
+			where.isVerified = isVerified;
 		}
 
 		if (minArea || maxArea) {
 			where.areaSqm = {};
-			if (minArea) where.areaSqm.gte = parseFloat(minArea);
-			if (maxArea) where.areaSqm.lte = parseFloat(maxArea);
+			if (minArea) where.areaSqm.gte = minArea;
+			if (maxArea) where.areaSqm.lte = maxArea;
 		}
 
 		if (minPrice || maxPrice) {
 			where.pricing = {};
-			if (minPrice) where.pricing.basePriceMonthly = { gte: parseFloat(minPrice) };
+			if (minPrice) where.pricing.basePriceMonthly = { gte: minPrice };
 			if (maxPrice) {
 				where.pricing.basePriceMonthly = {
 					...where.pricing.basePriceMonthly,
-					lte: parseFloat(maxPrice),
+					lte: maxPrice,
 				};
 			}
 		}
 
 		if (amenities) {
-			const amenityIds = amenities.split(',').map((id) => id.trim());
+			const amenityIds = amenities
+				.split(',')
+				.map((id) => id.trim())
+				.filter((id) => id.length > 0);
 			where.amenities = {
 				some: {
 					systemAmenityId: { in: amenityIds },
 				},
+			};
+		}
+
+		// Handle location-based filtering
+		if (latitude && longitude && radius) {
+			const earthRadius = 6371; // Earth's radius in km
+			const latRad = latitude * (Math.PI / 180);
+			const lonRad = longitude * (Math.PI / 180);
+			const radiusRad = radius / earthRadius;
+
+			const minLat = latitude - radius / 111.32; // 1 degree ≈ 111.32 km
+			const maxLat = latitude + radius / 111.32;
+			const minLon = longitude - radius / (111.32 * Math.cos(latRad));
+			const maxLon = longitude + radius / (111.32 * Math.cos(latRad));
+
+			where.building = {
+				...where.building,
+				latitude: { gte: minLat, lte: maxLat },
+				longitude: { gte: minLon, lte: maxLon },
 			};
 		}
 
@@ -111,6 +137,10 @@ export class ListingService {
 			orderBy.pricing = { basePriceMonthly: sortOrder };
 		} else if (sortBy === 'area') {
 			orderBy.areaSqm = sortOrder;
+		} else if (sortBy === 'distance' && latitude && longitude) {
+			// For distance sorting, we'll need to calculate distance in the application layer
+			// For now, just use createdAt as fallback
+			orderBy.createdAt = sortOrder;
 		} else {
 			orderBy[sortBy] = sortOrder;
 		}
@@ -128,6 +158,8 @@ export class ListingService {
 							name: true,
 							addressLine1: true,
 							addressLine2: true,
+							latitude: true,
+							longitude: true,
 							isVerified: true,
 							province: { select: { id: true, name: true, code: true } },
 							district: { select: { id: true, name: true, code: true } },
@@ -236,64 +268,229 @@ export class ListingService {
 			this.prisma.room.count({ where }),
 		]);
 
-		const formattedRooms = rooms.map((room) => ({
-			id: room.id,
-			slug: room.slug,
-			name: room.name,
-			roomType: room.roomType,
-			areaSqm: room.areaSqm?.toString(),
-			maxOccupancy: room.maxOccupancy,
-			isVerified: room.isVerified,
-			buildingName: room.building.name,
-			buildingVerified: room.building.isVerified,
-			address: room.building.addressLine1,
-			availableRooms: room.roomInstances.length, // Number of available room instances
-			owner: {
-				name: `${room.building.owner.firstName} ${room.building.owner.lastName}`,
-				avatarUrl: room.building.owner.avatarUrl,
-				gender: room.building.owner.gender,
-				verifiedPhone: room.building.owner.isVerifiedPhone,
-				verifiedEmail: room.building.owner.isVerifiedEmail,
-				verifiedIdentity: room.building.owner.isVerifiedIdentity,
-			},
-			location: {
-				provinceId: room.building.province.id,
-				provinceName: room.building.province.name,
-				districtId: room.building.district.id,
-				districtName: room.building.district.name,
-				wardId: room.building.ward?.id,
-				wardName: room.building.ward?.name,
-			},
-			images: room.images.map((image) => ({
-				url: image.imageUrl,
-				alt: image.altText,
-				isPrimary: image.isPrimary,
-				sortOrder: image.sortOrder,
-			})),
-			amenities: room.amenities.map((amenity) => ({
-				id: amenity.systemAmenity.id,
-				name: amenity.systemAmenity.name,
-				category: amenity.systemAmenity.category,
-			})),
-			costs: room.costs.map((cost) => ({
-				id: cost.systemCostType.id,
-				name: cost.systemCostType.name,
-				value: cost.baseRate.toString(),
-			})),
-			pricing: room.pricing
-				? {
-						basePriceMonthly: room.pricing.basePriceMonthly.toString(),
-						depositAmount: room.pricing.depositAmount.toString(),
-						utilityIncluded: room.pricing.utilityIncluded,
-					}
-				: undefined,
-			rules: room.rules.map((rule) => ({
-				id: rule.systemRule.id,
-				name: rule.customValue || rule.systemRule.name,
-				type: rule.systemRule.ruleType,
-			})),
-		}));
+		const formattedRooms = rooms.map((room) => {
+			let distance: number | undefined;
+			if (latitude && longitude && room.building.latitude && room.building.longitude) {
+				// Calculate distance using Haversine formula
+				const lat1Rad = latitude * (Math.PI / 180);
+				const lon1Rad = longitude * (Math.PI / 180);
+				const lat2Rad = Number(room.building.latitude) * (Math.PI / 180);
+				const lon2Rad = Number(room.building.longitude) * (Math.PI / 180);
+
+				const dLat = lat2Rad - lat1Rad;
+				const dLon = lon2Rad - lon1Rad;
+
+				const a =
+					Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+					Math.cos(lat1Rad) * Math.cos(lat2Rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+				const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+				distance = 6371 * c; // Distance in km
+			}
+
+			return {
+				id: room.id,
+				slug: room.slug,
+				name: room.name,
+				roomType: room.roomType,
+				areaSqm: room.areaSqm?.toString(),
+				maxOccupancy: room.maxOccupancy,
+				isVerified: room.isVerified,
+				buildingName: room.building.name,
+				buildingVerified: room.building.isVerified,
+				address: room.building.addressLine1,
+				availableRooms: room.roomInstances.length, // Number of available room instances
+				owner: {
+					name: `${room.building.owner.firstName} ${room.building.owner.lastName}`,
+					avatarUrl: room.building.owner.avatarUrl,
+					gender: room.building.owner.gender,
+					verifiedPhone: room.building.owner.isVerifiedPhone,
+					verifiedEmail: room.building.owner.isVerifiedEmail,
+					verifiedIdentity: room.building.owner.isVerifiedIdentity,
+				},
+				location: {
+					provinceId: room.building.province.id,
+					provinceName: room.building.province.name,
+					districtId: room.building.district.id,
+					districtName: room.building.district.name,
+					wardId: room.building.ward?.id,
+					wardName: room.building.ward?.name,
+				},
+				images: room.images.map((image) => ({
+					url: image.imageUrl,
+					alt: image.altText,
+					isPrimary: image.isPrimary,
+					sortOrder: image.sortOrder,
+				})),
+				amenities: room.amenities.map((amenity) => ({
+					id: amenity.systemAmenity.id,
+					name: amenity.systemAmenity.name,
+					category: amenity.systemAmenity.category,
+				})),
+				costs: room.costs.map((cost) => ({
+					id: cost.systemCostType.id,
+					name: cost.systemCostType.name,
+					value: cost.baseRate.toString(),
+				})),
+				pricing: room.pricing
+					? {
+							basePriceMonthly: room.pricing.basePriceMonthly.toString(),
+							depositAmount: room.pricing.depositAmount.toString(),
+							utilityIncluded: room.pricing.utilityIncluded,
+						}
+					: undefined,
+				rules: room.rules.map((rule) => ({
+					id: rule.systemRule.id,
+					name: rule.customValue || rule.systemRule.name,
+					type: rule.systemRule.ruleType,
+				})),
+				...(distance !== undefined && { distance: Number(distance.toFixed(2)) }),
+			};
+		});
 
 		return PaginatedResponseDto.create(formattedRooms, page, limit, total);
+	}
+
+	async findAllRoomRequests(query: RoomRequestSearchDto): Promise<any> {
+		const {
+			page = 1,
+			limit = 20,
+			search,
+			provinceId,
+			districtId,
+			wardId,
+			minBudget,
+			maxBudget,
+			roomType,
+			occupancy,
+			amenities,
+			status,
+			isPublic,
+			requesterId,
+			moveInDate,
+			sortBy = 'createdAt',
+			sortOrder = 'desc',
+		} = query;
+
+		const where: Prisma.RoomSeekingPostWhereInput = {
+			...(search && {
+				OR: [
+					{ title: { contains: search, mode: 'insensitive' } },
+					{ description: { contains: search, mode: 'insensitive' } },
+				],
+			}),
+			...(provinceId && { preferredProvinceId: provinceId }),
+			...(districtId && { preferredDistrictId: districtId }),
+			...(wardId && { preferredWardId: wardId }),
+			...(minBudget !== undefined && { minBudget: { gte: minBudget } }),
+			...(maxBudget !== undefined && { maxBudget: { lte: maxBudget } }),
+			...(roomType && { preferredRoomType: roomType }),
+			...(occupancy && { occupancy: occupancy }),
+			...(amenities && {
+				amenities: {
+					some: {
+						id: {
+							in: amenities
+								.split(',')
+								.map((id) => id.trim())
+								.filter((id) => id.length > 0),
+						},
+					},
+				},
+			}),
+			...(status && { status }),
+			...(isPublic !== undefined && { isPublic: isPublic }),
+			...(requesterId && { requesterId }),
+			...(moveInDate && { moveInDate: { lte: moveInDate } }),
+		};
+
+		const orderBy: Prisma.RoomSeekingPostOrderByWithRelationInput = {
+			[sortBy]: sortOrder,
+		};
+
+		const [data, total] = await Promise.all([
+			this.prisma.roomSeekingPost.findMany({
+				where,
+				orderBy,
+				skip: (page - 1) * limit,
+				take: limit,
+				include: {
+					requester: {
+						select: {
+							id: true,
+							firstName: true,
+							lastName: true,
+							email: true,
+							phone: true,
+							avatarUrl: true,
+						},
+					},
+					amenities: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+							category: true,
+							description: true,
+						},
+					},
+					preferredProvince: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+						},
+					},
+					preferredDistrict: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+						},
+					},
+					preferredWard: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+						},
+					},
+				},
+			}),
+			this.prisma.roomSeekingPost.count({ where }),
+		]);
+
+		return {
+			data: data.map((item) => ({
+				id: item.id,
+				title: item.title,
+				description: item.description,
+				slug: item.slug,
+				requesterId: item.requesterId,
+				preferredDistrictId: item.preferredDistrictId,
+				preferredWardId: item.preferredWardId,
+				preferredProvinceId: item.preferredProvinceId,
+				minBudget: item.minBudget,
+				maxBudget: item.maxBudget,
+				currency: item.currency,
+				preferredRoomType: item.preferredRoomType,
+				occupancy: item.occupancy,
+				moveInDate: item.moveInDate,
+				status: item.status,
+				isPublic: item.isPublic,
+				expiresAt: item.expiresAt,
+				viewCount: item.viewCount,
+				contactCount: item.contactCount,
+				createdAt: item.createdAt,
+				updatedAt: item.updatedAt,
+				requester: item.requester,
+				amenities: item.amenities,
+				preferredProvince: item.preferredProvince,
+				preferredDistrict: item.preferredDistrict,
+				preferredWard: item.preferredWard,
+			})),
+			total,
+			page,
+			limit,
+		};
 	}
 }

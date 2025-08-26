@@ -221,6 +221,7 @@ model User {
   roomSearchPosts     RoomSearchPost[]
   verificationCodes   VerificationCode[]
   refreshTokens       RefreshToken[]
+  roomRequests        RoomSeekingPost[]
 
   @@map("users")
 }
@@ -465,9 +466,10 @@ model SystemAmenity {
   createdAt   DateTime        @default(now()) @map("created_at")
   updatedAt   DateTime        @updatedAt @map("updated_at")
 
-  // Relations
+    // Relations
   roomAmenities RoomAmenity[]
-
+  roomRequestAmenities RoomSeekingPost[]
+  
   @@index([category])
   @@index([isActive])
   @@map("system_amenities")
@@ -878,6 +880,71 @@ model RoomSearchPost {
 }
 
 // ========================================
+// ROOM REQUEST (BÀI ĐĂNG TÌM TRỌ)
+// ========================================
+
+model RoomSeekingPost {
+  id          String @id @default(uuid())
+  title       String
+  description String
+  slug        String   @unique @map("slug")
+  
+  // Thông tin người đăng
+  requesterId String @map("requester_id")
+  
+  // Vị trí mong muốn
+  preferredDistrictId Int? @map("preferred_district_id")
+  preferredWardId     Int? @map("preferred_ward_id")
+  preferredProvinceId Int  @map("preferred_province_id")
+  
+  // Ngân sách
+  minBudget Decimal? @map("min_budget") @db.Decimal(15, 2)
+  maxBudget Decimal  @map("max_budget") @db.Decimal(15, 2)
+  currency  String   @default("VND")
+  
+  // Loại phòng mong muốn
+  preferredRoomType RoomType? @map("preferred_room_type")
+  
+  // Số người ở
+  occupancy Int? // Số người sẽ ở trong phòng
+  
+  // Thời gian dự định vào ở
+  moveInDate DateTime? @map("move_in_date") @db.Date
+  
+  // Trạng thái bài đăng
+  status    SearchPostStatus @default(active)
+  isPublic  Boolean          @default(true) @map("is_public")
+  expiresAt DateTime?        @map("expires_at")
+  
+  // Thống kê tương tác
+  viewCount    Int @default(0) @map("view_count")
+  contactCount Int @default(0) @map("contact_count")
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  requester User @relation(fields: [requesterId], references: [id], onDelete: Cascade)
+  amenities SystemAmenity[]
+  
+  // Relations
+  preferredProvince Province? @relation(fields: [preferredProvinceId], references: [id], onDelete: SetNull)
+  preferredDistrict District? @relation(fields: [preferredDistrictId], references: [id], onDelete: SetNull)
+  preferredWard     Ward?     @relation(fields: [preferredWardId], references: [id], onDelete: SetNull)
+
+  @@index([requesterId])
+  @@index([status])
+  @@index([preferredProvinceId])
+  @@index([preferredDistrictId])
+  @@index([preferredWardId])
+  @@index([maxBudget])
+  @@index([moveInDate])
+  @@index([expiresAt])
+  @@index([createdAt])
+  @@map("room_requests")
+}
+
+// ========================================
 // SYSTEM TABLES
 // ========================================
 
@@ -913,6 +980,7 @@ model Province {
   districts     District[]
   userAddresses UserAddress[]
   buildings     Building[]
+  roomRequests  RoomSeekingPost[]
 
   @@index([code])
   @@map("provinces")
@@ -931,6 +999,7 @@ model District {
   wards         Ward[]
   userAddresses UserAddress[]
   buildings     Building[]
+  roomRequests  RoomSeekingPost[]
 
   @@index([code])
   @@index([provinceId])
@@ -950,6 +1019,7 @@ model Ward {
   district      District      @relation(fields: [districtId], references: [id], onDelete: Cascade)
   userAddresses UserAddress[]
   buildings     Building[]
+  roomRequests  RoomSeekingPost[]
 
   @@index([code])
   @@index([districtId])

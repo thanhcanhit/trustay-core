@@ -1,5 +1,5 @@
-import { BadRequestException, Controller, Get, ParseIntPipe, Query } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { BadRequestException, Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { WardService } from './ward.service';
 
 @ApiTags('Wards')
@@ -39,5 +39,20 @@ export class WardController {
 			throw new BadRequestException('district_id or districtId must be provided');
 		}
 		return this.wardService.findByDistrict(id);
+	}
+
+	@Get(':id')
+	@ApiOperation({ summary: 'Get ward by ID' })
+	@ApiParam({ name: 'id', description: 'Ward ID', type: Number })
+	@ApiResponse({
+		status: 200,
+		description: 'Ward details found',
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'Ward not found',
+	})
+	findOne(@Param('id', ParseIntPipe) id: number) {
+		return this.wardService.findOne(id);
 	}
 }
