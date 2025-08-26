@@ -372,37 +372,72 @@ export class ListingService {
 			sortOrder = 'desc',
 		} = query;
 
-		const where: Prisma.RoomSeekingPostWhereInput = {
-			...(search && {
-				OR: [
-					{ title: { contains: search, mode: 'insensitive' } },
-					{ description: { contains: search, mode: 'insensitive' } },
-				],
-			}),
-			...(provinceId && { preferredProvinceId: provinceId }),
-			...(districtId && { preferredDistrictId: districtId }),
-			...(wardId && { preferredWardId: wardId }),
-			...(minBudget !== undefined && { minBudget: { gte: minBudget } }),
-			...(maxBudget !== undefined && { maxBudget: { lte: maxBudget } }),
-			...(roomType && { preferredRoomType: roomType }),
-			...(occupancy && { occupancy: occupancy }),
-			...(amenities && {
-				amenities: {
+		const where: Prisma.RoomSeekingPostWhereInput = {};
+
+		if (search) {
+			where.OR = [
+				{ title: { contains: search, mode: 'insensitive' } },
+				{ description: { contains: search, mode: 'insensitive' } },
+			];
+		}
+
+		if (provinceId) {
+			where.preferredProvinceId = provinceId;
+		}
+
+		if (districtId) {
+			where.preferredDistrictId = districtId;
+		}
+
+		if (wardId) {
+			where.preferredWardId = wardId;
+		}
+
+		if (minBudget !== undefined && minBudget !== null) {
+			where.maxBudget = { gte: minBudget };
+		}
+
+		if (maxBudget !== undefined && maxBudget !== null) {
+			where.minBudget = { lte: maxBudget };
+		}
+
+		if (roomType) {
+			where.preferredRoomType = roomType;
+		}
+
+		if (occupancy) {
+			where.occupancy = occupancy;
+		}
+
+		if (amenities) {
+			const amenityIds = amenities
+				.split(',')
+				.map((id) => id.trim())
+				.filter((id) => id.length > 0);
+			if (amenityIds.length > 0) {
+				where.amenities = {
 					some: {
-						id: {
-							in: amenities
-								.split(',')
-								.map((id) => id.trim())
-								.filter((id) => id.length > 0),
-						},
+						id: { in: amenityIds },
 					},
-				},
-			}),
-			...(status && { status }),
-			...(isPublic !== undefined && { isPublic: isPublic }),
-			...(requesterId && { requesterId }),
-			...(moveInDate && { moveInDate: { lte: moveInDate } }),
-		};
+				};
+			}
+		}
+
+		if (status) {
+			where.status = status;
+		}
+
+		if (isPublic !== undefined) {
+			where.isPublic = isPublic;
+		}
+
+		if (requesterId) {
+			where.requesterId = requesterId;
+		}
+
+		if (moveInDate) {
+			where.moveInDate = { lte: moveInDate };
+		}
 
 		const orderBy: Prisma.RoomSeekingPostOrderByWithRelationInput = {
 			[sortBy]: sortOrder,

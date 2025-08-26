@@ -119,7 +119,6 @@ export class ListingQueryDto extends PaginationQueryDto {
 	@ApiPropertyOptional({
 		description: 'Tiện ích yêu cầu (comma-separated)',
 		type: String,
-		example: 'uuid1,uuid2,uuid3',
 	})
 	@IsOptional()
 	@IsString()
