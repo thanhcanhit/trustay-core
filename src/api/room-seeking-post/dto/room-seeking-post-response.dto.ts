@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AmenityCategory, RoomType, SearchPostStatus } from '@prisma/client';
-import { Decimal } from '@prisma/client/runtime/library';
 
 export class RoomRoomSeekingPostDto {
 	@ApiProperty({ description: 'ID của bài đăng' })
@@ -28,10 +27,10 @@ export class RoomRoomSeekingPostDto {
 	preferredProvinceId: number;
 
 	@ApiPropertyOptional({ description: 'Ngân sách tối thiểu' })
-	minBudget?: Decimal;
+	minBudget?: number;
 
 	@ApiProperty({ description: 'Ngân sách tối đa' })
-	maxBudget: Decimal;
+	maxBudget: number;
 
 	@ApiProperty({ description: 'Đơn vị tiền tệ' })
 	currency: string;

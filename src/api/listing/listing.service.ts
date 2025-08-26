@@ -4,6 +4,7 @@ import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingQueryDto, RoomRequestSearchDto } from './dto/listing-query.dto';
 import { PaginatedListingResponseDto } from './dto/paginated-listing-response.dto';
+import { PaginatedRoomSeekingResponseDto } from './dto/paginated-room-seeking-response.dto';
 
 @Injectable()
 export class ListingService {
@@ -350,7 +351,7 @@ export class ListingService {
 		return PaginatedResponseDto.create(formattedRooms, page, limit, total);
 	}
 
-	async findAllRoomRequests(query: RoomRequestSearchDto): Promise<any> {
+	async findAllRoomRequests(query: RoomRequestSearchDto): Promise<PaginatedRoomSeekingResponseDto> {
 		const {
 			page = 1,
 			limit = 20,
@@ -371,37 +372,72 @@ export class ListingService {
 			sortOrder = 'desc',
 		} = query;
 
-		const where: Prisma.RoomSeekingPostWhereInput = {
-			...(search && {
-				OR: [
-					{ title: { contains: search, mode: 'insensitive' } },
-					{ description: { contains: search, mode: 'insensitive' } },
-				],
-			}),
-			...(provinceId && { preferredProvinceId: provinceId }),
-			...(districtId && { preferredDistrictId: districtId }),
-			...(wardId && { preferredWardId: wardId }),
-			...(minBudget !== undefined && { minBudget: { gte: minBudget } }),
-			...(maxBudget !== undefined && { maxBudget: { lte: maxBudget } }),
-			...(roomType && { preferredRoomType: roomType }),
-			...(occupancy && { occupancy: occupancy }),
-			...(amenities && {
-				amenities: {
+		const where: Prisma.RoomSeekingPostWhereInput = {};
+
+		if (search) {
+			where.OR = [
+				{ title: { contains: search, mode: 'insensitive' } },
+				{ description: { contains: search, mode: 'insensitive' } },
+			];
+		}
+
+		if (provinceId) {
+			where.preferredProvinceId = provinceId;
+		}
+
+		if (districtId) {
+			where.preferredDistrictId = districtId;
+		}
+
+		if (wardId) {
+			where.preferredWardId = wardId;
+		}
+
+		if (minBudget !== undefined && minBudget !== null) {
+			where.minBudget = { lte: minBudget };
+		}
+
+		if (maxBudget !== undefined && maxBudget !== null) {
+			where.maxBudget = { gte: maxBudget };
+		}
+
+		if (roomType) {
+			where.preferredRoomType = roomType;
+		}
+
+		if (occupancy) {
+			where.occupancy = occupancy;
+		}
+
+		if (amenities) {
+			const amenityIds = amenities
+				.split(',')
+				.map((id) => id.trim())
+				.filter((id) => id.length > 0);
+			if (amenityIds.length > 0) {
+				where.amenities = {
 					some: {
-						id: {
-							in: amenities
-								.split(',')
-								.map((id) => id.trim())
-								.filter((id) => id.length > 0),
-						},
+						id: { in: amenityIds },
 					},
-				},
-			}),
-			...(status && { status }),
-			...(isPublic !== undefined && { isPublic: isPublic }),
-			...(requesterId && { requesterId }),
-			...(moveInDate && { moveInDate: { lte: moveInDate } }),
-		};
+				};
+			}
+		}
+
+		if (status) {
+			where.status = status;
+		}
+
+		if (isPublic !== undefined) {
+			where.isPublic = isPublic;
+		}
+
+		if (requesterId) {
+			where.requesterId = requesterId;
+		}
+
+		if (moveInDate) {
+			where.moveInDate = { lte: moveInDate };
+		}
 
 		const orderBy: Prisma.RoomSeekingPostOrderByWithRelationInput = {
 			[sortBy]: sortOrder,
@@ -459,38 +495,35 @@ export class ListingService {
 			this.prisma.roomSeekingPost.count({ where }),
 		]);
 
-		return {
-			data: data.map((item) => ({
-				id: item.id,
-				title: item.title,
-				description: item.description,
-				slug: item.slug,
-				requesterId: item.requesterId,
-				preferredDistrictId: item.preferredDistrictId,
-				preferredWardId: item.preferredWardId,
-				preferredProvinceId: item.preferredProvinceId,
-				minBudget: item.minBudget,
-				maxBudget: item.maxBudget,
-				currency: item.currency,
-				preferredRoomType: item.preferredRoomType,
-				occupancy: item.occupancy,
-				moveInDate: item.moveInDate,
-				status: item.status,
-				isPublic: item.isPublic,
-				expiresAt: item.expiresAt,
-				viewCount: item.viewCount,
-				contactCount: item.contactCount,
-				createdAt: item.createdAt,
-				updatedAt: item.updatedAt,
-				requester: item.requester,
-				amenities: item.amenities,
-				preferredProvince: item.preferredProvince,
-				preferredDistrict: item.preferredDistrict,
-				preferredWard: item.preferredWard,
-			})),
-			total,
-			page,
-			limit,
-		};
+		const formattedData = data.map((item) => ({
+			id: item.id,
+			title: item.title,
+			description: item.description,
+			slug: item.slug,
+			requesterId: item.requesterId,
+			preferredDistrictId: item.preferredDistrictId,
+			preferredWardId: item.preferredWardId,
+			preferredProvinceId: item.preferredProvinceId,
+			minBudget: item.minBudget != null ? Number(item.minBudget) : undefined,
+			maxBudget: item.maxBudget != null ? Number(item.maxBudget) : undefined,
+			currency: item.currency,
+			preferredRoomType: item.preferredRoomType,
+			occupancy: item.occupancy,
+			moveInDate: item.moveInDate,
+			status: item.status,
+			isPublic: item.isPublic,
+			expiresAt: item.expiresAt,
+			viewCount: item.viewCount,
+			contactCount: item.contactCount,
+			createdAt: item.createdAt,
+			updatedAt: item.updatedAt,
+			requester: item.requester,
+			amenities: item.amenities,
+			preferredProvince: item.preferredProvince,
+			preferredDistrict: item.preferredDistrict,
+			preferredWard: item.preferredWard,
+		}));
+
+		return PaginatedResponseDto.create(formattedData, page, limit, total);
 	}
 }

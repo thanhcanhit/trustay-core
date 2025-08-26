@@ -130,6 +130,12 @@ export class ListingItemDto {
 	@ApiProperty()
 	address: string;
 
+	@ApiProperty()
+	availableRooms: number;
+
+	@ApiPropertyOptional()
+	distance?: number;
+
 	@ApiProperty({ type: OwnerDto })
 	owner: OwnerDto;
 
