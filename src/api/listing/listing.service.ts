@@ -158,6 +158,8 @@ export class ListingService {
 							name: true,
 							addressLine1: true,
 							addressLine2: true,
+							latitude: true,
+							longitude: true,
 							isVerified: true,
 							province: { select: { id: true, name: true, code: true } },
 							district: { select: { id: true, name: true, code: true } },
