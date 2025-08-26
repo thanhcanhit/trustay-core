@@ -58,15 +58,15 @@ export class ListingService {
 		}
 
 		if (provinceId) {
-			where.building.provinceId = parseInt(provinceId);
+			where.building.provinceId = provinceId;
 		}
 
 		if (districtId) {
-			where.building.districtId = parseInt(districtId);
+			where.building.districtId = districtId;
 		}
 
 		if (wardId) {
-			where.building.wardId = parseInt(wardId);
+			where.building.wardId = wardId;
 		}
 
 		if (roomType) {
@@ -74,26 +74,26 @@ export class ListingService {
 		}
 
 		if (maxOccupancy) {
-			where.maxOccupancy = { lte: parseInt(maxOccupancy) };
+			where.maxOccupancy = { lte: maxOccupancy };
 		}
 
 		if (isVerified !== undefined) {
-			where.isVerified = isVerified === 'true';
+			where.isVerified = isVerified;
 		}
 
 		if (minArea || maxArea) {
 			where.areaSqm = {};
-			if (minArea) where.areaSqm.gte = parseFloat(minArea);
-			if (maxArea) where.areaSqm.lte = parseFloat(maxArea);
+			if (minArea) where.areaSqm.gte = minArea;
+			if (maxArea) where.areaSqm.lte = maxArea;
 		}
 
 		if (minPrice || maxPrice) {
 			where.pricing = {};
-			if (minPrice) where.pricing.basePriceMonthly = { gte: parseFloat(minPrice) };
+			if (minPrice) where.pricing.basePriceMonthly = { gte: minPrice };
 			if (maxPrice) {
 				where.pricing.basePriceMonthly = {
 					...where.pricing.basePriceMonthly,
-					lte: parseFloat(maxPrice),
+					lte: maxPrice,
 				};
 			}
 		}
@@ -310,6 +310,7 @@ export class ListingService {
 			maxBudget,
 			roomType,
 			occupancy,
+			amenities,
 			status,
 			isPublic,
 			requesterId,
@@ -324,15 +325,22 @@ export class ListingService {
 					{ description: { contains: search, mode: 'insensitive' } },
 				],
 			}),
-			...(provinceId && { preferredProvinceId: parseInt(provinceId) }),
-			...(districtId && { preferredDistrictId: parseInt(districtId) }),
-			...(wardId && { preferredWardId: parseInt(wardId) }),
-			...(minBudget !== undefined && { maxBudget: { gte: parseFloat(minBudget) } }),
-			...(maxBudget !== undefined && { maxBudget: { lte: parseFloat(maxBudget) } }),
+			...(provinceId && { preferredProvinceId: provinceId }),
+			...(districtId && { preferredDistrictId: districtId }),
+			...(wardId && { preferredWardId: wardId }),
+			...(minBudget !== undefined && { minBudget: { gte: minBudget } }),
+			...(maxBudget !== undefined && { maxBudget: { lte: maxBudget } }),
 			...(roomType && { preferredRoomType: roomType }),
-			...(occupancy && { occupancy: parseInt(occupancy) }),
+			...(occupancy && { occupancy: occupancy }),
+			...(amenities && {
+				amenities: {
+					some: {
+						id: { in: amenities.split(',').map((id) => id.trim()) },
+					},
+				},
+			}),
 			...(status && { status }),
-			...(isPublic !== undefined && { isPublic: isPublic === 'true' }),
+			...(isPublic !== undefined && { isPublic: isPublic }),
 			...(requesterId && { requesterId }),
 		};
 

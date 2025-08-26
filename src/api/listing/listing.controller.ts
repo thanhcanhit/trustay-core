@@ -5,11 +5,11 @@ import { PaginatedListingResponseDto } from './dto/paginated-listing-response.dt
 import { ListingService } from './listing.service';
 
 @ApiTags('Listings')
-@Controller('listings/rooms')
+@Controller('listings')
 export class ListingController {
 	constructor(private readonly listingService: ListingService) {}
 
-	@Get()
+	@Get('/rooms')
 	@ApiOperation({ summary: 'Search and filter rental rooms' })
 	@ApiQuery({
 		name: 'search',
@@ -47,7 +47,7 @@ export class ListingController {
 		return this.listingService.findAllListings(query);
 	}
 
-	@Get('/room-requests')
+	@Get('/room-seeking-posts')
 	@ApiOperation({ summary: 'Tìm kiếm bài đăng tìm trọ' })
 	@ApiQuery({ name: 'search', required: false, description: 'Từ khóa tìm kiếm' })
 	@ApiQuery({ name: 'provinceId', required: false, description: 'Lọc theo ID tỉnh/thành phố' })
@@ -57,6 +57,11 @@ export class ListingController {
 	@ApiQuery({ name: 'maxBudget', required: false, description: 'Ngân sách tối đa' })
 	@ApiQuery({ name: 'roomType', required: false, description: 'Loại phòng' })
 	@ApiQuery({ name: 'occupancy', required: false, description: 'Số người ở' })
+	@ApiQuery({
+		name: 'amenities',
+		required: false,
+		description: 'Tiện ích mong muốn (comma-separated)',
+	})
 	@ApiQuery({ name: 'status', required: false, description: 'Trạng thái bài đăng' })
 	@ApiQuery({ name: 'isPublic', required: false, description: 'Có công khai hay không' })
 	@ApiQuery({ name: 'requesterId', required: false, description: 'ID người đăng' })
@@ -66,7 +71,7 @@ export class ListingController {
 		status: 200,
 		description: 'Lấy danh sách bài đăng tìm trọ thành công',
 	})
-	async getRoomRequests(@Query() query: RoomRequestSearchDto) {
+	async getRoomSeekingPosts(@Query() query: RoomRequestSearchDto) {
 		return this.listingService.findAllRoomRequests(query);
 	}
 }

@@ -1,45 +1,58 @@
 import { RoomType, SearchPostStatus } from '@prisma/client';
-import { Transform } from 'class-transformer';
-import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
 
 export class RoomRequestSearchDto extends PaginationQueryDto {
 	@IsOptional()
-	@IsString()
-	provinceId?: string;
+	@Type(() => Number)
+	@IsInt()
+	provinceId?: number;
 
 	@IsOptional()
-	@IsString()
-	districtId?: string;
+	@Type(() => Number)
+	@IsInt()
+	districtId?: number;
 
 	@IsOptional()
-	@IsString()
-	wardId?: string;
+	@Type(() => Number)
+	@IsInt()
+	wardId?: number;
 
 	@IsOptional()
-	@IsString()
-	minBudget?: string;
+	@Type(() => Number)
+	@IsNumber()
+	@Min(0)
+	minBudget?: number;
 
 	@IsOptional()
-	@IsString()
-	maxBudget?: string;
+	@Type(() => Number)
+	@IsNumber()
+	@Min(0)
+	maxBudget?: number;
 
 	@IsOptional()
 	@IsEnum(RoomType)
 	roomType?: RoomType;
 
 	@IsOptional()
+	@Type(() => Number)
+	@IsInt()
+	@Min(1)
+	occupancy?: number;
+
+	@IsOptional()
 	@IsString()
-	occupancy?: string;
+	amenities?: string;
 
 	@IsOptional()
 	@IsEnum(SearchPostStatus)
 	status?: SearchPostStatus;
 
 	@IsOptional()
-	@IsString()
 	@Transform(({ value }) => value === 'true')
-	isPublic?: string;
+	@IsBoolean()
+	isPublic?: boolean;
 
 	@IsOptional()
 	@IsString()
@@ -48,53 +61,62 @@ export class RoomRequestSearchDto extends PaginationQueryDto {
 
 export class ListingQueryDto extends PaginationQueryDto {
 	@IsOptional()
-	@IsString()
-	provinceId?: string;
+	@Type(() => Number)
+	@IsInt()
+	provinceId?: number;
 
 	@IsOptional()
-	@IsString()
-	districtId?: string;
+	@Type(() => Number)
+	@IsInt()
+	districtId?: number;
 
 	@IsOptional()
-	@IsString()
-	wardId?: string;
+	@Type(() => Number)
+	@IsInt()
+	wardId?: number;
 
 	@IsOptional()
 	@IsEnum(RoomType)
 	roomType?: RoomType;
 
 	@IsOptional()
-	@IsString()
-	minPrice?: string;
+	@Type(() => Number)
+	@IsNumber()
+	@Min(0)
+	minPrice?: number;
 
 	@IsOptional()
-	@IsString()
-	maxPrice?: string;
+	@Type(() => Number)
+	@IsNumber()
+	@Min(0)
+	maxPrice?: number;
 
 	@IsOptional()
-	@IsString()
-	minArea?: string;
+	@Type(() => Number)
+	@IsNumber()
+	@Min(0)
+	minArea?: number;
 
 	@IsOptional()
-	@IsString()
-	maxArea?: string;
+	@Type(() => Number)
+	@IsNumber()
+	@Min(0)
+	maxArea?: number;
 
 	@IsOptional()
 	@IsString()
 	amenities?: string;
 
 	@IsOptional()
-	@IsString()
-	maxOccupancy?: string;
+	@Type(() => Number)
+	@IsInt()
+	@Min(1)
+	maxOccupancy?: number;
 
 	@IsOptional()
-	@IsString()
 	@Transform(({ value }) => value === 'true')
-	isVerified?: string;
-
-	@IsOptional()
-	@IsString()
-	occupancy?: string;
+	@IsBoolean()
+	isVerified?: boolean;
 
 	@IsOptional()
 	@IsString()
