@@ -90,42 +90,46 @@ async function applyIntelligentAmenities(roomId, description, existingAmenities,
 						.catch(() => {}); // Ignore if already exists
 
 					detectedAmenities.push(mapping.nameEn);
-				} else {
-					console.warn(`⚠️ SystemAmenity not found: ${mapping.nameEn}`);
 				}
+				// Removed warning for missing amenities as we only use existing ones now
 			} catch (error) {
 				console.error(`Error adding amenity ${mapping.nameEn}:`, error);
 			}
 		}
 	}
 
-	console.log(`🏠 Applied ${detectedAmenities.length} amenities for ${priceTier} tier room`);
+	if (detectedAmenities.length > 0) {
+		console.log(`🏠 Applied ${detectedAmenities.length} amenities for ${priceTier} tier room`);
+	}
 }
 
 function getAmenityMappingsByTier(priceTier) {
-	// Create keyword mapping for default amenities only
+	// Only map amenities that EXIST in the database - validated list
 	const amenityKeywordMap = [
-		// Map từ default-amenities.js với keywords phù hợp
+		// Basic amenities (confirmed to exist in database)
 		{ keywords: ['đầy đủ nội thất', 'full nội thất', 'nội thất'], nameEn: 'fully_furnished' },
 		{ keywords: ['có gác', 'gác xép', 'gác lửng'], nameEn: 'has_loft' },
 		{ keywords: ['máy lạnh', 'điều hòa', 'có máy lạnh'], nameEn: 'has_air_conditioning' },
 		{ keywords: ['tủ lạnh', 'có tủ lạnh'], nameEn: 'has_refrigerator' },
+
+		// Kitchen amenities
 		{ keywords: ['có kệ bếp', 'bếp', 'nấu ăn'], nameEn: 'has_kitchen_shelf' },
+
+		// Bathroom amenities
 		{ keywords: ['vệ sinh riêng', 'toilet riêng', 'wc riêng'], nameEn: 'private_bathroom' },
 		{ keywords: ['nước nóng', 'bình nóng lạnh', 'có nước nóng'], nameEn: 'has_hot_water' },
+
+		// Building amenities
 		{ keywords: ['máy giặt', 'có máy giặt'], nameEn: 'has_washing_machine' },
 		{ keywords: ['thang máy', 'có thang máy'], nameEn: 'has_elevator' },
 		{ keywords: ['hầm để xe', 'chỗ để xe', 'gửi xe', 'bãi đỗ'], nameEn: 'has_parking_garage' },
+
+		// Connectivity
 		{ keywords: ['wifi', 'internet', 'mạng'], nameEn: 'has_wifi' },
-		{ keywords: ['bảo vệ 24/24', 'bảo vệ', 'an ninh 24'], nameEn: 'has_security_24_7' },
-		{ keywords: ['camera an ninh', 'camera', 'an ninh'], nameEn: 'security_camera' },
-		{ keywords: ['không chung chủ'], nameEn: 'no_shared_landlord' },
-		{ keywords: ['giờ giấc tự do', 'tự do giờ giấc'], nameEn: 'flexible_hours' },
-		{ keywords: ['gần trường', 'gần đại học', 'gần học'], nameEn: 'near_school' },
-		{ keywords: ['gần chợ', 'gần siêu thị', 'gần market'], nameEn: 'near_market' },
-		{ keywords: ['gần khu công nghiệp', 'gần kcn'], nameEn: 'near_industrial_area' },
-		{ keywords: ['ban công', 'có ban công'], nameEn: 'balcony' },
-		{ keywords: ['sân phơi', 'chỗ phơi đồ'], nameEn: 'drying_area' },
+
+		// REMOVED: amenities that don't exist in database
+		// has_security_24_7, security_camera, no_shared_landlord, flexible_hours,
+		// near_school, near_market, near_industrial_area, balcony, drying_area
 	];
 
 	return amenityKeywordMap;
@@ -399,10 +403,12 @@ async function findOrCreateLocation(addressData, province, district) {
 				cityName = 'Thành phố Hà Nội';
 			}
 		} else {
+			// Default to Ho Chi Minh when city not found
 			cityName = 'Thành phố Hồ Chí Minh';
 			districtName = parts[0] || 'Quận 1';
 		}
 	} else {
+		// Default to Ho Chi Minh when no location data
 		cityName = province || addressData?.city || 'Thành phố Hồ Chí Minh';
 		districtName = district || addressData?.district;
 	}
@@ -434,15 +440,32 @@ async function findOrCreateLocation(addressData, province, district) {
 	}
 
 	if (!provinceRecord) {
-		// Create province if not exists
-		const provinceCode = randomUUID().slice(0, 6);
-		provinceRecord = await prisma.province.create({
-			data: {
-				code: provinceCode,
-				name: cityName,
-				nameEn: cityName === 'Thành phố Hồ Chí Minh' ? 'Ho Chi Minh City' : cityName,
+		// Default to Ho Chi Minh when province not found
+		cityName = 'Thành phố Hồ Chí Minh';
+		console.log(`⚠️ Province not found, using default: ${cityName}`);
+
+		// Try to find Ho Chi Minh again
+		provinceRecord = await prisma.province.findFirst({
+			where: {
+				OR: [
+					{ name: { contains: 'Hồ Chí Minh', mode: 'insensitive' } },
+					{ name: { contains: 'Ho Chi Minh', mode: 'insensitive' } },
+					{ code: '79' }, // HCM province code
+				],
 			},
 		});
+
+		if (!provinceRecord) {
+			// Create Ho Chi Minh province if it doesn't exist
+			const provinceCode = randomUUID().slice(0, 6);
+			provinceRecord = await prisma.province.create({
+				data: {
+					code: provinceCode,
+					name: cityName,
+					nameEn: 'Ho Chi Minh City',
+				},
+			});
+		}
 	}
 
 	// Find district with better matching
@@ -491,6 +514,29 @@ async function findOrCreateLocation(addressData, province, district) {
 				provinceId: provinceRecord.id,
 			},
 		});
+	} else if (!districtRecord) {
+		// Default to Quận 1 if no district found
+		districtRecord = await prisma.district.findFirst({
+			where: {
+				AND: [
+					{ name: { contains: 'Quận 1', mode: 'insensitive' } },
+					{ provinceId: provinceRecord.id },
+				],
+			},
+		});
+
+		if (!districtRecord) {
+			// Create Quận 1 as default district
+			const districtCode = randomUUID().slice(0, 8);
+			districtRecord = await prisma.district.create({
+				data: {
+					code: districtCode,
+					name: 'Quận 1',
+					provinceId: provinceRecord.id,
+				},
+			});
+			console.log(`✅ Created default district: Quận 1`);
+		}
 	}
 
 	// Find ward if provided

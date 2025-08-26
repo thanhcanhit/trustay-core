@@ -45,7 +45,6 @@ export class RoomRequestSearchDto extends PaginationQueryDto {
 	@ApiPropertyOptional({
 		description: 'Tiện ích mong muốn (comma-separated)',
 		type: String,
-		example: 'uuid1,uuid2,uuid3',
 	})
 	@IsOptional()
 	@IsString()
@@ -67,7 +66,6 @@ export class RoomRequestSearchDto extends PaginationQueryDto {
 	@ApiPropertyOptional({
 		description: 'Ngày dự định vào ở',
 		type: String,
-		example: '2025-03-01',
 	})
 	@IsOptional()
 	@Type(() => Date)
@@ -145,7 +143,6 @@ export class ListingQueryDto extends PaginationQueryDto {
 	@ApiPropertyOptional({
 		description: 'Vĩ độ để tìm kiếm theo khoảng cách',
 		type: Number,
-		example: 10.7769,
 	})
 	@IsOptional()
 	@Type(() => Number)
@@ -155,7 +152,6 @@ export class ListingQueryDto extends PaginationQueryDto {
 	@ApiPropertyOptional({
 		description: 'Kinh độ để tìm kiếm theo khoảng cách',
 		type: Number,
-		example: 106.7009,
 	})
 	@IsOptional()
 	@Type(() => Number)
@@ -165,7 +161,6 @@ export class ListingQueryDto extends PaginationQueryDto {
 	@ApiPropertyOptional({
 		description: 'Bán kính tìm kiếm (km)',
 		type: Number,
-		example: 5,
 	})
 	@IsOptional()
 	@Type(() => Number)

@@ -4,6 +4,7 @@ import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingQueryDto, RoomRequestSearchDto } from './dto/listing-query.dto';
 import { PaginatedListingResponseDto } from './dto/paginated-listing-response.dto';
+import { PaginatedRoomSeekingResponseDto } from './dto/paginated-room-seeking-response.dto';
 
 @Injectable()
 export class ListingService {
@@ -350,7 +351,7 @@ export class ListingService {
 		return PaginatedResponseDto.create(formattedRooms, page, limit, total);
 	}
 
-	async findAllRoomRequests(query: RoomRequestSearchDto): Promise<any> {
+	async findAllRoomRequests(query: RoomRequestSearchDto): Promise<PaginatedRoomSeekingResponseDto> {
 		const {
 			page = 1,
 			limit = 20,
@@ -459,38 +460,35 @@ export class ListingService {
 			this.prisma.roomSeekingPost.count({ where }),
 		]);
 
-		return {
-			data: data.map((item) => ({
-				id: item.id,
-				title: item.title,
-				description: item.description,
-				slug: item.slug,
-				requesterId: item.requesterId,
-				preferredDistrictId: item.preferredDistrictId,
-				preferredWardId: item.preferredWardId,
-				preferredProvinceId: item.preferredProvinceId,
-				minBudget: item.minBudget,
-				maxBudget: item.maxBudget,
-				currency: item.currency,
-				preferredRoomType: item.preferredRoomType,
-				occupancy: item.occupancy,
-				moveInDate: item.moveInDate,
-				status: item.status,
-				isPublic: item.isPublic,
-				expiresAt: item.expiresAt,
-				viewCount: item.viewCount,
-				contactCount: item.contactCount,
-				createdAt: item.createdAt,
-				updatedAt: item.updatedAt,
-				requester: item.requester,
-				amenities: item.amenities,
-				preferredProvince: item.preferredProvince,
-				preferredDistrict: item.preferredDistrict,
-				preferredWard: item.preferredWard,
-			})),
-			total,
-			page,
-			limit,
-		};
+		const formattedData = data.map((item) => ({
+			id: item.id,
+			title: item.title,
+			description: item.description,
+			slug: item.slug,
+			requesterId: item.requesterId,
+			preferredDistrictId: item.preferredDistrictId,
+			preferredWardId: item.preferredWardId,
+			preferredProvinceId: item.preferredProvinceId,
+			minBudget: item.minBudget != null ? Number(item.minBudget) : undefined,
+			maxBudget: item.maxBudget != null ? Number(item.maxBudget) : undefined,
+			currency: item.currency,
+			preferredRoomType: item.preferredRoomType,
+			occupancy: item.occupancy,
+			moveInDate: item.moveInDate,
+			status: item.status,
+			isPublic: item.isPublic,
+			expiresAt: item.expiresAt,
+			viewCount: item.viewCount,
+			contactCount: item.contactCount,
+			createdAt: item.createdAt,
+			updatedAt: item.updatedAt,
+			requester: item.requester,
+			amenities: item.amenities,
+			preferredProvince: item.preferredProvince,
+			preferredDistrict: item.preferredDistrict,
+			preferredWard: item.preferredWard,
+		}));
+
+		return PaginatedResponseDto.create(formattedData, page, limit, total);
 	}
 }

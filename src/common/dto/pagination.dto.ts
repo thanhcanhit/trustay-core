@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class PaginationQueryDto {
 	@ApiPropertyOptional({
@@ -35,7 +35,7 @@ export class PaginationQueryDto {
 	@ApiPropertyOptional({
 		description: 'Sort field',
 		default: 'createdAt',
-		examples: ['createdAt', 'updatedAt', 'name'],
+		example: 'createdAt',
 	})
 	@IsOptional()
 	@IsString()
@@ -48,7 +48,7 @@ export class PaginationQueryDto {
 	})
 	@IsOptional()
 	@IsString()
-	@IsEnum(['asc', 'desc'])
+	@IsIn(['asc', 'desc'])
 	sortOrder?: 'asc' | 'desc' = 'desc';
 }
 
