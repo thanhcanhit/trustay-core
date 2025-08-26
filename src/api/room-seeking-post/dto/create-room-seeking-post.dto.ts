@@ -13,7 +13,7 @@ import {
 	Min,
 } from 'class-validator';
 
-export class CreateRoomRequestDto {
+export class CreateRoomSeekingPostDto {
 	@ApiProperty({ description: 'Tiêu đề bài đăng tìm trọ' })
 	@IsString()
 	title: string;

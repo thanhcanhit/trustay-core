@@ -1,18 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { RoomType, SearchPostStatus } from '@prisma/client';
-import {
-	IsBoolean,
-	IsDateString,
-	IsEnum,
-	IsNumber,
-	IsOptional,
-	IsString,
-	Max,
-	Min,
-} from 'class-validator';
+import { IsBoolean, IsEnum, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
 
-export class QueryRoomRequestDto extends PaginationQueryDto {
+export class QueryRoomSeekingPostDto extends PaginationQueryDto {
 	@ApiPropertyOptional({ description: 'Lọc theo ID tỉnh/thành phố' })
 	@IsOptional()
 	@IsNumber()

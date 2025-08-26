@@ -1,4 +1,4 @@
 import { PartialType } from '@nestjs/swagger';
-import { CreateRoomRequestDto } from './create-room-seeking-post.dto';
+import { CreateRoomSeekingPostDto } from './create-room-seeking-post.dto';
 
-export class UpdateRoomRequestDto extends PartialType(CreateRoomRequestDto) {}
+export class UpdateRoomSeekingPostDto extends PartialType(CreateRoomSeekingPostDto) {}

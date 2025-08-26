@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AmenityCategory, RoomType, SearchPostStatus } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 
-export class RoomRequestResponseDto {
+export class RoomRoomSeekingPostDto {
 	@ApiProperty({ description: 'ID của bài đăng' })
 	id: string;
 

@@ -7,18 +7,18 @@ import {
 import { SearchPostStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
-	CreateRoomRequestDto,
-	QueryRoomRequestDto,
-	RoomRequestResponseDto,
-	UpdateRoomRequestDto,
+	CreateRoomSeekingPostDto,
+	QueryRoomSeekingPostDto,
+	RoomRoomSeekingPostDto,
+	UpdateRoomSeekingPostDto,
 } from './dto';
 
 @Injectable()
 export class RoomSeekingPostService {
 	constructor(private readonly prisma: PrismaService) {}
 
-	async findAll(query: QueryRoomRequestDto): Promise<{
-		data: RoomRequestResponseDto[];
+	async findAll(query: QueryRoomSeekingPostDto): Promise<{
+		data: RoomRoomSeekingPostDto[];
 		total: number;
 		page: number;
 		limit: number;
@@ -103,9 +103,9 @@ export class RoomSeekingPostService {
 	}
 
 	async create(
-		createRoomRequestDto: CreateRoomRequestDto,
+		createRoomRequestDto: CreateRoomSeekingPostDto,
 		requesterId: string,
-	): Promise<RoomRequestResponseDto> {
+	): Promise<RoomRoomSeekingPostDto> {
 		const { amenityIds, ...roomRequestData } = createRoomRequestDto;
 
 		// Kiểm tra slug đã tồn tại chưa
@@ -179,7 +179,7 @@ export class RoomSeekingPostService {
 		return this.mapToResponseDto(roomRequest);
 	}
 
-	async findOne(id: string): Promise<RoomRequestResponseDto> {
+	async findOne(id: string): Promise<RoomRoomSeekingPostDto> {
 		const roomRequest = await this.prisma.roomSeekingPost.findUnique({
 			where: { id },
 			include: {
@@ -241,9 +241,9 @@ export class RoomSeekingPostService {
 
 	async update(
 		id: string,
-		updateRoomRequestDto: UpdateRoomRequestDto,
+		updateRoomRequestDto: UpdateRoomSeekingPostDto,
 		requesterId: string,
-	): Promise<RoomRequestResponseDto> {
+	): Promise<RoomRoomSeekingPostDto> {
 		// Kiểm tra quyền sở hữu
 		const existingRequest = await this.prisma.roomSeekingPost.findUnique({
 			where: { id },
@@ -363,7 +363,7 @@ export class RoomSeekingPostService {
 		id: string,
 		status: SearchPostStatus,
 		requesterId: string,
-	): Promise<RoomRequestResponseDto> {
+	): Promise<RoomRoomSeekingPostDto> {
 		// Kiểm tra quyền sở hữu
 		const existingRequest = await this.prisma.roomSeekingPost.findUnique({
 			where: { id },
@@ -428,7 +428,7 @@ export class RoomSeekingPostService {
 		return this.mapToResponseDto(updatedRequest);
 	}
 
-	private mapToResponseDto(roomRequest: any): RoomRequestResponseDto {
+	private mapToResponseDto(roomRequest: any): RoomRoomSeekingPostDto {
 		return {
 			id: roomRequest.id,
 			title: roomRequest.title,

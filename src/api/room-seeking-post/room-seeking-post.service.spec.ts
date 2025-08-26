@@ -3,7 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { RoomType, SearchPostStatus } from '@prisma/client';
 // Decimal not used in these tests
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateRoomRequestDto, QueryRoomRequestDto, UpdateRoomRequestDto } from './dto';
+import { CreateRoomSeekingPostDto, QueryRoomSeekingPostDto, UpdateRoomSeekingPostDto } from './dto';
 import { RoomSeekingPostService } from './room-seeking-post.service';
 
 describe('RoomRequestService', () => {
@@ -44,7 +44,7 @@ describe('RoomRequestService', () => {
 	});
 
 	describe('create', () => {
-		const createDto: CreateRoomRequestDto = {
+		const createDto: CreateRoomSeekingPostDto = {
 			title: 'Tìm trọ gần trường ĐH',
 			description: 'Cần phòng gần trường ĐH',
 			slug: 'tim-tro-gan-truong-dh',
@@ -107,7 +107,7 @@ describe('RoomRequestService', () => {
 	});
 
 	describe('findAll', () => {
-		const queryDto: QueryRoomRequestDto = {
+		const queryDto: QueryRoomSeekingPostDto = {
 			page: 1,
 			limit: 20,
 			search: 'trọ',
@@ -172,7 +172,7 @@ describe('RoomRequestService', () => {
 
 	describe('update', () => {
 		const requestId = 'request-1';
-		const updateDto: UpdateRoomRequestDto = {
+		const updateDto: UpdateRoomSeekingPostDto = {
 			title: 'Tìm trọ gần trường ĐH - Cập nhật',
 			maxBudget: 6000000,
 		};
