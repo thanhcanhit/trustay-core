@@ -1025,6 +1025,253 @@
       "description": "Room type and instance management with complex CRUD operations"
     },
     {
+      "name": "🔍 Room Seeking Posts",
+      "item": [
+        {
+          "name": "📝 Create Room Seeking Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('roomSeekingPostId', response.id);",
+                  "    pm.collectionVariables.set('roomSeekingPostSlug', response.slug);",
+                  "    console.log('📝 Room seeking post created successfully!');",
+                  "    console.log('🆔 Post ID saved:', response.id);",
+                  "    console.log('🔗 Post Slug saved:', response.slug);",
+                  "    console.log('👤 Requester:', response.requester.firstName, response.requester.lastName);",
+                  "    console.log('💰 Budget:', response.minBudget ? response.minBudget.toLocaleString() : 'N/A', '-', response.maxBudget.toLocaleString(), response.currency);",
+                  "    console.log('🏠 Room Type:', response.preferredRoomType || 'Any');",
+                  "    console.log('👥 Occupancy:', response.occupancy || 'Not specified');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"{{seekingPostTitle}}\",\n  \"description\": \"{{seekingPostDescription}}\",\n  \"slug\": \"{{seekingPostSlug}}\",\n  \"preferredProvinceId\": {{seekingPostProvinceId}},\n  \"preferredDistrictId\": {{seekingPostDistrictId}},\n  \"preferredWardId\": {{seekingPostWardId}},\n  \"minBudget\": {{seekingPostMinBudget}},\n  \"maxBudget\": {{seekingPostMaxBudget}},\n  \"currency\": \"{{seekingPostCurrency}}\",\n  \"preferredRoomType\": \"{{seekingPostRoomType}}\",\n  \"occupancy\": {{seekingPostOccupancy}},\n  \"moveInDate\": \"{{seekingPostMoveInDate}}\",\n  \"isPublic\": {{seekingPostIsPublic}},\n  \"expiresAt\": \"{{seekingPostExpiresAt}}\",\n  \"amenityIds\": [\"{{seekingPostAmenityId1}}\", \"{{seekingPostAmenityId2}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts"]
+            },
+            "description": "Create a new room seeking post (requires authentication)"
+          },
+          "response": []
+        },
+        {
+          "name": "📋 List Room Seeking Posts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts?page={{seekingPostPage}}&limit={{seekingPostLimit}}&provinceId={{seekingPostFilterProvinceId}}&districtId={{seekingPostFilterDistrictId}}&minBudget={{seekingPostFilterMinBudget}}&maxBudget={{seekingPostFilterMaxBudget}}&roomType={{seekingPostFilterRoomType}}&occupancy={{seekingPostFilterOccupancy}}&status={{seekingPostFilterStatus}}&isPublic={{seekingPostFilterIsPublic}}&search={{seekingPostSearch}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "{{seekingPostPage}}",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{seekingPostLimit}}",
+                  "description": "Items per page"
+                },
+                {
+                  "key": "provinceId",
+                  "value": "{{seekingPostFilterProvinceId}}",
+                  "description": "Filter by province ID"
+                },
+                {
+                  "key": "districtId",
+                  "value": "{{seekingPostFilterDistrictId}}",
+                  "description": "Filter by district ID"
+                },
+                {
+                  "key": "minBudget",
+                  "value": "{{seekingPostFilterMinBudget}}",
+                  "description": "Filter by minimum budget"
+                },
+                {
+                  "key": "maxBudget",
+                  "value": "{{seekingPostFilterMaxBudget}}",
+                  "description": "Filter by maximum budget"
+                },
+                {
+                  "key": "roomType",
+                  "value": "{{seekingPostFilterRoomType}}",
+                  "description": "Filter by room type"
+                },
+                {
+                  "key": "occupancy",
+                  "value": "{{seekingPostFilterOccupancy}}",
+                  "description": "Filter by occupancy"
+                },
+                {
+                  "key": "status",
+                  "value": "{{seekingPostFilterStatus}}",
+                  "description": "Filter by status"
+                },
+                {
+                  "key": "isPublic",
+                  "value": "{{seekingPostFilterIsPublic}}",
+                  "description": "Filter by public status"
+                },
+                {
+                  "key": "search",
+                  "value": "{{seekingPostSearch}}",
+                  "description": "Search in title and description"
+                }
+              ]
+            },
+            "description": "List room seeking posts with filtering and pagination (NOTE: This endpoint may not be implemented yet)"
+          },
+          "response": []
+        },
+        {
+          "name": "🔍 Get Room Seeking Post Details",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('🔍 Room seeking post details retrieved successfully!');",
+                  "    console.log('📝 Title:', response.title);",
+                  "    console.log('💰 Budget:', response.minBudget ? response.minBudget.toLocaleString() : 'N/A', '-', response.maxBudget.toLocaleString(), response.currency);",
+                  "console.log('👤 Requester:', response.requester.firstName, response.requester.lastName);",
+                  "console.log('📊 Views:', response.viewCount, '| Contacts:', response.contactCount);",
+                  "console.log('🏠 Room Type:', response.preferredRoomType || 'Any');",
+                  "console.log('📍 Location:', response.preferredProvince?.name || 'N/A');",
+                  "if (response.preferredDistrict) console.log('📍 District:', response.preferredDistrict.name);",
+                  "if (response.preferredWard) console.log('📍 Ward:', response.preferredWard.name);",
+                  "console.log('🏷️ Amenities:', response.amenities.length, 'items');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts/{{roomSeekingPostId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts", "{{roomSeekingPostId}}"]
+            },
+            "description": "Get detailed information about a room seeking post (public endpoint)"
+          },
+          "response": []
+        },
+        {
+          "name": "✏️ Update Room Seeking Post",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"{{seekingPostTitleUpdated}}\",\n  \"description\": \"{{seekingPostDescriptionUpdated}}\",\n  \"maxBudget\": {{seekingPostMaxBudgetUpdated}},\n  \"occupancy\": {{seekingPostOccupancyUpdated}},\n  \"moveInDate\": \"{{seekingPostMoveInDateUpdated}}\",\n  \"isPublic\": {{seekingPostIsPublicUpdated}}\",\n  \"amenityIds\": [\"{{seekingPostAmenityId1Updated}}\", \"{{seekingPostAmenityId3}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts/{{roomSeekingPostId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts", "{{roomSeekingPostId}}"]
+            },
+            "description": "Update room seeking post (owner only)"
+          },
+          "response": []
+        },
+        {
+          "name": "🔄 Update Room Seeking Post Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"{{seekingPostNewStatus}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts/{{roomSeekingPostId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts", "{{roomSeekingPostId}}", "status"]
+            },
+            "description": "Update room seeking post status (active, paused, closed, expired)"
+          },
+          "response": []
+        },
+        {
+          "name": "📞 Increment Contact Count",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts/{{roomSeekingPostId}}/contact",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts", "{{roomSeekingPostId}}", "contact"]
+            },
+            "description": "Increment contact count for a room seeking post (public endpoint)"
+          },
+          "response": []
+        },
+        {
+          "name": "🗑️ Delete Room Seeking Post",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts/{{roomSeekingPostId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts", "{{roomSeekingPostId}}"]
+            },
+            "description": "Delete room seeking post (owner only)"
+          },
+          "response": []
+        },
+        {
+          "name": "🧪 Test Room Seeking Posts API",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts/admin/test",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts", "admin", "test"]
+            },
+            "description": "Test endpoint for room seeking posts API"
+          },
+          "response": []
+        }
+      ],
+      "description": "Room seeking post management endpoints for tenants looking for accommodation"
+    },
+    {
       "name": "🔧 Utilities",
       "item": [
         {
@@ -1084,7 +1331,8 @@
           "// Define endpoints that DON'T need authentication",
           "const publicEndpoints = [",
           "    'Login', 'Register', 'Verification', 'Password Strength', 'Generate', 'Health', 'Documentation',",
-          "    'Provinces', 'Districts', 'Wards', 'Get Room by Slug'",
+          "    'Provinces', 'Districts', 'Wards', 'Get Room by Slug',",
+          "    'List Room Seeking Posts', 'Get Room Seeking Post Details', 'Increment Contact Count', 'Test Room Seeking Posts API'",
           "];",
           "",
           "const isPublicEndpoint = publicEndpoints.some(endpoint => requestName.includes(endpoint));",
@@ -1199,6 +1447,14 @@
           "                    pm.collectionVariables.set('roomInstanceId3', instances[2].id);",
           "                    console.log('🚪 Auto-saved multiple room instance IDs for bulk operations');",
           "                }",
+          "            }",
+          "            ",
+          "            // Save room seeking post IDs",
+          "            if (response.id && currentRequest.includes('Create Room Seeking Post')) {",
+          "                pm.collectionVariables.set('roomSeekingPostId', response.id);",
+          "                pm.collectionVariables.set('roomSeekingPostSlug', response.slug);",
+          "                console.log('📝 Auto-saved room seeking post ID:', response.id);",
+          "                console.log('🔗 Auto-saved room seeking post slug:', response.slug);",
           "            }",
           "        }",
           "    } catch (e) {",
@@ -1935,6 +2191,234 @@
       "value": "Bảo trì định kỳ tòa nhà",
       "type": "string",
       "description": "Reason for bulk status change"
+    },
+    {
+      "key": "roomSeekingPostId",
+      "value": "",
+      "type": "string",
+      "description": "Room seeking post ID (auto-populated after creation)"
+    },
+    {
+      "key": "roomSeekingPostSlug",
+      "value": "",
+      "type": "string",
+      "description": "Room seeking post slug (auto-populated after creation)"
+    },
+    {
+      "key": "seekingPostTitle",
+      "value": "Tìm phòng trọ gần trường ĐH Bách Khoa",
+      "type": "string",
+      "description": "Room seeking post title"
+    },
+    {
+      "key": "seekingPostDescription",
+      "value": "Sinh viên năm 3 tìm phòng trọ gần trường ĐH Bách Khoa, ưu tiên khu vực Thủ Đức. Cần phòng có điều hòa, wifi, gần chợ và bến xe buýt.",
+      "type": "string",
+      "description": "Room seeking post description"
+    },
+    {
+      "key": "seekingPostSlug",
+      "value": "tim-phong-tro-gan-truong-dh-bach-khoa",
+      "type": "string",
+      "description": "Room seeking post slug (unique identifier)"
+    },
+    {
+      "key": "seekingPostProvinceId",
+      "value": "79",
+      "type": "string",
+      "description": "Preferred province ID (Thành phố Hồ Chí Minh)"
+    },
+    {
+      "key": "seekingPostDistrictId",
+      "value": "769",
+      "type": "string",
+      "description": "Preferred district ID (Thủ Đức, HCMC)"
+    },
+    {
+      "key": "seekingPostWardId",
+      "value": "26734",
+      "type": "string",
+      "description": "Preferred ward ID (Phường Linh Chiểu, Thủ Đức)"
+    },
+    {
+      "key": "seekingPostMinBudget",
+      "value": "2000000",
+      "type": "string",
+      "description": "Minimum budget (VND)"
+    },
+    {
+      "key": "seekingPostMaxBudget",
+      "value": "4000000",
+      "type": "string",
+      "description": "Maximum budget (VND)"
+    },
+    {
+      "key": "seekingPostCurrency",
+      "value": "VND",
+      "type": "string",
+      "description": "Currency for budget"
+    },
+    {
+      "key": "seekingPostRoomType",
+      "value": "boarding_house",
+      "type": "string",
+      "description": "Preferred room type (boarding_house, dormitory, sleepbox, apartment, whole_house)"
+    },
+    {
+      "key": "seekingPostOccupancy",
+      "value": "1",
+      "type": "string",
+      "description": "Number of people who will live in the room"
+    },
+    {
+      "key": "seekingPostMoveInDate",
+      "value": "2024-09-01",
+      "type": "string",
+      "description": "Preferred move-in date (YYYY-MM-DD)"
+    },
+    {
+      "key": "seekingPostIsPublic",
+      "value": "true",
+      "type": "string",
+      "description": "Whether the post is public"
+    },
+    {
+      "key": "seekingPostExpiresAt",
+      "value": "2024-12-31",
+      "type": "string",
+      "description": "Post expiration date (YYYY-MM-DD)"
+    },
+    {
+      "key": "seekingPostAmenityId1",
+      "value": "sample-amenity-id-1",
+      "type": "string",
+      "description": "System amenity ID 1 (replace with actual ID)"
+    },
+    {
+      "key": "seekingPostAmenityId2",
+      "value": "sample-amenity-id-2",
+      "type": "string",
+      "description": "System amenity ID 2 (replace with actual ID)"
+    },
+    {
+      "key": "seekingPostPage",
+      "value": "1",
+      "type": "string",
+      "description": "Page number for listing"
+    },
+    {
+      "key": "seekingPostLimit",
+      "value": "20",
+      "type": "string",
+      "description": "Items per page for listing"
+    },
+    {
+      "key": "seekingPostFilterProvinceId",
+      "value": "79",
+      "type": "string",
+      "description": "Filter by province ID"
+    },
+    {
+      "key": "seekingPostFilterDistrictId",
+      "value": "769",
+      "type": "string",
+      "description": "Filter by district ID"
+    },
+    {
+      "key": "seekingPostFilterMinBudget",
+      "value": "2000000",
+      "type": "string",
+      "description": "Filter by minimum budget"
+    },
+    {
+      "key": "seekingPostFilterMaxBudget",
+      "value": "5000000",
+      "type": "string",
+      "description": "Filter by maximum budget"
+    },
+    {
+      "key": "seekingPostFilterRoomType",
+      "value": "boarding_house",
+      "type": "string",
+      "description": "Filter by room type"
+    },
+    {
+      "key": "seekingPostFilterOccupancy",
+      "value": "1",
+      "type": "string",
+      "description": "Filter by occupancy"
+    },
+    {
+      "key": "seekingPostFilterStatus",
+      "value": "active",
+      "type": "string",
+      "description": "Filter by status (active, paused, closed, expired)"
+    },
+    {
+      "key": "seekingPostFilterIsPublic",
+      "value": "true",
+      "type": "string",
+      "description": "Filter by public status"
+    },
+    {
+      "key": "seekingPostSearch",
+      "value": "trọ",
+      "type": "string",
+      "description": "Search term for title and description"
+    },
+    {
+      "key": "seekingPostTitleUpdated",
+      "value": "Tìm phòng trọ gần trường ĐH Bách Khoa - Cập nhật",
+      "type": "string",
+      "description": "Updated room seeking post title"
+    },
+    {
+      "key": "seekingPostDescriptionUpdated",
+      "value": "Sinh viên năm 3 tìm phòng trọ gần trường ĐH Bách Khoa, ưu tiên khu vực Thủ Đức. Cần phòng có điều hòa, wifi, gần chợ và bến xe buýt. Có thể chia sẻ phòng với bạn cùng lớp.",
+      "type": "string",
+      "description": "Updated room seeking post description"
+    },
+    {
+      "key": "seekingPostMaxBudgetUpdated",
+      "value": "3500000",
+      "type": "string",
+      "description": "Updated maximum budget"
+    },
+    {
+      "key": "seekingPostOccupancyUpdated",
+      "value": "2",
+      "type": "string",
+      "description": "Updated occupancy"
+    },
+    {
+      "key": "seekingPostMoveInDateUpdated",
+      "value": "2024-10-01",
+      "type": "string",
+      "description": "Updated move-in date"
+    },
+    {
+      "key": "seekingPostIsPublicUpdated",
+      "value": "true",
+      "type": "string",
+      "description": "Updated public status"
+    },
+    {
+      "key": "seekingPostAmenityId1Updated",
+      "value": "sample-amenity-id-1",
+      "type": "string",
+      "description": "Updated system amenity ID 1"
+    },
+    {
+      "key": "seekingPostAmenityId3",
+      "value": "sample-amenity-id-3",
+      "type": "string",
+      "description": "New system amenity ID 3"
+    },
+    {
+      "key": "seekingPostNewStatus",
+      "value": "paused",
+      "type": "string",
+      "description": "New status for room seeking post (active, paused, closed, expired)"
     }
   ]
 }
