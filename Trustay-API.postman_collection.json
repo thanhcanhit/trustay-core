@@ -725,6 +725,32 @@
           "response": []
         },
         {
+          "name": "📋 Get My Buildings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/buildings/me?page={{buildingPage}}&limit={{buildingLimit}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "buildings", "me"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "{{buildingPage}}",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{buildingLimit}}",
+                  "description": "Items per page"
+                }
+              ]
+            },
+            "description": "Get my buildings with pagination (requires authentication)"
+          },
+          "response": []
+        },
+        {
           "name": "🏢 Get Building Details",
           "request": {
             "method": "GET",
@@ -805,6 +831,32 @@
     {
       "name": "🏠 Rooms Management",
       "item": [
+        {
+          "name": "📋 Get My Rooms",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/rooms/me?page={{roomPage}}&limit={{roomLimit}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "rooms", "me"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "{{roomPage}}",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{roomLimit}}",
+                  "description": "Items per page"
+                }
+              ]
+            },
+            "description": "Get my rooms with pagination (requires authentication)"
+          },
+          "response": []
+        },
         {
           "name": "🏗️ Create Room Type",
           "event": [
@@ -1069,6 +1121,47 @@
               "path": ["api", "room-seeking-posts"]
             },
             "description": "Create a new room seeking post (requires authentication). Slug will be auto-generated from title."
+          },
+          "response": []
+        },
+        {
+          "name": "📋 Get My Room Seeking Posts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts/my-posts?page={{seekingPostPage}}&limit={{seekingPostLimit}}&search={{seekingPostSearch}}&sortBy={{seekingPostSortBy}}&sortOrder={{seekingPostSortOrder}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts", "my-posts"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "{{seekingPostPage}}",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{seekingPostLimit}}",
+                  "description": "Items per page"
+                },
+                {
+                  "key": "search",
+                  "value": "{{seekingPostSearch}}",
+                  "description": "Search in title and description"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "{{seekingPostSortBy}}",
+                  "description": "Sort field (createdAt, updatedAt, title, maxBudget, viewCount, contactCount)"
+                },
+                {
+                  "key": "sortOrder",
+                  "value": "{{seekingPostSortOrder}}",
+                  "description": "Sort order (asc, desc)"
+                }
+              ]
+            },
+            "description": "Get my room seeking posts with pagination and search (requires authentication)"
           },
           "response": []
         },
@@ -2314,6 +2407,42 @@
       "value": "paused",
       "type": "string",
       "description": "New status for room seeking post (active, paused, closed, expired)"
+    },
+    {
+      "key": "seekingPostSortBy",
+      "value": "createdAt",
+      "type": "string",
+      "description": "Sort field for my posts (createdAt, updatedAt, title, maxBudget, viewCount, contactCount)"
+    },
+    {
+      "key": "seekingPostSortOrder",
+      "value": "desc",
+      "type": "string",
+      "description": "Sort order for my posts (asc, desc)"
+    },
+    {
+      "key": "buildingPage",
+      "value": "1",
+      "type": "string",
+      "description": "Page number for buildings pagination"
+    },
+    {
+      "key": "buildingLimit",
+      "value": "10",
+      "type": "string",
+      "description": "Items per page for buildings pagination"
+    },
+    {
+      "key": "roomPage",
+      "value": "1",
+      "type": "string",
+      "description": "Page number for rooms pagination"
+    },
+    {
+      "key": "roomLimit",
+      "value": "10",
+      "type": "string",
+      "description": "Items per page for rooms pagination"
     }
   ]
 }

@@ -5,13 +5,71 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import { SearchPostStatus } from '@prisma/client';
+import { PaginatedResponseDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { generateSlug, generateUniqueSlug } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateRoomSeekingPostDto, RoomRoomSeekingPostDto, UpdateRoomSeekingPostDto } from './dto';
 
 @Injectable()
 export class RoomSeekingPostService {
-	constructor(private readonly prisma: PrismaService) {}
+	private viewCache = new Map<string, { timestamp: number; ips: Set<string> }>();
+	private readonly VIEW_COOLDOWN_MS = 1 * 60 * 1000; // 1 phút
+	private readonly CACHE_CLEANUP_INTERVAL = 30 * 60 * 1000; // 30 phút
+
+	constructor(private readonly prisma: PrismaService) {
+		// Dọn dẹp cache định kỳ
+		setInterval(() => {
+			this.cleanupViewCache();
+		}, this.CACHE_CLEANUP_INTERVAL);
+	}
+
+	/**
+	 * Dọn dẹp cache view cũ
+	 */
+	private cleanupViewCache(): void {
+		const now = Date.now();
+		for (const [key, value] of this.viewCache.entries()) {
+			if (now - value.timestamp > this.VIEW_COOLDOWN_MS * 2) {
+				this.viewCache.delete(key);
+			}
+		}
+	}
+
+	/**
+	 * Kiểm tra và ghi nhận view mới
+	 * @param postId - ID của bài đăng
+	 * @param clientIp - IP của client (có thể undefined nếu không có)
+	 * @returns true nếu view hợp lệ, false nếu bị chặn do spam
+	 */
+	private shouldIncrementView(postId: string, clientIp?: string): boolean {
+		const cacheKey = postId;
+		const now = Date.now();
+
+		if (!this.viewCache.has(cacheKey)) {
+			this.viewCache.set(cacheKey, {
+				timestamp: now,
+				ips: new Set(clientIp ? [clientIp] : []),
+			});
+			return true;
+		}
+
+		const cacheEntry = this.viewCache.get(cacheKey)!;
+
+		// Nếu có IP và IP này đã xem trong thời gian cooldown
+		if (clientIp && cacheEntry.ips.has(clientIp)) {
+			if (now - cacheEntry.timestamp < this.VIEW_COOLDOWN_MS) {
+				return false; // Chặn spam từ cùng IP
+			}
+		}
+
+		// Cập nhật cache
+		if (clientIp) {
+			cacheEntry.ips.add(clientIp);
+		}
+		cacheEntry.timestamp = now;
+
+		return true;
+	}
 
 	/**
 	 * Converts date string to Date object with validation
@@ -81,6 +139,64 @@ export class RoomSeekingPostService {
 				);
 			}
 		}
+	}
+
+	async findMyPosts(
+		query: PaginationQueryDto,
+		userId: string,
+	): Promise<PaginatedResponseDto<RoomRoomSeekingPostDto>> {
+		const { page = 1, limit = 20, sortBy = 'createdAt', sortOrder = 'desc', search } = query;
+
+		const where: any = {
+			requesterId: userId,
+			...(search && {
+				OR: [
+					{ title: { contains: search, mode: 'insensitive' } },
+					{ description: { contains: search, mode: 'insensitive' } },
+				],
+			}),
+		};
+
+		const [items, total] = await Promise.all([
+			this.prisma.roomSeekingPost.findMany({
+				where,
+				orderBy: { [sortBy]: sortOrder },
+				skip: (page - 1) * limit,
+				take: limit,
+				include: {
+					requester: {
+						select: {
+							id: true,
+							firstName: true,
+							lastName: true,
+							email: true,
+							phone: true,
+							avatarUrl: true,
+						},
+					},
+					amenities: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+							category: true,
+							description: true,
+						},
+					},
+					preferredProvince: { select: { id: true, name: true, nameEn: true } },
+					preferredDistrict: { select: { id: true, name: true, nameEn: true } },
+					preferredWard: { select: { id: true, name: true, nameEn: true } },
+				},
+			}),
+			this.prisma.roomSeekingPost.count({ where }),
+		]);
+
+		return PaginatedResponseDto.create(
+			items.map((item) => this.mapToResponseDto(item)),
+			page,
+			limit,
+			total,
+		);
 	}
 
 	async create(
@@ -184,7 +300,7 @@ export class RoomSeekingPostService {
 		return this.mapToResponseDto(roomRequest);
 	}
 
-	async findOne(id: string): Promise<RoomRoomSeekingPostDto> {
+	async findOne(id: string, clientIp?: string): Promise<RoomRoomSeekingPostDto> {
 		const roomRequest = await this.prisma.roomSeekingPost.findUnique({
 			where: { id },
 			include: {
@@ -235,11 +351,13 @@ export class RoomSeekingPostService {
 			throw new NotFoundException('Room seeking post not found');
 		}
 
-		// Tăng view count
-		await this.prisma.roomSeekingPost.update({
-			where: { id },
-			data: { viewCount: { increment: 1 } },
-		});
+		// Tăng view count với chiến lược chống spam
+		if (this.shouldIncrementView(id, clientIp)) {
+			await this.prisma.roomSeekingPost.update({
+				where: { id },
+				data: { viewCount: { increment: 1 } },
+			});
+		}
 
 		return this.mapToResponseDto(roomRequest);
 	}

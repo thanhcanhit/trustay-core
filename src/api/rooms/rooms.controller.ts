@@ -8,9 +8,18 @@ import {
 	Post,
 	Put,
 	Query,
+	Req,
 	UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+	ApiBearerAuth,
+	ApiOperation,
+	ApiParam,
+	ApiQuery,
+	ApiResponse,
+	ApiTags,
+} from '@nestjs/swagger';
+import { Request } from 'express';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ApiResponseDto } from '../../common/dto';
@@ -178,8 +187,10 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		status: 404,
 		description: 'Room not found',
 	})
-	async getRoomBySlug(@Param('slug') slug: string): Promise<RoomDetailDto> {
-		return this.roomsService.getRoomBySlug(slug);
+	async getRoomBySlug(@Param('slug') slug: string, @Req() req: Request): Promise<RoomDetailDto> {
+		const clientIp =
+			req.ip || req.connection?.remoteAddress || (req.headers['x-forwarded-for'] as string);
+		return this.roomsService.getRoomBySlug(slug, clientIp);
 	}
 
 	@Get('public/:slug')
@@ -202,8 +213,10 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		status: 404,
 		description: 'Room not found',
 	})
-	async getRoomBySlugAlt(@Param('slug') slug: string): Promise<RoomDetailDto> {
-		return this.roomsService.getRoomBySlug(slug);
+	async getRoomBySlugAlt(@Param('slug') slug: string, @Req() req: Request): Promise<RoomDetailDto> {
+		const clientIp =
+			req.ip || req.connection?.remoteAddress || (req.headers['x-forwarded-for'] as string);
+		return this.roomsService.getRoomBySlug(slug, clientIp);
 	}
 
 	@Put(':roomId')
@@ -333,6 +346,84 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		await this.roomsService.remove(userId, roomId);
 
 		return ApiResponseDto.success(null, 'Room deleted successfully');
+	}
+
+	@Get('me')
+	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
+	@ApiOperation({
+		summary: 'Lấy danh sách rooms của tôi',
+		description: 'Lấy danh sách tất cả room types thuộc sở hữu của user hiện tại với phân trang',
+	})
+	@ApiQuery({
+		name: 'page',
+		required: false,
+		description: 'Số trang (bắt đầu từ 1)',
+		example: 1,
+		type: Number,
+	})
+	@ApiQuery({
+		name: 'limit',
+		required: false,
+		description: 'Số lượng items per page',
+		example: 10,
+		type: Number,
+	})
+	@ApiResponse({
+		status: HttpStatus.OK,
+		description: 'Lấy danh sách rooms thành công',
+		schema: {
+			example: {
+				success: true,
+				message: 'My rooms retrieved successfully',
+				data: {
+					rooms: [
+						{
+							id: 'uuid-room-1',
+							name: 'Phòng VIP',
+							roomType: 'boarding_house',
+							areaSqm: 25.5,
+							totalRooms: 5,
+							availableInstancesCount: 3,
+							occupiedInstancesCount: 2,
+							pricing: {
+								basePriceMonthly: 3500000,
+								depositAmount: 7000000,
+							},
+						},
+					],
+					total: 3,
+					page: 1,
+					limit: 10,
+					totalPages: 1,
+				},
+				timestamp: '2025-01-01T00:00:00.000Z',
+			},
+		},
+	})
+	@ApiResponse({
+		status: HttpStatus.UNAUTHORIZED,
+		description: 'Chưa đăng nhập',
+	})
+	async findMyRooms(
+		@CurrentUser('id') userId: string,
+		@Query('page') page?: string,
+		@Query('limit') limit?: string,
+	): Promise<
+		ApiResponseDto<{
+			rooms: RoomResponseDto[];
+			total: number;
+			page: number;
+			limit: number;
+			totalPages: number;
+		}>
+	> {
+		const pageNum = page ? parseInt(page, 10) : 1;
+		const limitNum = limit ? parseInt(limit, 10) : 10;
+
+		const result = await this.roomsService.findMyRooms(userId, pageNum, limitNum);
+
+		return ApiResponseDto.success(result, 'My rooms retrieved successfully');
 	}
 
 	@Get('building/:buildingId/rooms')

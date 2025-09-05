@@ -171,11 +171,11 @@ enum VerificationStatus {
 }
 
 enum RoomStatus {
-  available     // Phòng trống, sẵn sàng cho thuê
-  occupied      // Phòng đã có người ở
-  maintenance   // Phòng đang sửa chữa/bảo trì
-  reserved      // Phòng đã được đặt cọc nhưng chưa vào ở
-  unavailable   // Phòng tạm thời không cho thuê
+  available // Phòng trống, sẵn sàng cho thuê
+  occupied // Phòng đã có người ở
+  maintenance // Phòng đang sửa chữa/bảo trì
+  reserved // Phòng đã được đặt cọc nhưng chưa vào ở
+  unavailable // Phòng tạm thời không cho thuê
 }
 
 // ========================================
@@ -218,7 +218,6 @@ model User {
   reviewsGiven        Review[]           @relation("ReviewGiver")
   reviewsReceived     Review[]           @relation("ReviewReceiver")
   notifications       Notification[]
-  roomSearchPosts     RoomSearchPost[]
   verificationCodes   VerificationCode[]
   refreshTokens       RefreshToken[]
   roomRequests        RoomSeekingPost[]
@@ -337,20 +336,21 @@ model Building {
 }
 
 model Room {
-  id             String     @id @default(uuid())
-  slug           String     @unique // auto-generated from building + room type
-  buildingId     String     @map("building_id")
-  floorNumber    Int?       @map("floor_number")
-  name           String // Tên loại phòng: "Phòng VIP", "Phòng thường"
-  description    String?
-  roomType       RoomType   @map("room_type")
-  areaSqm        Decimal?   @map("area_sqm") @db.Decimal(8, 2)
-  maxOccupancy   Int        @default(1) @map("max_occupancy")
-  totalRooms     Int        @map("total_rooms") // Tổng số phòng loại này
-  isActive       Boolean    @default(true) @map("is_active")
-  isVerified     Boolean    @default(false) @map("is_verified")
-  createdAt      DateTime   @default(now()) @map("created_at")
-  updatedAt      DateTime   @updatedAt @map("updated_at")
+  id           String   @id @default(uuid())
+  slug         String   @unique // auto-generated from building + room type
+  buildingId   String   @map("building_id")
+  floorNumber  Int?     @map("floor_number")
+  name         String // Tên loại phòng: "Phòng VIP", "Phòng thường"
+  description  String?
+  roomType     RoomType @map("room_type")
+  areaSqm      Decimal? @map("area_sqm") @db.Decimal(8, 2)
+  maxOccupancy Int      @default(1) @map("max_occupancy")
+  totalRooms   Int      @map("total_rooms") // Tổng số phòng loại này
+  viewCount    Int      @default(0) @map("view_count") // Số lượt xem
+  isActive     Boolean  @default(true) @map("is_active")
+  isVerified   Boolean  @default(false) @map("is_verified")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   // Relations
   building      Building       @relation(fields: [buildingId], references: [id], onDelete: Cascade)
@@ -466,10 +466,10 @@ model SystemAmenity {
   createdAt   DateTime        @default(now()) @map("created_at")
   updatedAt   DateTime        @updatedAt @map("updated_at")
 
-    // Relations
-  roomAmenities RoomAmenity[]
+  // Relations
+  roomAmenities        RoomAmenity[]
   roomRequestAmenities RoomSeekingPost[]
-  
+
   @@index([category])
   @@index([isActive])
   @@map("system_amenities")
@@ -814,72 +814,6 @@ model Review {
 }
 
 // ========================================
-// ROOM SEARCH POSTS
-// ========================================
-
-model RoomSearchPost {
-  id          String @id @default(uuid())
-  tenantId    String @map("tenant_id")
-  title       String
-  description String
-
-  // Location preferences
-  preferredDistricts String[] @map("preferred_districts")
-  preferredWards     String[] @map("preferred_wards")
-  preferredCity      String   @map("preferred_city")
-  preferredLatitude  Decimal? @map("preferred_latitude") @db.Decimal(10, 7)
-  preferredLongitude Decimal? @map("preferred_longitude") @db.Decimal(10, 7)
-  searchRadiusKm     Decimal? @map("search_radius_km") @db.Decimal(8, 2)
-
-  // Budget preferences
-  minBudget Decimal? @map("min_budget") @db.Decimal(15, 2)
-  maxBudget Decimal  @map("max_budget") @db.Decimal(15, 2)
-  currency  String   @default("VND")
-
-  // Room preferences
-  preferredRoomTypes RoomType[] @map("preferred_room_types")
-  maxOccupancy       Int?       @map("max_occupancy")
-  minAreaSqm         Decimal?   @map("min_area_sqm") @db.Decimal(8, 2)
-
-  // Move-in preferences
-  moveInDate     DateTime? @map("move_in_date") @db.Date
-  rentalDuration Int?      @map("rental_duration") // months
-
-  // Required amenities (JSON array of amenity IDs)
-  requiredAmenities String[] @map("required_amenities")
-
-  // Contact info
-  contactPhone String? @map("contact_phone")
-  contactEmail String? @map("contact_email")
-
-  // Post settings
-  status    SearchPostStatus @default(active)
-  isPublic  Boolean          @default(true) @map("is_public")
-  autoRenew Boolean          @default(false) @map("auto_renew")
-  expiresAt DateTime?        @map("expires_at")
-
-  // Engagement
-  viewCount    Int @default(0) @map("view_count")
-  contactCount Int @default(0) @map("contact_count")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  tenant User @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId])
-  @@index([status])
-  @@index([preferredCity])
-  @@index([maxBudget])
-  @@index([moveInDate])
-  @@index([expiresAt])
-  @@index([createdAt])
-  @@index([preferredLatitude, preferredLongitude])
-  @@map("room_search_posts")
-}
-
-// ========================================
 // ROOM REQUEST (BÀI ĐĂNG TÌM TRỌ)
 // ========================================
 
@@ -887,46 +821,46 @@ model RoomSeekingPost {
   id          String @id @default(uuid())
   title       String
   description String
-  slug        String   @unique @map("slug")
-  
+  slug        String @unique @map("slug")
+
   // Thông tin người đăng
   requesterId String @map("requester_id")
-  
+
   // Vị trí mong muốn
   preferredDistrictId Int? @map("preferred_district_id")
   preferredWardId     Int? @map("preferred_ward_id")
   preferredProvinceId Int  @map("preferred_province_id")
-  
+
   // Ngân sách
   minBudget Decimal? @map("min_budget") @db.Decimal(15, 2)
   maxBudget Decimal  @map("max_budget") @db.Decimal(15, 2)
   currency  String   @default("VND")
-  
+
   // Loại phòng mong muốn
   preferredRoomType RoomType? @map("preferred_room_type")
-  
+
   // Số người ở
   occupancy Int? // Số người sẽ ở trong phòng
-  
+
   // Thời gian dự định vào ở
   moveInDate DateTime? @map("move_in_date") @db.Date
-  
+
   // Trạng thái bài đăng
   status    SearchPostStatus @default(active)
   isPublic  Boolean          @default(true) @map("is_public")
   expiresAt DateTime?        @map("expires_at")
-  
+
   // Thống kê tương tác
   viewCount    Int @default(0) @map("view_count")
   contactCount Int @default(0) @map("contact_count")
-  
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
-  
+
   // Relations
-  requester User @relation(fields: [requesterId], references: [id], onDelete: Cascade)
+  requester User            @relation(fields: [requesterId], references: [id], onDelete: Cascade)
   amenities SystemAmenity[]
-  
+
   // Relations
   preferredProvince Province? @relation(fields: [preferredProvinceId], references: [id], onDelete: SetNull)
   preferredDistrict District? @relation(fields: [preferredDistrictId], references: [id], onDelete: SetNull)
@@ -949,20 +883,20 @@ model RoomSeekingPost {
 // ========================================
 
 model ErrorLog {
-  id          String   @id @default(uuid())
-  message     String
-  stack       String?
-  level       String   @default("error") // error, warn, fatal
-  context     String?
-  method      String?  // HTTP method
-  url         String?  // Request URL
-  statusCode  Int?     // HTTP status code
-  userId      String?  @map("user_id")
-  userAgent   String?  @map("user_agent")
-  ipAddress   String?  @map("ip_address")
-  requestId   String?  @map("request_id")
-  metadata    Json?    // Additional error details as JSON
-  createdAt   DateTime @default(now()) @map("created_at")
+  id         String   @id @default(uuid())
+  message    String
+  stack      String?
+  level      String   @default("error") // error, warn, fatal
+  context    String?
+  method     String? // HTTP method
+  url        String? // Request URL
+  statusCode Int? // HTTP status code
+  userId     String?  @map("user_id")
+  userAgent  String?  @map("user_agent")
+  ipAddress  String?  @map("ip_address")
+  requestId  String?  @map("request_id")
+  metadata   Json? // Additional error details as JSON
+  createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([level])
   @@index([context])
@@ -1023,7 +957,7 @@ model District {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  province      Province      @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  province      Province          @relation(fields: [provinceId], references: [id], onDelete: Cascade)
   wards         Ward[]
   userAddresses UserAddress[]
   buildings     Building[]
@@ -1044,7 +978,7 @@ model Ward {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  district      District      @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  district      District          @relation(fields: [districtId], references: [id], onDelete: Cascade)
   userAddresses UserAddress[]
   buildings     Building[]
   roomRequests  RoomSeekingPost[]
