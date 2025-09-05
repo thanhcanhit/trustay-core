@@ -945,6 +945,34 @@ model RoomSeekingPost {
 }
 
 // ========================================
+// ERROR LOGGING
+// ========================================
+
+model ErrorLog {
+  id          String   @id @default(uuid())
+  message     String
+  stack       String?
+  level       String   @default("error") // error, warn, fatal
+  context     String?
+  method      String?  // HTTP method
+  url         String?  // Request URL
+  statusCode  Int?     // HTTP status code
+  userId      String?  @map("user_id")
+  userAgent   String?  @map("user_agent")
+  ipAddress   String?  @map("ip_address")
+  requestId   String?  @map("request_id")
+  metadata    Json?    // Additional error details as JSON
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([level])
+  @@index([context])
+  @@index([statusCode])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("error_logs")
+}
+
+// ========================================
 // SYSTEM TABLES
 // ========================================
 

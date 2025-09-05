@@ -1,9 +1,30 @@
-import { Injectable, type LoggerService as NestLoggerService } from '@nestjs/common';
+import {
+	forwardRef,
+	Inject,
+	Injectable,
+	type LoggerService as NestLoggerService,
+} from '@nestjs/common';
 import { createLogger, format, type Logger, transports } from 'winston';
+
+interface ErrorLogData {
+	message: string;
+	stack?: string;
+	level?: string;
+	context?: string;
+	method?: string;
+	url?: string;
+	statusCode?: number;
+	userId?: string;
+	userAgent?: string;
+	ipAddress?: string;
+	requestId?: string;
+	metadata?: Record<string, unknown>;
+}
 
 @Injectable()
 export class LoggerService implements NestLoggerService {
 	private logger: Logger;
+	private prismaService?: any; // We'll inject this lazily to avoid circular dependency
 
 	constructor() {
 		this.logger = createLogger({
@@ -62,16 +83,69 @@ export class LoggerService implements NestLoggerService {
 		});
 	}
 
+	// Method to inject PrismaService lazily to avoid circular dependency
+	setPrismaService(prismaService: any) {
+		this.prismaService = prismaService;
+	}
+
+	// Save error to database
+	private async saveErrorToDatabase(errorData: ErrorLogData): Promise<void> {
+		if (!this.prismaService) {
+			return; // Prisma service not available, skip database logging
+		}
+
+		try {
+			await this.prismaService.errorLog.create({
+				data: {
+					message: errorData.message,
+					stack: errorData.stack,
+					level: errorData.level || 'error',
+					context: errorData.context,
+					method: errorData.method,
+					url: errorData.url,
+					statusCode: errorData.statusCode,
+					userId: errorData.userId,
+					userAgent: errorData.userAgent,
+					ipAddress: errorData.ipAddress,
+					requestId: errorData.requestId,
+					metadata: errorData.metadata,
+				},
+			});
+		} catch (dbError) {
+			// If database logging fails, just log to winston without recursion
+			this.logger.error('Failed to save error to database', {
+				context: 'ErrorLogger',
+				originalError: errorData.message,
+				dbError: dbError instanceof Error ? dbError.message : String(dbError),
+			});
+		}
+	}
+
 	log(message: string, context?: string) {
 		this.logger.info(message, { context });
 	}
 
 	error(message: string, trace?: string, context?: string) {
 		this.logger.error(message, { context, trace });
+
+		// Save to database
+		this.saveErrorToDatabase({
+			message,
+			stack: trace,
+			level: 'error',
+			context,
+		});
 	}
 
 	warn(message: string, context?: string) {
 		this.logger.warn(message, { context });
+
+		// Save to database for warnings that might be important
+		this.saveErrorToDatabase({
+			message,
+			level: 'warn',
+			context,
+		});
 	}
 
 	debug(message: string, context?: string) {
@@ -115,6 +189,15 @@ export class LoggerService implements NestLoggerService {
 			stack: error.stack,
 			...additionalInfo,
 		});
+
+		// Save to database with additional info
+		this.saveErrorToDatabase({
+			message: error.message,
+			stack: error.stack,
+			level: 'error',
+			context: context || 'Error',
+			metadata: additionalInfo,
+		});
 	}
 
 	// New methods for better logging
@@ -151,6 +234,91 @@ export class LoggerService implements NestLoggerService {
 		this.logger.warn(`Security: ${event}`, {
 			context: 'Security',
 			...details,
+		});
+	}
+
+	// Enhanced method for HTTP request errors
+	logHttpError(
+		error: Error,
+		method?: string,
+		url?: string,
+		statusCode?: number,
+		userId?: string,
+		userAgent?: string,
+		ipAddress?: string,
+		requestId?: string,
+		additionalInfo?: Record<string, unknown>,
+	) {
+		this.logger.error(`HTTP Error: ${error.message}`, {
+			context: 'HTTP',
+			method,
+			url,
+			statusCode,
+			userId,
+			userAgent,
+			ipAddress,
+			requestId,
+			stack: error.stack,
+			...additionalInfo,
+		});
+
+		// Save to database with full HTTP context
+		this.saveErrorToDatabase({
+			message: error.message,
+			stack: error.stack,
+			level: 'error',
+			context: 'HTTP',
+			method,
+			url,
+			statusCode,
+			userId,
+			userAgent,
+			ipAddress,
+			requestId,
+			metadata: additionalInfo,
+		});
+	}
+
+	// Method to log server errors specifically
+	logServerError(
+		message: string,
+		stack?: string,
+		method?: string,
+		url?: string,
+		statusCode?: number,
+		userId?: string,
+		userAgent?: string,
+		ipAddress?: string,
+		requestId?: string,
+		additionalInfo?: Record<string, unknown>,
+	) {
+		this.logger.error(`Server Error: ${message}`, {
+			context: 'Server',
+			method,
+			url,
+			statusCode,
+			userId,
+			userAgent,
+			ipAddress,
+			requestId,
+			stack,
+			...additionalInfo,
+		});
+
+		// Save to database
+		this.saveErrorToDatabase({
+			message,
+			stack,
+			level: 'error',
+			context: 'Server',
+			method,
+			url,
+			statusCode,
+			userId,
+			userAgent,
+			ipAddress,
+			requestId,
+			metadata: additionalInfo,
 		});
 	}
 }

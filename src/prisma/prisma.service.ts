@@ -50,8 +50,19 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 		if (this.configService.isDevelopment) {
 			// ✅ Dùng configService thay vì process.env
 			this.$on('query' as never, (e: PrismaQueryEvent) => {
-				const params = e.params ? (JSON.parse(e.params) as unknown[]) : [];
-				this.logger.logDbQuery(e.query, params, e.duration);
+				try {
+					const params = e.params ? (JSON.parse(e.params) as unknown[]) : [];
+					this.logger.logDbQuery(e.query, params, e.duration);
+				} catch (parseError) {
+					// If JSON parsing fails, log without params
+					this.logger.logDbQuery(
+						e.query,
+						[
+							`Parse error: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+						],
+						e.duration,
+					);
+				}
 			});
 		}
 
@@ -72,6 +83,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 		try {
 			await this.$connect();
 			this.logger.log('Database connected successfully', 'Database');
+
+			// Set the Prisma service in logger to enable database error logging
+			this.logger.setPrismaService(this);
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.stack : String(error);
 			this.logger.error('Failed to connect to database', errorMessage, 'Database');

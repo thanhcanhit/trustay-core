@@ -674,7 +674,7 @@ export class RoomsService {
 						advancePaymentDiscount: updateRoomDto.pricing.advancePaymentDiscount,
 					}),
 					...(updateRoomDto.pricing.isNegotiable !== undefined && {
-						isNegotiable: updateRoomDto.pricing.isNegotiable,
+						priceNegotiable: updateRoomDto.pricing.isNegotiable,
 					}),
 					...(updateRoomDto.pricing.priceNotes !== undefined && {
 						priceNotes: updateRoomDto.pricing.priceNotes,
