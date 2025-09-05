@@ -22,10 +22,6 @@ export class CreateRoomSeekingPostDto {
 	@IsString()
 	description: string;
 
-	@ApiProperty({ description: 'Slug duy nhất cho bài đăng' })
-	@IsString()
-	slug: string;
-
 	@ApiPropertyOptional({ description: 'ID quận/huyện mong muốn' })
 	@IsOptional()
 	@IsNumber()

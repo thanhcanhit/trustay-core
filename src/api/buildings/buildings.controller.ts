@@ -63,6 +63,80 @@ export class BuildingsController {
 		return ApiResponseDto.success(building, 'Building created successfully');
 	}
 
+	@Get('me')
+	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
+	@ApiOperation({
+		summary: 'Lấy danh sách buildings của tôi',
+		description: 'Lấy danh sách tất cả buildings thuộc sở hữu của user hiện tại với phân trang.',
+	})
+	@ApiQuery({
+		name: 'page',
+		required: false,
+		description: 'Số trang (bắt đầu từ 1)',
+		example: 1,
+		type: Number,
+	})
+	@ApiQuery({
+		name: 'limit',
+		required: false,
+		description: 'Số lượng items per page',
+		example: 10,
+		type: Number,
+	})
+	@ApiResponse({
+		status: HttpStatus.OK,
+		description: 'Lấy danh sách buildings thành công',
+		schema: {
+			example: {
+				success: true,
+				message: 'My buildings retrieved successfully',
+				data: {
+					buildings: [
+						{
+							id: 'nha-tro-minh-phat-quan-1',
+							name: 'Nhà trọ Minh Phát',
+							addressLine1: '123 Võ Văn Ngân',
+							roomCount: 3,
+							availableRoomCount: 12,
+							isActive: true,
+							createdAt: '2025-01-01T00:00:00.000Z',
+						},
+					],
+					total: 5,
+					page: 1,
+					limit: 10,
+					totalPages: 1,
+				},
+				timestamp: '2025-01-01T00:00:00.000Z',
+			},
+		},
+	})
+	@ApiResponse({
+		status: HttpStatus.UNAUTHORIZED,
+		description: 'Chưa đăng nhập',
+	})
+	async findMyBuildings(
+		@CurrentUser('id') userId: string,
+		@Query('page') page?: string,
+		@Query('limit') limit?: string,
+	): Promise<
+		ApiResponseDto<{
+			buildings: BuildingResponseDto[];
+			total: number;
+			page: number;
+			limit: number;
+			totalPages: number;
+		}>
+	> {
+		const pageNum = page ? parseInt(page, 10) : 1;
+		const limitNum = limit ? parseInt(limit, 10) : 10;
+
+		const result = await this.buildingsService.findManyByOwner(userId, pageNum, limitNum);
+
+		return ApiResponseDto.success(result, 'My buildings retrieved successfully');
+	}
+
 	@Get(':buildingId')
 	@ApiOperation({
 		summary: 'Lấy thông tin chi tiết tòa nhà',

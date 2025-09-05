@@ -231,6 +231,9 @@ export class RoomDetailDto {
 	@ApiProperty({ type: [RoomRuleDto] })
 	rules: RoomRuleDto[];
 
+	@ApiProperty({ description: 'Number of views for this room' })
+	viewCount: number;
+
 	@ApiProperty()
 	lastUpdated: Date;
 }

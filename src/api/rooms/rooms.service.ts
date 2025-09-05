@@ -5,7 +5,6 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import { plainToClass } from 'class-transformer';
 import { generateRoomSlug, generateUniqueSlug } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -19,7 +18,64 @@ import { RoomDetailDto } from './dto/room-detail.dto';
 
 @Injectable()
 export class RoomsService {
-	constructor(private readonly prisma: PrismaService) {}
+	private viewCache = new Map<string, { timestamp: number; ips: Set<string> }>();
+	private readonly VIEW_COOLDOWN_MS = 1 * 60 * 1000; // 1 phút
+	private readonly CACHE_CLEANUP_INTERVAL = 30 * 60 * 1000; // 30 phút
+
+	constructor(private readonly prisma: PrismaService) {
+		// Dọn dẹp cache định kỳ
+		setInterval(() => {
+			this.cleanupViewCache();
+		}, this.CACHE_CLEANUP_INTERVAL);
+	}
+
+	/**
+	 * Dọn dẹp cache view cũ
+	 */
+	private cleanupViewCache(): void {
+		const now = Date.now();
+		for (const [key, value] of this.viewCache.entries()) {
+			if (now - value.timestamp > this.VIEW_COOLDOWN_MS * 2) {
+				this.viewCache.delete(key);
+			}
+		}
+	}
+
+	/**
+	 * Kiểm tra và ghi nhận view mới
+	 * @param roomId - ID của room
+	 * @param clientIp - IP của client (có thể undefined nếu không có)
+	 * @returns true nếu view hợp lệ, false nếu bị chặn do spam
+	 */
+	private shouldIncrementView(roomId: string, clientIp?: string): boolean {
+		const cacheKey = roomId;
+		const now = Date.now();
+
+		if (!this.viewCache.has(cacheKey)) {
+			this.viewCache.set(cacheKey, {
+				timestamp: now,
+				ips: new Set(clientIp ? [clientIp] : []),
+			});
+			return true;
+		}
+
+		const cacheEntry = this.viewCache.get(cacheKey)!;
+
+		// Nếu có IP và IP này đã xem trong thời gian cooldown
+		if (clientIp && cacheEntry.ips.has(clientIp)) {
+			if (now - cacheEntry.timestamp < this.VIEW_COOLDOWN_MS) {
+				return false; // Chặn spam từ cùng IP
+			}
+		}
+
+		// Cập nhật cache
+		if (clientIp) {
+			cacheEntry.ips.add(clientIp);
+		}
+		cacheEntry.timestamp = now;
+
+		return true;
+	}
 
 	async create(
 		userId: string,
@@ -344,7 +400,7 @@ export class RoomsService {
 		}
 	}
 
-	async getRoomBySlug(slug: string): Promise<RoomDetailDto> {
+	async getRoomBySlug(slug: string, clientIp?: string): Promise<RoomDetailDto> {
 		// Find room type by slug
 		const room = await this.prisma.room.findFirst({
 			where: {
@@ -461,6 +517,14 @@ export class RoomsService {
 			throw new NotFoundException('Room not found');
 		}
 
+		// Tăng view count với chiến lược chống spam
+		if (this.shouldIncrementView(room.id, clientIp)) {
+			await this.prisma.room.update({
+				where: { id: room.id },
+				data: { viewCount: { increment: 1 } },
+			});
+		}
+
 		return {
 			id: room.id,
 			slug: room.slug,
@@ -544,6 +608,7 @@ export class RoomsService {
 				notes: rule.notes,
 				isEnforced: rule.isEnforced,
 			})),
+			viewCount: room.viewCount || 0,
 			lastUpdated: room.updatedAt,
 		};
 	}
@@ -916,6 +981,95 @@ export class RoomsService {
 		};
 	}
 
+	async findMyRooms(
+		userId: string,
+		page: number = 1,
+		limit: number = 10,
+	): Promise<{
+		rooms: RoomResponseDto[];
+		total: number;
+		page: number;
+		limit: number;
+		totalPages: number;
+	}> {
+		const skip = (page - 1) * limit;
+
+		const [rooms, total] = await this.prisma.$transaction([
+			this.prisma.room.findMany({
+				where: {
+					building: {
+						ownerId: userId,
+					},
+				},
+				include: {
+					building: {
+						select: {
+							id: true,
+							name: true,
+							addressLine1: true,
+						},
+					},
+					pricing: true,
+					amenities: {
+						include: {
+							systemAmenity: {
+								select: {
+									name: true,
+									nameEn: true,
+									category: true,
+								},
+							},
+						},
+					},
+					costs: {
+						include: {
+							systemCostType: {
+								select: {
+									name: true,
+									nameEn: true,
+									category: true,
+								},
+							},
+						},
+					},
+					rules: {
+						include: {
+							systemRule: {
+								select: {
+									name: true,
+									nameEn: true,
+									category: true,
+									ruleType: true,
+								},
+							},
+						},
+					},
+					roomInstances: {
+						orderBy: { roomNumber: 'asc' },
+					},
+				},
+				skip,
+				take: limit,
+				orderBy: { createdAt: 'desc' },
+			}),
+			this.prisma.room.count({
+				where: {
+					building: {
+						ownerId: userId,
+					},
+				},
+			}),
+		]);
+
+		return {
+			rooms: rooms.map((room) => this.transformRoomResponse(room)),
+			total,
+			page,
+			limit,
+			totalPages: Math.ceil(total / limit),
+		};
+	}
+
 	private async validateSystemReferencesForUpdate(updateRoomDto: UpdateRoomDto): Promise<void> {
 		// Validate amenities
 		if (updateRoomDto.amenities?.length) {
@@ -982,7 +1136,7 @@ export class RoomsService {
 				const match = num.match(/\d+$/);
 				return match ? parseInt(match[0], 10) : 0;
 			})
-			.filter((num) => !isNaN(num));
+			.filter((num) => !Number.isNaN(num));
 
 		const maxNumber = numericNumbers.length > 0 ? Math.max(...numericNumbers) : 0;
 

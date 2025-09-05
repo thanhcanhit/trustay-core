@@ -5,53 +5,150 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import { SearchPostStatus } from '@prisma/client';
+import { PaginatedResponseDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { generateSlug, generateUniqueSlug } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
-import {
-	CreateRoomSeekingPostDto,
-	QueryRoomSeekingPostDto,
-	RoomRoomSeekingPostDto,
-	UpdateRoomSeekingPostDto,
-} from './dto';
+import { CreateRoomSeekingPostDto, RoomRoomSeekingPostDto, UpdateRoomSeekingPostDto } from './dto';
 
 @Injectable()
 export class RoomSeekingPostService {
-	constructor(private readonly prisma: PrismaService) {}
+	private viewCache = new Map<string, { timestamp: number; ips: Set<string> }>();
+	private readonly VIEW_COOLDOWN_MS = 1 * 60 * 1000; // 1 phút
+	private readonly CACHE_CLEANUP_INTERVAL = 30 * 60 * 1000; // 30 phút
 
-	async findAll(query: QueryRoomSeekingPostDto): Promise<{
-		data: RoomRoomSeekingPostDto[];
-		total: number;
-		page: number;
-		limit: number;
-	}> {
-		const {
-			page = 1,
-			limit = 20,
-			sortBy = 'createdAt',
-			sortOrder = 'desc',
-			search,
-			provinceId,
-			districtId,
-			wardId,
-			minBudget,
-			maxBudget,
-			roomType,
-			occupancy,
-			status,
-			isPublic,
-			requesterId,
-		} = query;
+	constructor(private readonly prisma: PrismaService) {
+		// Dọn dẹp cache định kỳ
+		setInterval(() => {
+			this.cleanupViewCache();
+		}, this.CACHE_CLEANUP_INTERVAL);
+	}
+
+	/**
+	 * Dọn dẹp cache view cũ
+	 */
+	private cleanupViewCache(): void {
+		const now = Date.now();
+		for (const [key, value] of this.viewCache.entries()) {
+			if (now - value.timestamp > this.VIEW_COOLDOWN_MS * 2) {
+				this.viewCache.delete(key);
+			}
+		}
+	}
+
+	/**
+	 * Kiểm tra và ghi nhận view mới
+	 * @param postId - ID của bài đăng
+	 * @param clientIp - IP của client (có thể undefined nếu không có)
+	 * @returns true nếu view hợp lệ, false nếu bị chặn do spam
+	 */
+	private shouldIncrementView(postId: string, clientIp?: string): boolean {
+		const cacheKey = postId;
+		const now = Date.now();
+
+		if (!this.viewCache.has(cacheKey)) {
+			this.viewCache.set(cacheKey, {
+				timestamp: now,
+				ips: new Set(clientIp ? [clientIp] : []),
+			});
+			return true;
+		}
+
+		const cacheEntry = this.viewCache.get(cacheKey)!;
+
+		// Nếu có IP và IP này đã xem trong thời gian cooldown
+		if (clientIp && cacheEntry.ips.has(clientIp)) {
+			if (now - cacheEntry.timestamp < this.VIEW_COOLDOWN_MS) {
+				return false; // Chặn spam từ cùng IP
+			}
+		}
+
+		// Cập nhật cache
+		if (clientIp) {
+			cacheEntry.ips.add(clientIp);
+		}
+		cacheEntry.timestamp = now;
+
+		return true;
+	}
+
+	/**
+	 * Converts date string to Date object with validation
+	 * @param dateString - Date string in ISO format
+	 * @returns Date object or undefined if input is falsy
+	 */
+	private convertToDate(dateString?: string): Date | undefined {
+		if (!dateString) {
+			return undefined;
+		}
+
+		const date = new Date(dateString);
+		if (Number.isNaN(date.getTime())) {
+			throw new BadRequestException(
+				`Invalid date format: ${dateString}. Expected ISO-8601 format.`,
+			);
+		}
+
+		return date;
+	}
+
+	/**
+	 * Validates that location IDs exist in the database
+	 * @param roomRequestData - Room request data containing location IDs
+	 */
+	private async validateLocationIds(roomRequestData: any): Promise<void> {
+		const { preferredProvinceId, preferredDistrictId, preferredWardId } = roomRequestData;
+
+		// Validate province exists
+		if (preferredProvinceId) {
+			const province = await this.prisma.province.findUnique({
+				where: { id: preferredProvinceId },
+			});
+			if (!province) {
+				throw new BadRequestException(`Province with ID ${preferredProvinceId} not found`);
+			}
+		}
+
+		// Validate district exists and belongs to province
+		if (preferredDistrictId) {
+			const district = await this.prisma.district.findUnique({
+				where: { id: preferredDistrictId },
+				include: { province: true },
+			});
+			if (!district) {
+				throw new BadRequestException(`District with ID ${preferredDistrictId} not found`);
+			}
+			if (preferredProvinceId && district.provinceId !== preferredProvinceId) {
+				throw new BadRequestException(
+					`District with ID ${preferredDistrictId} does not belong to province with ID ${preferredProvinceId}`,
+				);
+			}
+		}
+
+		// Validate ward exists and belongs to district
+		if (preferredWardId) {
+			const ward = await this.prisma.ward.findUnique({
+				where: { id: preferredWardId },
+				include: { district: true },
+			});
+			if (!ward) {
+				throw new BadRequestException(`Ward with ID ${preferredWardId} not found`);
+			}
+			if (preferredDistrictId && ward.districtId !== preferredDistrictId) {
+				throw new BadRequestException(
+					`Ward with ID ${preferredWardId} does not belong to district with ID ${preferredDistrictId}`,
+				);
+			}
+		}
+	}
+
+	async findMyPosts(
+		query: PaginationQueryDto,
+		userId: string,
+	): Promise<PaginatedResponseDto<RoomRoomSeekingPostDto>> {
+		const { page = 1, limit = 20, sortBy = 'createdAt', sortOrder = 'desc', search } = query;
 
 		const where: any = {
-			...(typeof requesterId === 'string' && { requesterId }),
-			...(typeof isPublic === 'boolean' && { isPublic }),
-			...(status && { status }),
-			...(typeof occupancy === 'number' && { occupancy }),
-			...(roomType && { preferredRoomType: roomType }),
-			...(typeof provinceId === 'number' && { preferredProvinceId: provinceId }),
-			...(typeof districtId === 'number' && { preferredDistrictId: districtId }),
-			...(typeof wardId === 'number' && { preferredWardId: wardId }),
-			...(typeof minBudget === 'number' && { maxBudget: { gte: minBudget } }),
-			...(typeof maxBudget === 'number' && { maxBudget: { lte: maxBudget } }),
+			requesterId: userId,
 			...(search && {
 				OR: [
 					{ title: { contains: search, mode: 'insensitive' } },
@@ -94,12 +191,12 @@ export class RoomSeekingPostService {
 			this.prisma.roomSeekingPost.count({ where }),
 		]);
 
-		return {
-			data: items.map((it) => this.mapToResponseDto(it)),
-			total,
+		return PaginatedResponseDto.create(
+			items.map((item) => this.mapToResponseDto(item)),
 			page,
 			limit,
-		};
+			total,
+		);
 	}
 
 	async create(
@@ -108,78 +205,102 @@ export class RoomSeekingPostService {
 	): Promise<RoomRoomSeekingPostDto> {
 		const { amenityIds, ...roomRequestData } = createRoomRequestDto;
 
-		// Kiểm tra slug đã tồn tại chưa
-		const existingRequest = await this.prisma.roomSeekingPost.findUnique({
-			where: { slug: roomRequestData.slug },
+		// Generate unique slug from title
+		const baseSlug = generateSlug(roomRequestData.title);
+		const uniqueSlug = await generateUniqueSlug(baseSlug, async (slug: string) => {
+			const existing = await this.prisma.roomSeekingPost.findUnique({
+				where: { slug },
+				select: { id: true },
+			});
+			return !!existing;
 		});
 
-		if (existingRequest) {
-			throw new BadRequestException('Slug đã tồn tại');
-		}
+		// Validate location IDs exist
+		await this.validateLocationIds(roomRequestData);
+
+		// Convert date strings to Date objects
+		const processedData = {
+			...roomRequestData,
+			moveInDate: this.convertToDate(roomRequestData.moveInDate),
+			expiresAt: this.convertToDate(roomRequestData.expiresAt),
+		};
 
 		// Tạo room request với amenities
-		const roomRequest = await this.prisma.roomSeekingPost.create({
-			data: {
-				...roomRequestData,
-				requesterId,
-				status: SearchPostStatus.active,
-				currency: roomRequestData.currency || 'VND',
-				isPublic: roomRequestData.isPublic ?? true,
-				amenities:
-					amenityIds && amenityIds.length > 0
-						? {
-								connect: amenityIds.map((amenityId) => ({ id: amenityId })),
-							}
-						: undefined,
-			},
-			include: {
-				requester: {
-					select: {
-						id: true,
-						firstName: true,
-						lastName: true,
-						email: true,
-						phone: true,
-						avatarUrl: true,
+		let roomRequest: any;
+		try {
+			roomRequest = await this.prisma.roomSeekingPost.create({
+				data: {
+					...processedData,
+					slug: uniqueSlug,
+					requesterId,
+					status: SearchPostStatus.active,
+					currency: roomRequestData.currency || 'VND',
+					isPublic: roomRequestData.isPublic ?? true,
+					amenities:
+						amenityIds && amenityIds.length > 0
+							? {
+									connect: amenityIds.map((amenityId) => ({ id: amenityId })),
+								}
+							: undefined,
+				},
+				include: {
+					requester: {
+						select: {
+							id: true,
+							firstName: true,
+							lastName: true,
+							email: true,
+							phone: true,
+							avatarUrl: true,
+						},
+					},
+					amenities: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+							category: true,
+							description: true,
+						},
+					},
+					preferredProvince: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+						},
+					},
+					preferredDistrict: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+						},
+					},
+					preferredWard: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+						},
 					},
 				},
-				amenities: {
-					select: {
-						id: true,
-						name: true,
-						nameEn: true,
-						category: true,
-						description: true,
-					},
-				},
-				preferredProvince: {
-					select: {
-						id: true,
-						name: true,
-						nameEn: true,
-					},
-				},
-				preferredDistrict: {
-					select: {
-						id: true,
-						name: true,
-						nameEn: true,
-					},
-				},
-				preferredWard: {
-					select: {
-						id: true,
-						name: true,
-						nameEn: true,
-					},
-				},
-			},
-		});
+			});
+		} catch (error) {
+			// Handle Prisma foreign key constraint errors
+			if (error.code === 'P2003') {
+				throw new BadRequestException(
+					'Invalid location data. Please check province, district, and ward IDs.',
+				);
+			}
+			// Re-throw other errors
+			throw error;
+		}
 
 		return this.mapToResponseDto(roomRequest);
 	}
 
-	async findOne(id: string): Promise<RoomRoomSeekingPostDto> {
+	async findOne(id: string, clientIp?: string): Promise<RoomRoomSeekingPostDto> {
 		const roomRequest = await this.prisma.roomSeekingPost.findUnique({
 			where: { id },
 			include: {
@@ -227,14 +348,16 @@ export class RoomSeekingPostService {
 		});
 
 		if (!roomRequest) {
-			throw new NotFoundException('Không tìm thấy bài đăng tìm trọ');
+			throw new NotFoundException('Room seeking post not found');
 		}
 
-		// Tăng view count
-		await this.prisma.roomSeekingPost.update({
-			where: { id },
-			data: { viewCount: { increment: 1 } },
-		});
+		// Tăng view count với chiến lược chống spam
+		if (this.shouldIncrementView(id, clientIp)) {
+			await this.prisma.roomSeekingPost.update({
+				where: { id },
+				data: { viewCount: { increment: 1 } },
+			});
+		}
 
 		return this.mapToResponseDto(roomRequest);
 	}
@@ -251,83 +374,114 @@ export class RoomSeekingPostService {
 		});
 
 		if (!existingRequest) {
-			throw new NotFoundException('Không tìm thấy bài đăng tìm trọ');
+			throw new NotFoundException('Room seeking post not found');
 		}
 
 		if (existingRequest.requesterId !== requesterId) {
-			throw new ForbiddenException('Bạn không có quyền chỉnh sửa bài đăng này');
+			throw new ForbiddenException('You do not have permission to edit this post');
 		}
 
 		const { amenityIds, ...updateData } = updateRoomRequestDto;
 
-		// Kiểm tra slug mới nếu có thay đổi
-		if (updateData.slug) {
-			const slugExists = await this.prisma.roomSeekingPost.findFirst({
-				where: {
-					slug: updateData.slug,
-					id: { not: id },
-				},
+		// Generate new slug if title changed
+		let newSlug: string | undefined;
+		if (updateData.title) {
+			const baseSlug = generateSlug(updateData.title);
+			newSlug = await generateUniqueSlug(baseSlug, async (slug: string) => {
+				const existing = await this.prisma.roomSeekingPost.findFirst({
+					where: {
+						slug,
+						id: { not: id },
+					},
+					select: { id: true },
+				});
+				return !!existing;
 			});
-
-			if (slugExists) {
-				throw new BadRequestException('Slug đã tồn tại');
-			}
 		}
 
+		// Validate location IDs if they are being updated
+		if (
+			updateData.preferredProvinceId ||
+			updateData.preferredDistrictId ||
+			updateData.preferredWardId
+		) {
+			await this.validateLocationIds(updateData);
+		}
+
+		// Convert date strings to Date objects
+		const processedUpdateData = {
+			...updateData,
+			moveInDate: this.convertToDate(updateData.moveInDate),
+			expiresAt: this.convertToDate(updateData.expiresAt),
+		};
+
 		// Cập nhật room request
-		const updatedRequest = await this.prisma.roomSeekingPost.update({
-			where: { id },
-			data: {
-				...updateData,
-				...(amenityIds && {
+		let updatedRequest: any;
+		try {
+			updatedRequest = await this.prisma.roomSeekingPost.update({
+				where: { id },
+				data: {
+					...processedUpdateData,
+					...(newSlug && { slug: newSlug }),
+					...(amenityIds && {
+						amenities: {
+							set: amenityIds.map((amenityId) => ({ id: amenityId })),
+						},
+					}),
+				},
+				include: {
+					requester: {
+						select: {
+							id: true,
+							firstName: true,
+							lastName: true,
+							email: true,
+							phone: true,
+							avatarUrl: true,
+						},
+					},
 					amenities: {
-						set: amenityIds.map((amenityId) => ({ id: amenityId })),
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+							category: true,
+							description: true,
+						},
 					},
-				}),
-			},
-			include: {
-				requester: {
-					select: {
-						id: true,
-						firstName: true,
-						lastName: true,
-						email: true,
-						phone: true,
-						avatarUrl: true,
+					preferredProvince: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+						},
 					},
-				},
-				amenities: {
-					select: {
-						id: true,
-						name: true,
-						nameEn: true,
-						category: true,
-						description: true,
+					preferredDistrict: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+						},
 					},
-				},
-				preferredProvince: {
-					select: {
-						id: true,
-						name: true,
-						nameEn: true,
-					},
-				},
-				preferredDistrict: {
-					select: {
-						id: true,
-						name: true,
-						nameEn: true,
+					preferredWard: {
+						select: {
+							id: true,
+							name: true,
+							nameEn: true,
+						},
 					},
 				},
-				preferredWard: {
-					select: {
-						id: true,
-						name: true,
-						nameEn: true,
-					},
-				},
-			},
-		});
+			});
+		} catch (error) {
+			// Handle Prisma foreign key constraint errors
+			if (error.code === 'P2003') {
+				throw new BadRequestException(
+					'Invalid location data. Please check province, district, and ward IDs.',
+				);
+			}
+			// Re-throw other errors
+			throw error;
+		}
 
 		return this.mapToResponseDto(updatedRequest);
 	}
@@ -340,22 +494,15 @@ export class RoomSeekingPostService {
 		});
 
 		if (!existingRequest) {
-			throw new NotFoundException('Không tìm thấy bài đăng tìm trọ');
+			throw new NotFoundException('Room seeking post not found');
 		}
 
 		if (existingRequest.requesterId !== requesterId) {
-			throw new ForbiddenException('Bạn không có quyền xóa bài đăng này');
+			throw new ForbiddenException('You do not have permission to delete this post');
 		}
 
 		await this.prisma.roomSeekingPost.delete({
 			where: { id },
-		});
-	}
-
-	async incrementContactCount(id: string): Promise<void> {
-		await this.prisma.roomSeekingPost.update({
-			where: { id },
-			data: { contactCount: { increment: 1 } },
 		});
 	}
 
@@ -371,11 +518,11 @@ export class RoomSeekingPostService {
 		});
 
 		if (!existingRequest) {
-			throw new NotFoundException('Không tìm thấy bài đăng tìm trọ');
+			throw new NotFoundException('Room seeking post not found');
 		}
 
 		if (existingRequest.requesterId !== requesterId) {
-			throw new ForbiddenException('Bạn không có quyền thay đổi trạng thái bài đăng này');
+			throw new ForbiddenException('You do not have permission to change the status of this post');
 		}
 
 		const updatedRequest = await this.prisma.roomSeekingPost.update({
