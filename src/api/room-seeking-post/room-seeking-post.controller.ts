@@ -47,7 +47,11 @@ export class RoomSeekingPostController {
 	@Get('me')
 	@UseGuards(JwtAuthGuard)
 	@ApiBearerAuth()
-	@ApiOperation({ summary: 'Lấy danh sách bài đăng tìm trọ của tôi' })
+	@ApiOperation({
+		summary: 'Lấy danh sách bài đăng tìm trọ của tôi',
+		description:
+			'Endpoint để lấy danh sách các bài đăng tìm trọ do user hiện tại tạo ra với phân trang và tìm kiếm',
+	})
 	@ApiResponse({
 		status: 200,
 		description: 'Lấy danh sách thành công',
@@ -58,6 +62,26 @@ export class RoomSeekingPostController {
 		@Query() query: PaginationQueryDto,
 		@CurrentUser() user: User,
 	): Promise<PaginatedResponseDto<RoomRoomSeekingPostDto>> {
+		return this.roomRequestService.findMyPosts(query, user.id);
+	}
+
+	@Get('my-posts')
+	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
+	@ApiOperation({
+		summary: '[DEPRECATED] Use /me instead',
+		description: 'Legacy endpoint - redirects to /me. Please update your client to use /me',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Lấy danh sách thành công (deprecated)',
+		type: PaginatedResponseDto<RoomRoomSeekingPostDto>,
+	})
+	async findMyPostsLegacy(
+		@Query() query: PaginationQueryDto,
+		@CurrentUser() user: User,
+	): Promise<PaginatedResponseDto<RoomRoomSeekingPostDto>> {
+		// Same logic as /me endpoint for backward compatibility
 		return this.roomRequestService.findMyPosts(query, user.id);
 	}
 

@@ -1130,9 +1130,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/room-seeking-posts/my-posts?page={{seekingPostPage}}&limit={{seekingPostLimit}}&search={{seekingPostSearch}}&sortBy={{seekingPostSortBy}}&sortOrder={{seekingPostSortOrder}}",
+              "raw": "{{baseUrl}}/api/room-seeking-posts/me?page={{seekingPostPage}}&limit={{seekingPostLimit}}&search={{seekingPostSearch}}&sortBy={{seekingPostSortBy}}&sortOrder={{seekingPostSortOrder}}",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "room-seeking-posts", "my-posts"],
+              "path": ["api", "room-seeking-posts", "me"],
               "query": [
                 {
                   "key": "page",
