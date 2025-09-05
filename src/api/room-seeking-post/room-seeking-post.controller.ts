@@ -44,7 +44,7 @@ export class RoomSeekingPostController {
 		return this.roomRequestService.create(createRoomRequestDto, user.id);
 	}
 
-	@Get('my-posts')
+	@Get('me')
 	@UseGuards(JwtAuthGuard)
 	@ApiBearerAuth()
 	@ApiOperation({ summary: 'Lấy danh sách bài đăng tìm trọ của tôi' })
