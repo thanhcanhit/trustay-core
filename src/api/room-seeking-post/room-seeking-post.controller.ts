@@ -110,21 +110,4 @@ export class RoomSeekingPostController {
 	): Promise<RoomRoomSeekingPostDto> {
 		return this.roomRequestService.updateStatus(id, status, user.id);
 	}
-
-	@Post(':id/contact')
-	@ApiOperation({ summary: 'Tăng số lượt liên hệ cho bài đăng' })
-	@ApiParam({ name: 'id', description: 'ID của bài đăng' })
-	@ApiResponse({ status: 200, description: 'Tăng lượt liên hệ thành công' })
-	@ApiResponse({ status: 404, description: 'Không tìm thấy bài đăng' })
-	@HttpCode(HttpStatus.OK)
-	async incrementContactCount(@Param('id') id: string): Promise<void> {
-		return this.roomRequestService.incrementContactCount(id);
-	}
-
-	@Get('admin/test')
-	@ApiOperation({ summary: 'Test endpoint cho admin' })
-	@ApiResponse({ status: 200, description: 'Test thành công' })
-	async test() {
-		return { message: 'Room Request API is working!' };
-	}
 }
