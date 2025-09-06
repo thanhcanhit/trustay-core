@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { BookingRequestsModule } from './api/booking-requests/booking-requests.module';
 import { BuildingModule } from './api/buildings/building.module';
 import { ListingModule } from './api/listing/listing.module';
 import { NotificationsModule } from './api/notifications/notifications.module';
@@ -32,6 +33,7 @@ import { PrismaModule } from './prisma/prisma.module';
 		AddressModule,
 		UsersModule,
 		AuthModule,
+		BookingRequestsModule,
 		BuildingModule,
 		ListingModule,
 		ReferenceModule,
