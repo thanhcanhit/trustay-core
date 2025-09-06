@@ -73,6 +73,19 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		message: 'Lời mời thuê phòng {{roomName}} của bạn đã bị {{tenantName}} từ chối',
 	},
 
+	[NotificationType.ROOM_INVITATION_REJECTED]: {
+		type: NotificationType.ROOM_INVITATION_REJECTED,
+		title: 'Lời mời bị từ chối',
+		message:
+			'Lời mời thuê phòng {{roomName}} của bạn đã bị {{tenantName}} từ chối{{#reason}} với lý do: {{reason}}{{/reason}}',
+	},
+
+	[NotificationType.ROOM_INVITATION_WITHDRAWN]: {
+		type: NotificationType.ROOM_INVITATION_WITHDRAWN,
+		title: 'Lời mời đã bị thu hồi',
+		message: 'Lời mời thuê phòng {{roomName}} từ {{landlordName}} đã bị thu hồi',
+	},
+
 	[NotificationType.ROOM_INVITATION_EXPIRED]: {
 		type: NotificationType.ROOM_INVITATION_EXPIRED,
 		title: 'Lời mời hết hạn',

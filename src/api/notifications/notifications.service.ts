@@ -287,6 +287,37 @@ export class NotificationsService {
 		return this.createNotification(notification);
 	}
 
+	async notifyInvitationRejected(
+		landlordId: string,
+		data: {
+			roomName: string;
+			tenantName: string;
+			reason?: string;
+			invitationId: string;
+		},
+	) {
+		const notification = this.notificationFactory.createInvitationRejectedNotification(
+			landlordId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
+	async notifyInvitationWithdrawn(
+		tenantId: string,
+		data: {
+			roomName: string;
+			landlordName: string;
+			invitationId: string;
+		},
+	) {
+		const notification = this.notificationFactory.createInvitationWithdrawnNotification(
+			tenantId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
 	// Rental Related Notifications
 	async notifyRentalCreated(
 		userId: string,

@@ -14,6 +14,8 @@ export enum NotificationType {
 	ROOM_INVITATION_RECEIVED = 'room_invitation_received',
 	ROOM_INVITATION_ACCEPTED = 'room_invitation_accepted',
 	ROOM_INVITATION_DECLINED = 'room_invitation_declined',
+	ROOM_INVITATION_REJECTED = 'room_invitation_rejected',
+	ROOM_INVITATION_WITHDRAWN = 'room_invitation_withdrawn',
 	ROOM_INVITATION_EXPIRED = 'room_invitation_expired',
 
 	// Rental Related

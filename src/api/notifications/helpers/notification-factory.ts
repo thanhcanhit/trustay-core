@@ -142,6 +142,29 @@ export class NotificationFactory {
 		return this.createFromTemplate(landlordId, NotificationType.ROOM_INVITATION_DECLINED, data);
 	}
 
+	createInvitationRejectedNotification(
+		landlordId: string,
+		data: {
+			roomName: string;
+			tenantName: string;
+			reason?: string;
+			invitationId: string;
+		},
+	) {
+		return this.createFromTemplate(landlordId, NotificationType.ROOM_INVITATION_REJECTED, data);
+	}
+
+	createInvitationWithdrawnNotification(
+		tenantId: string,
+		data: {
+			roomName: string;
+			landlordName: string;
+			invitationId: string;
+		},
+	) {
+		return this.createFromTemplate(tenantId, NotificationType.ROOM_INVITATION_WITHDRAWN, data);
+	}
+
 	// Rental Related Notifications
 	createRentalCreatedNotification(
 		userId: string,
