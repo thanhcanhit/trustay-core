@@ -4,6 +4,7 @@ import { BookingRequestsModule } from './api/booking-requests/booking-requests.m
 import { BuildingModule } from './api/buildings/building.module';
 import { ListingModule } from './api/listing/listing.module';
 import { NotificationsModule } from './api/notifications/notifications.module';
+import { PaymentsModule } from './api/payments/payments.module';
 import { AddressModule } from './api/provinces/address/address.module';
 import { DistrictModule } from './api/provinces/district/district.module';
 import { ProvinceModule } from './api/provinces/province/province.module';
@@ -40,6 +41,7 @@ import { PrismaModule } from './prisma/prisma.module';
 		ListingModule,
 		ReferenceModule,
 		NotificationsModule,
+		PaymentsModule,
 		RentalsModule,
 		RoomInvitationsModule,
 		RoomsModule,
