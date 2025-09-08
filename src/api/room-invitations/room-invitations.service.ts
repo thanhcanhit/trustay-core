@@ -6,7 +6,9 @@ import {
 } from '@nestjs/common';
 import { InvitationStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ContractsService } from '../contracts/contracts.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RentalsService } from '../rentals/rentals.service';
 import { CreateRoomInvitationDto, QueryRoomInvitationDto, UpdateRoomInvitationDto } from './dto';
 
 @Injectable()
@@ -14,6 +16,8 @@ export class RoomInvitationsService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly notificationsService: NotificationsService,
+		private readonly contractsService: ContractsService,
+		private readonly rentalsService: RentalsService,
 	) {}
 
 	private transformToResponseDto(invitation: any): any {
@@ -368,7 +372,30 @@ export class RoomInvitationsService {
 				invitationId: invitation.id,
 			});
 
-			// TODO: Auto-create rental contract or booking request in Phase 2
+			// Auto-create rental and contract when invitation is accepted
+			try {
+				// Create rental from accepted invitation
+				const rental = await this.rentalsService.createRental(invitation.senderId, {
+					invitationId: invitation.id,
+					roomInstanceId: invitation.roomInstanceId,
+					tenantId: invitation.recipientId,
+					contractStartDate: updatedInvitation.moveInDate.toISOString(),
+					contractEndDate: updatedInvitation.rentalMonths
+						? new Date(
+								updatedInvitation.moveInDate.getTime() +
+									updatedInvitation.rentalMonths * 30 * 24 * 60 * 60 * 1000,
+							).toISOString()
+						: undefined,
+					monthlyRent: updatedInvitation.monthlyRent.toString(),
+					depositPaid: updatedInvitation.depositAmount.toString(),
+				});
+
+				// Auto-create contract from the new rental
+				await this.contractsService.autoCreateContractFromRental(rental.id);
+			} catch (error) {
+				// Log error but don't fail the invitation acceptance
+				console.error('Failed to auto-create rental and contract from invitation:', error);
+			}
 		} else if (dto.status === InvitationStatus.declined) {
 			await this.notificationsService.notifyInvitationRejected(invitation.senderId, {
 				roomName: `${updatedInvitation.roomInstance.room.name} - ${updatedInvitation.roomInstance.roomNumber}`,

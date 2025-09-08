@@ -6,7 +6,9 @@ import {
 } from '@nestjs/common';
 import { BookingStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ContractsService } from '../contracts/contracts.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RentalsService } from '../rentals/rentals.service';
 import {
 	CancelBookingRequestDto,
 	CreateBookingRequestDto,
@@ -19,6 +21,8 @@ export class BookingRequestsService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly notificationsService: NotificationsService,
+		private readonly contractsService: ContractsService,
+		private readonly rentalsService: RentalsService,
 	) {}
 
 	async createBookingRequest(tenantId: string, dto: CreateBookingRequestDto) {
@@ -300,7 +304,32 @@ export class BookingRequestsService {
 				bookingId: bookingRequest.id,
 			});
 
-			// TODO: Auto-create rental contract in Phase 2
+			// Auto-create rental and contract when booking is approved
+			try {
+				const rental = await this.rentalsService.createRental(
+					updatedBooking.roomInstance.room.building.ownerId,
+					{
+						bookingRequestId: bookingRequest.id,
+						roomInstanceId: bookingRequest.roomInstanceId,
+						tenantId: bookingRequest.tenantId,
+						contractStartDate: updatedBooking.moveInDate.toISOString(),
+						contractEndDate: updatedBooking.rentalMonths
+							? new Date(
+									updatedBooking.moveInDate.getTime() +
+										updatedBooking.rentalMonths * 30 * 24 * 60 * 60 * 1000,
+								).toISOString()
+							: undefined,
+						monthlyRent: updatedBooking.monthlyRent.toString(),
+						depositPaid: updatedBooking.depositAmount.toString(),
+					},
+				);
+
+				// Auto-create contract from the new rental
+				await this.contractsService.autoCreateContractFromRental(rental.id);
+			} catch (error) {
+				// Log error but don't fail the booking approval
+				console.error('Failed to auto-create rental and contract:', error);
+			}
 		} else if (dto.status === BookingStatus.rejected) {
 			await this.notificationsService.notifyBookingRejected(bookingRequest.tenantId, {
 				roomName: `${updatedBooking.roomInstance.room.name} - ${updatedBooking.roomInstance.roomNumber}`,

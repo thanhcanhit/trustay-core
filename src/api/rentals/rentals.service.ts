@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { BookingStatus, InvitationStatus, RentalStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ContractsService } from '../contracts/contracts.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateRentalDto, QueryRentalDto, TerminateRentalDto, UpdateRentalDto } from './dto';
 
@@ -14,6 +15,7 @@ export class RentalsService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly notificationsService: NotificationsService,
+		private readonly contractsService: ContractsService,
 	) {}
 
 	private transformToResponseDto(rental: any): any {
@@ -185,6 +187,14 @@ export class RentalsService {
 			startDate: contractStartDate.toISOString(),
 			rentalId: rental.id,
 		});
+
+		// Auto-create contract when rental is created
+		try {
+			await this.contractsService.autoCreateContractFromRental(rental.id);
+		} catch (error) {
+			// Log error but don't fail the rental creation
+			console.error('Failed to auto-create contract from rental:', error);
+		}
 
 		return this.transformToResponseDto(rental);
 	}
