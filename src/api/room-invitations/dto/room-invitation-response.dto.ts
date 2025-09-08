@@ -48,13 +48,13 @@ export class RoomInvitationResponseDto {
 		description: 'Giá thuê đề xuất',
 		example: '3200000',
 	})
-	monthlyRent: number;
+	monthlyRent: string;
 
 	@ApiProperty({
 		description: 'Tiền cọc',
 		example: '6400000',
 	})
-	depositAmount: number;
+	depositAmount: string;
 
 	@ApiProperty({
 		description: 'Trạng thái lời mời',

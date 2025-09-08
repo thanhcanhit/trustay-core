@@ -19,8 +19,8 @@ export class RoomInvitationsService {
 	private transformToResponseDto(invitation: any): any {
 		return {
 			...invitation,
-			monthlyRent: invitation.monthlyRent ? Number(invitation.monthlyRent) : 0,
-			depositAmount: invitation.depositAmount ? Number(invitation.depositAmount) : 0,
+			monthlyRent: invitation.monthlyRent ? invitation.monthlyRent.toString() : '0',
+			depositAmount: invitation.depositAmount ? invitation.depositAmount.toString() : '0',
 		};
 	}
 

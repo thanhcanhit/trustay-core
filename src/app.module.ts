@@ -9,6 +9,7 @@ import { DistrictModule } from './api/provinces/district/district.module';
 import { ProvinceModule } from './api/provinces/province/province.module';
 import { WardModule } from './api/provinces/ward/ward.module';
 import { ReferenceModule } from './api/reference/reference.module';
+import { RentalsModule } from './api/rentals/rentals.module';
 import { RoomInvitationsModule } from './api/room-invitations/room-invitations.module';
 import { RoomSeekingPostModule } from './api/room-seeking-post/room-seeking-post.module';
 import { RoomsModule } from './api/rooms/rooms.module';
@@ -39,6 +40,7 @@ import { PrismaModule } from './prisma/prisma.module';
 		ListingModule,
 		ReferenceModule,
 		NotificationsModule,
+		RentalsModule,
 		RoomInvitationsModule,
 		RoomsModule,
 		RoomSeekingPostModule,
