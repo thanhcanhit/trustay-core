@@ -415,6 +415,17 @@ async function findOrCreateLocation(addressData, province, district) {
 
 	const { ward } = addressData || {};
 
+	// Find province (city) - search exactly in database
+	let provinceRecord = await prisma.province.findFirst({
+		where: {
+			OR: [
+				{ name: { equals: cityName, mode: 'insensitive' } },
+				{ name: { contains: 'Hồ Chí Minh', mode: 'insensitive' } },
+				{ name: { contains: 'Hà Nội', mode: 'insensitive' } },
+			],
+		},
+	});
+
 	// If not found and it's HCM, try different variations
 	if (!provinceRecord && cityName.includes('Hồ Chí Minh')) {
 		provinceRecord = await prisma.province.findFirst({

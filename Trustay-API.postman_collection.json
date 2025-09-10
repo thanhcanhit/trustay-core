@@ -17,7 +17,7 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "if (pm.response.code === 200) {",
+                  "if ([200, 201].includes(pm.response.code)) {",
                   "    const response = pm.response.json();",
                   "    pm.collectionVariables.set('verificationId', response.verificationId);",
                   "    console.log('📧 Verification ID saved:', response.verificationId);",
@@ -55,7 +55,7 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "if (pm.response.code === 200) {",
+                  "if ([200, 201].includes(pm.response.code)) {",
                   "    const response = pm.response.json();",
                   "    pm.collectionVariables.set('verificationToken', response.verificationToken);",
                   "    console.log('✅ Verification Token saved:', response.verificationToken);",
@@ -109,7 +109,7 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "if (pm.response.code === 201) {",
+                  "if ([200, 201].includes(pm.response.code)) {",
                   "    const response = pm.response.json();",
                   "    pm.collectionVariables.set('accessToken', response.access_token);",
                   "    pm.collectionVariables.set('refreshToken', response.refresh_token);",
@@ -152,7 +152,7 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "if (pm.response.code === 201) {",
+                  "if ([200, 201].includes(pm.response.code)) {",
                   "    const response = pm.response.json();",
                   "    pm.collectionVariables.set('accessToken', response.access_token);",
                   "    pm.collectionVariables.set('refreshToken', response.refresh_token);",
@@ -195,7 +195,7 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "if (pm.response.code === 201) {",
+                  "if ([200, 201].includes(pm.response.code)) {",
                   "    const response = pm.response.json();",
                   "    pm.collectionVariables.set('accessToken', response.access_token);",
                   "    pm.collectionVariables.set('refreshToken', response.refresh_token);",
@@ -440,7 +440,7 @@
           "response": []
         },
         {
-          "name": "⚡ Quick Login (Budget Student)",
+          "name": "⚡ Quick Login (Default Landlord)",
           "event": [
             {
               "listen": "test",
@@ -506,14 +506,85 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"budget.student@trustay.com\",\n  \"password\": \"trustay123\"\n}"
+              "raw": "{\n  \"email\": \"{{defaultLandlordEmail}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
               "host": ["{{baseUrl}}"],
               "path": ["api", "auth", "login"]
             },
-            "description": "Quick login with budget.student@trustay.com for immediate testing of Building & Room APIs"
+            "description": "Quick login with default landlord for immediate testing of Building & Room APIs"
+          },
+          "response": []
+        },
+        {
+          "name": "⚡ Quick Login (Default Tenant)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    // Enhanced token saving with validation",
+                  "    if (response.access_token && response.access_token.length > 0) {",
+                  "        pm.collectionVariables.set('accessToken', response.access_token);",
+                  "        console.log('✅ Access Token saved successfully');",
+                  "        console.log('🔑 Token preview:', response.access_token.substring(0, 30) + '...');",
+                  "        console.log('🔑 Token length:', response.access_token.length);",
+                  "    } else {",
+                  "        console.log('❌ ERROR: No access_token in response!');",
+                  "    }",
+                  "    ",
+                  "    if (response.refresh_token) {",
+                  "        pm.collectionVariables.set('refreshToken', response.refresh_token);",
+                  "        console.log('✅ Refresh Token saved successfully');",
+                  "    }",
+                  "    ",
+                  "    if (response.user && response.user.id) {",
+                  "        pm.collectionVariables.set('userId', response.user.id);",
+                  "        console.log('👤 User ID saved:', response.user.id);",
+                  "        console.log('🏠 User Role:', response.user.role);",
+                  "    }",
+                  "    ",
+                  "    console.log('⚡ Quick Login (Tenant) successful!');",
+                  "    console.log('🔄 Next request will auto-include Authorization header');",
+                  "    ",
+                  "    // Verify token is actually saved",
+                  "    const savedToken = pm.collectionVariables.get('accessToken');",
+                  "    if (savedToken) {",
+                  "        console.log('✅ Token verification: Successfully saved to collection variables');",
+                  "    } else {",
+                  "        console.log('❌ Token verification: FAILED to save to collection variables');",
+                  "    }",
+                  "} else {",
+                  "    console.log('❌ Quick Login failed with status:', pm.response.code);",
+                  "    console.log('📝 Response body:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{defaultTenantEmail}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Quick login with default tenant for testing tenant-specific APIs"
           },
           "response": []
         },
@@ -1266,6 +1337,356 @@
       "description": "Room seeking post management endpoints for tenants looking for accommodation. Slugs are auto-generated from titles. Search functionality is available via /api/listings/room-seeking-posts endpoint."
     },
     {
+      "name": "💌 Room Invitations",
+      "item": [
+        {
+          "name": "⚡ Quick Login (Default Landlord)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if ([200, 201].includes(pm.response.code)) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.access_token && response.access_token.length > 0) {",
+                  "        pm.collectionVariables.set('accessToken', response.access_token);",
+                  "        console.log('✅ Access Token saved successfully');",
+                  "    }",
+                  "    if (response.refresh_token) {",
+                  "        pm.collectionVariables.set('refreshToken', response.refresh_token);",
+                  "        console.log('✅ Refresh Token saved successfully');",
+                  "    }",
+                  "    if (response.user && response.user.id) {",
+                  "        pm.collectionVariables.set('userId', response.user.id);",
+                  "        console.log('👤 User ID saved:', response.user.id);",
+                  "        console.log('🏠 User Role:', response.user.role);",
+                  "    }",
+                  "    console.log('⚡ Quick Login (Landlord) successful!');",
+                  "  } else {",
+                  "    console.log('❌ Quick Login failed with status:', pm.response.code);",
+                  "    console.log('📝 Response body:', pm.response.text());",
+                  "  }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{defaultLandlordEmail}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Login as default landlord for invitation actions"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Room Invitation (Landlord)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const res = pm.response.json();",
+                  "  pm.collectionVariables.set('roomInvitationId', res.id);",
+                  "  console.log('💌 Room Invitation created. ID:', res.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomInstanceId\": \"{{roomInstanceId}}\",\n  \"tenantId\": \"{{tenantUserId}}\",\n  \"availableFrom\": \"{{invitationAvailableFrom}}\",\n  \"availableUntil\": \"{{invitationAvailableUntil}}\",\n  \"invitationMessage\": \"{{invitationMessage}}\",\n  \"proposedRent\": \"{{invitationProposedRent}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/room-invitations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-invitations"]
+            },
+            "description": "Create a room invitation as landlord"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Sent Invitations (Landlord)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/room-invitations/sent?page={{invPage}}&limit={{invLimit}}&status={{invStatus}}&buildingId={{invBuildingId}}&roomId={{invRoomId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-invitations", "sent"],
+              "query": [
+                { "key": "page", "value": "{{invPage}}" },
+                { "key": "limit", "value": "{{invLimit}}" },
+                { "key": "status", "value": "{{invStatus}}" },
+                { "key": "buildingId", "value": "{{invBuildingId}}" },
+                { "key": "roomId", "value": "{{invRoomId}}" }
+              ]
+            },
+            "description": "List invitations sent by current landlord"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Received Invitations (Tenant)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/room-invitations/received?page={{invPage}}&limit={{invLimit}}&status={{invStatus}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-invitations", "received"],
+              "query": [
+                { "key": "page", "value": "{{invPage}}" },
+                { "key": "limit", "value": "{{invLimit}}" },
+                { "key": "status", "value": "{{invStatus}}" }
+              ]
+            },
+            "description": "List invitations received by current tenant"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Invitation Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/room-invitations/{{roomInvitationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-invitations", "{{roomInvitationId}}"]
+            },
+            "description": "Get invitation details (sender or recipient only)"
+          },
+          "response": []
+        },
+        {
+          "name": "Respond to Invitation (Tenant)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"{{invRespondStatus}}\",\n  \"tenantNotes\": \"{{invRespondNotes}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/room-invitations/{{roomInvitationId}}/respond",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-invitations", "{{roomInvitationId}}", "respond"]
+            },
+            "description": "Tenant accepts or declines an invitation"
+          },
+          "response": []
+        },
+        {
+          "name": "Withdraw Invitation (Landlord)",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/room-invitations/{{roomInvitationId}}/withdraw",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-invitations", "{{roomInvitationId}}", "withdraw"]
+            },
+            "description": "Landlord withdraws a pending invitation"
+          },
+          "response": []
+        }
+      ],
+      "description": "Room invitation endpoints for landlord-tenant invitation workflow"
+    },
+    {
+      "name": "📝 Booking Requests",
+      "item": [
+        {
+          "name": "⚡ Quick Login (Default Tenant)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if ([200, 201].includes(pm.response.code)) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.access_token && response.access_token.length > 0) {",
+                  "        pm.collectionVariables.set('accessToken', response.access_token);",
+                  "        console.log('✅ Access Token saved successfully');",
+                  "    }",
+                  "    if (response.refresh_token) {",
+                  "        pm.collectionVariables.set('refreshToken', response.refresh_token);",
+                  "        console.log('✅ Refresh Token saved successfully');",
+                  "    }",
+                  "    if (response.user && response.user.id) {",
+                  "        pm.collectionVariables.set('userId', response.user.id);",
+                  "        console.log('👤 User ID saved:', response.user.id);",
+                  "        console.log('🏠 User Role:', response.user.role);",
+                  "    }",
+                  "    console.log('⚡ Quick Login (Tenant) successful!');",
+                  "  } else {",
+                  "    console.log('❌ Quick Login failed with status:', pm.response.code);",
+                  "    console.log('📝 Response body:', pm.response.text());",
+                  "  }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{defaultTenantEmail}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Login as default tenant for booking actions"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Booking Request (Tenant)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const res = pm.response.json();",
+                  "  pm.collectionVariables.set('bookingRequestId', res.id);",
+                  "  console.log('📝 Booking Request created. ID:', res.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roomInstanceId\": \"{{roomInstanceId}}\",\n  \"moveInDate\": \"{{bookingMoveInDate}}\",\n  \"moveOutDate\": \"{{bookingMoveOutDate}}\",\n  \"messageToOwner\": \"{{bookingMessageToOwner}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/booking-requests",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "booking-requests"]
+            },
+            "description": "Create a new booking request as tenant"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Received Booking Requests (Landlord)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/booking-requests/received?page={{brPage}}&limit={{brLimit}}&status={{brStatus}}&buildingId={{brBuildingId}}&roomId={{brRoomId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "booking-requests", "received"],
+              "query": [
+                { "key": "page", "value": "{{brPage}}" },
+                { "key": "limit", "value": "{{brLimit}}" },
+                { "key": "status", "value": "{{brStatus}}" },
+                { "key": "buildingId", "value": "{{brBuildingId}}" },
+                { "key": "roomId", "value": "{{brRoomId}}" }
+              ]
+            },
+            "description": "List booking requests received by current landlord"
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Booking Requests (Tenant)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/booking-requests/my-requests?page={{brPage}}&limit={{brLimit}}&status={{brStatus}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "booking-requests", "my-requests"],
+              "query": [
+                { "key": "page", "value": "{{brPage}}" },
+                { "key": "limit", "value": "{{brLimit}}" },
+                { "key": "status", "value": "{{brStatus}}" }
+              ]
+            },
+            "description": "List my booking requests as tenant"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Booking Request Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/booking-requests/{{bookingRequestId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "booking-requests", "{{bookingRequestId}}"]
+            },
+            "description": "Get booking request details"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Booking Request (Landlord)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ownerNotes\": \"{{bookingOwnerNotes}}\",\n  \"status\": \"{{bookingUpdateStatus}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/booking-requests/{{bookingRequestId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "booking-requests", "{{bookingRequestId}}"]
+            },
+            "description": "Update booking request (approve/reject) as landlord"
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Booking Request (Tenant)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancellationReason\": \"{{bookingCancellationReason}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/booking-requests/{{bookingRequestId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "booking-requests", "{{bookingRequestId}}", "cancel"]
+            },
+            "description": "Cancel my booking request as tenant"
+          },
+          "response": []
+        }
+      ],
+      "description": "Booking request endpoints for tenant-landlord booking workflow"
+    },
+    {
       "name": "🔧 Utilities",
       "item": [
         {
@@ -1461,6 +1882,168 @@
   ],
   "variable": [
     {
+      "key": "defaultLandlordEmail",
+      "value": "budget.student@trustay.com",
+      "type": "string",
+      "description": "Default landlord email for quick login"
+    },
+    {
+      "key": "defaultTenantEmail",
+      "value": "tenant.one@trustay.com",
+      "type": "string",
+      "description": "Default tenant email for quick login"
+    },
+    {
+      "key": "defaultPassword",
+      "value": "trustay123",
+      "type": "string",
+      "description": "Default password for seeded users"
+    },
+    {
+      "key": "roomInstanceId",
+      "value": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "string",
+      "description": "Sample Room Instance ID for invite/booking requests"
+    },
+    {
+      "key": "tenantUserId",
+      "value": "550e8400-e29b-41d4-a716-446655440001",
+      "type": "string",
+      "description": "Sample Tenant User ID for invitations"
+    },
+    {
+      "key": "invitationAvailableFrom",
+      "value": "2025-10-01T00:00:00.000Z",
+      "type": "string",
+      "description": "Default available-from date for invitations (ISO)"
+    },
+    {
+      "key": "invitationAvailableUntil",
+      "value": "2026-04-01T00:00:00.000Z",
+      "type": "string",
+      "description": "Default available-until date for invitations (ISO)"
+    },
+    {
+      "key": "invitationMessage",
+      "value": "Tôi nghĩ phòng này phù hợp với bạn. Bạn có quan tâm không?",
+      "type": "string",
+      "description": "Default invitation message"
+    },
+    {
+      "key": "invitationProposedRent",
+      "value": "3200000",
+      "type": "string",
+      "description": "Default proposed monthly rent (VND)"
+    },
+    {
+      "key": "invPage",
+      "value": "1",
+      "type": "string",
+      "description": "Default page for invitations"
+    },
+    {
+      "key": "invLimit",
+      "value": "20",
+      "type": "string",
+      "description": "Default limit for invitations"
+    },
+    {
+      "key": "invStatus",
+      "value": "",
+      "type": "string",
+      "description": "Optional filter status for invitations"
+    },
+    {
+      "key": "invBuildingId",
+      "value": "",
+      "type": "string",
+      "description": "Optional filter buildingId for invitations"
+    },
+    {
+      "key": "invRoomId",
+      "value": "",
+      "type": "string",
+      "description": "Optional filter roomId for invitations"
+    },
+    {
+      "key": "invRespondStatus",
+      "value": "accepted",
+      "type": "string",
+      "description": "Default respond status for invitation (accepted/declined)"
+    },
+    {
+      "key": "invRespondNotes",
+      "value": "",
+      "type": "string",
+      "description": "Optional notes when responding to invitation"
+    },
+    {
+      "key": "bookingMoveInDate",
+      "value": "2025-10-05T00:00:00.000Z",
+      "type": "string",
+      "description": "Default move-in date for booking request (ISO)"
+    },
+    {
+      "key": "bookingMoveOutDate",
+      "value": "",
+      "type": "string",
+      "description": "Optional move-out date for booking request (ISO)"
+    },
+    {
+      "key": "bookingMessageToOwner",
+      "value": "Xin chào, tôi quan tâm đến phòng này và mong muốn được thuê.",
+      "type": "string",
+      "description": "Default tenant message to owner in booking request"
+    },
+    {
+      "key": "brPage",
+      "value": "1",
+      "type": "string",
+      "description": "Default page for booking requests"
+    },
+    {
+      "key": "brLimit",
+      "value": "20",
+      "type": "string",
+      "description": "Default limit for booking requests"
+    },
+    {
+      "key": "brStatus",
+      "value": "",
+      "type": "string",
+      "description": "Optional status filter for booking requests"
+    },
+    {
+      "key": "brBuildingId",
+      "value": "",
+      "type": "string",
+      "description": "Optional buildingId filter for booking requests"
+    },
+    {
+      "key": "brRoomId",
+      "value": "",
+      "type": "string",
+      "description": "Optional roomId filter for booking requests"
+    },
+    {
+      "key": "bookingOwnerNotes",
+      "value": "Phòng đã sẵn sàng, vui lòng liên hệ để xem phòng.",
+      "type": "string",
+      "description": "Default owner notes when updating booking request"
+    },
+    {
+      "key": "bookingUpdateStatus",
+      "value": "approved",
+      "type": "string",
+      "description": "Default status update for booking request (approved/rejected)"
+    },
+    {
+      "key": "bookingCancellationReason",
+      "value": "Đã tìm được phòng khác phù hợp hơn",
+      "type": "string",
+      "description": "Default cancellation reason for tenant"
+    },
+    {
       "key": "baseUrl",
       "value": "http://localhost:3000",
       "type": "string",
@@ -1606,13 +2189,13 @@
     },
     {
       "key": "testProvinceId",
-      "value": "79",
+      "value": "1",
       "type": "string",
       "description": "Test province ID (Thành phố Hồ Chí Minh)"
     },
     {
       "key": "testDistrictId",
-      "value": "769",
+      "value": "1",
       "type": "string",
       "description": "Test district ID (Thủ Đức, HCMC)"
     },
@@ -1684,19 +2267,19 @@
     },
     {
       "key": "buildingWardId",
-      "value": "26734",
+      "value": "1",
       "type": "string",
       "description": "Ward ID for building location (Phường Linh Chiểu, Thủ Đức, HCMC)"
     },
     {
       "key": "buildingDistrictId",
-      "value": "769",
+      "value": "1",
       "type": "string",
       "description": "District ID for building location (Thủ Đức, HCMC)"
     },
     {
       "key": "buildingProvinceId",
-      "value": "79",
+      "value": "1",
       "type": "string",
       "description": "Province ID for building location (Thành phố Hồ Chí Minh)"
     },
@@ -2212,19 +2795,19 @@
     },
     {
       "key": "seekingPostProvinceId",
-      "value": "79",
+      "value": "1",
       "type": "string",
       "description": "Preferred province ID (Thành phố Hồ Chí Minh)"
     },
     {
       "key": "seekingPostDistrictId",
-      "value": "769",
+      "value": "1",
       "type": "string",
       "description": "Preferred district ID (Thủ Đức, HCMC)"
     },
     {
       "key": "seekingPostWardId",
-      "value": "26734",
+      "value": "1",
       "type": "string",
       "description": "Preferred ward ID (Phường Linh Chiểu, Thủ Đức)"
     },
@@ -2302,13 +2885,13 @@
     },
     {
       "key": "seekingPostFilterProvinceId",
-      "value": "79",
+      "value": "1",
       "type": "string",
       "description": "Filter by province ID"
     },
     {
       "key": "seekingPostFilterDistrictId",
-      "value": "769",
+      "value": "1",
       "type": "string",
       "description": "Filter by district ID"
     },
@@ -2443,6 +3026,138 @@
       "value": "10",
       "type": "string",
       "description": "Items per page for rooms pagination"
+    },
+    {
+      "key": "enumGender",
+      "value": "[\"male\",\"female\",\"other\"]",
+      "type": "string",
+      "description": "Prisma enum Gender"
+    },
+    {
+      "key": "enumUserRole",
+      "value": "[\"tenant\",\"landlord\"]",
+      "type": "string",
+      "description": "Prisma enum UserRole"
+    },
+    {
+      "key": "enumRoomType",
+      "value": "[\"boarding_house\",\"dormitory\",\"sleepbox\",\"apartment\",\"whole_house\"]",
+      "type": "string",
+      "description": "Prisma enum RoomType"
+    },
+    {
+      "key": "enumBookingStatus",
+      "value": "[\"pending\",\"approved\",\"rejected\",\"cancelled\"]",
+      "type": "string",
+      "description": "Prisma enum BookingStatus"
+    },
+    {
+      "key": "enumRentalStatus",
+      "value": "[\"active\",\"terminated\",\"expired\",\"pending_renewal\"]",
+      "type": "string",
+      "description": "Prisma enum RentalStatus"
+    },
+    {
+      "key": "enumInvitationStatus",
+      "value": "[\"pending\",\"accepted\",\"declined\",\"withdrawn\",\"expired\"]",
+      "type": "string",
+      "description": "Prisma enum InvitationStatus"
+    },
+    {
+      "key": "enumBillStatus",
+      "value": "[\"draft\",\"pending\",\"paid\",\"overdue\",\"cancelled\"]",
+      "type": "string",
+      "description": "Prisma enum BillStatus"
+    },
+    {
+      "key": "enumPaymentType",
+      "value": "[\"rent\",\"deposit\",\"utility\",\"fee\",\"refund\"]",
+      "type": "string",
+      "description": "Prisma enum PaymentType"
+    },
+    {
+      "key": "enumPaymentMethod",
+      "value": "[\"bank_transfer\",\"cash\",\"e_wallet\",\"card\"]",
+      "type": "string",
+      "description": "Prisma enum PaymentMethod"
+    },
+    {
+      "key": "enumPaymentStatus",
+      "value": "[\"pending\",\"completed\",\"failed\",\"refunded\"]",
+      "type": "string",
+      "description": "Prisma enum PaymentStatus"
+    },
+    {
+      "key": "enumReviewerType",
+      "value": "[\"tenant\",\"owner\"]",
+      "type": "string",
+      "description": "Prisma enum ReviewerType"
+    },
+    {
+      "key": "enumAmenityCategory",
+      "value": "[\"basic\",\"kitchen\",\"bathroom\",\"entertainment\",\"safety\",\"connectivity\",\"building\"]",
+      "type": "string",
+      "description": "Prisma enum AmenityCategory"
+    },
+    {
+      "key": "enumCostCategory",
+      "value": "[\"utility\",\"service\",\"parking\",\"maintenance\"]",
+      "type": "string",
+      "description": "Prisma enum CostCategory"
+    },
+    {
+      "key": "enumRuleCategory",
+      "value": "[\"smoking\",\"pets\",\"visitors\",\"noise\",\"cleanliness\",\"security\",\"usage\",\"other\"]",
+      "type": "string",
+      "description": "Prisma enum RuleCategory"
+    },
+    {
+      "key": "enumRuleType",
+      "value": "[\"allowed\",\"forbidden\",\"required\",\"conditional\"]",
+      "type": "string",
+      "description": "Prisma enum RuleType"
+    },
+    {
+      "key": "enumCostType",
+      "value": "[\"fixed\",\"per_unit\",\"metered\",\"percentage\",\"tiered\"]",
+      "type": "string",
+      "description": "Prisma enum CostType"
+    },
+    {
+      "key": "enumBillingCycle",
+      "value": "[\"daily\",\"weekly\",\"monthly\",\"quarterly\",\"yearly\",\"per_use\"]",
+      "type": "string",
+      "description": "Prisma enum BillingCycle"
+    },
+    {
+      "key": "enumVisibility",
+      "value": "[\"anyoneCanFind\",\"anyoneWithLink\",\"domainCanFind\",\"domainWithLink\",\"limited\"]",
+      "type": "string",
+      "description": "Prisma enum Visibility"
+    },
+    {
+      "key": "enumSearchPostStatus",
+      "value": "[\"active\",\"paused\",\"closed\",\"expired\"]",
+      "type": "string",
+      "description": "Prisma enum SearchPostStatus"
+    },
+    {
+      "key": "enumVerificationType",
+      "value": "[\"email\",\"phone\",\"password_reset\"]",
+      "type": "string",
+      "description": "Prisma enum VerificationType"
+    },
+    {
+      "key": "enumVerificationStatus",
+      "value": "[\"pending\",\"verified\",\"expired\",\"failed\"]",
+      "type": "string",
+      "description": "Prisma enum VerificationStatus"
+    },
+    {
+      "key": "enumRoomStatus",
+      "value": "[\"available\",\"occupied\",\"maintenance\",\"reserved\",\"unavailable\"]",
+      "type": "string",
+      "description": "Prisma enum RoomStatus"
     }
   ]
 }
