@@ -124,6 +124,23 @@ export class RoomInvitationsService {
 			);
 		}
 
+		// Validate optional roomSeekingPostId
+		if (dto.roomSeekingPostId) {
+			const post = await this.prisma.roomSeekingPost.findUnique({
+				where: { id: dto.roomSeekingPostId },
+				select: { id: true, requesterId: true, status: true },
+			});
+			if (!post) {
+				throw new NotFoundException('Room seeking post not found');
+			}
+			if (post.requesterId !== dto.tenantId) {
+				throw new ForbiddenException('Post does not belong to this tenant');
+			}
+			if (post.status === 'closed' || post.status === 'expired') {
+				throw new BadRequestException('Room seeking post is not active');
+			}
+		}
+
 		// Create room invitation
 		const roomInvitation = await this.prisma.roomInvitation.create({
 			data: {
@@ -135,6 +152,7 @@ export class RoomInvitationsService {
 				monthlyRent: dto.proposedRent ? parseFloat(dto.proposedRent) : 0,
 				depositAmount: 0, // Will be calculated based on monthly rent
 				rentalMonths,
+				...(dto.roomSeekingPostId && { roomSeekingPostId: dto.roomSeekingPostId }),
 				status: InvitationStatus.pending,
 			},
 			include: {

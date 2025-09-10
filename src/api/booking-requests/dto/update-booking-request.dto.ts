@@ -17,7 +17,9 @@ export class UpdateBookingRequestDto {
 		example: 'approved',
 	})
 	@IsOptional()
-	@IsEnum(BookingStatus)
+	@IsEnum(BookingStatus, {
+		message: `status must be one of: ${Object.values(BookingStatus).join(', ')}`,
+	})
 	status?: BookingStatus;
 }
 

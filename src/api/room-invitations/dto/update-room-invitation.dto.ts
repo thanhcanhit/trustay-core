@@ -9,7 +9,9 @@ export class UpdateRoomInvitationDto {
 		example: 'accepted',
 	})
 	@IsOptional()
-	@IsEnum(InvitationStatus)
+	@IsEnum(InvitationStatus, {
+		message: `status must be one of: ${Object.values(InvitationStatus).join(', ')}`,
+	})
 	status?: InvitationStatus;
 
 	@ApiPropertyOptional({

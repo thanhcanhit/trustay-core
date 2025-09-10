@@ -8,7 +8,6 @@ import {
 	Patch,
 	Post,
 	Query,
-	Request,
 	UseGuards,
 } from '@nestjs/common';
 import {
@@ -19,6 +18,7 @@ import {
 	ApiResponse,
 	ApiTags,
 } from '@nestjs/swagger';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { BookingRequestsService } from './booking-requests.service';
 import {
@@ -30,7 +30,7 @@ import {
 	UpdateBookingRequestDto,
 } from './dto';
 
-@ApiTags('booking-requests')
+@ApiTags('Booking Requests')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('booking-requests')
@@ -49,12 +49,9 @@ export class BookingRequestsController {
 	@ApiResponse({ status: 404, description: 'Room instance không tồn tại' })
 	async createBookingRequest(
 		@Body() createBookingRequestDto: CreateBookingRequestDto,
-		@Request() req,
+		@CurrentUser('id') userId: string,
 	) {
-		return this.bookingRequestsService.createBookingRequest(
-			req.user.userId,
-			createBookingRequestDto,
-		);
+		return this.bookingRequestsService.createBookingRequest(userId, createBookingRequestDto);
 	}
 
 	@Get('received')
@@ -84,8 +81,11 @@ export class BookingRequestsController {
 		description: 'Lọc theo building ID',
 	})
 	@ApiQuery({ name: 'roomId', required: false, type: String, description: 'Lọc theo room ID' })
-	async getReceivedBookingRequests(@Query() query: QueryBookingRequestsDto, @Request() req) {
-		return this.bookingRequestsService.getBookingRequestsForLandlord(req.user.userId, query);
+	async getReceivedBookingRequests(
+		@Query() query: QueryBookingRequestsDto,
+		@CurrentUser('id') userId: string,
+	) {
+		return this.bookingRequestsService.getBookingRequestsForLandlord(userId, query);
 	}
 
 	@Get('my-requests')
@@ -108,8 +108,11 @@ export class BookingRequestsController {
 		enum: ['pending', 'approved', 'rejected', 'cancelled'],
 		description: 'Lọc theo trạng thái',
 	})
-	async getMyBookingRequests(@Query() query: QueryBookingRequestsDto, @Request() req) {
-		return this.bookingRequestsService.getMyBookingRequests(req.user.userId, query);
+	async getMyBookingRequests(
+		@Query() query: QueryBookingRequestsDto,
+		@CurrentUser('id') userId: string,
+	) {
+		return this.bookingRequestsService.getMyBookingRequests(userId, query);
 	}
 
 	@Get(':id')
@@ -122,8 +125,8 @@ export class BookingRequestsController {
 	})
 	@ApiResponse({ status: 404, description: 'Booking request không tồn tại' })
 	@ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
-	async getBookingRequestById(@Param('id') id: string, @Request() req) {
-		return this.bookingRequestsService.getBookingRequestById(id, req.user.userId);
+	async getBookingRequestById(@Param('id') id: string, @CurrentUser('id') userId: string) {
+		return this.bookingRequestsService.getBookingRequestById(id, userId);
 	}
 
 	@Patch(':id')
@@ -140,13 +143,9 @@ export class BookingRequestsController {
 	async updateBookingRequest(
 		@Param('id') id: string,
 		@Body() updateBookingRequestDto: UpdateBookingRequestDto,
-		@Request() req,
+		@CurrentUser('id') userId: string,
 	) {
-		return this.bookingRequestsService.updateBookingRequest(
-			id,
-			req.user.userId,
-			updateBookingRequestDto,
-		);
+		return this.bookingRequestsService.updateBookingRequest(id, userId, updateBookingRequestDto);
 	}
 
 	@Patch(':id/cancel')
@@ -164,12 +163,8 @@ export class BookingRequestsController {
 	async cancelBookingRequest(
 		@Param('id') id: string,
 		@Body() cancelBookingRequestDto: CancelBookingRequestDto,
-		@Request() req,
+		@CurrentUser('id') userId: string,
 	) {
-		return this.bookingRequestsService.cancelBookingRequest(
-			id,
-			req.user.userId,
-			cancelBookingRequestDto,
-		);
+		return this.bookingRequestsService.cancelBookingRequest(id, userId, cancelBookingRequestDto);
 	}
 }

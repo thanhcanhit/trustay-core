@@ -18,6 +18,14 @@ export class CreateRoomInvitationDto {
 	@IsNotEmpty()
 	tenantId: string;
 
+	@ApiPropertyOptional({
+		description: 'Optional Room Seeking Post ID to link this invitation',
+		example: '550e8400-e29b-41d4-a716-446655440000',
+	})
+	@IsOptional()
+	@IsUUID()
+	roomSeekingPostId?: string;
+
 	@ApiProperty({
 		description: 'Ngày có thể move-in',
 		example: '2024-02-01T00:00:00.000Z',
