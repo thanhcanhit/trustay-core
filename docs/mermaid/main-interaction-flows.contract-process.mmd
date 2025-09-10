@@ -1,0 +1,16 @@
+flowchart TD
+    A[Booking Approved / Invitation Accepted] --> B[Tạo Rental]
+    B --> C[Tự động trigger Contract Generation]
+    C --> D[Tạo Contract Number]
+    D --> E[Lấy dữ liệu từ Rental]
+    E --> F[Tạo nội dung Contract tiếng Việt]
+    F --> G[Gửi thông báo]
+    G --> H[Contract sẵn sàng sử dụng]
+    
+    C --> I{Lỗi?}
+    I -->|Có| J[Log error - Rental vẫn tạo]
+    I -->|Không| D
+    
+    style H fill:#90EE90
+    style J fill:#FFB347
+

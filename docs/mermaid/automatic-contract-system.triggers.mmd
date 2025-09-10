@@ -1,0 +1,9 @@
+graph TD
+    A[Booking Request Approved] --> D[Auto-generate Contract]
+    B[Invitation Accepted] --> D
+    C[Direct Rental Creation] --> D
+    
+    D --> E[Contract Status: DRAFT]
+    E --> F[Auto-populate Contract Terms]
+    F --> G[Contract Status: PENDING_REVIEW]
+

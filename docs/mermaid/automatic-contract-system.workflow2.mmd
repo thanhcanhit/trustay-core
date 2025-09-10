@@ -1,0 +1,18 @@
+sequenceDiagram
+    participant T as Tenant
+    participant PS as PaymentService
+    participant CS as ContractService
+    participant C as Contract
+    
+    T->>PS: Make Monthly Payment
+    PS->>CS: Emit Payment Event
+    CS->>C: Update Payment History
+    CS->>C: Update Next Due Date
+    CS->>C: Check Payment Terms Compliance
+    alt Payment Up to Date
+        CS->>C: Mark Contract: COMPLIANT
+    else Payment Overdue
+        CS->>C: Mark Contract: OVERDUE
+        CS->>C: Add Late Fee Clause
+    end
+

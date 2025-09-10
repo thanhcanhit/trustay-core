@@ -1,0 +1,27 @@
+flowchart TD
+    A[Monthly Payment Due] --> B[Contract Active?]
+    B -->|Yes| C[Process Payment]
+    B -->|No| D[Block Payment - No Contract]
+    
+    C --> E[Payment Successful]
+    E --> F[Update Contract Payment History]
+    F --> G[Send Payment Receipt]
+    G --> H[Update Rental Status]
+    
+    C --> I[Payment Failed]
+    I --> J[Mark Contract as Overdue]
+    J --> K[Send Overdue Notice]
+    K --> L{Grace Period Expired?}
+    
+    L -->|No| M[Wait for Payment]
+    L -->|Yes| N[Initiate Contract Breach]
+    
+    M --> A
+    N --> O[Contract Status: BREACHED]
+    O --> P[Send Legal Notice]
+    
+    style E fill:#90EE90
+    style I fill:#FFB347
+    style N fill:#FF6B6B
+    style O fill:#FF6B6B
+

@@ -1,0 +1,21 @@
+stateDiagram-v2
+    [*] --> Draft: Tenant creates post
+    Draft --> Active: Publish post
+    Active --> Active: Receive invitations
+    Active --> Paused: Tenant pauses search
+    Paused --> Active: Resume search
+    Active --> Closed: Accept invitation
+    Active --> Expired: Time limit reached
+    Closed --> [*]: Auto-close after acceptance
+    Expired --> [*]: Post expires
+    
+    note right of Active
+        Landlords can see and
+        send invitations
+    end note
+    
+    note right of Closed
+        Auto-triggered when
+        invitation accepted
+    end note
+

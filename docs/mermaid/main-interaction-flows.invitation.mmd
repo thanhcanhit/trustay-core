@@ -1,0 +1,13 @@
+sequenceDiagram
+    participant L as Landlord  
+    participant T as Tenant
+    participant S as System
+    
+    L->>S: Gửi Room Invitation
+    S->>T: Thông báo có invitation
+    T->>S: Accept Invitation
+    S->>S: Tự động tạo Rental
+    S->>S: Tự động tạo Contract
+    S->>L: Thông báo thành công + Contract
+    S->>T: Thông báo thành công + Contract
+

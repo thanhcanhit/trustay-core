@@ -1,0 +1,24 @@
+flowchart TD
+    A[Tenant Creates Seeking Post] --> B[Post Goes Live]
+    B --> C[Landlords Browse Posts]
+    
+    C --> D{Post Matches Room?}
+    D -->|Yes| E[Send Invitation]
+    D -->|No| F[Continue Browsing]
+    
+    E --> G[Tenant Reviews Invitation]
+    G --> H{Accept Invitation?}
+    
+    H -->|Yes| I[Auto-Close Post]
+    H -->|No| J[Invitation Declined]
+    
+    I --> K[Create Rental & Contract]
+    J --> L[Post Remains Active]
+    L --> C
+    
+    F --> C
+    
+    style K fill:#90EE90
+    style I fill:#87CEEB
+    style L fill:#FFD700
+

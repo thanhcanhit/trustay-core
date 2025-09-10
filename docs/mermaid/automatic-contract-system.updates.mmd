@@ -1,0 +1,24 @@
+sequenceDiagram
+    participant T as Tenant
+    participant S as System
+    participant C as Contract
+    participant L as Landlord
+    
+    Note over T,L: Contract Updates based on Actions
+    
+    T->>S: Make Payment
+    S->>C: Update Payment History
+    S->>C: Mark Payment Terms Fulfilled
+    
+    L->>S: Update Room Rules
+    S->>C: Auto-amend Contract Rules
+    S->>C: Add Amendment Record
+    
+    T->>S: Request Lease Renewal
+    S->>C: Create Renewal Amendment
+    S->>C: Update Contract End Date
+    
+    L->>S: Terminate Lease
+    S->>C: Update Contract Status: TERMINATED
+    S->>C: Record Termination Details
+

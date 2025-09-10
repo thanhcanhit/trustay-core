@@ -1,0 +1,35 @@
+sequenceDiagram
+    participant R as Rental
+    participant C as Contract
+    participant N as Notifications
+    participant T as Tenant
+    participant L as Landlord
+    
+    Note over R,C: Initial Creation
+    R->>C: Auto-create contract
+    C->>C: Generate contract text
+    C->>N: Notify contract created
+    N->>T: Contract ready notification
+    N->>L: Contract ready notification
+    
+    Note over R,C: Updates & Changes
+    L->>R: Update rental terms
+    R->>C: Sync contract changes
+    C->>C: Create amendment
+    C->>N: Notify contract amended
+    N->>T: Amendment notification
+    
+    Note over R,C: Lifecycle Events
+    R->>C: Rental terminated
+    C->>C: Set status to terminated
+    C->>N: Notify contract ended
+    N->>T: Contract termination notice
+    N->>L: Contract termination notice
+    
+    Note over R,C: Renewal Process
+    R->>C: Rental renewal
+    C->>C: Create renewal amendment
+    C->>N: Notify contract renewed
+    N->>T: New contract period
+    N->>L: New contract period
+
