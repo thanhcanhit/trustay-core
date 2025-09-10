@@ -24,7 +24,7 @@ import {
 	UpdateContractDto,
 } from './dto';
 
-@ApiTags('Contracts')
+@ApiTags('Contracts - Chưa hoạt động')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('contracts')
