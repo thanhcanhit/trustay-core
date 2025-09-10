@@ -52,6 +52,7 @@ enum InvitationStatus {
   pending
   accepted
   declined
+  withdrawn
   expired
 }
 
@@ -596,6 +597,7 @@ model RoomInvitation {
   senderId       String           @map("sender_id") // Landlord
   recipientId    String?          @map("recipient_id") // Tenant (optional if not registered)
   recipientEmail String?          @map("recipient_email") // For users not yet registered
+  roomSeekingPostId String?       @map("room_seeking_post_id")
   monthlyRent    Decimal          @map("monthly_rent") @db.Decimal(15, 2)
   depositAmount  Decimal          @map("deposit_amount") @db.Decimal(15, 2)
   moveInDate     DateTime?        @map("move_in_date") @db.Date
@@ -611,11 +613,13 @@ model RoomInvitation {
   roomInstance RoomInstance @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
   sender       User         @relation("InvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
   recipient    User?        @relation("InvitationReceiver", fields: [recipientId], references: [id], onDelete: Cascade)
+  roomSeekingPost RoomSeekingPost? @relation(fields: [roomSeekingPostId], references: [id], onDelete: SetNull)
   rental       Rental?
 
   @@index([roomInstanceId])
   @@index([senderId])
   @@index([recipientId])
+  @@index([roomSeekingPostId])
   @@index([status])
   @@index([expiresAt])
   @@map("room_invitations")
@@ -865,6 +869,7 @@ model RoomSeekingPost {
   preferredProvince Province? @relation(fields: [preferredProvinceId], references: [id], onDelete: SetNull)
   preferredDistrict District? @relation(fields: [preferredDistrictId], references: [id], onDelete: SetNull)
   preferredWard     Ward?     @relation(fields: [preferredWardId], references: [id], onDelete: SetNull)
+  invitations       RoomInvitation[]
 
   @@index([requesterId])
   @@index([status])
