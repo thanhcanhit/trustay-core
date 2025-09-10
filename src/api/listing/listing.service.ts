@@ -116,10 +116,7 @@ export class ListingService {
 
 		// Handle location-based filtering
 		if (latitude && longitude && radius) {
-			const earthRadius = 6371; // Earth's radius in km
 			const latRad = latitude * (Math.PI / 180);
-			const lonRad = longitude * (Math.PI / 180);
-			const radiusRad = radius / earthRadius;
 
 			const minLat = latitude - radius / 111.32; // 1 degree ≈ 111.32 km
 			const maxLat = latitude + radius / 111.32;
@@ -330,12 +327,18 @@ export class ListingService {
 				costs: room.costs.map((cost) => ({
 					id: cost.systemCostType.id,
 					name: cost.systemCostType.name,
-					value: cost.baseRate.toString(),
+					value: cost.baseRate != null ? cost.baseRate.toString() : undefined,
 				})),
 				pricing: room.pricing
 					? {
-							basePriceMonthly: room.pricing.basePriceMonthly.toString(),
-							depositAmount: room.pricing.depositAmount.toString(),
+							basePriceMonthly:
+								room.pricing.basePriceMonthly != null
+									? room.pricing.basePriceMonthly.toString()
+									: undefined,
+							depositAmount:
+								room.pricing.depositAmount != null
+									? room.pricing.depositAmount.toString()
+									: undefined,
 							utilityIncluded: room.pricing.utilityIncluded,
 						}
 					: undefined,

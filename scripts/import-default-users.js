@@ -183,6 +183,40 @@ const defaultUsers = [
 	},
 ];
 
+// Default tenant users (3 users)
+const defaultTenants = [
+	{
+		email: 'tenant.one@trustay.com',
+		phone: '0910000001',
+		firstName: 'Minh',
+		lastName: 'Anh',
+		gender: 'male',
+		role: 'tenant',
+		isVerifiedPhone: true,
+		isVerifiedEmail: true,
+	},
+	{
+		email: 'tenant.two@trustay.com',
+		phone: '0910000002',
+		firstName: 'Thu',
+		lastName: 'Trang',
+		gender: 'female',
+		role: 'tenant',
+		isVerifiedPhone: true,
+		isVerifiedEmail: true,
+	},
+	{
+		email: 'tenant.three@trustay.com',
+		phone: '0910000003',
+		firstName: 'Quang',
+		lastName: 'Huy',
+		gender: 'male',
+		role: 'tenant',
+		isVerifiedPhone: true,
+		isVerifiedEmail: true,
+	},
+];
+
 // Room distribution helper functions
 function shuffleArray(array) {
 	const shuffled = [...array];
@@ -297,7 +331,11 @@ async function assignRoomsToLandlords() {
 async function importDefaultUsers() {
 	console.log('👥 Importing balanced landlord users across market segments...');
 
-	// Check if default users already exist
+	// Hash the default password (used for both landlords and tenants)
+	const saltRounds = 10;
+	const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, saltRounds);
+
+	// Check if default landlord users already exist
 	const existingUsers = await prisma.user.count({
 		where: {
 			role: 'landlord',
@@ -309,13 +347,10 @@ async function importDefaultUsers() {
 		console.log(
 			`⏭️ Default landlord users already exist (${existingUsers} users). Skipping import.`,
 		);
-		console.log('✨ Users import completed: 0 created, 0 skipped (data exists)');
-
 		// Still try to assign rooms if they exist
 		console.log('\n📍 Checking for room assignment...');
 		await assignRoomsToLandlords();
 		console.log('');
-		return;
 	}
 
 	console.log('📊 Distribution Strategy:');
@@ -323,10 +358,6 @@ async function importDefaultUsers() {
 	console.log('   • Economy Segment: 30% of rooms (young professionals + small families)');
 	console.log('   • Standard Segment: 15% of rooms (professionals + executives)');
 	console.log('   • Premium/Luxury: 5% of rooms (high-end clients)\n');
-
-	// Hash the default password
-	const saltRounds = 10;
-	const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, saltRounds);
 
 	let successCount = 0;
 	let skipCount = 0;
@@ -371,6 +402,33 @@ async function importDefaultUsers() {
 		await assignRoomsToLandlords();
 	}
 
+	// Create default tenant users (always attempt)
+	let tenantCreatedCount = 0;
+	let tenantSkippedCount = 0;
+	for (const tenant of defaultTenants) {
+		try {
+			const existingTenant = await prisma.user.findUnique({ where: { email: tenant.email } });
+			if (existingTenant) {
+				console.log(`   ⏭️  Skipping existing tenant: ${tenant.email}`);
+				tenantSkippedCount++;
+				continue;
+			}
+			await prisma.user.create({
+				data: {
+					...tenant,
+					passwordHash: hashedPassword,
+				},
+			});
+			console.log(`   ✅ Created default tenant: ${tenant.firstName} ${tenant.lastName}`);
+			tenantCreatedCount++;
+		} catch (error) {
+			console.error(`   ❌ Error creating tenant ${tenant.email}:`, error.message);
+		}
+	}
+
+	console.log(
+		`\n✨ Tenants import completed: ${tenantCreatedCount} created, ${tenantSkippedCount} skipped`,
+	);
 	console.log('');
 }
 
@@ -461,5 +519,6 @@ module.exports = {
 	importDefaultUsers,
 	clearDefaultUsers,
 	defaultUsers,
+	defaultTenants,
 	DEFAULT_PASSWORD,
 };
