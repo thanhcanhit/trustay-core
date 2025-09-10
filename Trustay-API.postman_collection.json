@@ -446,7 +446,7 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "if (pm.response.code === 200) {",
+                  "if ([200, 201].includes(pm.response.code)) {",
                   "    const response = pm.response.json();",
                   "    ",
                   "    // Enhanced token saving with validation",
@@ -524,7 +524,7 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "if (pm.response.code === 200) {",
+                  "if ([200, 201].includes(pm.response.code)) {",
                   "    const response = pm.response.json();",
                   "    ",
                   "    // Enhanced token saving with validation",
