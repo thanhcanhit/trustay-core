@@ -45,10 +45,13 @@ function getPriceTier(price) {
 	return 'BUDGET';
 }
 
-// Enhanced amenities mapping with price-based intelligence - ONLY use default amenities
+// Enhanced amenities mapping with price-based intelligence - Use ALL default amenities
 async function applyIntelligentAmenities(roomId, description, existingAmenities, price) {
 	const priceTier = getPriceTier(price);
-	const amenityMappings = getAmenityMappingsByTier(priceTier);
+	const allAmenityMappings = getAmenityMappingsByTier();
+
+	// Filter amenities based on price tier
+	const amenityMappings = filterAmenitiesByPriceTier(allAmenityMappings, priceTier);
 
 	// Parse existing amenities if they're in array format
 	let parsedAmenities = [];
@@ -57,13 +60,13 @@ async function applyIntelligentAmenities(roomId, description, existingAmenities,
 	} else if (typeof existingAmenities === 'string') {
 		try {
 			parsedAmenities = JSON.parse(existingAmenities) || [];
-		} catch (e) {
+		} catch {
 			parsedAmenities = [];
 		}
 	}
 
 	// Combine description and existing amenities for analysis
-	const combinedText = description + ' ' + parsedAmenities.join(' ').toLowerCase();
+	const combinedText = `${description} ${parsedAmenities.join(' ').toLowerCase()}`;
 
 	const detectedAmenities = [];
 
@@ -103,40 +106,202 @@ async function applyIntelligentAmenities(roomId, description, existingAmenities,
 	}
 }
 
-function getAmenityMappingsByTier(priceTier) {
-	// Only map amenities that EXIST in the database - validated list
-	const amenityKeywordMap = [
-		// Basic amenities (confirmed to exist in database)
-		{ keywords: ['đầy đủ nội thất', 'full nội thất', 'nội thất'], nameEn: 'fully_furnished' },
-		{ keywords: ['có gác', 'gác xép', 'gác lửng'], nameEn: 'has_loft' },
-		{ keywords: ['máy lạnh', 'điều hòa', 'có máy lạnh'], nameEn: 'has_air_conditioning' },
-		{ keywords: ['tủ lạnh', 'có tủ lạnh'], nameEn: 'has_refrigerator' },
+function getAmenityMappingsByTier() {
+	// Create comprehensive keyword mapping from default-amenities.js
+	const amenityKeywordMap = defaultAmenities.map((amenity) => {
+		// Generate comprehensive keywords based on amenity name and description
+		const keywords = [];
 
-		// Kitchen amenities
-		{ keywords: ['có kệ bếp', 'bếp', 'nấu ăn'], nameEn: 'has_kitchen_shelf' },
+		// Add the Vietnamese name as keyword
+		keywords.push(amenity.name.toLowerCase());
 
-		// Bathroom amenities
-		{ keywords: ['vệ sinh riêng', 'toilet riêng', 'wc riêng'], nameEn: 'private_bathroom' },
-		{ keywords: ['nước nóng', 'bình nóng lạnh', 'có nước nóng'], nameEn: 'has_hot_water' },
+		// Add English name variations
+		keywords.push(amenity.nameEn.toLowerCase());
 
-		// Building amenities
-		{ keywords: ['máy giặt', 'có máy giặt'], nameEn: 'has_washing_machine' },
-		{ keywords: ['thang máy', 'có thang máy'], nameEn: 'has_elevator' },
-		{ keywords: ['hầm để xe', 'chỗ để xe', 'gửi xe', 'bãi đỗ'], nameEn: 'has_parking_garage' },
+		// Add description keywords
+		if (amenity.description) {
+			const descWords = amenity.description
+				.toLowerCase()
+				.split(/[\s,]+/)
+				.filter((word) => word.length > 2);
+			keywords.push(...descWords);
+		}
 
-		// Connectivity
-		{ keywords: ['wifi', 'internet', 'mạng'], nameEn: 'has_wifi' },
+		// Add specific keyword variations based on amenity type
+		switch (amenity.nameEn) {
+			case 'fully_furnished':
+				keywords.push('đầy đủ nội thất', 'full nội thất', 'nội thất', 'có nội thất');
+				break;
+			case 'has_loft':
+				keywords.push('có gác', 'gác xép', 'gác lửng', 'gác');
+				break;
+			case 'has_air_conditioning':
+				keywords.push('máy lạnh', 'điều hòa', 'có máy lạnh', 'ac');
+				break;
+			case 'has_refrigerator':
+				keywords.push('tủ lạnh', 'có tủ lạnh', 'tủ lạnh');
+				break;
+			case 'has_kitchen_shelf':
+				keywords.push('có kệ bếp', 'bếp', 'nấu ăn', 'kệ bếp');
+				break;
+			case 'private_bathroom':
+				keywords.push('vệ sinh riêng', 'toilet riêng', 'wc riêng', 'nhà vệ sinh riêng');
+				break;
+			case 'has_hot_water':
+				keywords.push('nước nóng', 'bình nóng lạnh', 'có nước nóng', 'nước nóng');
+				break;
+			case 'has_washing_machine':
+				keywords.push('máy giặt', 'có máy giặt', 'giặt');
+				break;
+			case 'has_elevator':
+				keywords.push('thang máy', 'có thang máy', 'thang máy');
+				break;
+			case 'has_parking_garage':
+				keywords.push('hầm để xe', 'chỗ để xe', 'gửi xe', 'bãi đỗ', 'đỗ xe');
+				break;
+			case 'has_wifi':
+				keywords.push('wifi', 'internet', 'mạng', 'wifi miễn phí');
+				break;
+			case 'has_security_24_7':
+				keywords.push('bảo vệ 24/24', 'bảo vệ', '24/24', 'an ninh');
+				break;
+			case 'security_camera':
+				keywords.push('camera an ninh', 'camera', 'an ninh');
+				break;
+			case 'no_shared_landlord':
+				keywords.push('không chung chủ', 'chung chủ', 'không ở chung');
+				break;
+			case 'flexible_hours':
+				keywords.push('giờ giấc tự do', 'tự do giờ giấc', 'tự do');
+				break;
+			case 'near_school':
+				keywords.push('gần trường', 'gần trường học', 'gần đại học');
+				break;
+			case 'near_market':
+				keywords.push('gần chợ', 'gần siêu thị', 'gần chợ/siêu thị');
+				break;
+			case 'near_industrial_area':
+				keywords.push('gần khu công nghiệp', 'khu công nghiệp');
+				break;
+			case 'balcony':
+				keywords.push('ban công', 'có ban công');
+				break;
+			case 'drying_area':
+				keywords.push('sân phơi', 'có sân phơi', 'phơi đồ');
+				break;
+		}
 
-		// REMOVED: amenities that don't exist in database
-		// has_security_24_7, security_camera, no_shared_landlord, flexible_hours,
-		// near_school, near_market, near_industrial_area, balcony, drying_area
-	];
+		// Remove duplicates and return
+		return {
+			keywords: [...new Set(keywords)],
+			nameEn: amenity.nameEn,
+		};
+	});
 
 	return amenityKeywordMap;
 }
 
+// Filter amenities based on price tier
+function filterAmenitiesByPriceTier(amenityMappings, priceTier) {
+	// Define which amenities are appropriate for each price tier
+	const tierAmenities = {
+		BUDGET: [
+			'fully_furnished',
+			'has_air_conditioning',
+			'has_refrigerator',
+			'private_bathroom',
+			'has_hot_water',
+			'has_wifi',
+			'has_washing_machine',
+		],
+		ECONOMY: [
+			'fully_furnished',
+			'has_loft',
+			'has_air_conditioning',
+			'has_refrigerator',
+			'has_kitchen_shelf',
+			'private_bathroom',
+			'has_hot_water',
+			'has_washing_machine',
+			'has_elevator',
+			'has_parking_garage',
+			'has_wifi',
+			'near_school',
+			'near_market',
+		],
+		STANDARD: [
+			'fully_furnished',
+			'has_loft',
+			'has_air_conditioning',
+			'has_refrigerator',
+			'has_kitchen_shelf',
+			'private_bathroom',
+			'has_hot_water',
+			'has_washing_machine',
+			'has_elevator',
+			'has_parking_garage',
+			'has_wifi',
+			'has_security_24_7',
+			'no_shared_landlord',
+			'flexible_hours',
+			'near_school',
+			'near_market',
+			'balcony',
+		],
+		PREMIUM: [
+			'fully_furnished',
+			'has_loft',
+			'has_air_conditioning',
+			'has_refrigerator',
+			'has_kitchen_shelf',
+			'private_bathroom',
+			'has_hot_water',
+			'has_washing_machine',
+			'has_elevator',
+			'has_parking_garage',
+			'has_wifi',
+			'has_security_24_7',
+			'security_camera',
+			'no_shared_landlord',
+			'flexible_hours',
+			'near_school',
+			'near_market',
+			'near_industrial_area',
+			'balcony',
+			'drying_area',
+		],
+		LUXURY: [
+			// All amenities available for luxury tier
+			'fully_furnished',
+			'has_loft',
+			'has_air_conditioning',
+			'has_refrigerator',
+			'has_kitchen_shelf',
+			'private_bathroom',
+			'has_hot_water',
+			'has_washing_machine',
+			'has_elevator',
+			'has_parking_garage',
+			'has_wifi',
+			'has_security_24_7',
+			'security_camera',
+			'no_shared_landlord',
+			'flexible_hours',
+			'near_school',
+			'near_market',
+			'near_industrial_area',
+			'balcony',
+			'drying_area',
+		],
+	};
+
+	const allowedAmenities = tierAmenities[priceTier] || tierAmenities.BUDGET;
+
+	return amenityMappings.filter((mapping) => allowedAmenities.includes(mapping.nameEn));
+}
+
 // Apply intelligent cost types based on amenities and price tier
-async function applyIntelligentCostTypes(roomId, description, price, amenities) {
+async function applyIntelligentCostTypes(roomId, _description, price) {
 	const priceTier = getPriceTier(price);
 	const costTypeMappings = getCostTypeMappingsByTier(priceTier);
 
@@ -220,7 +385,7 @@ function getCostTypeMappingsByTier(priceTier) {
 }
 
 // Apply intelligent room rules based on price tier and property characteristics
-async function applyIntelligentRoomRules(roomId, description, price, amenities) {
+async function applyIntelligentRoomRules(roomId, description, price) {
 	const priceTier = getPriceTier(price);
 	const ruleMappings = getRuleMappingsByTier(priceTier, description);
 
@@ -365,7 +530,7 @@ function extractRoomNumber(address, title, buildingId) {
 }
 
 function determineRoomType(title, description) {
-	const content = (title + ' ' + description).toLowerCase();
+	const content = `${title} ${description}`.toLowerCase();
 
 	if (content.includes('ở ghép') || content.includes('ghép') || content.includes('ký túc')) {
 		return 'dormitory';
@@ -396,10 +561,14 @@ async function findOrCreateLocation(addressData, province, district) {
 		if (parts.length >= 2) {
 			districtName = parts[0]; // "Quận 7"
 			cityName = parts[1]; // "Hồ Chí Minh"
-			// Normalize city name
-			if (cityName.includes('Hồ Chí Minh') || cityName.includes('HCM')) {
+			// Normalize city name - be more specific
+			if (
+				cityName.includes('Hồ Chí Minh') ||
+				cityName.includes('HCM') ||
+				cityName.includes('TP.HCM')
+			) {
 				cityName = 'Thành phố Hồ Chí Minh';
-			} else if (cityName.includes('Hà Nội')) {
+			} else if (cityName.includes('Hà Nội') || cityName.includes('Hanoi')) {
 				cityName = 'Thành phố Hà Nội';
 			}
 		} else {
@@ -408,9 +577,20 @@ async function findOrCreateLocation(addressData, province, district) {
 			districtName = parts[0] || 'Quận 1';
 		}
 	} else {
-		// Default to Ho Chi Minh when no location data
+		// Use provided province/district or default to Ho Chi Minh
 		cityName = province || addressData?.city || 'Thành phố Hồ Chí Minh';
 		districtName = district || addressData?.district;
+
+		// Normalize city name if provided
+		if (
+			cityName.includes('Hồ Chí Minh') ||
+			cityName.includes('HCM') ||
+			cityName.includes('TP.HCM')
+		) {
+			cityName = 'Thành phố Hồ Chí Minh';
+		} else if (cityName.includes('Hà Nội') || cityName.includes('Hanoi')) {
+			cityName = 'Thành phố Hà Nội';
+		}
 	}
 
 	const { ward } = addressData || {};
@@ -418,31 +598,40 @@ async function findOrCreateLocation(addressData, province, district) {
 	// Find province (city) - search exactly in database
 	let provinceRecord = await prisma.province.findFirst({
 		where: {
-			OR: [
-				{ name: { equals: cityName, mode: 'insensitive' } },
-				{ name: { contains: 'Hồ Chí Minh', mode: 'insensitive' } },
-				{ name: { contains: 'Hà Nội', mode: 'insensitive' } },
-			],
+			name: { equals: cityName, mode: 'insensitive' },
 		},
 	});
 
-	// If not found and it's HCM, try different variations
-	if (!provinceRecord && cityName.includes('Hồ Chí Minh')) {
-		provinceRecord = await prisma.province.findFirst({
-			where: {
-				OR: [
-					{ name: { contains: 'Hồ Chí Minh', mode: 'insensitive' } },
-					{ name: { contains: 'Ho Chi Minh', mode: 'insensitive' } },
-					{ code: '79' }, // HCM province code
-				],
-			},
-		});
+	// If not found, try different variations based on the detected city
+	if (!provinceRecord) {
+		if (cityName.includes('Hồ Chí Minh') || cityName.includes('HCM')) {
+			provinceRecord = await prisma.province.findFirst({
+				where: {
+					OR: [
+						{ name: { contains: 'Hồ Chí Minh', mode: 'insensitive' } },
+						{ name: { contains: 'Ho Chi Minh', mode: 'insensitive' } },
+						{ code: '79' }, // HCM province code
+					],
+				},
+			});
+		} else if (cityName.includes('Hà Nội') || cityName.includes('Hanoi')) {
+			provinceRecord = await prisma.province.findFirst({
+				where: {
+					OR: [
+						{ name: { contains: 'Hà Nội', mode: 'insensitive' } },
+						{ name: { contains: 'Hanoi', mode: 'insensitive' } },
+						{ code: '01' }, // Hanoi province code
+					],
+				},
+			});
+		}
 	}
 
 	if (!provinceRecord) {
-		// Default to Ho Chi Minh when province not found
+		// Only default to Ho Chi Minh if we can't determine the city
+		// This prevents HCM districts from being assigned to Hanoi
+		console.log(`⚠️ Province not found for: ${cityName}, using default: Thành phố Hồ Chí Minh`);
 		cityName = 'Thành phố Hồ Chí Minh';
-		console.log(`⚠️ Province not found, using default: ${cityName}`);
 
 		// Try to find Ho Chi Minh again
 		provinceRecord = await prisma.province.findFirst({
@@ -500,7 +689,9 @@ async function findOrCreateLocation(addressData, province, district) {
 
 		// Debug log
 		if (!districtRecord) {
-			console.log(`⚠️ District not found: ${districtName} in ${cityName}`);
+			console.log(
+				`⚠️ District not found: ${districtName} in ${cityName} (Province ID: ${provinceRecord.id})`,
+			);
 		}
 	}
 
@@ -569,23 +760,23 @@ async function findOrCreateLocation(addressData, province, district) {
 	};
 }
 
-async function getRandomLandlord() {
-	// Get existing landlord users (should be imported from default-users script)
-	const landlords = await prisma.user.findMany({
-		where: { role: 'landlord' },
-		select: { id: true, firstName: true, lastName: true, email: true },
-	});
+// async function getRandomLandlord() {
+// 	// Get existing landlord users (should be imported from default-users script)
+// 	const landlords = await prisma.user.findMany({
+// 		where: { role: 'landlord' },
+// 		select: { id: true, firstName: true, lastName: true, email: true },
+// 	});
 
-	if (landlords.length === 0) {
-		throw new Error(
-			'No landlord users found. Please run: node scripts/import-default-users.js first',
-		);
-	}
+// 	if (landlords.length === 0) {
+// 		throw new Error(
+// 			'No landlord users found. Please run: node scripts/import-default-users.js first',
+// 		);
+// 	}
 
-	// Return random landlord
-	const randomIndex = Math.floor(Math.random() * landlords.length);
-	return landlords[randomIndex];
-}
+// 	// Return random landlord
+// 	const randomIndex = Math.floor(Math.random() * landlords.length);
+// 	return landlords[randomIndex];
+// }
 
 async function importCrawledData(filePath, limitRecords = null) {
 	console.log('🚀 Bắt đầu import dữ liệu crawled...');
@@ -688,7 +879,7 @@ async function importCrawledData(filePath, limitRecords = null) {
 					// Create room
 					const roomNumber = extractRoomNumber(item.full_address, item.title, building.id);
 					const roomSlug = `${buildingSlug}-phong-${roomNumber}`;
-					const roomType = determineRoomType(item.title, item.description);
+					const roomType = determineRoomType(item.title, item.description || '');
 
 					// Check if room already exists
 					const existingRoom = await prisma.room.findUnique({
@@ -769,7 +960,7 @@ async function importCrawledData(filePath, limitRecords = null) {
 					});
 
 					// Create room instance with new status field
-					const roomInstance = await prisma.roomInstance.create({
+					await prisma.roomInstance.create({
 						data: {
 							roomId: room.id,
 							roomNumber: roomNumber,
@@ -792,12 +983,12 @@ async function importCrawledData(filePath, limitRecords = null) {
 							depositAmount: actualPrice, // Default 1 month deposit
 							depositMonths: 1,
 							utilityIncluded:
-								item.description.toLowerCase().includes('bao điện') ||
-								item.description.toLowerCase().includes('bao nước'),
+								item.description?.toLowerCase().includes('bao điện') ||
+								item.description?.toLowerCase().includes('bao nước'),
 							minimumStayMonths: 1,
 							priceNegotiable:
-								item.description.toLowerCase().includes('thương lượng') ||
-								item.description.toLowerCase().includes('tl'),
+								item.description?.toLowerCase().includes('thương lượng') ||
+								item.description?.toLowerCase().includes('tl'),
 						},
 					});
 
@@ -805,7 +996,7 @@ async function importCrawledData(filePath, limitRecords = null) {
 					const imagesToProcess = [];
 
 					// Check if images array exists (new format)
-					if (item.images && Array.isArray(item.images) && item.images.length > 0) {
+					if (item.images?.length > 0) {
 						imagesToProcess.push(...item.images);
 					} else if (item.main_image) {
 						// Use main_image as fallback
@@ -885,17 +1076,17 @@ async function validateCrawledData(filePath) {
 		const requiredFields = ['id', 'title', 'poster_full_name'];
 
 		// Optional fields that should be present in new format
-		const optionalFields = [
-			'full_address',
-			'full_address_normalized',
-			'official_price_normalized',
-			'price_numeric',
-			'province',
-			'district',
-			'ward',
-			'amenities',
-			'images',
-		];
+		// const optionalFields = [
+		// 	'full_address',
+		// 	'full_address_normalized',
+		// 	'official_price_normalized',
+		// 	'price_numeric',
+		// 	'province',
+		// 	'district',
+		// 	'ward',
+		// 	'amenities',
+		// 	'images',
+		// ];
 
 		let validRecords = 0;
 		let invalidRecords = 0;
