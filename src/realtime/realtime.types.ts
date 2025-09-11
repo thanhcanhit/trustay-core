@@ -30,6 +30,8 @@ export const REALTIME_EVENT = {
 	DISCONNECTED: 'realtime/disconnected',
 	NOTIFY: 'notify/event',
 	CHAT_MESSAGE: 'chat/message',
+	HEARTBEAT_PING: 'realtime/ping',
+	HEARTBEAT_PONG: 'realtime/pong',
 } as const;
 
 export type RealtimeEventName = (typeof REALTIME_EVENT)[keyof typeof REALTIME_EVENT];

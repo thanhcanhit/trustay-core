@@ -42,4 +42,9 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 	public handleRegister(@MessageBody() payload: RegisterPayload, client: Socket): void {
 		this.realtimeService.registerConnection(client, payload);
 	}
+
+	@SubscribeMessage(REALTIME_EVENT.HEARTBEAT_PONG)
+	public handlePong(_payload: unknown, client: Socket): void {
+		this.realtimeService.handlePong(client);
+	}
 }

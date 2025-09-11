@@ -14,9 +14,15 @@ export class RealtimeService {
 	private io?: Server;
 	private readonly userIdToSockets: Map<SocketUserId, Set<string>> = new Map();
 	private readonly socketIdToUserId: Map<string, SocketUserId> = new Map();
+	private heartbeatInterval?: NodeJS.Timeout;
+	private readonly connectionHealth: Map<string, { lastPongMs: number; isAlive: boolean }> =
+		new Map();
+	private static readonly HEARTBEAT_INTERVAL_MS: number = 30_000;
+	private static readonly HEARTBEAT_TIMEOUT_MS: number = 60_000;
 
 	public setServer(server: Server): void {
 		this.io = server;
+		this.setupHeartbeat();
 	}
 
 	public registerConnection(socket: Socket, payload: RegisterPayload): void {
@@ -30,6 +36,7 @@ export class RealtimeService {
 		sockets.add(socket.id);
 		this.userIdToSockets.set(userId, sockets);
 		this.logger.log(`Registered user ${userId} for socket ${socket.id}`);
+		this.markAlive(socket.id);
 		this.emitToUser(userId, REALTIME_EVENT.CONNECTED, { socketId: socket.id });
 	}
 
@@ -46,6 +53,7 @@ export class RealtimeService {
 				this.userIdToSockets.delete(userId);
 			}
 		}
+		this.connectionHealth.delete(socketId);
 		this.emitToUser(userId, REALTIME_EVENT.DISCONNECTED, { socketId });
 	}
 
@@ -66,6 +74,10 @@ export class RealtimeService {
 		this.io.emit(event, data);
 	}
 
+	public handlePong(socket: Socket): void {
+		this.markAlive(socket.id);
+	}
+
 	private emitToUser(userId: string, event: string, data: unknown): void {
 		if (!this.io) {
 			return;
@@ -77,5 +89,44 @@ export class RealtimeService {
 		sockets.forEach((socketId) => {
 			this.io?.to(socketId).emit(event, data);
 		});
+	}
+
+	private setupHeartbeat(): void {
+		if (this.heartbeatInterval) {
+			clearInterval(this.heartbeatInterval);
+		}
+		this.heartbeatInterval = setInterval(() => {
+			if (!this.io) {
+				return;
+			}
+			// Emit ping to all connected clients
+			this.io.emit(REALTIME_EVENT.HEARTBEAT_PING);
+			this.checkConnectionHealth();
+		}, RealtimeService.HEARTBEAT_INTERVAL_MS);
+	}
+
+	private checkConnectionHealth(): void {
+		const now = Date.now();
+		this.connectionHealth.forEach((health, socketId) => {
+			if (now - health.lastPongMs > RealtimeService.HEARTBEAT_TIMEOUT_MS) {
+				this.logger.warn(`Heartbeat timeout; disconnecting socket ${socketId}`);
+				this.handleDeadConnection(socketId);
+			}
+		});
+	}
+
+	private handleDeadConnection(socketId: string): void {
+		try {
+			this.connectionHealth.delete(socketId);
+			this.unregisterConnection(socketId);
+			this.io?.sockets.sockets.get(socketId)?.disconnect(true);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			this.logger.error(`Failed to handle dead connection ${socketId}: ${message}`);
+		}
+	}
+
+	private markAlive(socketId: string): void {
+		this.connectionHealth.set(socketId, { lastPongMs: Date.now(), isAlive: true });
 	}
 }
