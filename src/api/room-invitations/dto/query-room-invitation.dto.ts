@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { InvitationStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class QueryRoomInvitationDto {
 	@ApiPropertyOptional({
@@ -42,7 +42,7 @@ export class QueryRoomInvitationDto {
 		example: '550e8400-e29b-41d4-a716-446655440000',
 	})
 	@IsOptional()
-	@IsUUID()
+	@IsString()
 	buildingId?: string;
 
 	@ApiPropertyOptional({
@@ -50,6 +50,6 @@ export class QueryRoomInvitationDto {
 		example: '550e8400-e29b-41d4-a716-446655440000',
 	})
 	@IsOptional()
-	@IsUUID()
+	@IsString()
 	roomId?: string;
 }
