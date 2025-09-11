@@ -22,6 +22,7 @@ import {
 import { Request } from 'express';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../auth/guards/optional-jwt-auth.guard';
 import { ApiResponseDto } from '../../common/dto';
 import {
 	BulkUpdateRoomInstanceStatusDto,
@@ -246,6 +247,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	}
 
 	@Get('public/slug/:slug')
+	@UseGuards(OptionalJwtAuthGuard)
 	@ApiOperation({
 		summary: 'Get room details by slug (Public API)',
 		description:
@@ -268,10 +270,12 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	async getRoomBySlug(@Param('slug') slug: string, @Req() req: Request): Promise<RoomDetailDto> {
 		const clientIp =
 			req.ip || req.connection?.remoteAddress || (req.headers['x-forwarded-for'] as string);
-		return this.roomsService.getRoomBySlug(slug, clientIp);
+		const isAuthenticated = Boolean((req as any).user);
+		return this.roomsService.getRoomBySlug(slug, clientIp, { isAuthenticated });
 	}
 
 	@Get('public/:slug')
+	@UseGuards(OptionalJwtAuthGuard)
 	@ApiOperation({
 		summary: 'Get room details by slug (Public API - Alternative)',
 		description:
@@ -294,7 +298,8 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	async getRoomBySlugAlt(@Param('slug') slug: string, @Req() req: Request): Promise<RoomDetailDto> {
 		const clientIp =
 			req.ip || req.connection?.remoteAddress || (req.headers['x-forwarded-for'] as string);
-		return this.roomsService.getRoomBySlug(slug, clientIp);
+		const isAuthenticated = Boolean((req as any).user);
+		return this.roomsService.getRoomBySlug(slug, clientIp, { isAuthenticated });
 	}
 
 	@Put(':roomId')

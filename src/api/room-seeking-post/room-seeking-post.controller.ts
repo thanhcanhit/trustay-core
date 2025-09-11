@@ -17,6 +17,7 @@ import { SearchPostStatus, User } from '@prisma/client';
 import { Request } from 'express';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../auth/guards/optional-jwt-auth.guard';
 import { PaginatedResponseDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { CreateRoomSeekingPostDto, RoomRoomSeekingPostDto, UpdateRoomSeekingPostDto } from './dto';
 import { RoomSeekingPostService } from './room-seeking-post.service';
@@ -86,6 +87,7 @@ export class RoomSeekingPostController {
 	}
 
 	@Get(':id')
+	@UseGuards(OptionalJwtAuthGuard)
 	@ApiOperation({ summary: 'Lấy chi tiết bài đăng tìm trọ' })
 	@ApiParam({ name: 'id', description: 'ID của bài đăng' })
 	@ApiResponse({
@@ -97,7 +99,8 @@ export class RoomSeekingPostController {
 	async findOne(@Param('id') id: string, @Req() req: Request): Promise<RoomRoomSeekingPostDto> {
 		const clientIp =
 			req.ip || req.connection?.remoteAddress || (req.headers['x-forwarded-for'] as string);
-		return this.roomRequestService.findOne(id, clientIp);
+		const isAuthenticated = Boolean((req as any).user);
+		return this.roomRequestService.findOne(id, clientIp, { isAuthenticated });
 	}
 
 	@Patch(':id')
