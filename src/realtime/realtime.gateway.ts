@@ -1,0 +1,45 @@
+import { Logger } from '@nestjs/common';
+import {
+	MessageBody,
+	OnGatewayConnection,
+	OnGatewayDisconnect,
+	SubscribeMessage,
+	WebSocketGateway,
+	WebSocketServer,
+} from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
+import { RealtimeService } from './realtime.service';
+import { REALTIME_EVENT, RegisterPayload } from './realtime.types';
+
+@WebSocketGateway({
+	cors: {
+		origin: '*',
+		methods: ['GET', 'POST'],
+	},
+	path: '/ws',
+})
+export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
+	@WebSocketServer()
+	public server!: Server;
+	private readonly logger: Logger = new Logger(RealtimeGateway.name);
+
+	public constructor(private readonly realtimeService: RealtimeService) {}
+
+	public afterInit(): void {
+		this.realtimeService.setServer(this.server);
+	}
+
+	public handleConnection(client: Socket): void {
+		this.logger.log(`Socket connected: ${client.id}`);
+	}
+
+	public handleDisconnect(client: Socket): void {
+		this.logger.log(`Socket disconnected: ${client.id}`);
+		this.realtimeService.unregisterConnection(client.id);
+	}
+
+	@SubscribeMessage(REALTIME_EVENT.REGISTER)
+	public handleRegister(@MessageBody() payload: RegisterPayload, client: Socket): void {
+		this.realtimeService.registerConnection(client, payload);
+	}
+}

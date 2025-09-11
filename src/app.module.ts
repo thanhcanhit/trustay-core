@@ -24,6 +24,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ConfigModule } from './config/config.module';
 import { LoggerModule } from './logger/logger.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RealtimeModule } from './realtime/realtime.module';
 
 @Module({
 	imports: [
@@ -48,6 +49,7 @@ import { PrismaModule } from './prisma/prisma.module';
 		RoomInvitationsModule,
 		RoomsModule,
 		RoomSeekingPostModule,
+		RealtimeModule,
 	],
 	controllers: [AppController],
 	providers: [
