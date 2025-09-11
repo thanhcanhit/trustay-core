@@ -18,24 +18,6 @@ export class SendMessageDto {
 	@MaxLength(5000)
 	public content?: string;
 
-	// Optional attachment URLs; in a real flow we'd upload first then pass ids
 	@IsOptional()
 	public attachmentUrls?: string[];
-}
-
-export class CreateConversationDto {
-	@IsUUID()
-	public userAId!: string;
-
-	@IsUUID()
-	public userBId!: string;
-}
-
-export class ListMessagesQueryDto {
-	@IsOptional()
-	@IsString()
-	public cursor?: string;
-
-	@IsOptional()
-	public limit: number = 20;
 }

@@ -2,7 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeService } from '../../realtime/realtime.service';
 import { REALTIME_EVENT } from '../../realtime/realtime.types';
-import { CreateConversationDto, ListMessagesQueryDto, SendMessageDto } from './chat.dto';
+import { CreateConversationDto } from './dto/create-conversation.dto';
+import { ListMessagesQueryDto } from './dto/list-messages-query.dto';
+import { SendMessageDto } from './dto/send-message.dto';
 
 @Injectable()
 export class ChatService {
@@ -73,7 +75,8 @@ export class ChatService {
 		this.realtimeService.emitChatMessage({
 			fromUserId: senderId,
 			toUserId: recipientId,
-			message: JSON.stringify(created),
+			conversationId: conversation.id,
+			message: created,
 			messageId: created.id,
 			sentAt: created.sentAt.toISOString(),
 		});

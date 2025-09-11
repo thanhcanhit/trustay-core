@@ -15,10 +15,11 @@ export interface NotifyEnvelope<T = unknown> {
 	data: T;
 }
 
-export interface ChatMessagePayload {
+export interface ChatMessagePayload<TMessage = unknown> {
 	fromUserId: string;
 	toUserId: string;
-	message: string;
+	conversationId: string;
+	message: TMessage;
 	messageId?: string;
 	sentAt?: string;
 }
