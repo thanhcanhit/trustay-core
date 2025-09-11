@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { BookingRequestsModule } from './api/booking-requests/booking-requests.module';
 import { BuildingModule } from './api/buildings/building.module';
+import { ChatModule } from './api/chat/chat.module';
 import { ContractsModule } from './api/contracts/contracts.module';
 import { ListingModule } from './api/listing/listing.module';
 import { NotificationsModule } from './api/notifications/notifications.module';
@@ -24,6 +25,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ConfigModule } from './config/config.module';
 import { LoggerModule } from './logger/logger.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RealtimeModule } from './realtime/realtime.module';
 
 @Module({
 	imports: [
@@ -48,6 +50,8 @@ import { PrismaModule } from './prisma/prisma.module';
 		RoomInvitationsModule,
 		RoomsModule,
 		RoomSeekingPostModule,
+		RealtimeModule,
+		ChatModule,
 	],
 	controllers: [AppController],
 	providers: [

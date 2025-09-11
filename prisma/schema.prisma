@@ -171,6 +171,13 @@ enum VerificationStatus {
   failed
 }
 
+// Chat message types
+enum ChatMessageType {
+  text
+  invitation
+  request
+}
+
 enum RoomStatus {
   available // Phòng trống, sẵn sàng cho thuê
   occupied // Phòng đã có người ở
@@ -208,20 +215,23 @@ model User {
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
   // Relations
-  addresses           UserAddress[]
-  ownedBuildings      Building[]         @relation("BuildingOwner")
-  bookingRequests     BookingRequest[]
-  rentalsAsTenant     Rental[]           @relation("RentalTenant")
-  rentalsAsOwner      Rental[]           @relation("RentalOwner")
-  payments            Payment[]
-  sentInvitations     RoomInvitation[]   @relation("InvitationSender")
-  receivedInvitations RoomInvitation[]   @relation("InvitationReceiver")
-  reviewsGiven        Review[]           @relation("ReviewGiver")
-  reviewsReceived     Review[]           @relation("ReviewReceiver")
-  notifications       Notification[]
-  verificationCodes   VerificationCode[]
-  refreshTokens       RefreshToken[]
-  roomRequests        RoomSeekingPost[]
+  addresses            UserAddress[]
+  ownedBuildings       Building[]         @relation("BuildingOwner")
+  bookingRequests      BookingRequest[]
+  rentalsAsTenant      Rental[]           @relation("RentalTenant")
+  rentalsAsOwner       Rental[]           @relation("RentalOwner")
+  payments             Payment[]
+  sentInvitations      RoomInvitation[]   @relation("InvitationSender")
+  receivedInvitations  RoomInvitation[]   @relation("InvitationReceiver")
+  reviewsGiven         Review[]           @relation("ReviewGiver")
+  reviewsReceived      Review[]           @relation("ReviewReceiver")
+  notifications        Notification[]
+  verificationCodes    VerificationCode[]
+  refreshTokens        RefreshToken[]
+  roomRequests         RoomSeekingPost[]
+  conversationsAsUserA Conversation[]     @relation("ConversationUserA")
+  conversationsAsUserB Conversation[]     @relation("ConversationUserB")
+  messagesSent         Message[]
 
   @@map("users")
 }
@@ -592,29 +602,29 @@ model RoomPricing {
 // ========================================
 
 model RoomInvitation {
-  id             String           @id @default(uuid())
-  roomInstanceId String           @map("room_instance_id")
-  senderId       String           @map("sender_id") // Landlord
-  recipientId    String?          @map("recipient_id") // Tenant (optional if not registered)
-  recipientEmail String?          @map("recipient_email") // For users not yet registered
-  roomSeekingPostId String?       @map("room_seeking_post_id")
-  monthlyRent    Decimal          @map("monthly_rent") @db.Decimal(15, 2)
-  depositAmount  Decimal          @map("deposit_amount") @db.Decimal(15, 2)
-  moveInDate     DateTime?        @map("move_in_date") @db.Date
-  rentalMonths   Int?             @map("rental_months")
-  status         InvitationStatus @default(pending)
-  message        String?
-  expiresAt      DateTime?        @map("expires_at")
-  respondedAt    DateTime?        @map("responded_at")
-  createdAt      DateTime         @default(now()) @map("created_at")
-  updatedAt      DateTime         @updatedAt @map("updated_at")
+  id                String           @id @default(uuid())
+  roomInstanceId    String           @map("room_instance_id")
+  senderId          String           @map("sender_id") // Landlord
+  recipientId       String?          @map("recipient_id") // Tenant (optional if not registered)
+  recipientEmail    String?          @map("recipient_email") // For users not yet registered
+  roomSeekingPostId String?          @map("room_seeking_post_id")
+  monthlyRent       Decimal          @map("monthly_rent") @db.Decimal(15, 2)
+  depositAmount     Decimal          @map("deposit_amount") @db.Decimal(15, 2)
+  moveInDate        DateTime?        @map("move_in_date") @db.Date
+  rentalMonths      Int?             @map("rental_months")
+  status            InvitationStatus @default(pending)
+  message           String?
+  expiresAt         DateTime?        @map("expires_at")
+  respondedAt       DateTime?        @map("responded_at")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
 
   // Relations
-  roomInstance RoomInstance @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
-  sender       User         @relation("InvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
-  recipient    User?        @relation("InvitationReceiver", fields: [recipientId], references: [id], onDelete: Cascade)
+  roomInstance    RoomInstance     @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
+  sender          User             @relation("InvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient       User?            @relation("InvitationReceiver", fields: [recipientId], references: [id], onDelete: Cascade)
   roomSeekingPost RoomSeekingPost? @relation(fields: [roomSeekingPostId], references: [id], onDelete: SetNull)
-  rental       Rental?
+  rental          Rental?
 
   @@index([roomInstanceId])
   @@index([senderId])
@@ -866,9 +876,9 @@ model RoomSeekingPost {
   amenities SystemAmenity[]
 
   // Relations
-  preferredProvince Province? @relation(fields: [preferredProvinceId], references: [id], onDelete: SetNull)
-  preferredDistrict District? @relation(fields: [preferredDistrictId], references: [id], onDelete: SetNull)
-  preferredWard     Ward?     @relation(fields: [preferredWardId], references: [id], onDelete: SetNull)
+  preferredProvince Province?        @relation(fields: [preferredProvinceId], references: [id], onDelete: SetNull)
+  preferredDistrict District?        @relation(fields: [preferredDistrictId], references: [id], onDelete: SetNull)
+  preferredWard     Ward?            @relation(fields: [preferredWardId], references: [id], onDelete: SetNull)
   invitations       RoomInvitation[]
 
   @@index([requesterId])
@@ -909,6 +919,66 @@ model ErrorLog {
   @@index([userId])
   @@index([createdAt])
   @@map("error_logs")
+}
+
+// ========================================
+// CHAT (1-1 CONVERSATIONS)
+// ========================================
+
+model Conversation {
+  id            String    @id @default(uuid())
+  userAId       String    @map("user_a_id")
+  userBId       String    @map("user_b_id")
+  lastMessageAt DateTime? @map("last_message_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  userA    User      @relation("ConversationUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB    User      @relation("ConversationUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@unique([userAId, userBId])
+  @@index([lastMessageAt])
+  @@map("conversations")
+}
+
+model Message {
+  id             String          @id @default(uuid())
+  conversationId String          @map("conversation_id")
+  senderId       String          @map("sender_id")
+  type           ChatMessageType @default(text)
+  content        String?
+  isEdited       Boolean         @default(false) @map("is_edited")
+  sentAt         DateTime        @default(now()) @map("sent_at")
+  readAt         DateTime?       @map("read_at")
+
+  // Relations
+  conversation Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User                @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  attachments  MessageAttachment[]
+
+  @@index([conversationId, sentAt])
+  @@index([senderId])
+  @@map("messages")
+}
+
+model MessageAttachment {
+  id        String   @id @default(uuid())
+  messageId String   @map("message_id")
+  url       String
+  mimeType  String   @map("mime_type")
+  byteSize  Int?     @map("byte_size")
+  width     Int?
+  height    Int?
+  isImage   Boolean  @default(false) @map("is_image")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("message_attachments")
 }
 
 // ========================================

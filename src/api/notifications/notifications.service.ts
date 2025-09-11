@@ -1,5 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RealtimeService } from '../../realtime/realtime.service';
+import { NotifyEnvelope, REALTIME_EVENT } from '../../realtime/realtime.types';
 import { NotificationType } from './constants/notification-types';
 import { CreateNotificationDto, QueryNotificationsDto } from './dto';
 import { NotificationFactory } from './helpers/notification-factory';
@@ -9,6 +11,7 @@ export class NotificationsService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly notificationFactory: NotificationFactory,
+		private readonly realtimeService: RealtimeService,
 	) {}
 
 	async createNotification(createNotificationDto: CreateNotificationDto) {
@@ -23,7 +26,7 @@ export class NotificationsService {
 			throw new NotFoundException('User not found');
 		}
 
-		return this.prisma.notification.create({
+		const created = await this.prisma.notification.create({
 			data: {
 				userId,
 				notificationType,
@@ -34,6 +37,12 @@ export class NotificationsService {
 				isRead: false,
 			},
 		});
+		const envelope: NotifyEnvelope<typeof created> = {
+			type: notificationType,
+			data: created,
+		};
+		this.realtimeService.emitNotify({ userId, event: REALTIME_EVENT.NOTIFY, data: envelope });
+		return created;
 	}
 
 	async getUserNotifications(userId: string, query: QueryNotificationsDto) {
