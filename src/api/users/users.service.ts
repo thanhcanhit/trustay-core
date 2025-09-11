@@ -7,6 +7,7 @@ import {
 import * as bcrypt from 'bcryptjs';
 import { UploadService } from '../../common/services/upload.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PaginatedUsersResponseDto } from './dto/paginated-users-response.dto';
@@ -22,6 +23,7 @@ export class UsersService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly uploadService: UploadService,
+		private readonly notificationsService: NotificationsService,
 	) {}
 
 	async createUser(createUserDto: CreateUserDto) {
@@ -76,6 +78,11 @@ export class UsersService {
 				updatedAt: true,
 			},
 		});
+
+		await this.notificationsService.notifyWelcome(
+			user.id,
+			`${user.firstName} ${user.lastName}`.trim(),
+		);
 
 		return user;
 	}
@@ -317,6 +324,8 @@ export class UsersService {
 			},
 		});
 
+		await this.notificationsService.notifyProfileUpdated(userId);
+
 		return updatedUser;
 	}
 
@@ -517,6 +526,8 @@ export class UsersService {
 			},
 		});
 
+		await this.notificationsService.notifyProfileUpdated(userId);
+
 		return {
 			message: 'Phone number verified successfully',
 			user: updatedUser,
@@ -565,6 +576,8 @@ export class UsersService {
 			},
 		});
 
+		await this.notificationsService.notifyAccountVerification(userId);
+
 		return {
 			message: 'Email verified successfully',
 			user: updatedUser,
@@ -607,6 +620,8 @@ export class UsersService {
 				isVerifiedIdentity: true,
 			},
 		});
+
+		await this.notificationsService.notifyProfileUpdated(userId);
 
 		return {
 			message: 'Identity verified successfully',
@@ -661,6 +676,8 @@ export class UsersService {
 				updatedAt: true,
 			},
 		});
+
+		await this.notificationsService.notifyProfileUpdated(userId);
 
 		return {
 			message: 'Avatar uploaded successfully',
