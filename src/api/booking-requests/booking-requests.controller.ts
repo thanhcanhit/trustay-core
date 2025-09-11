@@ -46,7 +46,7 @@ export class BookingRequestsController {
 	})
 	@ApiResponse({ status: 400, description: 'Dữ liệu không hợp lệ' })
 	@ApiResponse({ status: 403, description: 'Chỉ tenant mới có thể tạo booking request' })
-	@ApiResponse({ status: 404, description: 'Room instance không tồn tại' })
+	@ApiResponse({ status: 404, description: 'Room không tồn tại' })
 	async createBookingRequest(
 		@Body() createBookingRequestDto: CreateBookingRequestDto,
 		@CurrentUser('id') userId: string,

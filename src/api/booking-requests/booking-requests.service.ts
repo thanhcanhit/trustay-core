@@ -33,35 +33,39 @@ export class BookingRequestsService {
 			throw new ForbiddenException('Only tenants can create booking requests');
 		}
 
-		// Validate room instance exists and is available
-		const roomInstance = await this.prisma.roomInstance.findUnique({
-			where: { id: dto.roomInstanceId },
+		// Validate room exists and is available
+		const room = await this.prisma.room.findUnique({
+			where: { id: dto.roomId },
 			include: {
-				room: {
+				building: {
 					include: {
-						building: {
-							include: {
-								owner: true,
-							},
-						},
+						owner: true,
 					},
+				},
+				roomInstances: {
+					where: { status: 'available' },
+					take: 1,
 				},
 			},
 		});
 
-		if (!roomInstance) {
-			throw new NotFoundException('Room instance not found');
+		if (!room) {
+			throw new NotFoundException('Room not found');
 		}
 
-		if (roomInstance.status !== 'available') {
-			throw new BadRequestException('Room is not available for booking');
+		if (!room.isActive) {
+			throw new BadRequestException('Room is not active');
+		}
+
+		if (room.roomInstances.length === 0) {
+			throw new BadRequestException('No available room instances for booking');
 		}
 
 		// Check for existing pending/approved booking from same tenant
 		const existingBooking = await this.prisma.bookingRequest.findFirst({
 			where: {
 				tenantId,
-				roomInstanceId: dto.roomInstanceId,
+				roomId: dto.roomId,
 				status: { in: ['pending', 'approved'] },
 			},
 		});
@@ -87,7 +91,7 @@ export class BookingRequestsService {
 		const bookingRequest = await this.prisma.bookingRequest.create({
 			data: {
 				tenantId,
-				roomInstanceId: dto.roomInstanceId,
+				roomId: dto.roomId,
 				moveInDate: moveInDate,
 				moveOutDate: dto.moveOutDate ? new Date(dto.moveOutDate) : null,
 				messageToOwner: dto.messageToOwner,
@@ -98,24 +102,20 @@ export class BookingRequestsService {
 			},
 			include: {
 				tenant: true,
-				roomInstance: {
+				room: {
 					include: {
-						room: {
-							include: {
-								building: true,
-							},
-						},
+						building: true,
 					},
 				},
 			},
 		});
 
 		// Send notification to landlord
-		await this.notificationsService.notifyBookingRequest(roomInstance.room.building.ownerId, {
-			roomName: `${roomInstance.room.name} - ${roomInstance.roomNumber}`,
+		await this.notificationsService.notifyBookingRequest(room.building.ownerId, {
+			roomName: room.name,
 			tenantName: `${tenant.firstName} ${tenant.lastName}`,
 			bookingId: bookingRequest.id,
-			roomId: roomInstance.room.id,
+			roomId: room.id,
 		});
 
 		return bookingRequest;
@@ -127,14 +127,12 @@ export class BookingRequestsService {
 
 		// Build where clause
 		const where = {
-			roomInstance: {
-				room: {
-					building: {
-						ownerId: landlordId,
-						...(buildingId && { id: buildingId }),
-					},
-					...(roomId && { id: roomId }),
+			room: {
+				building: {
+					ownerId: landlordId,
+					...(buildingId && { id: buildingId }),
 				},
+				...(roomId && { id: roomId }),
 			},
 			...(status && { status }),
 		};
@@ -155,16 +153,12 @@ export class BookingRequestsService {
 							phone: true,
 						},
 					},
-					roomInstance: {
+					room: {
 						include: {
-							room: {
-								include: {
-									building: {
-										select: {
-											id: true,
-											name: true,
-										},
-									},
+							building: {
+								select: {
+									id: true,
+									name: true,
 								},
 							},
 						},
@@ -201,16 +195,12 @@ export class BookingRequestsService {
 				take: limit,
 				orderBy: { createdAt: 'desc' },
 				include: {
-					roomInstance: {
+					room: {
 						include: {
-							room: {
-								include: {
-									building: {
-										select: {
-											id: true,
-											name: true,
-										},
-									},
+							building: {
+								select: {
+									id: true,
+									name: true,
 								},
 							},
 						},
@@ -240,15 +230,11 @@ export class BookingRequestsService {
 			where: { id: bookingRequestId },
 			include: {
 				tenant: true,
-				roomInstance: {
+				room: {
 					include: {
-						room: {
+						building: {
 							include: {
-								building: {
-									include: {
-										owner: true,
-									},
-								},
+								owner: true,
 							},
 						},
 					},
@@ -261,7 +247,7 @@ export class BookingRequestsService {
 		}
 
 		// Verify landlord ownership
-		if (bookingRequest.roomInstance.room.building.ownerId !== landlordId) {
+		if (bookingRequest.room.building.ownerId !== landlordId) {
 			throw new ForbiddenException('You can only update booking requests for your properties');
 		}
 
@@ -278,15 +264,11 @@ export class BookingRequestsService {
 			},
 			include: {
 				tenant: true,
-				roomInstance: {
+				room: {
 					include: {
-						room: {
+						building: {
 							include: {
-								building: {
-									include: {
-										owner: true,
-									},
-								},
+								owner: true,
 							},
 						},
 					},
@@ -297,16 +279,26 @@ export class BookingRequestsService {
 		// Send notifications based on status change
 		if (dto.status === BookingStatus.approved) {
 			await this.notificationsService.notifyBookingApproved(bookingRequest.tenantId, {
-				roomName: `${updatedBooking.roomInstance.room.name} - ${updatedBooking.roomInstance.roomNumber}`,
-				landlordName: `${updatedBooking.roomInstance.room.building.owner?.firstName} ${updatedBooking.roomInstance.room.building.owner?.lastName}`,
+				roomName: updatedBooking.room.name,
+				landlordName: `${updatedBooking.room.building.owner?.firstName} ${updatedBooking.room.building.owner?.lastName}`,
 				bookingId: bookingRequest.id,
 			});
 
 			// Auto-create rental when booking is approved
 			try {
-				await this.rentalsService.createRental(updatedBooking.roomInstance.room.building.ownerId, {
+				// pick an available room instance for the room
+				const availableInstance = await this.prisma.roomInstance.findFirst({
+					where: { roomId: bookingRequest.roomId, status: 'available' },
+					orderBy: { createdAt: 'asc' },
+				});
+
+				if (!availableInstance) {
+					throw new Error('No available room instances to create rental');
+				}
+
+				await this.rentalsService.createRental(updatedBooking.room.building.ownerId, {
 					bookingRequestId: bookingRequest.id,
-					roomInstanceId: bookingRequest.roomInstanceId,
+					roomInstanceId: availableInstance.id,
 					tenantId: bookingRequest.tenantId,
 					contractStartDate: updatedBooking.moveInDate.toISOString(),
 					contractEndDate: updatedBooking.rentalMonths
@@ -324,7 +316,7 @@ export class BookingRequestsService {
 			}
 		} else if (dto.status === BookingStatus.rejected) {
 			await this.notificationsService.notifyBookingRejected(bookingRequest.tenantId, {
-				roomName: `${updatedBooking.roomInstance.room.name} - ${updatedBooking.roomInstance.roomNumber}`,
+				roomName: updatedBooking.room.name,
 				reason: dto.ownerNotes,
 				bookingId: bookingRequest.id,
 			});
@@ -341,13 +333,9 @@ export class BookingRequestsService {
 		const bookingRequest = await this.prisma.bookingRequest.findUnique({
 			where: { id: bookingRequestId },
 			include: {
-				roomInstance: {
+				room: {
 					include: {
-						room: {
-							include: {
-								building: true,
-							},
-						},
+						building: true,
 					},
 				},
 			},
@@ -376,14 +364,11 @@ export class BookingRequestsService {
 		});
 
 		// Notify landlord
-		await this.notificationsService.notifyBookingCancelled(
-			bookingRequest.roomInstance.room.building.ownerId,
-			{
-				roomName: `${bookingRequest.roomInstance.room.name} - ${bookingRequest.roomInstance.roomNumber}`,
-				cancelledBy: 'Tenant',
-				bookingId: bookingRequest.id,
-			},
-		);
+		await this.notificationsService.notifyBookingCancelled(bookingRequest.room.building.ownerId, {
+			roomName: bookingRequest.room.name,
+			cancelledBy: 'Tenant',
+			bookingId: bookingRequest.id,
+		});
 
 		return updatedBooking;
 	}
@@ -401,17 +386,13 @@ export class BookingRequestsService {
 						phone: true,
 					},
 				},
-				roomInstance: {
+				room: {
 					include: {
-						room: {
-							include: {
-								building: {
-									select: {
-										id: true,
-										name: true,
-										ownerId: true,
-									},
-								},
+						building: {
+							select: {
+								id: true,
+								name: true,
+								ownerId: true,
 							},
 						},
 					},
@@ -424,7 +405,7 @@ export class BookingRequestsService {
 		}
 
 		// Check access rights
-		const isOwner = bookingRequest.roomInstance.room.building.ownerId === userId;
+		const isOwner = bookingRequest.room.building.ownerId === userId;
 		const isTenant = bookingRequest.tenantId === userId;
 
 		if (!isOwner && !isTenant) {

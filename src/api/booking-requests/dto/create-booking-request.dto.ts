@@ -3,12 +3,12 @@ import { IsDateString, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-va
 
 export class CreateBookingRequestDto {
 	@ApiProperty({
-		description: 'ID của room instance muốn book',
+		description: 'ID của room muốn book',
 		example: '550e8400-e29b-41d4-a716-446655440000',
 	})
 	@IsUUID()
 	@IsNotEmpty()
-	roomInstanceId: string;
+	roomId: string;
 
 	@ApiProperty({
 		description: 'Ngày dự kiến move-in',
