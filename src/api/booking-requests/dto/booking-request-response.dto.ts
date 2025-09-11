@@ -15,10 +15,10 @@ export class BookingRequestResponseDto {
 	tenantId: string;
 
 	@ApiProperty({
-		description: 'ID của room instance',
+		description: 'ID của room',
 		example: '550e8400-e29b-41d4-a716-446655440000',
 	})
-	roomInstanceId: string;
+	roomId: string;
 
 	@ApiProperty({
 		description: 'Ngày move-in dự kiến',
@@ -96,16 +96,12 @@ export class BookingRequestResponseDto {
 		phone: string;
 	};
 
-	roomInstance?: {
+	room?: {
 		id: string;
-		roomNumber: string;
-		room: {
+		name: string;
+		building: {
 			id: string;
 			name: string;
-			building: {
-				id: string;
-				name: string;
-			};
 		};
 	};
 }

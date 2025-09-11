@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { BookingStatus } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsEnum, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsUUID, Max, Min } from 'class-validator';
 
 export class QueryBookingRequestsDto {
 	@ApiPropertyOptional({

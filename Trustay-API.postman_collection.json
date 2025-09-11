@@ -1409,7 +1409,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"roomInstanceId\": \"{{roomInstanceId}}\",\n  \"tenantId\": \"{{tenantUserId}}\",\n  \"availableFrom\": \"{{invitationAvailableFrom}}\",\n  \"availableUntil\": \"{{invitationAvailableUntil}}\",\n  \"invitationMessage\": \"{{invitationMessage}}\",\n  \"proposedRent\": \"{{invitationProposedRent}}\"\n}"
+              "raw": "{\n  \"roomId\": \"{{roomId}}\",\n  \"tenantId\": \"{{tenantUserId}}\",\n  \"availableFrom\": \"{{invitationAvailableFrom}}\",\n  \"availableUntil\": \"{{invitationAvailableUntil}}\",\n  \"invitationMessage\": \"{{invitationMessage}}\",\n  \"proposedRent\": \"{{invitationProposedRent}}\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/room-invitations",
@@ -1582,7 +1582,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"roomInstanceId\": \"{{roomInstanceId}}\",\n  \"moveInDate\": \"{{bookingMoveInDate}}\",\n  \"moveOutDate\": \"{{bookingMoveOutDate}}\",\n  \"messageToOwner\": \"{{bookingMessageToOwner}}\"\n}"
+              "raw": "{\n  \"roomId\": \"{{roomId}}\",\n  \"moveInDate\": \"{{bookingMoveInDate}}\",\n  \"moveOutDate\": \"{{bookingMoveOutDate}}\",\n  \"messageToOwner\": \"{{bookingMessageToOwner}}\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/booking-requests",
@@ -1903,7 +1903,7 @@
       "key": "roomInstanceId",
       "value": "550e8400-e29b-41d4-a716-446655440000",
       "type": "string",
-      "description": "Sample Room Instance ID for invite/booking requests"
+      "description": "Sample Room Instance ID for instance operations (not used in invite/booking create)"
     },
     {
       "key": "tenantUserId",
