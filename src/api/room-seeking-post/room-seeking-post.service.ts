@@ -7,6 +7,7 @@ import {
 import { SearchPostStatus } from '@prisma/client';
 import { PaginatedResponseDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { generateSlug, generateUniqueSlug } from '../../common/utils';
+import { maskEmail, maskFullName, maskPhone } from '../../common/utils/mask.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateRoomSeekingPostDto, RoomRoomSeekingPostDto, UpdateRoomSeekingPostDto } from './dto';
 
@@ -300,7 +301,12 @@ export class RoomSeekingPostService {
 		return this.mapToResponseDto(roomRequest);
 	}
 
-	async findOne(id: string, clientIp?: string): Promise<RoomRoomSeekingPostDto> {
+	async findOne(
+		id: string,
+		clientIp?: string,
+		context: { isAuthenticated: boolean } = { isAuthenticated: false },
+	): Promise<RoomRoomSeekingPostDto> {
+		const { isAuthenticated } = context;
 		const roomRequest = await this.prisma.roomSeekingPost.findUnique({
 			where: { id },
 			include: {
@@ -359,7 +365,22 @@ export class RoomSeekingPostService {
 			});
 		}
 
-		return this.mapToResponseDto(roomRequest);
+		const dto = this.mapToResponseDto(roomRequest);
+		if (!isAuthenticated) {
+			const fullName = `${dto.requester.firstName ?? ''} ${dto.requester.lastName ?? ''}`.trim();
+			return {
+				...dto,
+				requester: {
+					...dto.requester,
+					firstName: undefined as unknown as string,
+					lastName: undefined as unknown as string,
+					email: dto.requester.email ? maskEmail(dto.requester.email) : '',
+					phone: dto.requester.phone ? maskPhone(dto.requester.phone) : '',
+					name: fullName ? maskFullName(fullName) : undefined,
+				},
+			} as unknown as RoomRoomSeekingPostDto;
+		}
+		return dto;
 	}
 
 	async update(

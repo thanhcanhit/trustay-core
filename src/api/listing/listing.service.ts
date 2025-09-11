@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
+import { maskEmail, maskFullName, maskPhone, maskText } from '../../common/utils/mask.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingQueryDto, RoomRequestSearchDto } from './dto/listing-query.dto';
 import { PaginatedListingResponseDto } from './dto/paginated-listing-response.dto';
@@ -10,7 +11,11 @@ import { PaginatedRoomSeekingResponseDto } from './dto/paginated-room-seeking-re
 export class ListingService {
 	constructor(private readonly prisma: PrismaService) {}
 
-	async findAllListings(query: ListingQueryDto): Promise<PaginatedListingResponseDto> {
+	async findAllListings(
+		query: ListingQueryDto,
+		context: { isAuthenticated: boolean } = { isAuthenticated: false },
+	): Promise<PaginatedListingResponseDto> {
+		const { isAuthenticated } = context;
 		const {
 			page = 1,
 			limit = 20,
@@ -285,6 +290,13 @@ export class ListingService {
 				distance = 6371 * c; // Distance in km
 			}
 
+			const fullOwnerName =
+				`${room.building.owner.firstName} ${room.building.owner.lastName}`.trim();
+			const maskedOwnerName = maskFullName(fullOwnerName);
+			const maskedAddress = room.building.addressLine1
+				? maskText(room.building.addressLine1, 0, 0)
+				: '';
+
 			return {
 				id: room.id,
 				slug: room.slug,
@@ -295,10 +307,10 @@ export class ListingService {
 				isVerified: room.isVerified,
 				buildingName: room.building.name,
 				buildingVerified: room.building.isVerified,
-				address: room.building.addressLine1,
+				address: isAuthenticated ? room.building.addressLine1 : maskedAddress,
 				availableRooms: room.roomInstances.length, // Number of available room instances
 				owner: {
-					name: `${room.building.owner.firstName} ${room.building.owner.lastName}`,
+					name: isAuthenticated ? fullOwnerName : maskedOwnerName,
 					avatarUrl: room.building.owner.avatarUrl,
 					gender: room.building.owner.gender,
 					verifiedPhone: room.building.owner.isVerifiedPhone,
@@ -354,7 +366,11 @@ export class ListingService {
 		return PaginatedResponseDto.create(formattedRooms, page, limit, total);
 	}
 
-	async findAllRoomRequests(query: RoomRequestSearchDto): Promise<PaginatedRoomSeekingResponseDto> {
+	async findAllRoomRequests(
+		query: RoomRequestSearchDto,
+		context: { isAuthenticated: boolean } = { isAuthenticated: false },
+	): Promise<PaginatedRoomSeekingResponseDto> {
+		const { isAuthenticated } = context;
 		const {
 			page = 1,
 			limit = 20,
@@ -498,34 +514,49 @@ export class ListingService {
 			this.prisma.roomSeekingPost.count({ where }),
 		]);
 
-		const formattedData = data.map((item) => ({
-			id: item.id,
-			title: item.title,
-			description: item.description,
-			slug: item.slug,
-			requesterId: item.requesterId,
-			preferredDistrictId: item.preferredDistrictId,
-			preferredWardId: item.preferredWardId,
-			preferredProvinceId: item.preferredProvinceId,
-			minBudget: item.minBudget != null ? Number(item.minBudget) : undefined,
-			maxBudget: item.maxBudget != null ? Number(item.maxBudget) : undefined,
-			currency: item.currency,
-			preferredRoomType: item.preferredRoomType,
-			occupancy: item.occupancy,
-			moveInDate: item.moveInDate,
-			status: item.status,
-			isPublic: item.isPublic,
-			expiresAt: item.expiresAt,
-			viewCount: item.viewCount,
-			contactCount: item.contactCount,
-			createdAt: item.createdAt,
-			updatedAt: item.updatedAt,
-			requester: item.requester,
-			amenities: item.amenities,
-			preferredProvince: item.preferredProvince,
-			preferredDistrict: item.preferredDistrict,
-			preferredWard: item.preferredWard,
-		}));
+		const formattedData = data.map((item) => {
+			const requesterFullName = `${item.requester.firstName} ${item.requester.lastName}`.trim();
+			const maskedRequesterName = maskFullName(requesterFullName);
+			const maskedEmail = item.requester.email ? maskEmail(item.requester.email) : '';
+			const maskedPhone = item.requester.phone ? maskPhone(item.requester.phone) : '';
+
+			return {
+				id: item.id,
+				title: item.title,
+				description: item.description,
+				slug: item.slug,
+				requesterId: item.requesterId,
+				preferredDistrictId: item.preferredDistrictId,
+				preferredWardId: item.preferredWardId,
+				preferredProvinceId: item.preferredProvinceId,
+				minBudget: item.minBudget != null ? Number(item.minBudget) : undefined,
+				maxBudget: item.maxBudget != null ? Number(item.maxBudget) : undefined,
+				currency: item.currency,
+				preferredRoomType: item.preferredRoomType,
+				occupancy: item.occupancy,
+				moveInDate: item.moveInDate,
+				status: item.status,
+				isPublic: item.isPublic,
+				expiresAt: item.expiresAt,
+				viewCount: item.viewCount,
+				contactCount: item.contactCount,
+				createdAt: item.createdAt,
+				updatedAt: item.updatedAt,
+				requester: {
+					...item.requester,
+					firstName: isAuthenticated ? item.requester.firstName : undefined,
+					lastName: isAuthenticated ? item.requester.lastName : undefined,
+					email: isAuthenticated ? item.requester.email : maskedEmail,
+					phone: isAuthenticated ? item.requester.phone : maskedPhone,
+					// add masked display name for convenience
+					name: isAuthenticated ? requesterFullName : maskedRequesterName,
+				},
+				amenities: item.amenities,
+				preferredProvince: item.preferredProvince,
+				preferredDistrict: item.preferredDistrict,
+				preferredWard: item.preferredWard,
+			};
+		});
 
 		return PaginatedResponseDto.create(formattedData, page, limit, total);
 	}

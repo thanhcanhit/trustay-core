@@ -1,5 +1,6 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { OptionalJwtAuthGuard } from '../../auth/guards/optional-jwt-auth.guard';
 import { ListingQueryDto, RoomRequestSearchDto } from './dto/listing-query.dto';
 import { PaginatedListingResponseDto } from './dto/paginated-listing-response.dto';
 import { PaginatedRoomSeekingResponseDto } from './dto/paginated-room-seeking-response.dto';
@@ -95,8 +96,13 @@ export class ListingController {
 		status: 400,
 		description: 'Invalid query parameters',
 	})
-	async getListings(@Query() query: ListingQueryDto): Promise<PaginatedListingResponseDto> {
-		return this.listingService.findAllListings(query);
+	@UseGuards(OptionalJwtAuthGuard)
+	async getListings(
+		@Query() query: ListingQueryDto,
+		@Req() req: any,
+	): Promise<PaginatedListingResponseDto> {
+		const isAuthenticated = Boolean(req.user);
+		return this.listingService.findAllListings(query, { isAuthenticated });
 	}
 
 	@Get('/room-seeking-posts')
@@ -179,9 +185,12 @@ export class ListingController {
 		description: 'Lấy danh sách bài đăng tìm trọ thành công',
 		type: PaginatedRoomSeekingResponseDto,
 	})
+	@UseGuards(OptionalJwtAuthGuard)
 	async getRoomSeekingPosts(
 		@Query() query: RoomRequestSearchDto,
+		@Req() req: any,
 	): Promise<PaginatedRoomSeekingResponseDto> {
-		return this.listingService.findAllRoomRequests(query);
+		const isAuthenticated = Boolean(req.user);
+		return this.listingService.findAllRoomRequests(query, { isAuthenticated });
 	}
 }

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { generateRoomSlug, generateUniqueSlug } from '../../common/utils';
+import { maskFullName, maskPhone, maskText } from '../../common/utils/mask.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
 	BulkUpdateRoomInstanceStatusDto,
@@ -400,7 +401,12 @@ export class RoomsService {
 		}
 	}
 
-	async getRoomBySlug(slug: string, clientIp?: string): Promise<RoomDetailDto> {
+	async getRoomBySlug(
+		slug: string,
+		clientIp?: string,
+		context: { isAuthenticated: boolean } = { isAuthenticated: false },
+	): Promise<RoomDetailDto> {
+		const { isAuthenticated } = context;
 		// Find room type by slug
 		const room = await this.prisma.room.findFirst({
 			where: {
@@ -525,7 +531,7 @@ export class RoomsService {
 			});
 		}
 
-		return {
+		const result: RoomDetailDto = {
 			id: room.id,
 			slug: room.slug,
 			name: room.name,
@@ -541,7 +547,9 @@ export class RoomsService {
 			floorNumber: room.floorNumber,
 			buildingName: room.building.name,
 			buildingDescription: room.building.description,
-			address: room.building.addressLine1,
+			address: isAuthenticated
+				? room.building.addressLine1
+				: maskText(room.building.addressLine1, 0, 0),
 			addressLine2: room.building.addressLine2,
 			latitude: room.building.latitude?.toString(),
 			longitude: room.building.longitude?.toString(),
@@ -553,15 +561,24 @@ export class RoomsService {
 				wardId: room.building.ward?.id,
 				wardName: room.building.ward?.name,
 			},
-			owner: {
-				id: room.building.owner.id,
-				firstName: room.building.owner.firstName,
-				lastName: room.building.owner.lastName,
-				phone: room.building.owner.phone,
-				isVerifiedPhone: room.building.owner.isVerifiedPhone,
-				isVerifiedEmail: room.building.owner.isVerifiedEmail,
-				isVerifiedIdentity: room.building.owner.isVerifiedIdentity,
-			},
+			owner: ((): any => {
+				const fullName =
+					`${room.building.owner.firstName ?? ''} ${room.building.owner.lastName ?? ''}`.trim();
+				return {
+					id: room.building.owner.id,
+					firstName: isAuthenticated ? room.building.owner.firstName : undefined,
+					lastName: isAuthenticated ? room.building.owner.lastName : undefined,
+					name: isAuthenticated ? fullName : maskFullName(fullName),
+					phone: isAuthenticated
+						? room.building.owner.phone
+						: room.building.owner.phone
+							? maskPhone(room.building.owner.phone)
+							: '',
+					isVerifiedPhone: room.building.owner.isVerifiedPhone,
+					isVerifiedEmail: room.building.owner.isVerifiedEmail,
+					isVerifiedIdentity: room.building.owner.isVerifiedIdentity,
+				};
+			})(),
 			roomInstances: room.roomInstances.map((instance) => ({
 				id: instance.id,
 				roomNumber: instance.roomNumber,
@@ -611,6 +628,7 @@ export class RoomsService {
 			viewCount: room.viewCount || 0,
 			lastUpdated: room.updatedAt,
 		};
+		return result;
 	}
 
 	async update(
