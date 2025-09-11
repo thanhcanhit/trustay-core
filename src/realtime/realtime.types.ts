@@ -10,6 +10,11 @@ export interface NotifyEventPayload<T = unknown> {
 	data: T;
 }
 
+export interface NotifyEnvelope<T = unknown> {
+	type: string;
+	data: T;
+}
+
 export interface ChatMessagePayload {
 	fromUserId: string;
 	toUserId: string;
