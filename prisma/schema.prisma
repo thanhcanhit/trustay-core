@@ -372,6 +372,7 @@ model Room {
   rules           RoomRule[]
   pricing         RoomPricing?
   bookingRequests BookingRequest[]
+  invitations     RoomInvitation[]
 
   @@index([buildingId])
   @@index([roomType])
@@ -391,10 +392,9 @@ model RoomInstance {
   updatedAt  DateTime   @updatedAt @map("updated_at")
 
   // Relations
-  room            Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  invitations     RoomInvitation[]
-  rentals         Rental[]
-  monthlyBills    MonthlyBill[]
+  room         Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  rentals      Rental[]
+  monthlyBills MonthlyBill[]
 
   @@unique([roomId, roomNumber]) // Unique room number within same room type
   @@index([roomId])
@@ -603,7 +603,7 @@ model RoomPricing {
 
 model RoomInvitation {
   id                String           @id @default(uuid())
-  roomInstanceId    String           @map("room_instance_id")
+  roomId            String           @map("room_id")
   senderId          String           @map("sender_id") // Landlord
   recipientId       String?          @map("recipient_id") // Tenant (optional if not registered)
   recipientEmail    String?          @map("recipient_email") // For users not yet registered
@@ -620,13 +620,13 @@ model RoomInvitation {
   updatedAt         DateTime         @updatedAt @map("updated_at")
 
   // Relations
-  roomInstance    RoomInstance     @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
+  room            Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
   sender          User             @relation("InvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
   recipient       User?            @relation("InvitationReceiver", fields: [recipientId], references: [id], onDelete: Cascade)
   roomSeekingPost RoomSeekingPost? @relation(fields: [roomSeekingPostId], references: [id], onDelete: SetNull)
   rental          Rental?
 
-  @@index([roomInstanceId])
+  @@index([roomId])
   @@index([senderId])
   @@index([recipientId])
   @@index([roomSeekingPostId])

@@ -47,32 +47,25 @@ export class RoomInvitationsService {
 			throw new BadRequestException('Invalid tenant ID or tenant not found');
 		}
 
-		// Validate room instance exists and belongs to landlord
-		const roomInstance = await this.prisma.roomInstance.findUnique({
-			where: { id: dto.roomInstanceId },
+		// Validate room exists and belongs to landlord; ensure availability
+		const room = await this.prisma.room.findUnique({
+			where: { id: dto.roomId },
 			include: {
-				room: {
-					include: {
-						building: {
-							include: {
-								owner: true,
-							},
-						},
-					},
-				},
+				building: { include: { owner: true } },
+				roomInstances: true,
 			},
 		});
 
-		if (!roomInstance) {
-			throw new NotFoundException('Room instance not found');
+		if (!room) {
+			throw new NotFoundException('Room not found');
 		}
 
-		if (roomInstance.room.building.ownerId !== senderId) {
+		if (room.building.ownerId !== senderId) {
 			throw new ForbiddenException('You can only invite tenants to your own properties');
 		}
 
-		if (roomInstance.status !== 'available') {
-			throw new BadRequestException('Room is not available for invitation');
+		if (!room.roomInstances.some((ri) => ri.status === 'available')) {
+			throw new BadRequestException('No available room instances for invitation');
 		}
 
 		// Check for existing pending/accepted invitation
@@ -80,7 +73,7 @@ export class RoomInvitationsService {
 			where: {
 				senderId,
 				recipientId: dto.tenantId,
-				roomInstanceId: dto.roomInstanceId,
+				roomId: dto.roomId,
 				status: { in: ['pending', 'accepted'] },
 			},
 		});
@@ -95,7 +88,7 @@ export class RoomInvitationsService {
 		const existingBooking = await this.prisma.bookingRequest.findFirst({
 			where: {
 				tenantId: dto.tenantId,
-				roomInstanceId: dto.roomInstanceId,
+				roomId: dto.roomId,
 				status: { in: ['pending', 'approved'] },
 			},
 		});
@@ -146,7 +139,7 @@ export class RoomInvitationsService {
 			data: {
 				senderId,
 				recipientId: dto.tenantId,
-				roomInstanceId: dto.roomInstanceId,
+				roomId: dto.roomId,
 				moveInDate: moveInDate,
 				message: dto.invitationMessage,
 				monthlyRent: dto.proposedRent ? parseFloat(dto.proposedRent) : 0,
@@ -158,22 +151,14 @@ export class RoomInvitationsService {
 			include: {
 				recipient: true,
 				sender: true,
-				roomInstance: {
-					include: {
-						room: {
-							include: {
-								building: true,
-							},
-						},
-					},
-				},
+				room: { include: { building: true } },
 			},
 		});
 
 		// Send notification to tenant
 		await this.notificationsService.notifyRoomInvitation(dto.tenantId, {
-			roomName: `${roomInstance.room.name} - ${roomInstance.roomNumber}`,
-			buildingName: roomInstance.room.building.name,
+			roomName: room.name,
+			buildingName: room.building.name,
 			landlordName: `${sender.firstName} ${sender.lastName}`,
 			invitationId: roomInvitation.id,
 		});
@@ -192,13 +177,11 @@ export class RoomInvitationsService {
 		};
 
 		if (buildingId || roomId) {
-			where.roomInstance = {
-				room: {
-					...(roomId && { id: roomId }),
-					building: {
-						ownerId: senderId,
-						...(buildingId && { id: buildingId }),
-					},
+			where.room = {
+				...(roomId && { id: roomId }),
+				building: {
+					ownerId: senderId,
+					...(buildingId && { id: buildingId }),
 				},
 			};
 		}
@@ -219,17 +202,10 @@ export class RoomInvitationsService {
 							phone: true,
 						},
 					},
-					roomInstance: {
+					room: {
 						include: {
-							room: {
-								include: {
-									building: {
-										select: {
-											id: true,
-											name: true,
-										},
-									},
-								},
+							building: {
+								select: { id: true, name: true },
 							},
 						},
 					},
@@ -274,17 +250,10 @@ export class RoomInvitationsService {
 							phone: true,
 						},
 					},
-					roomInstance: {
+					room: {
 						include: {
-							room: {
-								include: {
-									building: {
-										select: {
-											id: true,
-											name: true,
-										},
-									},
-								},
+							building: {
+								select: { id: true, name: true },
 							},
 						},
 					},
@@ -314,19 +283,7 @@ export class RoomInvitationsService {
 			include: {
 				recipient: true,
 				sender: true,
-				roomInstance: {
-					include: {
-						room: {
-							include: {
-								building: {
-									include: {
-										owner: true,
-									},
-								},
-							},
-						},
-					},
-				},
+				room: { include: { building: { include: { owner: true } } } },
 			},
 		});
 
@@ -346,13 +303,38 @@ export class RoomInvitationsService {
 
 		// If accepting, check if room is still available
 		if (dto.status === InvitationStatus.accepted) {
-			const roomInstance = await this.prisma.roomInstance.findUnique({
-				where: { id: invitation.roomInstanceId },
+			const availableInstance = await this.prisma.roomInstance.findFirst({
+				where: { roomId: invitation.roomId, status: 'available' },
+				orderBy: { createdAt: 'asc' },
 			});
 
-			if (!roomInstance || roomInstance.status !== 'available') {
-				throw new BadRequestException('Room is no longer available');
+			if (!availableInstance) {
+				throw new Error('No available room instances to create rental');
 			}
+
+			const rental = await this.rentalsService.createRental(invitation.senderId, {
+				invitationId: invitation.id,
+				roomInstanceId: availableInstance.id,
+				tenantId: invitation.recipientId as string,
+				contractStartDate: invitation.moveInDate!.toISOString(),
+				contractEndDate: invitation.rentalMonths
+					? new Date(
+							invitation.moveInDate!.getTime() + invitation.rentalMonths * 30 * 24 * 60 * 60 * 1000,
+						).toISOString()
+					: undefined,
+				monthlyRent: invitation.monthlyRent.toString(),
+				depositPaid: invitation.depositAmount.toString(),
+			});
+
+			// Auto-create contract from the new rental
+			await this.contractsService.autoCreateContractFromRental(rental.id);
+		} else if (dto.status === InvitationStatus.declined) {
+			await this.notificationsService.notifyInvitationRejected(invitation.senderId, {
+				roomName: invitation.room.name,
+				tenantName: `${invitation.recipient?.firstName} ${invitation.recipient?.lastName}`,
+				reason: dto.tenantNotes,
+				invitationId: invitation.id,
+			});
 		}
 
 		const updatedInvitation = await this.prisma.roomInvitation.update({
@@ -366,62 +348,9 @@ export class RoomInvitationsService {
 			include: {
 				recipient: true,
 				sender: true,
-				roomInstance: {
-					include: {
-						room: {
-							include: {
-								building: {
-									include: {
-										owner: true,
-									},
-								},
-							},
-						},
-					},
-				},
+				room: { include: { building: { include: { owner: true } } } },
 			},
 		});
-
-		// Send notifications based on status change
-		if (dto.status === InvitationStatus.accepted) {
-			await this.notificationsService.notifyInvitationAccepted(invitation.senderId, {
-				roomName: `${updatedInvitation.roomInstance.room.name} - ${updatedInvitation.roomInstance.roomNumber}`,
-				tenantName: `${updatedInvitation.recipient?.firstName} ${updatedInvitation.recipient?.lastName}`,
-				invitationId: invitation.id,
-			});
-
-			// Auto-create rental and contract when invitation is accepted
-			try {
-				// Create rental from accepted invitation
-				const rental = await this.rentalsService.createRental(invitation.senderId, {
-					invitationId: invitation.id,
-					roomInstanceId: invitation.roomInstanceId,
-					tenantId: invitation.recipientId,
-					contractStartDate: updatedInvitation.moveInDate.toISOString(),
-					contractEndDate: updatedInvitation.rentalMonths
-						? new Date(
-								updatedInvitation.moveInDate.getTime() +
-									updatedInvitation.rentalMonths * 30 * 24 * 60 * 60 * 1000,
-							).toISOString()
-						: undefined,
-					monthlyRent: updatedInvitation.monthlyRent.toString(),
-					depositPaid: updatedInvitation.depositAmount.toString(),
-				});
-
-				// Auto-create contract from the new rental
-				await this.contractsService.autoCreateContractFromRental(rental.id);
-			} catch (error) {
-				// Log error but don't fail the invitation acceptance
-				console.error('Failed to auto-create rental and contract from invitation:', error);
-			}
-		} else if (dto.status === InvitationStatus.declined) {
-			await this.notificationsService.notifyInvitationRejected(invitation.senderId, {
-				roomName: `${updatedInvitation.roomInstance.room.name} - ${updatedInvitation.roomInstance.roomNumber}`,
-				tenantName: `${updatedInvitation.recipient?.firstName} ${updatedInvitation.recipient?.lastName}`,
-				reason: dto.tenantNotes,
-				invitationId: invitation.id,
-			});
-		}
 
 		return this.transformToResponseDto(updatedInvitation);
 	}
@@ -432,15 +361,7 @@ export class RoomInvitationsService {
 			include: {
 				recipient: true,
 				sender: true,
-				roomInstance: {
-					include: {
-						room: {
-							include: {
-								building: true,
-							},
-						},
-					},
-				},
+				room: { include: { building: true } },
 			},
 		});
 
@@ -468,22 +389,14 @@ export class RoomInvitationsService {
 			include: {
 				recipient: true,
 				sender: true,
-				roomInstance: {
-					include: {
-						room: {
-							include: {
-								building: true,
-							},
-						},
-					},
-				},
+				room: { include: { building: true } },
 			},
 		});
 
 		// Notify recipient if invitation was pending
 		if (invitation.status === InvitationStatus.pending && invitation.recipientId) {
 			await this.notificationsService.notifyInvitationWithdrawn(invitation.recipientId, {
-				roomName: `${invitation.roomInstance.room.name} - ${invitation.roomInstance.roomNumber}`,
+				roomName: invitation.room.name,
 				landlordName: `${invitation.sender?.firstName} ${invitation.sender?.lastName}`,
 				invitationId: invitation.id,
 			});
@@ -497,38 +410,12 @@ export class RoomInvitationsService {
 			where: { id: invitationId },
 			include: {
 				recipient: {
-					select: {
-						id: true,
-						firstName: true,
-						lastName: true,
-						email: true,
-						phone: true,
-					},
+					select: { id: true, firstName: true, lastName: true, email: true, phone: true },
 				},
 				sender: {
-					select: {
-						id: true,
-						firstName: true,
-						lastName: true,
-						email: true,
-						phone: true,
-					},
+					select: { id: true, firstName: true, lastName: true, email: true, phone: true },
 				},
-				roomInstance: {
-					include: {
-						room: {
-							include: {
-								building: {
-									select: {
-										id: true,
-										name: true,
-										ownerId: true,
-									},
-								},
-							},
-						},
-					},
-				},
+				room: { include: { building: { select: { id: true, name: true, ownerId: true } } } },
 			},
 		});
 

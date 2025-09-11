@@ -3,12 +3,12 @@ import { IsDateString, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-va
 
 export class CreateRoomInvitationDto {
 	@ApiProperty({
-		description: 'ID của room instance để mời',
+		description: 'ID của room để mời',
 		example: '550e8400-e29b-41d4-a716-446655440000',
 	})
 	@IsUUID()
 	@IsNotEmpty()
-	roomInstanceId: string;
+	roomId: string;
 
 	@ApiProperty({
 		description: 'ID của tenant được mời',
