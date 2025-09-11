@@ -1,12 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsDateString, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateBookingRequestDto {
 	@ApiProperty({
 		description: 'ID của room muốn book',
 		example: '550e8400-e29b-41d4-a716-446655440000',
 	})
-	@IsUUID()
+	@IsString()
 	@IsNotEmpty()
 	roomId: string;
 

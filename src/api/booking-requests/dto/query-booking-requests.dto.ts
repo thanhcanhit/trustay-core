@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { BookingStatus } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsEnum, IsNumber, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class QueryBookingRequestsDto {
 	@ApiPropertyOptional({
@@ -42,7 +42,7 @@ export class QueryBookingRequestsDto {
 		example: '550e8400-e29b-41d4-a716-446655440000',
 	})
 	@IsOptional()
-	@IsUUID()
+	@IsString()
 	buildingId?: string;
 
 	@ApiPropertyOptional({
@@ -50,6 +50,6 @@ export class QueryBookingRequestsDto {
 		example: '550e8400-e29b-41d4-a716-446655440000',
 	})
 	@IsOptional()
-	@IsUUID()
+	@IsString()
 	roomId?: string;
 }
