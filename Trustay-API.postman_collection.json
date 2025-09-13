@@ -951,22 +951,94 @@
           ],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [],
             "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"{{roomName}}\",\n  \"description\": \"{{roomDescription}}\",\n  \"roomType\": \"{{roomType}}\",\n  \"areaSqm\": {{roomAreaSqm}},\n  \"maxOccupancy\": {{roomMaxOccupancy}},\n  \"totalRooms\": {{roomTotalRooms}},\n  \"floorNumber\": {{roomFloorNumber}},\n  \"roomNumberPrefix\": \"{{roomNumberPrefix}}\",\n  \"roomNumberStart\": {{roomNumberStart}},\n  \"pricing\": {\n    \"basePriceMonthly\": {{roomBasePriceMonthly}},\n    \"depositAmount\": {{roomDepositAmount}},\n    \"depositMonths\": {{roomDepositMonths}},\n    \"utilityIncluded\": {{roomUtilityIncluded}},\n    \"utilityCostMonthly\": {{roomUtilityCostMonthly}},\n    \"cleaningFee\": {{roomCleaningFee}},\n    \"serviceFeePercentage\": {{roomServiceFeePercentage}},\n    \"minimumStayMonths\": {{roomMinimumStayMonths}},\n    \"maximumStayMonths\": {{roomMaximumStayMonths}},\n    \"priceNegotiable\": {{roomPriceNegotiable}}\n  },\n  \"amenities\": [\n    {\n      \"systemAmenityId\": \"{{amenityId1}}\",\n      \"customValue\": \"{{amenityValue1}}\",\n      \"notes\": \"{{amenityNotes1}}\"\n    },\n    {\n      \"systemAmenityId\": \"{{amenityId2}}\",\n      \"customValue\": \"{{amenityValue2}}\",\n      \"notes\": \"{{amenityNotes2}}\"\n    }\n  ],\n  \"costs\": [\n    {\n      \"systemCostTypeId\": \"{{costTypeId1}}\",\n      \"value\": {{costValue1}},\n      \"costType\": \"{{costType1}}\",\n      \"unit\": \"{{costUnit1}}\",\n      \"billingCycle\": \"{{costBillingCycle1}}\",\n      \"includedInRent\": {{costIncludedInRent1}},\n      \"isOptional\": {{costIsOptional1}},\n      \"notes\": \"{{costNotes1}}\"\n    },\n    {\n      \"systemCostTypeId\": \"{{costTypeId2}}\",\n      \"value\": {{costValue2}},\n      \"costType\": \"{{costType2}}\",\n      \"unit\": \"{{costUnit2}}\",\n      \"billingCycle\": \"{{costBillingCycle2}}\",\n      \"includedInRent\": {{costIncludedInRent2}},\n      \"isOptional\": {{costIsOptional2}},\n      \"notes\": \"{{costNotes2}}\"\n    }\n  ],\n  \"rules\": [\n    {\n      \"systemRuleId\": \"{{ruleId1}}\",\n      \"customValue\": \"{{ruleValue1}}\",\n      \"isEnforced\": {{ruleIsEnforced1}},\n      \"notes\": \"{{ruleNotes1}}\"\n    },\n    {\n      \"systemRuleId\": \"{{ruleId2}}\",\n      \"customValue\": \"{{ruleValue2}}\",\n      \"isEnforced\": {{ruleIsEnforced2}},\n      \"notes\": \"{{ruleNotes2}}\"\n    }\n  ],\n  \"isActive\": true\n}"
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "name",
+                  "value": "{{roomName}}",
+                  "type": "text"
+                },
+                {
+                  "key": "description",
+                  "value": "{{roomDescription}}",
+                  "type": "text"
+                },
+                {
+                  "key": "roomType",
+                  "value": "{{roomType}}",
+                  "type": "text"
+                },
+                {
+                  "key": "areaSqm",
+                  "value": "{{roomAreaSqm}}",
+                  "type": "text"
+                },
+                {
+                  "key": "maxOccupancy",
+                  "value": "{{roomMaxOccupancy}}",
+                  "type": "text"
+                },
+                {
+                  "key": "totalRooms",
+                  "value": "{{roomTotalRooms}}",
+                  "type": "text"
+                },
+                {
+                  "key": "floorNumber",
+                  "value": "{{roomFloorNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "roomNumberPrefix",
+                  "value": "{{roomNumberPrefix}}",
+                  "type": "text"
+                },
+                {
+                  "key": "roomNumberStart",
+                  "value": "{{roomNumberStart}}",
+                  "type": "text"
+                },
+                {
+                  "key": "pricing",
+                  "value": "{\"basePriceMonthly\":{{roomBasePriceMonthly}},\"depositAmount\":{{roomDepositAmount}},\"depositMonths\":{{roomDepositMonths}},\"utilityIncluded\":{{roomUtilityIncluded}},\"utilityCostMonthly\":{{roomUtilityCostMonthly}},\"cleaningFee\":{{roomCleaningFee}},\"serviceFeePercentage\":{{roomServiceFeePercentage}},\"minimumStayMonths\":{{roomMinimumStayMonths}},\"maximumStayMonths\":{{roomMaximumStayMonths}},\"priceNegotiable\":{{roomPriceNegotiable}}}",
+                  "type": "text"
+                },
+                {
+                  "key": "amenities",
+                  "value": "[{\"systemAmenityId\":\"{{amenityId1}}\",\"customValue\":\"{{amenityValue1}}\",\"notes\":\"{{amenityNotes1}}\"},{\"systemAmenityId\":\"{{amenityId2}}\",\"customValue\":\"{{amenityValue2}}\",\"notes\":\"{{amenityNotes2}}\"}]",
+                  "type": "text"
+                },
+                {
+                  "key": "costs",
+                  "value": "[{\"systemCostTypeId\":\"{{costTypeId1}}\",\"value\":{{costValue1}},\"costType\":\"{{costType1}}\",\"unit\":\"{{costUnit1}}\",\"billingCycle\":\"{{costBillingCycle1}}\",\"includedInRent\":{{costIncludedInRent1}},\"isOptional\":{{costIsOptional1}},\"notes\":\"{{costNotes1}}\"},{\"systemCostTypeId\":\"{{costTypeId2}}\",\"value\":{{costValue2}},\"costType\":\"{{costType2}}\",\"unit\":\"{{costUnit2}}\",\"billingCycle\":\"{{costBillingCycle2}}\",\"includedInRent\":{{costIncludedInRent2}},\"isOptional\":{{costIsOptional2}},\"notes\":\"{{costNotes2}}\"}]",
+                  "type": "text"
+                },
+                {
+                  "key": "rules",
+                  "value": "[{\"systemRuleId\":\"{{ruleId1}}\",\"customValue\":\"{{ruleValue1}}\",\"isEnforced\":{{ruleIsEnforced1}},\"notes\":\"{{ruleNotes1}}\"},{\"systemRuleId\":\"{{ruleId2}}\",\"customValue\":\"{{ruleValue2}}\",\"isEnforced\":{{ruleIsEnforced2}},\"notes\":\"{{ruleNotes2}}\"}]",
+                  "type": "text"
+                },
+                {
+                  "key": "isActive",
+                  "value": "true",
+                  "type": "text"
+                },
+                {
+                  "key": "images",
+                  "src": [],
+                  "type": "file",
+                  "disabled": false
+                }
+              ]
             },
             "url": {
               "raw": "{{baseUrl}}/api/rooms/{{buildingId}}/rooms",
               "host": ["{{baseUrl}}"],
               "path": ["api", "rooms", "{{buildingId}}", "rooms"]
             },
-            "description": "Create room type with automatic room instance generation"
+            "description": "Create room type with automatic room instance generation and file upload. Upload room images directly in the 'images' file field. Support up to 10 images. First image will be set as primary automatically."
           },
           "response": []
         },
@@ -1335,6 +1407,119 @@
         }
       ],
       "description": "Room seeking post management endpoints for tenants looking for accommodation. Slugs are auto-generated from titles. Search functionality is available via /api/listings/room-seeking-posts endpoint."
+    },
+    {
+      "name": "📤 File Upload",
+      "item": [
+        {
+          "name": "📷 Upload Single Image",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.imagePath) {",
+                  "        pm.collectionVariables.set('uploadedImagePath', response.imagePath);",
+                  "        console.log('📷 Image uploaded successfully!');",
+                  "        console.log('🖼️ Image Path saved:', response.imagePath);",
+                  "        console.log('💾 Saved to DB:', response.savedToDb);",
+                  "        if (response.imageId) {",
+                  "            pm.collectionVariables.set('uploadedImageId', response.imageId);",
+                  "            console.log('🆔 Image ID saved:', response.imageId);",
+                  "        }",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Select image file (jpg, png, webp, gif, max 10MB)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/upload/image",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "upload", "image"]
+            },
+            "description": "Upload a single image file. Returns image path for use in room creation. Files are auto-resized to multiple sizes (128x128, 256x256, 512x512, 1024x1024, 1920x1080)."
+          },
+          "response": []
+        },
+        {
+          "name": "📷 Upload Multiple Images",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (Array.isArray(response) && response.length > 0) {",
+                  "        // Save first image path as primary for testing",
+                  "        pm.collectionVariables.set('roomImagePath1', response[0].imagePath);",
+                  "        pm.collectionVariables.set('roomImageAlt1', 'Room Main View');",
+                  "        pm.collectionVariables.set('roomImageSort1', '1');",
+                  "        pm.collectionVariables.set('roomImagePrimary1', 'true');",
+                  "        ",
+                  "        // Save second image if exists",
+                  "        if (response.length > 1) {",
+                  "            pm.collectionVariables.set('roomImagePath2', response[1].imagePath);",
+                  "            pm.collectionVariables.set('roomImageAlt2', 'Room Secondary View');",
+                  "            pm.collectionVariables.set('roomImageSort2', '2');",
+                  "            pm.collectionVariables.set('roomImagePrimary2', 'false');",
+                  "        }",
+                  "        ",
+                  "        console.log('📷 Multiple images uploaded successfully!');",
+                  "        console.log('🖼️ Total images:', response.length);",
+                  "        response.forEach((img, index) => {",
+                  "            console.log(`📸 Image ${index + 1}:`, img.imagePath);",
+                  "        });",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": [],
+                  "description": "Select multiple image files"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/upload/images",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "upload", "images"]
+            },
+            "description": "Upload multiple image files at once. Returns array of image paths for use in room creation. Automatically sets Postman variables for room image testing."
+          },
+          "response": []
+        }
+      ],
+      "description": "File upload endpoints for images used in rooms, buildings, and user avatars. All uploads are automatically optimized and resized to multiple sizes."
     },
     {
       "name": "💌 Room Invitations",

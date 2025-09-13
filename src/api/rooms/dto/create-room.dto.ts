@@ -10,6 +10,7 @@ import {
 	IsNumber,
 	IsOptional,
 	IsString,
+	Matches,
 	Max,
 	MaxLength,
 	Min,

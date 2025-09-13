@@ -519,15 +519,15 @@ export class RoomSeekingPostService {
 				...dto,
 				requester: {
 					...dto.requester,
-					firstName: undefined as unknown as string,
-					lastName: undefined as unknown as string,
+					firstName: undefined,
+					lastName: undefined,
 					email: dto.requester.email ? maskEmail(dto.requester.email) : '',
 					phone: dto.requester.phone ? maskPhone(dto.requester.phone) : '',
 					name: fullName ? maskFullName(fullName) : undefined,
 				},
 				seo,
 				breadcrumb,
-			} as unknown as RoomSeekingDetailWithMetaResponseDto;
+			};
 		} else {
 			responseDto = {
 				...dto,

@@ -6,9 +6,14 @@ import {
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { BreadcrumbDto, SeoDto } from '../../common/dto';
-import { RoomDetailOutputDto } from '../../common/dto/room-output.dto';
+import { RoomDetailOutputDto, RoomListItemOutputDto } from '../../common/dto/room-output.dto';
+import { UploadService } from '../../common/services/upload.service';
 import { generateRoomSlug, generateUniqueSlug } from '../../common/utils';
-import { formatRoomDetail, getOwnerStats } from '../../common/utils/room-formatter.utils';
+import {
+	formatRoomDetail,
+	formatRoomListItem,
+	getOwnerStats,
+} from '../../common/utils/room-formatter.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
 	BulkUpdateRoomInstanceStatusDto,
@@ -25,7 +30,10 @@ export class RoomsService {
 	private readonly VIEW_COOLDOWN_MS = 1 * 60 * 1000; // 1 phút
 	private readonly CACHE_CLEANUP_INTERVAL = 30 * 60 * 1000; // 30 phút
 
-	constructor(private readonly prisma: PrismaService) {
+	constructor(
+		private readonly prisma: PrismaService,
+		private readonly uploadService: UploadService,
+	) {
 		// Dọn dẹp cache định kỳ
 		setInterval(() => {
 			this.cleanupViewCache();
@@ -201,10 +209,79 @@ export class RoomsService {
 		return { items };
 	}
 
+	/**
+	 * Get similar rooms in the same district and province
+	 */
+	private async getSimilarRooms(room: any, limit: number = 8): Promise<RoomListItemOutputDto[]> {
+		const { building } = room;
+
+		// Get rooms in the same district and province, excluding current room
+		const similarRooms = await this.prisma.room.findMany({
+			where: {
+				id: { not: room.id },
+				isActive: true,
+				building: {
+					districtId: building.districtId,
+					provinceId: building.provinceId,
+				},
+			},
+			include: {
+				building: {
+					include: {
+						province: { select: { id: true, name: true, code: true } },
+						district: { select: { id: true, name: true, code: true } },
+						ward: { select: { id: true, name: true, code: true } },
+						owner: {
+							select: {
+								id: true,
+								firstName: true,
+								lastName: true,
+								avatarUrl: true,
+								gender: true,
+								isVerifiedPhone: true,
+								isVerifiedEmail: true,
+								isVerifiedIdentity: true,
+							},
+						},
+					},
+				},
+				images: {
+					select: {
+						id: true,
+						imageUrl: true,
+						altText: true,
+						sortOrder: true,
+						isPrimary: true,
+					},
+					orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+					take: 1, // Only get primary image for list view
+				},
+				pricing: {
+					select: {
+						basePriceMonthly: true,
+						currency: true,
+					},
+				},
+			},
+			orderBy: [
+				{ viewCount: 'desc' }, // Popular rooms first
+				{ createdAt: 'desc' }, // Then newest
+			],
+			take: limit,
+		});
+
+		// Format similar rooms using the same utility as listing
+		return similarRooms.map((similarRoom) => {
+			const ownerStats = { totalBuildings: 0, totalRoomInstances: 0 }; // Simplified for similar rooms
+			return formatRoomListItem(similarRoom, false, { ownerStats });
+		});
+	}
+
 	async create(
 		userId: string,
 		buildingId: string,
 		createRoomDto: CreateRoomDto,
+		files?: Express.Multer.File[],
 	): Promise<RoomDetailOutputDto> {
 		// Verify building ownership and existence
 		const building = await this.prisma.building.findUnique({
@@ -338,6 +415,25 @@ export class RoomsService {
 					isActive: true,
 				})),
 			});
+
+			// 7. Upload and create room images
+			if (files?.length) {
+				const uploadPromises = files.map(async (file, index) => {
+					const uploadResult = await this.uploadService.uploadImage(file);
+					return {
+						roomId: room.id,
+						imageUrl: uploadResult.imagePath,
+						altText: `Room image ${index + 1}`,
+						sortOrder: index,
+						isPrimary: index === 0, // First image is primary
+					};
+				});
+
+				const processedImages = await Promise.all(uploadPromises);
+				await tx.roomImage.createMany({
+					data: processedImages,
+				});
+			}
 
 			return room.id;
 		});
@@ -730,10 +826,14 @@ export class RoomsService {
 		const seo = await this.generateRoomDetailSeo(room);
 		const breadcrumb = await this.generateRoomDetailBreadcrumb(room);
 
+		// Get similar rooms
+		const similarRooms = await this.getSimilarRooms(room, 8);
+
 		return {
 			...roomDetail,
 			seo,
 			breadcrumb,
+			similarRooms,
 		};
 	}
 
