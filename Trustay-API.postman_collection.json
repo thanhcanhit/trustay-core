@@ -957,67 +957,67 @@
               "formdata": [
                 {
                   "key": "name",
-                  "value": "{{roomName}}",
+                  "value": "Phòng VIP Deluxe",
                   "type": "text"
                 },
                 {
                   "key": "description",
-                  "value": "{{roomDescription}}",
+                  "value": "Phòng cao cấp với đầy đủ tiện nghi, view đẹp, gần trường đại học",
                   "type": "text"
                 },
                 {
                   "key": "roomType",
-                  "value": "{{roomType}}",
+                  "value": "boarding_house",
                   "type": "text"
                 },
                 {
                   "key": "areaSqm",
-                  "value": "{{roomAreaSqm}}",
+                  "value": "25.5",
                   "type": "text"
                 },
                 {
                   "key": "maxOccupancy",
-                  "value": "{{roomMaxOccupancy}}",
+                  "value": "2",
                   "type": "text"
                 },
                 {
                   "key": "totalRooms",
-                  "value": "{{roomTotalRooms}}",
+                  "value": "5",
                   "type": "text"
                 },
                 {
                   "key": "floorNumber",
-                  "value": "{{roomFloorNumber}}",
+                  "value": "1",
                   "type": "text"
                 },
                 {
                   "key": "roomNumberPrefix",
-                  "value": "{{roomNumberPrefix}}",
+                  "value": "A",
                   "type": "text"
                 },
                 {
                   "key": "roomNumberStart",
-                  "value": "{{roomNumberStart}}",
+                  "value": "101",
                   "type": "text"
                 },
                 {
                   "key": "pricing",
-                  "value": "{\"basePriceMonthly\":{{roomBasePriceMonthly}},\"depositAmount\":{{roomDepositAmount}},\"depositMonths\":{{roomDepositMonths}},\"utilityIncluded\":{{roomUtilityIncluded}},\"utilityCostMonthly\":{{roomUtilityCostMonthly}},\"cleaningFee\":{{roomCleaningFee}},\"serviceFeePercentage\":{{roomServiceFeePercentage}},\"minimumStayMonths\":{{roomMinimumStayMonths}},\"maximumStayMonths\":{{roomMaximumStayMonths}},\"priceNegotiable\":{{roomPriceNegotiable}}}",
+                  "value": "{\"basePriceMonthly\":3500000,\"depositAmount\":7000000,\"depositMonths\":2,\"utilityIncluded\":false,\"utilityCostMonthly\":500000,\"cleaningFee\":200000,\"serviceFeePercentage\":5.0,\"minimumStayMonths\":3,\"maximumStayMonths\":24,\"priceNegotiable\":true}",
                   "type": "text"
                 },
                 {
                   "key": "amenities",
-                  "value": "[{\"systemAmenityId\":\"{{amenityId1}}\",\"customValue\":\"{{amenityValue1}}\",\"notes\":\"{{amenityNotes1}}\"},{\"systemAmenityId\":\"{{amenityId2}}\",\"customValue\":\"{{amenityValue2}}\",\"notes\":\"{{amenityNotes2}}\"}]",
+                  "value": "[{\"systemAmenityId\":\"air_conditioning\",\"customValue\":\"2 chiếc Daikin inverter\",\"notes\":\"Điều hòa mới 100%, bảo hành 3 năm\"},{\"systemAmenityId\":\"wifi\",\"customValue\":\"Viettel Fiber 100Mbps\",\"notes\":\"Tốc độ ổn định 24/7\"}]",
                   "type": "text"
                 },
                 {
                   "key": "costs",
-                  "value": "[{\"systemCostTypeId\":\"{{costTypeId1}}\",\"value\":{{costValue1}},\"costType\":\"{{costType1}}\",\"unit\":\"{{costUnit1}}\",\"billingCycle\":\"{{costBillingCycle1}}\",\"includedInRent\":{{costIncludedInRent1}},\"isOptional\":{{costIsOptional1}},\"notes\":\"{{costNotes1}}\"},{\"systemCostTypeId\":\"{{costTypeId2}}\",\"value\":{{costValue2}},\"costType\":\"{{costType2}}\",\"unit\":\"{{costUnit2}}\",\"billingCycle\":\"{{costBillingCycle2}}\",\"includedInRent\":{{costIncludedInRent2}},\"isOptional\":{{costIsOptional2}},\"notes\":\"{{costNotes2}}\"}]",
+                  "value": "[{\"systemCostTypeId\":\"electricity\",\"value\":3500,\"costType\":\"per_unit\",\"unit\":\"kWh\",\"billingCycle\":\"monthly\",\"includedInRent\":false,\"isOptional\":false,\"notes\":\"Giá điện theo EVN, đọc công tơ cuối tháng\"},{\"systemCostTypeId\":\"water\",\"value\":25000,\"costType\":\"per_unit\",\"unit\":\"m³\",\"billingCycle\":\"monthly\",\"includedInRent\":false,\"isOptional\":false,\"notes\":\"Nước sạch Saigon Water\"}]",
                   "type": "text"
                 },
                 {
                   "key": "rules",
-                  "value": "[{\"systemRuleId\":\"{{ruleId1}}\",\"customValue\":\"{{ruleValue1}}\",\"isEnforced\":{{ruleIsEnforced1}},\"notes\":\"{{ruleNotes1}}\"},{\"systemRuleId\":\"{{ruleId2}}\",\"customValue\":\"{{ruleValue2}}\",\"isEnforced\":{{ruleIsEnforced2}},\"notes\":\"{{ruleNotes2}}\"}]",
+                  "value": "[{\"systemRuleId\":\"max_occupancy\",\"customValue\":\"Tối đa 2 người/phòng\",\"isEnforced\":true,\"notes\":\"Quá số lượng sẽ tính phụ phí\"},{\"systemRuleId\":\"no_smoking\",\"customValue\":\"Không hút thuốc trong phòng\",\"isEnforced\":true,\"notes\":\"Vi phạm 3 lần sẽ chấm dứt hợp đồng\"}]",
                   "type": "text"
                 },
                 {
@@ -1038,7 +1038,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "rooms", "{{buildingId}}", "rooms"]
             },
-            "description": "Create room type with automatic room instance generation and file upload. Upload room images directly in the 'images' file field. Support up to 10 images. First image will be set as primary automatically."
+            "description": "Create room type with automatic room instance generation and file upload. Upload room images directly in the 'images' file field. Support up to 10 images. First image will be set as primary automatically. This request uses hardcoded valid values to work immediately without needing to update variables."
           },
           "response": []
         },
