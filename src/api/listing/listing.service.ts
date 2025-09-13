@@ -291,7 +291,7 @@ export class ListingService {
 			}
 
 			const fullOwnerName =
-				`${room.building.owner.firstName} ${room.building.owner.lastName}`.trim();
+				`${room.building.owner.firstName || ''} ${room.building.owner.lastName || ''}`.trim();
 			const maskedOwnerName = maskFullName(fullOwnerName);
 			const maskedAddress = room.building.addressLine1
 				? maskText(room.building.addressLine1, 0, 0)
@@ -300,19 +300,19 @@ export class ListingService {
 			return {
 				id: room.id,
 				slug: room.slug,
-				name: room.name,
+				name: room.name || undefined,
 				roomType: room.roomType,
-				areaSqm: room.areaSqm?.toString(),
+				areaSqm: room.areaSqm ? room.areaSqm.toString() : undefined,
 				maxOccupancy: room.maxOccupancy,
 				isVerified: room.isVerified,
-				buildingName: room.building.name,
+				buildingName: room.building.name || '',
 				buildingVerified: room.building.isVerified,
-				address: isAuthenticated ? room.building.addressLine1 : maskedAddress,
+				address: isAuthenticated ? room.building.addressLine1 || '' : maskedAddress,
 				availableRooms: room.roomInstances.length, // Number of available room instances
 				owner: {
 					name: isAuthenticated ? fullOwnerName : maskedOwnerName,
-					avatarUrl: room.building.owner.avatarUrl,
-					gender: room.building.owner.gender,
+					avatarUrl: room.building.owner.avatarUrl || undefined,
+					gender: room.building.owner.gender || undefined,
 					verifiedPhone: room.building.owner.isVerifiedPhone,
 					verifiedEmail: room.building.owner.isVerifiedEmail,
 					verifiedIdentity: room.building.owner.isVerifiedIdentity,
@@ -515,7 +515,8 @@ export class ListingService {
 		]);
 
 		const formattedData = data.map((item) => {
-			const requesterFullName = `${item.requester.firstName} ${item.requester.lastName}`.trim();
+			const requesterFullName =
+				`${item.requester.firstName || ''} ${item.requester.lastName || ''}`.trim();
 			const maskedRequesterName = maskFullName(requesterFullName);
 			const maskedEmail = item.requester.email ? maskEmail(item.requester.email) : '';
 			const maskedPhone = item.requester.phone ? maskPhone(item.requester.phone) : '';
