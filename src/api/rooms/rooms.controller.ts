@@ -24,14 +24,15 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../../auth/guards/optional-jwt-auth.guard';
 import { ApiResponseDto } from '../../common/dto';
+import { RoomDetailOutputDto } from '../../common/dto/room-output.dto';
 import {
 	BulkUpdateRoomInstanceStatusDto,
 	CreateRoomDto,
+	RoomDetailWithMetaResponseDto,
 	RoomResponseDto,
 	UpdateRoomDto,
 	UpdateRoomInstanceStatusDto,
 } from './dto';
-import { RoomDetailDto } from './dto/room-detail.dto';
 import { RoomsService } from './rooms.service';
 
 @ApiTags('Rooms')
@@ -66,7 +67,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	@ApiResponse({
 		status: HttpStatus.CREATED,
 		description: 'Room type được tạo thành công kèm room instances',
-		type: ApiResponseDto<RoomResponseDto>,
+		type: ApiResponseDto<RoomDetailOutputDto>,
 		schema: {
 			example: {
 				success: true,
@@ -132,7 +133,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		@CurrentUser('id') userId: string,
 		@Param('buildingId') buildingId: string,
 		@Body() createRoomDto: CreateRoomDto,
-	): Promise<ApiResponseDto<RoomResponseDto>> {
+	): Promise<ApiResponseDto<RoomDetailOutputDto>> {
 		const room = await this.roomsService.create(userId, buildingId, createRoomDto);
 
 		return ApiResponseDto.success(room, 'Room created successfully with instances');
@@ -201,7 +202,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		@Query('limit') limit?: string,
 	): Promise<
 		ApiResponseDto<{
-			rooms: RoomResponseDto[];
+			rooms: RoomDetailOutputDto[];
 			total: number;
 			page: number;
 			limit: number;
@@ -230,7 +231,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	@ApiResponse({
 		status: HttpStatus.OK,
 		description: 'Lấy thông tin room type thành công',
-		type: ApiResponseDto<RoomResponseDto>,
+		type: ApiResponseDto<RoomDetailOutputDto>,
 	})
 	@ApiResponse({
 		status: HttpStatus.NOT_FOUND,
@@ -240,7 +241,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		status: HttpStatus.UNAUTHORIZED,
 		description: 'Chưa đăng nhập',
 	})
-	async findOne(@Param('roomId') roomId: string): Promise<ApiResponseDto<RoomResponseDto>> {
+	async findOne(@Param('roomId') roomId: string): Promise<ApiResponseDto<RoomDetailOutputDto>> {
 		const room = await this.roomsService.findOne(roomId);
 
 		return ApiResponseDto.success(room, 'Room retrieved successfully');
@@ -261,13 +262,16 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	@ApiResponse({
 		status: 200,
 		description: 'Room details retrieved successfully',
-		type: RoomDetailDto,
+		type: RoomDetailOutputDto,
 	})
 	@ApiResponse({
 		status: 404,
 		description: 'Room not found',
 	})
-	async getRoomBySlug(@Param('slug') slug: string, @Req() req: Request): Promise<RoomDetailDto> {
+	async getRoomBySlug(
+		@Param('slug') slug: string,
+		@Req() req: Request,
+	): Promise<RoomDetailOutputDto> {
 		const clientIp =
 			req.ip || req.connection?.remoteAddress || (req.headers['x-forwarded-for'] as string);
 		const isAuthenticated = Boolean((req as any).user);
@@ -289,13 +293,16 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	@ApiResponse({
 		status: 200,
 		description: 'Room details retrieved successfully',
-		type: RoomDetailDto,
+		type: RoomDetailOutputDto,
 	})
 	@ApiResponse({
 		status: 404,
 		description: 'Room not found',
 	})
-	async getRoomBySlugAlt(@Param('slug') slug: string, @Req() req: Request): Promise<RoomDetailDto> {
+	async getRoomBySlugAlt(
+		@Param('slug') slug: string,
+		@Req() req: Request,
+	): Promise<RoomDetailOutputDto> {
 		const clientIp =
 			req.ip || req.connection?.remoteAddress || (req.headers['x-forwarded-for'] as string);
 		const isAuthenticated = Boolean((req as any).user);
@@ -324,7 +331,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	@ApiResponse({
 		status: HttpStatus.OK,
 		description: 'Cập nhật room thành công',
-		type: ApiResponseDto<RoomResponseDto>,
+		type: ApiResponseDto<RoomDetailOutputDto>,
 		schema: {
 			example: {
 				success: true,
@@ -381,7 +388,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		@CurrentUser('id') userId: string,
 		@Param('roomId') roomId: string,
 		@Body() updateRoomDto: UpdateRoomDto,
-	): Promise<ApiResponseDto<RoomResponseDto>> {
+	): Promise<ApiResponseDto<RoomDetailOutputDto>> {
 		const room = await this.roomsService.update(userId, roomId, updateRoomDto);
 
 		return ApiResponseDto.success(room, 'Room updated successfully');
@@ -490,7 +497,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		@Query('limit') limit?: string,
 	): Promise<
 		ApiResponseDto<{
-			rooms: RoomResponseDto[];
+			rooms: RoomDetailOutputDto[];
 			total: number;
 			page: number;
 			limit: number;

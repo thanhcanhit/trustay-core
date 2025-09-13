@@ -23,25 +23,22 @@ export class LocationDto {
 
 export class BuildingOwnerDto {
 	@ApiProperty()
-	id: string;
-
-	@ApiProperty()
-	firstName: string;
-
-	@ApiProperty()
-	lastName: string;
+	name: string;
 
 	@ApiPropertyOptional()
-	phone?: string;
+	avatarUrl?: string;
+
+	@ApiPropertyOptional()
+	gender?: string;
 
 	@ApiProperty()
-	isVerifiedPhone: boolean;
+	verifiedPhone: boolean;
 
 	@ApiProperty()
-	isVerifiedEmail: boolean;
+	verifiedEmail: boolean;
 
 	@ApiProperty()
-	isVerifiedIdentity: boolean;
+	verifiedIdentity: boolean;
 }
 
 export class RoomImageDto {
@@ -93,29 +90,14 @@ export class RoomCostDto {
 }
 
 export class RoomPricingDto {
-	@ApiProperty()
-	basePriceMonthly: string;
+	@ApiPropertyOptional()
+	basePriceMonthly?: string;
 
-	@ApiProperty()
-	depositAmount: string;
-
-	@ApiProperty()
-	depositMonths: number;
+	@ApiPropertyOptional()
+	depositAmount?: string;
 
 	@ApiProperty()
 	utilityIncluded: boolean;
-
-	@ApiPropertyOptional()
-	utilityCostMonthly?: string;
-
-	@ApiProperty()
-	minimumStayMonths: number;
-
-	@ApiPropertyOptional()
-	maximumStayMonths?: number;
-
-	@ApiProperty()
-	priceNegotiable: boolean;
 }
 
 export class RoomRuleDto {
@@ -162,9 +144,6 @@ export class RoomDetailDto {
 	@ApiPropertyOptional()
 	name?: string;
 
-	@ApiPropertyOptional()
-	description?: string;
-
 	@ApiProperty({ enum: RoomType })
 	roomType: RoomType;
 
@@ -175,46 +154,25 @@ export class RoomDetailDto {
 	maxOccupancy: number;
 
 	@ApiProperty()
-	totalRooms: number;
-
-	@ApiProperty()
-	availableRooms: number;
-
-	@ApiProperty()
 	isVerified: boolean;
-
-	@ApiProperty()
-	isActive: boolean;
-
-	@ApiPropertyOptional()
-	floorNumber?: number;
 
 	@ApiProperty()
 	buildingName: string;
 
-	@ApiPropertyOptional()
-	buildingDescription?: string;
+	@ApiProperty()
+	buildingVerified: boolean;
 
 	@ApiProperty()
 	address: string;
 
-	@ApiPropertyOptional()
-	addressLine2?: string;
-
-	@ApiPropertyOptional()
-	latitude?: string;
-
-	@ApiPropertyOptional()
-	longitude?: string;
-
-	@ApiProperty({ type: LocationDto })
-	location: LocationDto;
+	@ApiProperty()
+	availableRooms: number;
 
 	@ApiProperty({ type: BuildingOwnerDto })
 	owner: BuildingOwnerDto;
 
-	@ApiProperty({ type: [RoomInstanceDto] })
-	roomInstances: RoomInstanceDto[];
+	@ApiProperty({ type: LocationDto })
+	location: LocationDto;
 
 	@ApiProperty({ type: [RoomImageDto] })
 	images: RoomImageDto[];
@@ -230,10 +188,4 @@ export class RoomDetailDto {
 
 	@ApiProperty({ type: [RoomRuleDto] })
 	rules: RoomRuleDto[];
-
-	@ApiProperty({ description: 'Number of views for this room' })
-	viewCount: number;
-
-	@ApiProperty()
-	lastUpdated: Date;
 }

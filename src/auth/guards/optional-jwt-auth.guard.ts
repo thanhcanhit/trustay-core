@@ -3,25 +3,33 @@ import { AuthGuard } from '@nestjs/passport';
 
 @Injectable()
 export class OptionalJwtAuthGuard extends AuthGuard('jwt') {
-	async canActivate(context: ExecutionContext) {
+	async canActivate(context: ExecutionContext): Promise<boolean> {
+		const request = context.switchToHttp().getRequest();
+
 		try {
 			// Attempt to authenticate to populate req.user when token is provided
-			await super.canActivate(context);
-		} catch {
-			// Swallow errors to allow anonymous access
+			const result = await super.canActivate(context);
+			// If authentication succeeds, req.user will be populated by handleRequest
+			return result as boolean;
+		} catch (error) {
+			// If authentication fails (invalid token, expired, etc.), set user to null
+			request.user = null;
+			return true; // Allow anonymous access
 		}
-		// Always allow the request to proceed (public route behavior)
-		return true;
 	}
 
 	handleRequest<TUser = any>(
-		_err: any,
+		err: any,
 		user: TUser,
-		_info: any,
-		_context: ExecutionContext,
-		_status?: any,
+		info: any,
+		context: ExecutionContext,
+		status?: any,
 	): TUser {
-		// If authentication succeeded, user will be defined; otherwise return null to indicate anonymous
-		return (user ?? (null as unknown as TUser)) as TUser;
+		// If there's an error or no user, return null for anonymous access
+		if (err || !user) {
+			return null as unknown as TUser;
+		}
+		// If authentication succeeded, return the authenticated user
+		return user;
 	}
 }
