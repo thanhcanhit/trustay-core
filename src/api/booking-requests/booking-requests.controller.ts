@@ -88,6 +88,49 @@ export class BookingRequestsController {
 		return this.bookingRequestsService.getBookingRequestsForLandlord(userId, query);
 	}
 
+	@Get('me')
+	@ApiOperation({
+		summary: 'Lấy booking requests của tôi',
+		description:
+			'Tự động hiển thị booking requests đã nhận (landlord) hoặc đã tạo (tenant) dựa trên role',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Danh sách booking requests của user',
+		type: PaginatedBookingRequestResponseDto,
+	})
+	@ApiQuery({ name: 'page', required: false, type: Number, description: 'Số trang (default: 1)' })
+	@ApiQuery({
+		name: 'limit',
+		required: false,
+		type: Number,
+		description: 'Số items per page (default: 20, max: 100)',
+	})
+	@ApiQuery({
+		name: 'status',
+		required: false,
+		enum: ['pending', 'approved', 'rejected', 'cancelled'],
+		description: 'Lọc theo trạng thái',
+	})
+	@ApiQuery({
+		name: 'buildingId',
+		required: false,
+		type: String,
+		description: 'Lọc theo building ID (chỉ áp dụng cho landlord)',
+	})
+	@ApiQuery({
+		name: 'roomId',
+		required: false,
+		type: String,
+		description: 'Lọc theo room ID (chỉ áp dụng cho landlord)',
+	})
+	async getMyBookingRequests(
+		@Query() query: QueryBookingRequestsDto,
+		@CurrentUser('id') userId: string,
+	) {
+		return this.bookingRequestsService.getMyBookingRequests(userId, query);
+	}
+
 	@Get('my-requests')
 	@ApiOperation({ summary: 'Lấy booking requests của tôi (Tenant only)' })
 	@ApiResponse({
@@ -108,11 +151,11 @@ export class BookingRequestsController {
 		enum: ['pending', 'approved', 'rejected', 'cancelled'],
 		description: 'Lọc theo trạng thái',
 	})
-	async getMyBookingRequests(
+	async getMyBookingRequestsAsTenant(
 		@Query() query: QueryBookingRequestsDto,
 		@CurrentUser('id') userId: string,
 	) {
-		return this.bookingRequestsService.getMyBookingRequests(userId, query);
+		return this.bookingRequestsService.getMyBookingRequestsAsTenant(userId, query);
 	}
 
 	@Get(':id')
