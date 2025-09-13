@@ -19,7 +19,12 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../../auth/guards/optional-jwt-auth.guard';
 import { PaginatedResponseDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
-import { CreateRoomSeekingPostDto, RoomRoomSeekingPostDto, UpdateRoomSeekingPostDto } from './dto';
+import {
+	CreateRoomSeekingPostDto,
+	RoomRoomSeekingPostDto,
+	RoomSeekingDetailWithMetaResponseDto,
+	UpdateRoomSeekingPostDto,
+} from './dto';
 import { RoomSeekingPostService } from './room-seeking-post.service';
 
 @ApiTags('Room Seeking Posts')
@@ -93,10 +98,13 @@ export class RoomSeekingPostController {
 	@ApiResponse({
 		status: 200,
 		description: 'Lấy chi tiết thành công',
-		type: RoomRoomSeekingPostDto,
+		type: RoomSeekingDetailWithMetaResponseDto,
 	})
 	@ApiResponse({ status: 404, description: 'Không tìm thấy bài đăng' })
-	async findOne(@Param('id') id: string, @Req() req: Request): Promise<RoomRoomSeekingPostDto> {
+	async findOne(
+		@Param('id') id: string,
+		@Req() req: Request,
+	): Promise<RoomSeekingDetailWithMetaResponseDto> {
 		const clientIp =
 			req.ip || req.connection?.remoteAddress || (req.headers['x-forwarded-for'] as string);
 		const isAuthenticated = Boolean((req as any).user);

@@ -9,10 +9,14 @@ import {
 	Put,
 	Query,
 	Req,
+	UploadedFiles,
 	UseGuards,
+	UseInterceptors,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import {
 	ApiBearerAuth,
+	ApiConsumes,
 	ApiOperation,
 	ApiParam,
 	ApiQuery,
@@ -24,14 +28,14 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../../auth/guards/optional-jwt-auth.guard';
 import { ApiResponseDto } from '../../common/dto';
+import { RoomDetailOutputDto } from '../../common/dto/room-output.dto';
 import {
 	BulkUpdateRoomInstanceStatusDto,
 	CreateRoomDto,
-	RoomResponseDto,
+	RoomDetailWithMetaResponseDto,
 	UpdateRoomDto,
 	UpdateRoomInstanceStatusDto,
 } from './dto';
-import { RoomDetailDto } from './dto/room-detail.dto';
 import { RoomsService } from './rooms.service';
 
 @ApiTags('Rooms')
@@ -42,21 +46,25 @@ export class RoomsController {
 	@Post(':buildingId/rooms')
 	@UseGuards(JwtAuthGuard)
 	@ApiBearerAuth()
+	@UseInterceptors(FilesInterceptor('images', 10)) // Max 10 images
+	@ApiConsumes('multipart/form-data')
 	@ApiOperation({
-		summary: 'Tạo room type mới cho building',
-		description: `Tạo loại phòng mới với đầy đủ thông tin:
+		summary: 'Tạo room type mới cho building với hình ảnh',
+		description: `Tạo loại phòng mới với đầy đủ thông tin và upload hình ảnh:
 - **Pricing**: Giá thuê, tiền cọc, điều kiện thuê
 - **Amenities**: Danh sách tiện ích từ system amenities
 - **Costs**: Chi phí phát sinh (điện, nước, internet, v.v.)
 - **Rules**: Quy tắc từ system rules
+- **Images**: Upload files hình ảnh (tối đa 10 ảnh)
 - **Room Instances**: Tự động sinh phòng cụ thể theo totalRooms
 
 Sau khi tạo thành công, hệ thống sẽ tự động:
-1. Generate unique slug cho room type
-2. Tạo pricing record
-3. Link amenities, costs, rules từ system data
-4. Batch tạo room instances với room numbers
-5. Set tất cả instances = "available" status`,
+1. Upload và xử lý hình ảnh
+2. Generate unique slug cho room type
+3. Tạo pricing record
+4. Link amenities, costs, rules từ system data
+5. Batch tạo room instances với room numbers
+6. Set tất cả instances = "available" status`,
 	})
 	@ApiParam({
 		name: 'buildingId',
@@ -66,7 +74,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	@ApiResponse({
 		status: HttpStatus.CREATED,
 		description: 'Room type được tạo thành công kèm room instances',
-		type: ApiResponseDto<RoomResponseDto>,
+		type: ApiResponseDto<RoomDetailOutputDto>,
 		schema: {
 			example: {
 				success: true,
@@ -132,8 +140,9 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		@CurrentUser('id') userId: string,
 		@Param('buildingId') buildingId: string,
 		@Body() createRoomDto: CreateRoomDto,
-	): Promise<ApiResponseDto<RoomResponseDto>> {
-		const room = await this.roomsService.create(userId, buildingId, createRoomDto);
+		@UploadedFiles() files?: Express.Multer.File[],
+	): Promise<ApiResponseDto<RoomDetailOutputDto>> {
+		const room = await this.roomsService.create(userId, buildingId, createRoomDto, files);
 
 		return ApiResponseDto.success(room, 'Room created successfully with instances');
 	}
@@ -201,7 +210,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		@Query('limit') limit?: string,
 	): Promise<
 		ApiResponseDto<{
-			rooms: RoomResponseDto[];
+			rooms: RoomDetailOutputDto[];
 			total: number;
 			page: number;
 			limit: number;
@@ -230,7 +239,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	@ApiResponse({
 		status: HttpStatus.OK,
 		description: 'Lấy thông tin room type thành công',
-		type: ApiResponseDto<RoomResponseDto>,
+		type: ApiResponseDto<RoomDetailOutputDto>,
 	})
 	@ApiResponse({
 		status: HttpStatus.NOT_FOUND,
@@ -240,7 +249,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		status: HttpStatus.UNAUTHORIZED,
 		description: 'Chưa đăng nhập',
 	})
-	async findOne(@Param('roomId') roomId: string): Promise<ApiResponseDto<RoomResponseDto>> {
+	async findOne(@Param('roomId') roomId: string): Promise<ApiResponseDto<RoomDetailOutputDto>> {
 		const room = await this.roomsService.findOne(roomId);
 
 		return ApiResponseDto.success(room, 'Room retrieved successfully');
@@ -261,13 +270,16 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	@ApiResponse({
 		status: 200,
 		description: 'Room details retrieved successfully',
-		type: RoomDetailDto,
+		type: RoomDetailWithMetaResponseDto,
 	})
 	@ApiResponse({
 		status: 404,
 		description: 'Room not found',
 	})
-	async getRoomBySlug(@Param('slug') slug: string, @Req() req: Request): Promise<RoomDetailDto> {
+	async getRoomBySlug(
+		@Param('slug') slug: string,
+		@Req() req: Request,
+	): Promise<RoomDetailWithMetaResponseDto> {
 		const clientIp =
 			req.ip || req.connection?.remoteAddress || (req.headers['x-forwarded-for'] as string);
 		const isAuthenticated = Boolean((req as any).user);
@@ -289,13 +301,16 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	@ApiResponse({
 		status: 200,
 		description: 'Room details retrieved successfully',
-		type: RoomDetailDto,
+		type: RoomDetailWithMetaResponseDto,
 	})
 	@ApiResponse({
 		status: 404,
 		description: 'Room not found',
 	})
-	async getRoomBySlugAlt(@Param('slug') slug: string, @Req() req: Request): Promise<RoomDetailDto> {
+	async getRoomBySlugAlt(
+		@Param('slug') slug: string,
+		@Req() req: Request,
+	): Promise<RoomDetailWithMetaResponseDto> {
 		const clientIp =
 			req.ip || req.connection?.remoteAddress || (req.headers['x-forwarded-for'] as string);
 		const isAuthenticated = Boolean((req as any).user);
@@ -324,7 +339,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	@ApiResponse({
 		status: HttpStatus.OK,
 		description: 'Cập nhật room thành công',
-		type: ApiResponseDto<RoomResponseDto>,
+		type: ApiResponseDto<RoomDetailOutputDto>,
 		schema: {
 			example: {
 				success: true,
@@ -381,7 +396,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		@CurrentUser('id') userId: string,
 		@Param('roomId') roomId: string,
 		@Body() updateRoomDto: UpdateRoomDto,
-	): Promise<ApiResponseDto<RoomResponseDto>> {
+	): Promise<ApiResponseDto<RoomDetailOutputDto>> {
 		const room = await this.roomsService.update(userId, roomId, updateRoomDto);
 
 		return ApiResponseDto.success(room, 'Room updated successfully');
@@ -490,7 +505,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		@Query('limit') limit?: string,
 	): Promise<
 		ApiResponseDto<{
-			rooms: RoomResponseDto[];
+			rooms: RoomDetailOutputDto[];
 			total: number;
 			page: number;
 			limit: number;

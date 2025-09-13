@@ -30,7 +30,7 @@ import {
 } from './dto';
 import { NotificationsService } from './notifications.service';
 
-@ApiTags('Notifications - Chưa hoạt động')
+@ApiTags('Notifications')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('notifications')

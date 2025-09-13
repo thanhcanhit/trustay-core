@@ -5,11 +5,13 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import { SearchPostStatus } from '@prisma/client';
+import { BreadcrumbDto, SeoDto } from '../../common/dto';
 import { PaginatedResponseDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { generateSlug, generateUniqueSlug } from '../../common/utils';
 import { maskEmail, maskFullName, maskPhone } from '../../common/utils/mask.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateRoomSeekingPostDto, RoomRoomSeekingPostDto, UpdateRoomSeekingPostDto } from './dto';
+import { RoomSeekingDetailWithMetaResponseDto } from './dto/room-seeking-detail-with-meta.dto';
 
 @Injectable()
 export class RoomSeekingPostService {
@@ -70,6 +72,145 @@ export class RoomSeekingPostService {
 		cacheEntry.timestamp = now;
 
 		return true;
+	}
+
+	/**
+	 * Generate SEO data for room seeking detail page
+	 */
+	private async generateRoomSeekingDetailSeo(post: any): Promise<SeoDto> {
+		const {
+			title,
+			preferredRoomType,
+			preferredProvince,
+			preferredDistrict,
+			preferredWard,
+			minBudget,
+			maxBudget,
+		} = post;
+
+		// Get room type info
+		const roomTypeMap: Record<string, string> = {
+			boarding_house: 'nhà trọ',
+			dormitory: 'ký túc xá',
+			sleepbox: 'sleepbox',
+			apartment: 'chung cư',
+			whole_house: 'nhà nguyên căn',
+		};
+		const roomTypeText = preferredRoomType
+			? roomTypeMap[preferredRoomType] || preferredRoomType
+			: 'phòng trọ';
+
+		// Get location info
+		const locationParts = [];
+		if (preferredWard?.name) locationParts.push(preferredWard.name);
+		if (preferredDistrict?.name) locationParts.push(preferredDistrict.name);
+		if (preferredProvince?.name) locationParts.push(preferredProvince.name);
+
+		// Get budget info
+		let budgetText = '';
+		if (minBudget && maxBudget) {
+			budgetText = `từ ${(Number(minBudget) / 1000000).toFixed(1)} triệu đến ${(Number(maxBudget) / 1000000).toFixed(1)} triệu`;
+		} else if (minBudget) {
+			budgetText = `từ ${(Number(minBudget) / 1000000).toFixed(1)} triệu`;
+		} else if (maxBudget) {
+			budgetText = `dưới ${(Number(maxBudget) / 1000000).toFixed(1)} triệu`;
+		}
+
+		// Build title
+		let seoTitle = title;
+		if (locationParts.length > 0) {
+			seoTitle += ` tại ${locationParts.join(', ')}`;
+		}
+		if (budgetText) {
+			seoTitle += ` ${budgetText}`;
+		}
+		seoTitle += ' | Trustay';
+
+		// Build description
+		let description = `${title} - Tìm ${roomTypeText} chất lượng cao`;
+		if (locationParts.length > 0) {
+			description += ` tại ${locationParts.join(', ')}`;
+		}
+		if (budgetText) {
+			description += ` với ngân sách ${budgetText}`;
+		}
+		description += '. Kết nối chủ nhà và người thuê hiệu quả!';
+
+		// Build keywords
+		const keywords = [
+			title,
+			'tìm người thuê',
+			'đăng tin tìm trọ',
+			'room seeking',
+			roomTypeText,
+			...locationParts,
+			budgetText ? 'ngân sách' : '',
+			'chủ nhà',
+			'người thuê',
+		]
+			.filter(Boolean)
+			.join(', ');
+
+		return {
+			title: seoTitle,
+			description,
+			keywords,
+		};
+	}
+
+	/**
+	 * Generate breadcrumb for room seeking detail page
+	 */
+	private async generateRoomSeekingDetailBreadcrumb(post: any): Promise<BreadcrumbDto> {
+		const { title, preferredRoomType, preferredProvince, preferredDistrict, preferredWard } = post;
+
+		const items = [
+			{ title: 'Trang chủ', path: '/' },
+			{ title: 'Tìm người thuê', path: '/room-seekings' },
+		];
+
+		// Add location breadcrumbs
+		if (preferredWard?.name) {
+			items.push({
+				title: preferredWard.name,
+				path: `/room-seekings?wardId=${preferredWard.id}`,
+			});
+		}
+		if (preferredDistrict?.name) {
+			items.push({
+				title: preferredDistrict.name,
+				path: `/room-seekings?districtId=${preferredDistrict.id}`,
+			});
+		}
+		if (preferredProvince?.name) {
+			items.push({
+				title: preferredProvince.name,
+				path: `/room-seekings?provinceId=${preferredProvince.id}`,
+			});
+		}
+
+		// Add room type breadcrumb
+		if (preferredRoomType) {
+			const roomTypeMap: Record<string, string> = {
+				boarding_house: 'Nhà trọ',
+				dormitory: 'Ký túc xá',
+				sleepbox: 'Sleepbox',
+				apartment: 'Chung cư',
+				whole_house: 'Nhà nguyên căn',
+			};
+			items.push({
+				title: roomTypeMap[preferredRoomType] || preferredRoomType,
+				path: `/room-seekings?roomType=${preferredRoomType}`,
+			});
+		}
+
+		// Add post title (current page)
+		items.push({
+			title: title,
+			path: `/room-seekings/${post.slug}`,
+		});
+
+		return { items };
 	}
 
 	/**
@@ -305,7 +446,7 @@ export class RoomSeekingPostService {
 		id: string,
 		clientIp?: string,
 		context: { isAuthenticated: boolean } = { isAuthenticated: false },
-	): Promise<RoomRoomSeekingPostDto> {
+	): Promise<RoomSeekingDetailWithMetaResponseDto> {
 		const { isAuthenticated } = context;
 		const roomRequest = await this.prisma.roomSeekingPost.findUnique({
 			where: { id },
@@ -366,21 +507,36 @@ export class RoomSeekingPostService {
 		}
 
 		const dto = this.mapToResponseDto(roomRequest);
+
+		// Generate SEO and breadcrumb
+		const seo = await this.generateRoomSeekingDetailSeo(roomRequest);
+		const breadcrumb = await this.generateRoomSeekingDetailBreadcrumb(roomRequest);
+
+		let responseDto: RoomSeekingDetailWithMetaResponseDto;
 		if (!isAuthenticated) {
 			const fullName = `${dto.requester.firstName ?? ''} ${dto.requester.lastName ?? ''}`.trim();
-			return {
+			responseDto = {
 				...dto,
 				requester: {
 					...dto.requester,
-					firstName: undefined as unknown as string,
-					lastName: undefined as unknown as string,
+					firstName: undefined,
+					lastName: undefined,
 					email: dto.requester.email ? maskEmail(dto.requester.email) : '',
 					phone: dto.requester.phone ? maskPhone(dto.requester.phone) : '',
 					name: fullName ? maskFullName(fullName) : undefined,
 				},
-			} as unknown as RoomRoomSeekingPostDto;
+				seo,
+				breadcrumb,
+			};
+		} else {
+			responseDto = {
+				...dto,
+				seo,
+				breadcrumb,
+			};
 		}
-		return dto;
+
+		return responseDto;
 	}
 
 	async update(

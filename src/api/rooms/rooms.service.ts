@@ -5,8 +5,15 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import { BreadcrumbDto, SeoDto } from '../../common/dto';
+import { RoomDetailOutputDto, RoomListItemOutputDto } from '../../common/dto/room-output.dto';
+import { UploadService } from '../../common/services/upload.service';
 import { generateRoomSlug, generateUniqueSlug } from '../../common/utils';
-import { maskFullName, maskPhone, maskText } from '../../common/utils/mask.utils';
+import {
+	formatRoomDetail,
+	formatRoomListItem,
+	getOwnerStats,
+} from '../../common/utils/room-formatter.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
 	BulkUpdateRoomInstanceStatusDto,
@@ -15,7 +22,7 @@ import {
 	UpdateRoomDto,
 	UpdateRoomInstanceStatusDto,
 } from './dto';
-import { RoomDetailDto } from './dto/room-detail.dto';
+import { RoomDetailWithMetaResponseDto } from './dto/room-detail-with-meta.dto';
 
 @Injectable()
 export class RoomsService {
@@ -23,7 +30,10 @@ export class RoomsService {
 	private readonly VIEW_COOLDOWN_MS = 1 * 60 * 1000; // 1 phút
 	private readonly CACHE_CLEANUP_INTERVAL = 30 * 60 * 1000; // 30 phút
 
-	constructor(private readonly prisma: PrismaService) {
+	constructor(
+		private readonly prisma: PrismaService,
+		private readonly uploadService: UploadService,
+	) {
 		// Dọn dẹp cache định kỳ
 		setInterval(() => {
 			this.cleanupViewCache();
@@ -78,11 +88,201 @@ export class RoomsService {
 		return true;
 	}
 
+	/**
+	 * Generate SEO data for room detail page
+	 */
+	private async generateRoomDetailSeo(room: any): Promise<SeoDto> {
+		const { name, roomType, building, pricing } = room;
+
+		// Get room type info
+		const roomTypeMap: Record<string, string> = {
+			boarding_house: 'nhà trọ',
+			dormitory: 'ký túc xá',
+			sleepbox: 'sleepbox',
+			apartment: 'chung cư',
+			whole_house: 'nhà nguyên căn',
+		};
+		const roomTypeText = roomTypeMap[roomType] || 'phòng trọ';
+
+		// Get location info
+		const locationParts = [];
+		if (building.ward?.name) locationParts.push(building.ward.name);
+		if (building.district?.name) locationParts.push(building.district.name);
+		if (building.province?.name) locationParts.push(building.province.name);
+
+		// Get price info
+		const price = pricing?.basePriceMonthly ? Number(pricing.basePriceMonthly) : 0;
+		const priceText = price > 0 ? `${(price / 1000000).toFixed(1)} triệu/tháng` : '';
+
+		// Build title
+		let title = `${name} - ${roomTypeText}`;
+		if (locationParts.length > 0) {
+			title += ` tại ${locationParts.join(', ')}`;
+		}
+		if (priceText) {
+			title += ` ${priceText}`;
+		}
+		title += ' | Trustay';
+
+		// Build description
+		let description = `${name} - ${roomTypeText} chất lượng cao`;
+		if (locationParts.length > 0) {
+			description += ` tại ${locationParts.join(', ')}`;
+		}
+		if (priceText) {
+			description += ` với giá ${priceText}`;
+		}
+		description += '. Xem chi tiết, đặt phòng ngay!';
+
+		// Build keywords
+		const keywords = [
+			name,
+			roomTypeText,
+			'phòng trọ',
+			'nhà trọ',
+			'thuê phòng',
+			...locationParts,
+			priceText ? 'giá rẻ' : '',
+			'đầy đủ tiện nghi',
+			'chất lượng cao',
+		]
+			.filter(Boolean)
+			.join(', ');
+
+		return {
+			title,
+			description,
+			keywords,
+		};
+	}
+
+	/**
+	 * Generate breadcrumb for room detail page
+	 */
+	private async generateRoomDetailBreadcrumb(room: any): Promise<BreadcrumbDto> {
+		const { name, roomType, building } = room;
+
+		const items = [
+			{ title: 'Trang chủ', path: '/' },
+			{ title: 'Tìm phòng trọ', path: '/rooms' },
+		];
+
+		// Add location breadcrumbs
+		if (building.ward?.name) {
+			items.push({
+				title: building.ward.name,
+				path: `/rooms?wardId=${building.ward.id}`,
+			});
+		}
+		if (building.district?.name) {
+			items.push({
+				title: building.district.name,
+				path: `/rooms?districtId=${building.district.id}`,
+			});
+		}
+		if (building.province?.name) {
+			items.push({
+				title: building.province.name,
+				path: `/rooms?provinceId=${building.province.id}`,
+			});
+		}
+
+		// Add room type breadcrumb
+		const roomTypeMap: Record<string, string> = {
+			boarding_house: 'Nhà trọ',
+			dormitory: 'Ký túc xá',
+			sleepbox: 'Sleepbox',
+			apartment: 'Chung cư',
+			whole_house: 'Nhà nguyên căn',
+		};
+		items.push({
+			title: roomTypeMap[roomType] || roomType,
+			path: `/rooms?roomType=${roomType}`,
+		});
+
+		// Add room name (current page)
+		items.push({
+			title: name,
+			path: `/rooms/${room.slug}`,
+		});
+
+		return { items };
+	}
+
+	/**
+	 * Get similar rooms in the same district and province
+	 */
+	private async getSimilarRooms(room: any, limit: number = 8): Promise<RoomListItemOutputDto[]> {
+		const { building } = room;
+
+		// Get rooms in the same district and province, excluding current room
+		const similarRooms = await this.prisma.room.findMany({
+			where: {
+				id: { not: room.id },
+				isActive: true,
+				building: {
+					districtId: building.districtId,
+					provinceId: building.provinceId,
+				},
+			},
+			include: {
+				building: {
+					include: {
+						province: { select: { id: true, name: true, code: true } },
+						district: { select: { id: true, name: true, code: true } },
+						ward: { select: { id: true, name: true, code: true } },
+						owner: {
+							select: {
+								id: true,
+								firstName: true,
+								lastName: true,
+								avatarUrl: true,
+								gender: true,
+								isVerifiedPhone: true,
+								isVerifiedEmail: true,
+								isVerifiedIdentity: true,
+							},
+						},
+					},
+				},
+				images: {
+					select: {
+						id: true,
+						imageUrl: true,
+						altText: true,
+						sortOrder: true,
+						isPrimary: true,
+					},
+					orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+					take: 1, // Only get primary image for list view
+				},
+				pricing: {
+					select: {
+						basePriceMonthly: true,
+						currency: true,
+					},
+				},
+			},
+			orderBy: [
+				{ viewCount: 'desc' }, // Popular rooms first
+				{ createdAt: 'desc' }, // Then newest
+			],
+			take: limit,
+		});
+
+		// Format similar rooms using the same utility as listing
+		return similarRooms.map((similarRoom) => {
+			const ownerStats = { totalBuildings: 0, totalRoomInstances: 0 }; // Simplified for similar rooms
+			return formatRoomListItem(similarRoom, false, { ownerStats });
+		});
+	}
+
 	async create(
 		userId: string,
 		buildingId: string,
 		createRoomDto: CreateRoomDto,
-	): Promise<RoomResponseDto> {
+		files?: Express.Multer.File[],
+	): Promise<RoomDetailOutputDto> {
 		// Verify building ownership and existence
 		const building = await this.prisma.building.findUnique({
 			where: { id: buildingId },
@@ -216,6 +416,25 @@ export class RoomsService {
 				})),
 			});
 
+			// 7. Upload and create room images
+			if (files?.length) {
+				const uploadPromises = files.map(async (file, index) => {
+					const uploadResult = await this.uploadService.uploadImage(file);
+					return {
+						roomId: room.id,
+						imageUrl: uploadResult.imagePath,
+						altText: `Room image ${index + 1}`,
+						sortOrder: index,
+						isPrimary: index === 0, // First image is primary
+					};
+				});
+
+				const processedImages = await Promise.all(uploadPromises);
+				await tx.roomImage.createMany({
+					data: processedImages,
+				});
+			}
+
 			return room.id;
 		});
 
@@ -223,22 +442,59 @@ export class RoomsService {
 		return this.findOne(result);
 	}
 
-	async findOne(roomId: string): Promise<RoomResponseDto> {
+	async findOne(roomId: string): Promise<RoomDetailOutputDto> {
 		const room = await this.prisma.room.findUnique({
 			where: { id: roomId },
 			include: {
 				building: {
-					select: {
-						id: true,
-						name: true,
-						addressLine1: true,
+					include: {
+						province: { select: { id: true, name: true, code: true } },
+						district: { select: { id: true, name: true, code: true } },
+						ward: { select: { id: true, name: true, code: true } },
+						owner: {
+							select: {
+								id: true,
+								firstName: true,
+								lastName: true,
+								avatarUrl: true,
+								gender: true,
+								email: true,
+								phone: true,
+								isVerifiedPhone: true,
+								isVerifiedEmail: true,
+								isVerifiedIdentity: true,
+							},
+						},
 					},
 				},
-				pricing: true,
+				roomInstances: {
+					select: {
+						id: true,
+						roomNumber: true,
+						status: true,
+						isActive: true,
+					},
+					where: { isActive: true },
+					orderBy: { roomNumber: 'asc' },
+				},
+				images: {
+					select: {
+						id: true,
+						imageUrl: true,
+						altText: true,
+						sortOrder: true,
+						isPrimary: true,
+					},
+					orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+				},
 				amenities: {
-					include: {
+					select: {
+						id: true,
+						customValue: true,
+						notes: true,
 						systemAmenity: {
 							select: {
+								id: true,
 								name: true,
 								nameEn: true,
 								category: true,
@@ -247,30 +503,51 @@ export class RoomsService {
 					},
 				},
 				costs: {
-					include: {
+					select: {
+						id: true,
+						baseRate: true,
+						currency: true,
+						notes: true,
 						systemCostType: {
 							select: {
+								id: true,
 								name: true,
 								nameEn: true,
 								category: true,
+								defaultUnit: true,
 							},
 						},
+					},
+				},
+				pricing: {
+					select: {
+						id: true,
+						basePriceMonthly: true,
+						currency: true,
+						depositAmount: true,
+						depositMonths: true,
+						utilityIncluded: true,
+						utilityCostMonthly: true,
+						minimumStayMonths: true,
+						maximumStayMonths: true,
+						priceNegotiable: true,
 					},
 				},
 				rules: {
-					include: {
+					select: {
+						id: true,
+						customValue: true,
+						isEnforced: true,
+						notes: true,
 						systemRule: {
 							select: {
+								id: true,
+								ruleType: true,
 								name: true,
 								nameEn: true,
-								category: true,
-								ruleType: true,
 							},
 						},
 					},
-				},
-				roomInstances: {
-					orderBy: { roomNumber: 'asc' },
 				},
 			},
 		});
@@ -279,7 +556,12 @@ export class RoomsService {
 			throw new NotFoundException('Room not found');
 		}
 
-		return this.transformRoomResponse(room);
+		// Get owner statistics
+		const ownerStats = await getOwnerStats(this.prisma, room.building.owner.id);
+
+		// Use the same format utility as public endpoint
+		// For admin, always show full info (authenticated = true)
+		return formatRoomDetail(room, true, ownerStats);
 	}
 
 	private async validateSystemReferences(createRoomDto: CreateRoomDto): Promise<void> {
@@ -407,7 +689,7 @@ export class RoomsService {
 		slug: string,
 		clientIp?: string,
 		context: { isAuthenticated: boolean } = { isAuthenticated: false },
-	): Promise<RoomDetailDto> {
+	): Promise<RoomDetailWithMetaResponseDto> {
 		const { isAuthenticated } = context;
 		// Find room type by slug
 		const room = await this.prisma.room.findFirst({
@@ -428,6 +710,7 @@ export class RoomsService {
 								lastName: true,
 								avatarUrl: true,
 								gender: true,
+								email: true,
 								phone: true,
 								isVerifiedPhone: true,
 								isVerifiedEmail: true,
@@ -533,111 +816,32 @@ export class RoomsService {
 			});
 		}
 
-		const result: RoomDetailDto = {
-			id: room.id,
-			slug: room.slug,
-			name: room.name,
-			description: room.description,
-			roomType: room.roomType,
-			areaSqm: room.areaSqm?.toString(),
-			maxOccupancy: room.maxOccupancy,
-			totalRooms: room.totalRooms,
-			availableRooms: room.roomInstances.filter((instance) => instance.status === 'available')
-				.length,
-			isVerified: room.isVerified,
-			isActive: room.isActive,
-			floorNumber: room.floorNumber,
-			buildingName: room.building.name,
-			buildingDescription: room.building.description,
-			address: isAuthenticated
-				? room.building.addressLine1
-				: maskText(room.building.addressLine1, 0, 0),
-			addressLine2: room.building.addressLine2,
-			latitude: room.building.latitude?.toString() || null,
-			longitude: room.building.longitude?.toString() || null,
-			location: {
-				provinceId: room.building.province.id,
-				provinceName: room.building.province.name,
-				districtId: room.building.district.id,
-				districtName: room.building.district.name,
-				wardId: room.building.ward?.id,
-				wardName: room.building.ward?.name,
-			},
-			owner: ((): any => {
-				const fullName =
-					`${room.building.owner.firstName ?? ''} ${room.building.owner.lastName ?? ''}`.trim();
-				return {
-					id: room.building.owner.id,
-					firstName: isAuthenticated ? room.building.owner.firstName : undefined,
-					lastName: isAuthenticated ? room.building.owner.lastName : undefined,
-					name: isAuthenticated ? fullName : maskFullName(fullName),
-					phone: isAuthenticated
-						? room.building.owner.phone
-						: room.building.owner.phone
-							? maskPhone(room.building.owner.phone)
-							: '',
-					isVerifiedPhone: room.building.owner.isVerifiedPhone,
-					isVerifiedEmail: room.building.owner.isVerifiedEmail,
-					isVerifiedIdentity: room.building.owner.isVerifiedIdentity,
-				};
-			})(),
-			roomInstances: room.roomInstances.map((instance) => ({
-				id: instance.id,
-				roomNumber: instance.roomNumber,
-				isOccupied: instance.status === 'occupied',
-				isActive: instance.isActive,
-			})),
-			images: room.images.map((image) => ({
-				url: image.imageUrl,
-				alt: image.altText,
-				isPrimary: image.isPrimary,
-				sortOrder: image.sortOrder,
-			})),
-			amenities: room.amenities.map((amenity) => ({
-				id: amenity.systemAmenity.id,
-				name: amenity.systemAmenity.name,
-				category: amenity.systemAmenity.category,
-				customValue: amenity.customValue,
-				notes: amenity.notes,
-			})),
-			costs: room.costs.map((cost) => ({
-				id: cost.systemCostType.id,
-				name: cost.systemCostType.name,
-				value: cost.baseRate?.toString() || '0',
-				category: cost.systemCostType.category,
-				notes: cost.notes,
-			})),
-			pricing: room.pricing
-				? {
-						basePriceMonthly: room.pricing.basePriceMonthly.toString(),
-						depositAmount: room.pricing.depositAmount.toString(),
-						depositMonths: room.pricing.depositMonths,
-						utilityIncluded: room.pricing.utilityIncluded,
-						utilityCostMonthly: room.pricing.utilityCostMonthly?.toString() || null,
-						minimumStayMonths: room.pricing.minimumStayMonths,
-						maximumStayMonths: room.pricing.maximumStayMonths,
-						priceNegotiable: room.pricing.priceNegotiable,
-					}
-				: undefined,
-			rules: room.rules.map((rule) => ({
-				id: rule.systemRule.id,
-				name: rule.customValue || rule.systemRule.name,
-				type: rule.systemRule.ruleType,
-				customValue: rule.customValue,
-				notes: rule.notes,
-				isEnforced: rule.isEnforced,
-			})),
-			viewCount: room.viewCount || 0,
-			lastUpdated: room.updatedAt,
+		// Get owner statistics
+		const ownerStats = await getOwnerStats(this.prisma, room.building.owner.id);
+
+		// Use the formatting utility function
+		const roomDetail = formatRoomDetail(room, isAuthenticated, ownerStats);
+
+		// Generate SEO and breadcrumb
+		const seo = await this.generateRoomDetailSeo(room);
+		const breadcrumb = await this.generateRoomDetailBreadcrumb(room);
+
+		// Get similar rooms
+		const similarRooms = await this.getSimilarRooms(room, 8);
+
+		return {
+			...roomDetail,
+			seo,
+			breadcrumb,
+			similarRooms,
 		};
-		return result;
 	}
 
 	async update(
 		userId: string,
 		roomId: string,
 		updateRoomDto: UpdateRoomDto,
-	): Promise<RoomResponseDto> {
+	): Promise<RoomDetailOutputDto> {
 		// Verify room ownership
 		const existingRoom = await this.prisma.room.findUnique({
 			where: { id: roomId },
@@ -911,7 +1115,7 @@ export class RoomsService {
 		page: number = 1,
 		limit: number = 10,
 	): Promise<{
-		rooms: RoomResponseDto[];
+		rooms: RoomDetailOutputDto[];
 		total: number;
 		page: number;
 		limit: number;
@@ -940,17 +1144,53 @@ export class RoomsService {
 				where: { buildingId },
 				include: {
 					building: {
-						select: {
-							id: true,
-							name: true,
-							addressLine1: true,
+						include: {
+							province: { select: { id: true, name: true, code: true } },
+							district: { select: { id: true, name: true, code: true } },
+							ward: { select: { id: true, name: true, code: true } },
+							owner: {
+								select: {
+									id: true,
+									firstName: true,
+									lastName: true,
+									avatarUrl: true,
+									gender: true,
+									phone: true,
+									isVerifiedPhone: true,
+									isVerifiedEmail: true,
+									isVerifiedIdentity: true,
+								},
+							},
 						},
 					},
-					pricing: true,
+					roomInstances: {
+						select: {
+							id: true,
+							roomNumber: true,
+							status: true,
+							isActive: true,
+						},
+						where: { isActive: true },
+						orderBy: { roomNumber: 'asc' },
+					},
+					images: {
+						select: {
+							id: true,
+							imageUrl: true,
+							altText: true,
+							sortOrder: true,
+							isPrimary: true,
+						},
+						orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+					},
 					amenities: {
-						include: {
+						select: {
+							id: true,
+							customValue: true,
+							notes: true,
 							systemAmenity: {
 								select: {
+									id: true,
 									name: true,
 									nameEn: true,
 									category: true,
@@ -959,30 +1199,51 @@ export class RoomsService {
 						},
 					},
 					costs: {
-						include: {
+						select: {
+							id: true,
+							baseRate: true,
+							currency: true,
+							notes: true,
 							systemCostType: {
 								select: {
+									id: true,
 									name: true,
 									nameEn: true,
 									category: true,
+									defaultUnit: true,
 								},
 							},
+						},
+					},
+					pricing: {
+						select: {
+							id: true,
+							basePriceMonthly: true,
+							currency: true,
+							depositAmount: true,
+							depositMonths: true,
+							utilityIncluded: true,
+							utilityCostMonthly: true,
+							minimumStayMonths: true,
+							maximumStayMonths: true,
+							priceNegotiable: true,
 						},
 					},
 					rules: {
-						include: {
+						select: {
+							id: true,
+							customValue: true,
+							isEnforced: true,
+							notes: true,
 							systemRule: {
 								select: {
+									id: true,
+									ruleType: true,
 									name: true,
 									nameEn: true,
-									category: true,
-									ruleType: true,
 								},
 							},
 						},
-					},
-					roomInstances: {
-						orderBy: { roomNumber: 'asc' },
 					},
 				},
 				skip,
@@ -994,8 +1255,14 @@ export class RoomsService {
 			}),
 		]);
 
+		// Get owner statistics (all rooms belong to the same owner)
+		const ownerStats =
+			rooms.length > 0
+				? await getOwnerStats(this.prisma, rooms[0].building.owner.id)
+				: { totalBuildings: 0, totalRoomInstances: 0 };
+
 		return {
-			rooms: rooms.map((room) => this.transformRoomResponse(room)),
+			rooms: rooms.map((room) => formatRoomDetail(room, true, ownerStats)), // Admin always authenticated
 			total,
 			page,
 			limit,
@@ -1008,7 +1275,7 @@ export class RoomsService {
 		page: number = 1,
 		limit: number = 10,
 	): Promise<{
-		rooms: RoomResponseDto[];
+		rooms: RoomDetailOutputDto[];
 		total: number;
 		page: number;
 		limit: number;
@@ -1025,17 +1292,53 @@ export class RoomsService {
 				},
 				include: {
 					building: {
-						select: {
-							id: true,
-							name: true,
-							addressLine1: true,
+						include: {
+							province: { select: { id: true, name: true, code: true } },
+							district: { select: { id: true, name: true, code: true } },
+							ward: { select: { id: true, name: true, code: true } },
+							owner: {
+								select: {
+									id: true,
+									firstName: true,
+									lastName: true,
+									avatarUrl: true,
+									gender: true,
+									phone: true,
+									isVerifiedPhone: true,
+									isVerifiedEmail: true,
+									isVerifiedIdentity: true,
+								},
+							},
 						},
 					},
-					pricing: true,
+					roomInstances: {
+						select: {
+							id: true,
+							roomNumber: true,
+							status: true,
+							isActive: true,
+						},
+						where: { isActive: true },
+						orderBy: { roomNumber: 'asc' },
+					},
+					images: {
+						select: {
+							id: true,
+							imageUrl: true,
+							altText: true,
+							sortOrder: true,
+							isPrimary: true,
+						},
+						orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+					},
 					amenities: {
-						include: {
+						select: {
+							id: true,
+							customValue: true,
+							notes: true,
 							systemAmenity: {
 								select: {
+									id: true,
 									name: true,
 									nameEn: true,
 									category: true,
@@ -1044,30 +1347,51 @@ export class RoomsService {
 						},
 					},
 					costs: {
-						include: {
+						select: {
+							id: true,
+							baseRate: true,
+							currency: true,
+							notes: true,
 							systemCostType: {
 								select: {
+									id: true,
 									name: true,
 									nameEn: true,
 									category: true,
+									defaultUnit: true,
 								},
 							},
+						},
+					},
+					pricing: {
+						select: {
+							id: true,
+							basePriceMonthly: true,
+							currency: true,
+							depositAmount: true,
+							depositMonths: true,
+							utilityIncluded: true,
+							utilityCostMonthly: true,
+							minimumStayMonths: true,
+							maximumStayMonths: true,
+							priceNegotiable: true,
 						},
 					},
 					rules: {
-						include: {
+						select: {
+							id: true,
+							customValue: true,
+							isEnforced: true,
+							notes: true,
 							systemRule: {
 								select: {
+									id: true,
+									ruleType: true,
 									name: true,
 									nameEn: true,
-									category: true,
-									ruleType: true,
 								},
 							},
 						},
-					},
-					roomInstances: {
-						orderBy: { roomNumber: 'asc' },
 					},
 				},
 				skip,
@@ -1083,8 +1407,11 @@ export class RoomsService {
 			}),
 		]);
 
+		// Get owner statistics (userId is the owner for all rooms)
+		const ownerStats = await getOwnerStats(this.prisma, userId);
+
 		return {
-			rooms: rooms.map((room) => this.transformRoomResponse(room)),
+			rooms: rooms.map((room) => formatRoomDetail(room, true, ownerStats)), // Admin always authenticated
 			total,
 			page,
 			limit,

@@ -1,20 +1,346 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { BreadcrumbDto, SeoDto } from '../../common/dto';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
-import { maskEmail, maskFullName, maskPhone, maskText } from '../../common/utils/mask.utils';
+import { maskEmail, maskFullName, maskPhone } from '../../common/utils/mask.utils';
+import { formatRoomListItem, getOwnerStats } from '../../common/utils/room-formatter.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingQueryDto, RoomRequestSearchDto } from './dto/listing-query.dto';
-import { PaginatedListingResponseDto } from './dto/paginated-listing-response.dto';
-import { PaginatedRoomSeekingResponseDto } from './dto/paginated-room-seeking-response.dto';
+import { ListingWithMetaResponseDto } from './dto/listing-with-meta.dto';
+import { RoomSeekingWithMetaResponseDto } from './dto/room-seeking-with-meta.dto';
 
 @Injectable()
 export class ListingService {
 	constructor(private readonly prisma: PrismaService) {}
 
+	/**
+	 * Generate SEO data for room listings
+	 */
+	private async generateRoomListingSeo(query: ListingQueryDto): Promise<SeoDto> {
+		const { search, provinceId, districtId, wardId, roomType, minPrice, maxPrice } = query;
+
+		// Get location info from database
+		const locationParts: string[] = [];
+		if (wardId) {
+			const ward = await this.prisma.ward.findUnique({
+				where: { id: wardId },
+				select: { name: true },
+			});
+			if (ward) locationParts.push(ward.name);
+		}
+		if (districtId) {
+			const district = await this.prisma.district.findUnique({
+				where: { id: districtId },
+				select: { name: true },
+			});
+			if (district) locationParts.push(district.name);
+		}
+		if (provinceId) {
+			const province = await this.prisma.province.findUnique({
+				where: { id: provinceId },
+				select: { name: true },
+			});
+			if (province) locationParts.push(province.name);
+		}
+
+		// Get room type info
+		const roomTypeMap: Record<string, string> = {
+			boarding_house: 'nhà trọ',
+			dormitory: 'ký túc xá',
+			sleepbox: 'sleepbox',
+			apartment: 'chung cư',
+			whole_house: 'nhà nguyên căn',
+		};
+		const roomTypeText = roomType ? roomTypeMap[roomType] || roomType : 'phòng trọ';
+
+		// Get price range
+		let priceText = '';
+		if (minPrice && maxPrice) {
+			priceText = `từ ${(minPrice / 1000000).toFixed(1)} triệu đến ${(maxPrice / 1000000).toFixed(1)} triệu`;
+		} else if (minPrice) {
+			priceText = `từ ${(minPrice / 1000000).toFixed(1)} triệu`;
+		} else if (maxPrice) {
+			priceText = `dưới ${(maxPrice / 1000000).toFixed(1)} triệu`;
+		}
+
+		// Build title
+		let title = 'Tìm phòng trọ';
+		if (search) {
+			title = `Tìm ${roomTypeText} "${search}"`;
+		} else if (locationParts.length > 0) {
+			title = `Tìm ${roomTypeText} tại ${locationParts.join(', ')}`;
+		} else {
+			title = `Tìm ${roomTypeText}`;
+		}
+
+		if (priceText) {
+			title += ` ${priceText}`;
+		}
+		title += ' | Trustay';
+
+		// Build description
+		let description = `Tìm ${roomTypeText} chất lượng cao`;
+		if (locationParts.length > 0) {
+			description += ` tại ${locationParts.join(', ')}`;
+		}
+		if (priceText) {
+			description += ` với giá ${priceText}`;
+		}
+		description += '. Hàng ngàn phòng trọ đầy đủ tiện nghi, giá tốt nhất. Đặt phòng ngay!';
+
+		// Build keywords
+		const keywords = [
+			roomTypeText,
+			'phòng trọ',
+			'nhà trọ',
+			'thuê phòng',
+			...locationParts,
+			priceText ? 'giá rẻ' : '',
+			'đầy đủ tiện nghi',
+			'chất lượng cao',
+		]
+			.filter(Boolean)
+			.join(', ');
+
+		return {
+			title,
+			description,
+			keywords,
+		};
+	}
+
+	/**
+	 * Generate breadcrumb for room listings
+	 */
+	private async generateRoomListingBreadcrumb(query: ListingQueryDto): Promise<BreadcrumbDto> {
+		const { search, provinceId, districtId, wardId, roomType } = query;
+
+		const items = [
+			{ title: 'Trang chủ', path: '/' },
+			{ title: 'Tìm phòng trọ', path: '/rooms' },
+		];
+
+		// Add location breadcrumbs
+		if (wardId) {
+			const ward = await this.prisma.ward.findUnique({
+				where: { id: wardId },
+				select: { name: true },
+			});
+			if (ward) {
+				items.push({ title: ward.name, path: `/rooms?wardId=${wardId}` });
+			}
+		}
+		if (districtId) {
+			const district = await this.prisma.district.findUnique({
+				where: { id: districtId },
+				select: { name: true },
+			});
+			if (district) {
+				items.push({ title: district.name, path: `/rooms?districtId=${districtId}` });
+			}
+		}
+		if (provinceId) {
+			const province = await this.prisma.province.findUnique({
+				where: { id: provinceId },
+				select: { name: true },
+			});
+			if (province) {
+				items.push({ title: province.name, path: `/rooms?provinceId=${provinceId}` });
+			}
+		}
+
+		// Add room type breadcrumb
+		if (roomType) {
+			const roomTypeMap: Record<string, string> = {
+				boarding_house: 'Nhà trọ',
+				dormitory: 'Ký túc xá',
+				sleepbox: 'Sleepbox',
+				apartment: 'Chung cư',
+				whole_house: 'Nhà nguyên căn',
+			};
+			items.push({
+				title: roomTypeMap[roomType] || roomType,
+				path: `/rooms?roomType=${roomType}`,
+			});
+		}
+
+		// Add search breadcrumb
+		if (search) {
+			items.push({
+				title: `"${search}"`,
+				path: `/rooms?search=${encodeURIComponent(search)}`,
+			});
+		}
+
+		return { items };
+	}
+
+	/**
+	 * Generate SEO data for room seeking posts
+	 */
+	private async generateRoomSeekingSeo(query: RoomRequestSearchDto): Promise<SeoDto> {
+		const { search, provinceId, districtId, wardId, roomType, minBudget, maxBudget } = query;
+
+		// Get location info from database
+		const locationParts: string[] = [];
+		if (wardId) {
+			const ward = await this.prisma.ward.findUnique({
+				where: { id: wardId },
+				select: { name: true },
+			});
+			if (ward) locationParts.push(ward.name);
+		}
+		if (districtId) {
+			const district = await this.prisma.district.findUnique({
+				where: { id: districtId },
+				select: { name: true },
+			});
+			if (district) locationParts.push(district.name);
+		}
+		if (provinceId) {
+			const province = await this.prisma.province.findUnique({
+				where: { id: provinceId },
+				select: { name: true },
+			});
+			if (province) locationParts.push(province.name);
+		}
+
+		// Get room type info
+		const roomTypeMap: Record<string, string> = {
+			boarding_house: 'nhà trọ',
+			dormitory: 'ký túc xá',
+			sleepbox: 'sleepbox',
+			apartment: 'chung cư',
+			whole_house: 'nhà nguyên căn',
+		};
+		const roomTypeText = roomType ? roomTypeMap[roomType] || roomType : 'phòng trọ';
+
+		// Get budget range
+		let budgetText = '';
+		if (minBudget && maxBudget) {
+			budgetText = `từ ${(minBudget / 1000000).toFixed(1)} triệu đến ${(maxBudget / 1000000).toFixed(1)} triệu`;
+		} else if (minBudget) {
+			budgetText = `từ ${(minBudget / 1000000).toFixed(1)} triệu`;
+		} else if (maxBudget) {
+			budgetText = `dưới ${(maxBudget / 1000000).toFixed(1)} triệu`;
+		}
+
+		// Build title
+		let title = 'Tìm người thuê phòng';
+		if (search) {
+			title = `Tìm người thuê ${roomTypeText} "${search}"`;
+		} else if (locationParts.length > 0) {
+			title = `Tìm người thuê ${roomTypeText} tại ${locationParts.join(', ')}`;
+		} else {
+			title = `Tìm người thuê ${roomTypeText}`;
+		}
+
+		if (budgetText) {
+			title += ` ${budgetText}`;
+		}
+		title += ' | Trustay';
+
+		// Build description
+		let description = `Tìm người thuê ${roomTypeText} chất lượng cao`;
+		if (locationParts.length > 0) {
+			description += ` tại ${locationParts.join(', ')}`;
+		}
+		if (budgetText) {
+			description += ` với ngân sách ${budgetText}`;
+		}
+		description += '. Kết nối chủ nhà và người thuê hiệu quả. Đăng tin miễn phí!';
+
+		// Build keywords
+		const keywords = [
+			'tìm người thuê',
+			'đăng tin tìm trọ',
+			'room seeking',
+			roomTypeText,
+			...locationParts,
+			budgetText ? 'ngân sách' : '',
+			'chủ nhà',
+			'người thuê',
+		]
+			.filter(Boolean)
+			.join(', ');
+
+		return {
+			title,
+			description,
+			keywords,
+		};
+	}
+
+	/**
+	 * Generate breadcrumb for room seeking posts
+	 */
+	private async generateRoomSeekingBreadcrumb(query: RoomRequestSearchDto): Promise<BreadcrumbDto> {
+		const { search, provinceId, districtId, wardId, roomType } = query;
+
+		const items = [
+			{ title: 'Trang chủ', path: '/' },
+			{ title: 'Tìm người thuê', path: '/room-seekings' },
+		];
+
+		// Add location breadcrumbs
+		if (wardId) {
+			const ward = await this.prisma.ward.findUnique({
+				where: { id: wardId },
+				select: { name: true },
+			});
+			if (ward) {
+				items.push({ title: ward.name, path: `/room-seekings?wardId=${wardId}` });
+			}
+		}
+		if (districtId) {
+			const district = await this.prisma.district.findUnique({
+				where: { id: districtId },
+				select: { name: true },
+			});
+			if (district) {
+				items.push({ title: district.name, path: `/room-seekings?districtId=${districtId}` });
+			}
+		}
+		if (provinceId) {
+			const province = await this.prisma.province.findUnique({
+				where: { id: provinceId },
+				select: { name: true },
+			});
+			if (province) {
+				items.push({ title: province.name, path: `/room-seekings?provinceId=${provinceId}` });
+			}
+		}
+
+		// Add room type breadcrumb
+		if (roomType) {
+			const roomTypeMap: Record<string, string> = {
+				boarding_house: 'Nhà trọ',
+				dormitory: 'Ký túc xá',
+				sleepbox: 'Sleepbox',
+				apartment: 'Chung cư',
+				whole_house: 'Nhà nguyên căn',
+			};
+			items.push({
+				title: roomTypeMap[roomType] || roomType,
+				path: `/room-seekings?roomType=${roomType}`,
+			});
+		}
+
+		// Add search breadcrumb
+		if (search) {
+			items.push({
+				title: `"${search}"`,
+				path: `/room-seekings?search=${encodeURIComponent(search)}`,
+			});
+		}
+
+		return { items };
+	}
+
 	async findAllListings(
 		query: ListingQueryDto,
 		context: { isAuthenticated: boolean } = { isAuthenticated: false },
-	): Promise<PaginatedListingResponseDto> {
+	): Promise<ListingWithMetaResponseDto> {
 		const { isAuthenticated } = context;
 		const {
 			page = 1,
@@ -169,6 +495,7 @@ export class ListingService {
 							ward: { select: { id: true, name: true, code: true } },
 							owner: {
 								select: {
+									id: true,
 									firstName: true,
 									lastName: true,
 									avatarUrl: true,
@@ -271,105 +598,44 @@ export class ListingService {
 			this.prisma.room.count({ where }),
 		]);
 
-		const formattedRooms = rooms.map((room) => {
-			let distance: number | undefined;
-			if (latitude && longitude && room.building.latitude && room.building.longitude) {
-				// Calculate distance using Haversine formula
-				const lat1Rad = latitude * (Math.PI / 180);
-				const lon1Rad = longitude * (Math.PI / 180);
-				const lat2Rad = Number(room.building.latitude) * (Math.PI / 180);
-				const lon2Rad = Number(room.building.longitude) * (Math.PI / 180);
+		// Get unique owner IDs to batch fetch their stats
+		const uniqueOwnerIds = [...new Set(rooms.map((room) => room.building.owner.id))];
 
-				const dLat = lat2Rad - lat1Rad;
-				const dLon = lon2Rad - lon1Rad;
+		// Batch get owner statistics for all unique owners
+		const ownerStatsMap = new Map<string, { totalBuildings: number; totalRoomInstances: number }>();
+		await Promise.all(
+			uniqueOwnerIds.map(async (ownerId) => {
+				const stats = await getOwnerStats(this.prisma, ownerId);
+				ownerStatsMap.set(ownerId, stats);
+			}),
+		);
 
-				const a =
-					Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-					Math.cos(lat1Rad) * Math.cos(lat2Rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-				const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-				distance = 6371 * c; // Distance in km
-			}
+		const formattedRooms = rooms.map((room) =>
+			formatRoomListItem(room, isAuthenticated, {
+				includeDistance: Boolean(latitude && longitude),
+				latitude,
+				longitude,
+				ownerStats: ownerStatsMap.get(room.building.owner.id),
+			}),
+		);
 
-			const fullOwnerName =
-				`${room.building.owner.firstName || ''} ${room.building.owner.lastName || ''}`.trim();
-			const maskedOwnerName = maskFullName(fullOwnerName);
-			const maskedAddress = room.building.addressLine1
-				? maskText(room.building.addressLine1, 0, 0)
-				: '';
+		const paginatedResponse = PaginatedResponseDto.create(formattedRooms, page, limit, total);
 
-			return {
-				id: room.id,
-				slug: room.slug,
-				name: room.name || undefined,
-				roomType: room.roomType,
-				areaSqm: room.areaSqm ? room.areaSqm.toString() : undefined,
-				maxOccupancy: room.maxOccupancy,
-				isVerified: room.isVerified,
-				buildingName: room.building.name || '',
-				buildingVerified: room.building.isVerified,
-				address: isAuthenticated ? room.building.addressLine1 || '' : maskedAddress,
-				availableRooms: room.roomInstances.length, // Number of available room instances
-				owner: {
-					name: isAuthenticated ? fullOwnerName : maskedOwnerName,
-					avatarUrl: room.building.owner.avatarUrl || undefined,
-					gender: room.building.owner.gender || undefined,
-					verifiedPhone: room.building.owner.isVerifiedPhone,
-					verifiedEmail: room.building.owner.isVerifiedEmail,
-					verifiedIdentity: room.building.owner.isVerifiedIdentity,
-				},
-				location: {
-					provinceId: room.building.province.id,
-					provinceName: room.building.province.name,
-					districtId: room.building.district.id,
-					districtName: room.building.district.name,
-					wardId: room.building.ward?.id,
-					wardName: room.building.ward?.name,
-				},
-				images: room.images.map((image) => ({
-					url: image.imageUrl,
-					alt: image.altText,
-					isPrimary: image.isPrimary,
-					sortOrder: image.sortOrder,
-				})),
-				amenities: room.amenities.map((amenity) => ({
-					id: amenity.systemAmenity.id,
-					name: amenity.systemAmenity.name,
-					category: amenity.systemAmenity.category,
-				})),
-				costs: room.costs.map((cost) => ({
-					id: cost.systemCostType.id,
-					name: cost.systemCostType.name,
-					value: cost.baseRate != null ? cost.baseRate.toString() : undefined,
-				})),
-				pricing: room.pricing
-					? {
-							basePriceMonthly:
-								room.pricing.basePriceMonthly != null
-									? room.pricing.basePriceMonthly.toString()
-									: undefined,
-							depositAmount:
-								room.pricing.depositAmount != null
-									? room.pricing.depositAmount.toString()
-									: undefined,
-							utilityIncluded: room.pricing.utilityIncluded,
-						}
-					: undefined,
-				rules: room.rules.map((rule) => ({
-					id: rule.systemRule.id,
-					name: rule.customValue || rule.systemRule.name,
-					type: rule.systemRule.ruleType,
-				})),
-				...(distance !== undefined && { distance: Number(distance.toFixed(2)) }),
-			};
-		});
+		// Generate SEO and breadcrumb
+		const seo = await this.generateRoomListingSeo(query);
+		const breadcrumb = await this.generateRoomListingBreadcrumb(query);
 
-		return PaginatedResponseDto.create(formattedRooms, page, limit, total);
+		return {
+			...paginatedResponse,
+			seo,
+			breadcrumb,
+		};
 	}
 
 	async findAllRoomRequests(
 		query: RoomRequestSearchDto,
 		context: { isAuthenticated: boolean } = { isAuthenticated: false },
-	): Promise<PaginatedRoomSeekingResponseDto> {
+	): Promise<RoomSeekingWithMetaResponseDto> {
 		const { isAuthenticated } = context;
 		const {
 			page = 1,
@@ -559,6 +825,16 @@ export class ListingService {
 			};
 		});
 
-		return PaginatedResponseDto.create(formattedData, page, limit, total);
+		const paginatedResponse = PaginatedResponseDto.create(formattedData, page, limit, total);
+
+		// Generate SEO and breadcrumb
+		const seo = await this.generateRoomSeekingSeo(query);
+		const breadcrumb = await this.generateRoomSeekingBreadcrumb(query);
+
+		return {
+			...paginatedResponse,
+			seo,
+			breadcrumb,
+		};
 	}
 }

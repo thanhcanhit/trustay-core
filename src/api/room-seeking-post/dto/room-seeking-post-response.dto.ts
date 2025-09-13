@@ -68,8 +68,9 @@ export class RoomRoomSeekingPostDto {
 	@ApiProperty({ description: 'Thông tin người đăng' })
 	requester: {
 		id: string;
-		firstName: string;
-		lastName: string;
+		firstName?: string;
+		lastName?: string;
+		name?: string; // Masked full name when not authenticated
 		email: string;
 		phone?: string;
 		avatarUrl?: string;
