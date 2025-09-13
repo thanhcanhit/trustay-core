@@ -405,6 +405,29 @@ export class RoomInvitationsService {
 		return this.transformToResponseDto(updatedInvitation);
 	}
 
+	async getMyInvitations(userId: string, query: QueryRoomInvitationDto) {
+		// Get user role to determine which invitations to show
+		const user = await this.prisma.user.findUnique({
+			where: { id: userId },
+			select: { role: true },
+		});
+
+		if (!user) {
+			throw new NotFoundException('User not found');
+		}
+
+		// If user is landlord, show sent invitations
+		if (user.role === UserRole.landlord) {
+			return this.getSentInvitations(userId, query);
+		}
+		// If user is tenant, show received invitations
+		else if (user.role === UserRole.tenant) {
+			return this.getReceivedInvitations(userId, query);
+		}
+
+		throw new ForbiddenException('Invalid user role');
+	}
+
 	async getRoomInvitationById(invitationId: string, userId: string) {
 		const invitation = await this.prisma.roomInvitation.findUnique({
 			where: { id: invitationId },

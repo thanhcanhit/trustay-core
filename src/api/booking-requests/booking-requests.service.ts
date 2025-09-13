@@ -179,7 +179,7 @@ export class BookingRequestsService {
 		};
 	}
 
-	async getMyBookingRequests(tenantId: string, query: QueryBookingRequestsDto) {
+	async getMyBookingRequestsAsTenant(tenantId: string, query: QueryBookingRequestsDto) {
 		const { page = 1, limit = 20, status } = query;
 		const skip = (page - 1) * limit;
 
@@ -371,6 +371,29 @@ export class BookingRequestsService {
 		});
 
 		return updatedBooking;
+	}
+
+	async getMyBookingRequests(userId: string, query: QueryBookingRequestsDto) {
+		// Get user role to determine which booking requests to show
+		const user = await this.prisma.user.findUnique({
+			where: { id: userId },
+			select: { role: true },
+		});
+
+		if (!user) {
+			throw new NotFoundException('User not found');
+		}
+
+		// If user is landlord, show booking requests for their properties
+		if (user.role === UserRole.landlord) {
+			return this.getBookingRequestsForLandlord(userId, query);
+		}
+		// If user is tenant, show their own booking requests
+		else if (user.role === UserRole.tenant) {
+			return this.getMyBookingRequestsAsTenant(userId, query);
+		}
+
+		throw new ForbiddenException('Invalid user role');
 	}
 
 	async getBookingRequestById(bookingRequestId: string, userId: string) {

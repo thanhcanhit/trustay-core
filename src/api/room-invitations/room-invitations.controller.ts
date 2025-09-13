@@ -64,6 +64,23 @@ export class RoomInvitationsController {
 		return this.roomInvitationsService.getSentInvitations(landlordId, query);
 	}
 
+	@Get('me')
+	@ApiOperation({
+		summary: 'Xem lời mời của tôi',
+		description: 'Tự động hiển thị lời mời đã gửi (landlord) hoặc đã nhận (tenant) dựa trên role',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Lấy danh sách lời mời thành công',
+		type: PaginatedRoomInvitationResponseDto,
+	})
+	async getMyInvitations(
+		@CurrentUser('id') userId: string,
+		@Query() query: QueryRoomInvitationDto,
+	): Promise<PaginatedRoomInvitationResponseDto> {
+		return this.roomInvitationsService.getMyInvitations(userId, query);
+	}
+
 	@Get('received')
 	@ApiOperation({
 		summary: 'Xem lời mời đã nhận (Tenant)',

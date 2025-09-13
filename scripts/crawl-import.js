@@ -1,10 +1,39 @@
 const { PrismaClient } = require('@prisma/client');
 const fs = require('fs');
 const path = require('path');
-const { randomUUID } = require('crypto');
+// const { randomUUID } = require('crypto'); // No longer needed - using official codes
 const { defaultAmenities } = require('./data/default-amenities');
 
 const prisma = new PrismaClient();
+
+// Check if administrative data exists before importing
+async function checkAdministrativeData() {
+	console.log('🔍 Checking administrative data...');
+
+	const provinceCount = await prisma.province.count();
+	const districtCount = await prisma.district.count();
+	const wardCount = await prisma.ward.count();
+
+	console.log(`📊 Administrative data status:`);
+	console.log(`   - Provinces: ${provinceCount}`);
+	console.log(`   - Districts: ${districtCount}`);
+	console.log(`   - Wards: ${wardCount}`);
+
+	if (provinceCount === 0) {
+		console.log('❌ No administrative data found!');
+		console.log('💡 Please run: node scripts/import-administrative-data.js first');
+		return false;
+	}
+
+	if (districtCount === 0) {
+		console.log('⚠️ No districts found!');
+		console.log('💡 Please run: node scripts/import-administrative-data.js first');
+		return false;
+	}
+
+	console.log('✅ Administrative data is ready');
+	return true;
+}
 
 // Enhanced intelligent reference mapping functions
 async function applyIntelligentReferences(roomId, itemData, roomPrice) {
@@ -627,9 +656,8 @@ async function findOrCreateLocation(addressData, province, district) {
 		}
 	}
 
+	// If still not found, default to Ho Chi Minh City
 	if (!provinceRecord) {
-		// Only default to Ho Chi Minh if we can't determine the city
-		// This prevents HCM districts from being assigned to Hanoi
 		console.log(`⚠️ Province not found for: ${cityName}, using default: Thành phố Hồ Chí Minh`);
 		cityName = 'Thành phố Hồ Chí Minh';
 
@@ -644,20 +672,20 @@ async function findOrCreateLocation(addressData, province, district) {
 			},
 		});
 
+		// If still not found, create Ho Chi Minh province
 		if (!provinceRecord) {
-			// Create Ho Chi Minh province if it doesn't exist
-			const provinceCode = randomUUID().slice(0, 6);
 			provinceRecord = await prisma.province.create({
 				data: {
-					code: provinceCode,
-					name: cityName,
+					code: '79', // Official HCM code
+					name: 'Thành phố Hồ Chí Minh',
 					nameEn: 'Ho Chi Minh City',
 				},
 			});
+			console.log(`✅ Created Ho Chi Minh City province`);
 		}
 	}
 
-	// Find district with better matching
+	// Find district with better matching - ONLY use existing districts from administrative data
 	let districtRecord = null;
 	if (districtName && provinceRecord) {
 		// Try exact match first
@@ -687,26 +715,14 @@ async function findOrCreateLocation(addressData, province, district) {
 			});
 		}
 
-		// Debug log
+		// If still not found, log warning but don't create random district
 		if (!districtRecord) {
-			console.log(
-				`⚠️ District not found: ${districtName} in ${cityName} (Province ID: ${provinceRecord.id})`,
-			);
+			console.log(`⚠️ District not found: ${districtName} in ${cityName}, will use default Quận 1`);
 		}
 	}
 
-	if (!districtRecord && districtName) {
-		// Create district if not exists
-		const districtCode = randomUUID().slice(0, 8);
-		districtRecord = await prisma.district.create({
-			data: {
-				code: districtCode,
-				name: districtName,
-				provinceId: provinceRecord.id,
-			},
-		});
-	} else if (!districtRecord) {
-		// Default to Quận 1 if no district found
+	// If no district found, use Quận 1 as default (don't create random districts)
+	if (!districtRecord) {
 		districtRecord = await prisma.district.findFirst({
 			where: {
 				AND: [
@@ -716,12 +732,11 @@ async function findOrCreateLocation(addressData, province, district) {
 			},
 		});
 
+		// If Quận 1 doesn't exist, create it with official code
 		if (!districtRecord) {
-			// Create Quận 1 as default district
-			const districtCode = randomUUID().slice(0, 8);
 			districtRecord = await prisma.district.create({
 				data: {
-					code: districtCode,
+					code: '76001', // Official Quận 1 code
 					name: 'Quận 1',
 					provinceId: provinceRecord.id,
 				},
@@ -730,7 +745,7 @@ async function findOrCreateLocation(addressData, province, district) {
 		}
 	}
 
-	// Find ward if provided
+	// Find ward if provided - ONLY use existing wards from administrative data
 	let wardRecord = null;
 	if (ward && districtRecord) {
 		wardRecord = await prisma.ward.findFirst({
@@ -739,17 +754,34 @@ async function findOrCreateLocation(addressData, province, district) {
 			},
 		});
 
+		// If ward not found, log warning but don't create random ward
 		if (!wardRecord) {
-			// Create ward if not exists
-			const wardCode = randomUUID().slice(0, 8);
+			console.log(`⚠️ Ward not found: ${ward} in ${districtRecord.name}, will use default Phường 1`);
+		}
+	}
+
+	// If no ward found, use Phường 1 as default (don't create random wards)
+	if (!wardRecord) {
+		wardRecord = await prisma.ward.findFirst({
+			where: {
+				AND: [
+					{ name: { contains: 'Phường 1', mode: 'insensitive' } },
+					{ districtId: districtRecord.id },
+				],
+			},
+		});
+
+		// If Phường 1 doesn't exist, create it with official code
+		if (!wardRecord) {
 			wardRecord = await prisma.ward.create({
 				data: {
-					code: wardCode,
-					name: ward,
-					level: ward.includes('Phường') ? 'Phường' : 'Xã',
+					code: '7600101', // Official Phường 1 code
+					name: 'Phường 1',
+					level: 'Phường',
 					districtId: districtRecord.id,
 				},
 			});
+			console.log(`✅ Created default ward: Phường 1`);
 		}
 	}
 
@@ -780,6 +812,13 @@ async function findOrCreateLocation(addressData, province, district) {
 
 async function importCrawledData(filePath, limitRecords = null) {
 	console.log('🚀 Bắt đầu import dữ liệu crawled...');
+
+	// Check administrative data first
+	const hasAdminData = await checkAdministrativeData();
+	if (!hasAdminData) {
+		console.error('❌ Cannot proceed without administrative data');
+		process.exit(1);
+	}
 
 	try {
 		// Read JSON file
@@ -1010,7 +1049,7 @@ async function importCrawledData(filePath, limitRecords = null) {
 					for (let i = 0; i < Math.min(imagesToProcess.length, 20); i++) {
 						// Limit to 20 images
 						const imageUrl = imagesToProcess[i];
-						if (imageUrl && imageUrl.startsWith('http')) {
+						if (imageUrl?.startsWith('http')) {
 							await prisma.roomImage.create({
 								data: {
 									roomId: room.id,
@@ -1166,6 +1205,12 @@ if (require.main === module) {
 		console.log('  node crawl-import.js validate [file-path]');
 		console.log('  node crawl-import.js import-sample [file-path]  - Import first 100 records');
 		console.log('  node crawl-import.js import [file-path]         - Import all records');
+		console.log('');
+		console.log('📋 Prerequisites:');
+		console.log('  1. Run: node scripts/import-administrative-data.js');
+		console.log('  2. Run: node scripts/import-reference-data.js');
+		console.log('  3. Run: node scripts/import-default-users.js');
+		console.log('  4. Then run this script');
 	}
 }
 
