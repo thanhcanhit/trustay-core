@@ -86,7 +86,9 @@ export class RoomsService {
 		// Verify building ownership and existence
 		const building = await this.prisma.building.findUnique({
 			where: { id: buildingId },
-			include: {
+			select: {
+				id: true,
+				slug: true,
 				owner: { select: { id: true, role: true } },
 			},
 		});
@@ -551,8 +553,8 @@ export class RoomsService {
 				? room.building.addressLine1
 				: maskText(room.building.addressLine1, 0, 0),
 			addressLine2: room.building.addressLine2,
-			latitude: room.building.latitude?.toString(),
-			longitude: room.building.longitude?.toString(),
+			latitude: room.building.latitude?.toString() || null,
+			longitude: room.building.longitude?.toString() || null,
 			location: {
 				provinceId: room.building.province.id,
 				provinceName: room.building.province.name,
@@ -601,7 +603,7 @@ export class RoomsService {
 			costs: room.costs.map((cost) => ({
 				id: cost.systemCostType.id,
 				name: cost.systemCostType.name,
-				value: cost.baseRate.toString(),
+				value: cost.baseRate?.toString() || '0',
 				category: cost.systemCostType.category,
 				notes: cost.notes,
 			})),
@@ -611,7 +613,7 @@ export class RoomsService {
 						depositAmount: room.pricing.depositAmount.toString(),
 						depositMonths: room.pricing.depositMonths,
 						utilityIncluded: room.pricing.utilityIncluded,
-						utilityCostMonthly: room.pricing.utilityCostMonthly?.toString(),
+						utilityCostMonthly: room.pricing.utilityCostMonthly?.toString() || null,
 						minimumStayMonths: room.pricing.minimumStayMonths,
 						maximumStayMonths: room.pricing.maximumStayMonths,
 						priceNegotiable: room.pricing.priceNegotiable,
@@ -641,7 +643,9 @@ export class RoomsService {
 			where: { id: roomId },
 			include: {
 				building: {
-					include: {
+					select: {
+						id: true,
+						slug: true,
 						owner: { select: { id: true, role: true } },
 					},
 				},
