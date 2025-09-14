@@ -6,11 +6,13 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { UploadService } from '../../common/services/upload.service';
+import { maskEmail, maskFullName, maskPhone } from '../../common/utils/mask.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PaginatedUsersResponseDto } from './dto/paginated-users-response.dto';
+import { PublicUserResponseDto } from './dto/public-user-response.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UsersQueryDto } from './dto/users-query.dto';
@@ -682,6 +684,63 @@ export class UsersService {
 		return {
 			message: 'Avatar uploaded successfully',
 			user: updatedUser,
+		};
+	}
+
+	/**
+	 * Get user information for public viewing with masking based on authentication status
+	 */
+	async getPublicUser(
+		userId: string,
+		isAuthenticated: boolean = false,
+	): Promise<PublicUserResponseDto> {
+		const user = await this.prisma.user.findUnique({
+			where: { id: userId },
+			select: {
+				id: true,
+				email: true,
+				phone: true,
+				firstName: true,
+				lastName: true,
+				avatarUrl: true,
+				gender: true,
+				role: true,
+				bio: true,
+				isVerifiedPhone: true,
+				isVerifiedEmail: true,
+				isVerifiedIdentity: true,
+				isVerifiedBank: true,
+				createdAt: true,
+				updatedAt: true,
+			},
+		});
+
+		if (!user) {
+			throw new NotFoundException('User not found');
+		}
+
+		const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+		const maskedFullName = maskFullName(fullName);
+		const maskedEmail = user.email ? maskEmail(user.email) : '';
+		const maskedPhone = user.phone ? maskPhone(user.phone) : '';
+
+		return {
+			id: user.id,
+			firstName: isAuthenticated ? user.firstName : undefined,
+			lastName: isAuthenticated ? user.lastName : undefined,
+			name: isAuthenticated ? fullName : maskedFullName,
+			email: isAuthenticated ? user.email : maskedEmail,
+			phone: isAuthenticated ? user.phone : maskedPhone,
+			avatarUrl: user.avatarUrl,
+			gender: user.gender,
+			role: user.role,
+			bio: user.bio,
+			isVerifiedPhone: user.isVerifiedPhone,
+			isVerifiedEmail: user.isVerifiedEmail,
+			isVerifiedIdentity: user.isVerifiedIdentity,
+			isVerifiedBank: user.isVerifiedBank,
+			createdAt: user.createdAt,
+			updatedAt: user.updatedAt,
 		};
 	}
 }

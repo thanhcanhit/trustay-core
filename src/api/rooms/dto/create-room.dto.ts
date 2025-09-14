@@ -10,13 +10,13 @@ import {
 	IsNumber,
 	IsOptional,
 	IsString,
-	Matches,
 	Max,
 	MaxLength,
 	Min,
 	MinLength,
 	ValidateNested,
 } from 'class-validator';
+import { CreateRoomImageDto } from './room-image.dto';
 
 export class CreateRoomPricingDto {
 	@ApiProperty({
@@ -445,4 +445,30 @@ export class CreateRoomDto {
 	@Min(1)
 	@Max(9999)
 	roomNumberStart?: number = 1;
+
+	@ApiPropertyOptional({
+		description: 'Danh sách hình ảnh phòng',
+		type: CreateRoomImageDto,
+		example: {
+			images: [
+				{
+					path: '/images/1757854142834-a76f44bd-19d60dce93ed8871.jpg',
+					alt: 'KHAI TRƯƠNG TOÀ NHÀ MỚI XÂY GIÁ CHỈ 3 TRIỆU 8',
+					isPrimary: true,
+					sortOrder: 0,
+				},
+				{
+					path: '/images/1757854142835-a76f44be-19d60dce93ed8872.jpg',
+				},
+				{
+					path: '/images/1757854142836-a76f44bf-19d60dce93ed8873.jpg',
+					alt: 'Hình ảnh phòng',
+				},
+			],
+		},
+	})
+	@IsOptional()
+	@ValidateNested()
+	@Type(() => CreateRoomImageDto)
+	images?: CreateRoomImageDto;
 }

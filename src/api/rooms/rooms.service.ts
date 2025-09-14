@@ -281,7 +281,6 @@ export class RoomsService {
 		userId: string,
 		buildingId: string,
 		createRoomDto: CreateRoomDto,
-		files?: Express.Multer.File[],
 	): Promise<RoomDetailOutputDto> {
 		// Verify building ownership and existence
 		const building = await this.prisma.building.findUnique({
@@ -416,22 +415,18 @@ export class RoomsService {
 				})),
 			});
 
-			// 7. Upload and create room images
-			if (files?.length) {
-				const uploadPromises = files.map(async (file, index) => {
-					const uploadResult = await this.uploadService.uploadImage(file);
-					return {
-						roomId: room.id,
-						imageUrl: uploadResult.imagePath,
-						altText: `Room image ${index + 1}`,
-						sortOrder: index,
-						isPrimary: index === 0, // First image is primary
-					};
-				});
+			// 7. Create room images from string array
+			if (createRoomDto.images?.images?.length) {
+				const imageData = createRoomDto.images.images.map((image, index) => ({
+					roomId: room.id,
+					imageUrl: image.path,
+					altText: image.alt || `Room image`,
+					sortOrder: image.sortOrder ?? index,
+					isPrimary: image.isPrimary ?? index === 0, // First image is primary if not specified
+				}));
 
-				const processedImages = await Promise.all(uploadPromises);
 				await tx.roomImage.createMany({
-					data: processedImages,
+					data: imageData,
 				});
 			}
 
@@ -1052,6 +1047,29 @@ export class RoomsService {
 							isEnforced: rule.isStrict ?? true,
 							notes: rule.notes,
 						})),
+					});
+				}
+			}
+
+			// 7. OVERRIDE images (GHI ĐÈ HOÀN TOÀN)
+			if (updateRoomDto.images !== undefined) {
+				// Delete all existing images
+				await tx.roomImage.deleteMany({
+					where: { roomId },
+				});
+
+				// Create new images if provided
+				if (updateRoomDto.images.images && updateRoomDto.images.images.length > 0) {
+					const imageData = updateRoomDto.images.images.map((image, index) => ({
+						roomId,
+						imageUrl: image.path,
+						altText: image.alt || `Room image`,
+						sortOrder: image.sortOrder ?? index,
+						isPrimary: image.isPrimary ?? index === 0, // First image is primary if not specified
+					}));
+
+					await tx.roomImage.createMany({
+						data: imageData,
 					});
 				}
 			}

@@ -15,6 +15,7 @@ import {
 	MinLength,
 	ValidateNested,
 } from 'class-validator';
+import { UpdateRoomImageDto } from './room-image.dto';
 
 export class UpdateRoomPricingDto {
 	@ApiPropertyOptional({
@@ -398,4 +399,30 @@ export class UpdateRoomDto {
 	@IsOptional()
 	@IsBoolean()
 	isActive?: boolean;
+
+	@ApiPropertyOptional({
+		description: 'Danh sách hình ảnh phòng - GHI ĐÈ HOÀN TOÀN danh sách cũ',
+		type: UpdateRoomImageDto,
+		example: {
+			images: [
+				{
+					path: '/images/1757854142834-a76f44bd-19d60dce93ed8871.jpg',
+					alt: 'KHAI TRƯƠNG TOÀ NHÀ MỚI XÂY GIÁ CHỈ 3 TRIỆU 8',
+					isPrimary: true,
+					sortOrder: 0,
+				},
+				{
+					path: '/images/1757854142835-a76f44be-19d60dce93ed8872.jpg',
+				},
+				{
+					path: '/images/1757854142836-a76f44bf-19d60dce93ed8873.jpg',
+					alt: 'Hình ảnh phòng',
+				},
+			],
+		},
+	})
+	@IsOptional()
+	@ValidateNested()
+	@Type(() => UpdateRoomImageDto)
+	images?: UpdateRoomImageDto;
 }

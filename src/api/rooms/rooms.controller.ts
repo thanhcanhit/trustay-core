@@ -9,11 +9,8 @@ import {
 	Put,
 	Query,
 	Req,
-	UploadedFiles,
 	UseGuards,
-	UseInterceptors,
 } from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
 import {
 	ApiBearerAuth,
 	ApiConsumes,
@@ -46,20 +43,19 @@ export class RoomsController {
 	@Post(':buildingId/rooms')
 	@UseGuards(JwtAuthGuard)
 	@ApiBearerAuth()
-	@UseInterceptors(FilesInterceptor('images', 10)) // Max 10 images
-	@ApiConsumes('multipart/form-data')
+	@ApiConsumes('application/json')
 	@ApiOperation({
 		summary: 'Tạo room type mới cho building với hình ảnh',
-		description: `Tạo loại phòng mới với đầy đủ thông tin và upload hình ảnh:
+		description: `Tạo loại phòng mới với đầy đủ thông tin và hình ảnh:
 - **Pricing**: Giá thuê, tiền cọc, điều kiện thuê
 - **Amenities**: Danh sách tiện ích từ system amenities
 - **Costs**: Chi phí phát sinh (điện, nước, internet, v.v.)
 - **Rules**: Quy tắc từ system rules
-- **Images**: Upload files hình ảnh (tối đa 10 ảnh)
+- **Images**: Danh sách hình ảnh với URL, alt text, isPrimary, sortOrder
 - **Room Instances**: Tự động sinh phòng cụ thể theo totalRooms
 
 Sau khi tạo thành công, hệ thống sẽ tự động:
-1. Upload và xử lý hình ảnh
+1. Xử lý danh sách hình ảnh từ URL
 2. Generate unique slug cho room type
 3. Tạo pricing record
 4. Link amenities, costs, rules từ system data
@@ -140,9 +136,8 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		@CurrentUser('id') userId: string,
 		@Param('buildingId') buildingId: string,
 		@Body() createRoomDto: CreateRoomDto,
-		@UploadedFiles() files?: Express.Multer.File[],
 	): Promise<ApiResponseDto<RoomDetailOutputDto>> {
-		const room = await this.roomsService.create(userId, buildingId, createRoomDto, files);
+		const room = await this.roomsService.create(userId, buildingId, createRoomDto);
 
 		return ApiResponseDto.success(room, 'Room created successfully with instances');
 	}
