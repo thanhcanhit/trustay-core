@@ -21,6 +21,7 @@ import {
 import { Auth } from '../../auth/decorators/auth.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { CreateAddressDto } from './dto/create-address.dto';
+import { PublicUserResponseDto } from './dto/public-user-response.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
@@ -30,11 +31,28 @@ import { UsersService } from './users.service';
 
 @ApiTags('Users')
 @Controller('users')
-@Auth()
 export class UsersController {
 	constructor(private readonly usersService: UsersService) {}
 
+	@Get('public/:id')
+	@ApiOperation({ summary: 'Get public user information' })
+	@ApiParam({ name: 'id', description: 'User ID' })
+	@ApiResponse({
+		status: 200,
+		description: 'User information retrieved successfully',
+		type: PublicUserResponseDto,
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'User not found',
+	})
+	async getPublicUser(@Param('id') userId: string, @CurrentUser() user?: any) {
+		const isAuthenticated = Boolean(user);
+		return this.usersService.getPublicUser(userId, isAuthenticated);
+	}
+
 	@Get('profile')
+	@Auth()
 	@ApiOperation({ summary: 'Get user profile' })
 	@ApiResponse({
 		status: 200,
@@ -49,6 +67,7 @@ export class UsersController {
 	}
 
 	@Put('profile')
+	@Auth()
 	@ApiOperation({ summary: 'Update user profile' })
 	@ApiResponse({
 		status: 200,
@@ -67,6 +86,7 @@ export class UsersController {
 	}
 
 	@Post('addresses')
+	@Auth()
 	@ApiOperation({ summary: 'Create a new address for user' })
 	@ApiResponse({
 		status: 201,
@@ -85,6 +105,7 @@ export class UsersController {
 	}
 
 	@Put('addresses/:id')
+	@Auth()
 	@ApiOperation({ summary: 'Update user address' })
 	@ApiParam({ name: 'id', description: 'Address ID' })
 	@ApiResponse({
@@ -108,6 +129,7 @@ export class UsersController {
 	}
 
 	@Delete('addresses/:id')
+	@Auth()
 	@ApiOperation({ summary: 'Delete user address' })
 	@ApiParam({ name: 'id', description: 'Address ID' })
 	@ApiResponse({
@@ -123,6 +145,7 @@ export class UsersController {
 	}
 
 	@Post('verify-phone')
+	@Auth()
 	@ApiOperation({ summary: 'Verify user phone number' })
 	@ApiResponse({
 		status: 200,
@@ -141,6 +164,7 @@ export class UsersController {
 	}
 
 	@Post('verify-email')
+	@Auth()
 	@ApiOperation({ summary: 'Verify user email address' })
 	@ApiResponse({
 		status: 200,
@@ -159,6 +183,7 @@ export class UsersController {
 	}
 
 	@Post('verify-identity')
+	@Auth()
 	@ApiOperation({ summary: 'Verify user identity with ID card' })
 	@ApiResponse({
 		status: 200,
@@ -177,6 +202,7 @@ export class UsersController {
 	}
 
 	@Put('avatar')
+	@Auth()
 	@UseInterceptors(FileInterceptor('file'))
 	@ApiOperation({ summary: 'Upload/update user avatar' })
 	@ApiConsumes('multipart/form-data')
