@@ -459,6 +459,11 @@ export class RoomSeekingPostService {
 						email: true,
 						phone: true,
 						avatarUrl: true,
+						isVerifiedPhone: true,
+						isVerifiedEmail: true,
+						isVerifiedIdentity: true,
+						isOnline: true,
+						lastActiveAt: true,
 					},
 				},
 				amenities: {

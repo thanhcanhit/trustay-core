@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
+import { PrismaService } from '@/prisma/prisma.service';
 import {
 	ChatMessagePayload,
 	NotifyEventPayload,
@@ -19,13 +20,17 @@ export class RealtimeService {
 		new Map();
 	private static readonly HEARTBEAT_INTERVAL_MS: number = 30_000;
 	private static readonly HEARTBEAT_TIMEOUT_MS: number = 60_000;
+	// private static readonly HEARTBEAT_INTERVAL_MS: number = 300_000; // 5 minutes
+	// private static readonly HEARTBEAT_TIMEOUT_MS: number = 600_000; //
+
+	public constructor(private readonly prisma: PrismaService) {}
 
 	public setServer(server: Server): void {
 		this.io = server;
 		this.setupHeartbeat();
 	}
 
-	public registerConnection(socket: Socket, payload: RegisterPayload): void {
+	public async registerConnection(socket: Socket, payload: RegisterPayload): Promise<void> {
 		const { userId } = payload;
 		if (!userId) {
 			this.logger.warn(`Reject register for socket ${socket.id} due to missing userId`);
@@ -38,9 +43,20 @@ export class RealtimeService {
 		this.logger.log(`Registered user ${userId} for socket ${socket.id}`);
 		this.markAlive(socket.id);
 		this.emitToUser(userId, REALTIME_EVENT.CONNECTED, { socketId: socket.id });
+
+		// Mark user online and update lastActiveAt
+		try {
+			await this.prisma.user.update({
+				where: { id: userId },
+				data: { isOnline: true, lastActiveAt: new Date() },
+			});
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			this.logger.warn(`Failed updating user online status on register: ${message}`);
+		}
 	}
 
-	public unregisterConnection(socketId: string): void {
+	public async unregisterConnection(socketId: string): Promise<void> {
 		const userId = this.socketIdToUserId.get(socketId);
 		if (!userId) {
 			return;
@@ -55,6 +71,18 @@ export class RealtimeService {
 		}
 		this.connectionHealth.delete(socketId);
 		this.emitToUser(userId, REALTIME_EVENT.DISCONNECTED, { socketId });
+
+		// If no more sockets for this user, mark offline; otherwise keep online
+		const remaining = this.userIdToSockets.get(userId)?.size ?? 0;
+		try {
+			await this.prisma.user.update({
+				where: { id: userId },
+				data: { isOnline: remaining > 0, lastActiveAt: new Date() },
+			});
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			this.logger.warn(`Failed updating user online status on disconnect: ${message}`);
+		}
 	}
 
 	public emitNotify<T = unknown>(payload: NotifyEventPayload<T>): void {
@@ -74,8 +102,21 @@ export class RealtimeService {
 		this.io.emit(event, data);
 	}
 
-	public handlePong(socket: Socket): void {
+	public async handlePong(socket: Socket): Promise<void> {
 		this.markAlive(socket.id);
+		const userId = this.socketIdToUserId.get(socket.id);
+		if (!userId) {
+			return;
+		}
+		try {
+			await this.prisma.user.update({
+				where: { id: userId },
+				data: { lastActiveAt: new Date(), isOnline: true },
+			});
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			this.logger.warn(`Failed updating lastActiveAt on pong: ${message}`);
+		}
 	}
 
 	private emitToUser(userId: string, event: string, data: unknown): void {
