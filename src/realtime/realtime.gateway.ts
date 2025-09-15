@@ -33,18 +33,21 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 		this.logger.log(`Socket connected: ${client.id}`);
 	}
 
-	public handleDisconnect(client: Socket): void {
+	public async handleDisconnect(client: Socket): Promise<void> {
 		this.logger.log(`Socket disconnected: ${client.id}`);
-		this.realtimeService.unregisterConnection(client.id);
+		await this.realtimeService.unregisterConnection(client.id);
 	}
 
 	@SubscribeMessage(REALTIME_EVENT.REGISTER)
-	public handleRegister(@MessageBody() payload: RegisterPayload, client: Socket): void {
-		this.realtimeService.registerConnection(client, payload);
+	public async handleRegister(
+		@MessageBody() payload: RegisterPayload,
+		client: Socket,
+	): Promise<void> {
+		await this.realtimeService.registerConnection(client, payload);
 	}
 
 	@SubscribeMessage(REALTIME_EVENT.HEARTBEAT_PONG)
-	public handlePong(_payload: unknown, client: Socket): void {
-		this.realtimeService.handlePong(client);
+	public async handlePong(_payload: unknown, client: Socket): Promise<void> {
+		await this.realtimeService.handlePong(client);
 	}
 }

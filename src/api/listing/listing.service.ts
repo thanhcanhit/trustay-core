@@ -503,6 +503,8 @@ export class ListingService {
 									isVerifiedPhone: true,
 									isVerifiedEmail: true,
 									isVerifiedIdentity: true,
+									isOnline: true,
+									lastActiveAt: true,
 								},
 							},
 						},
