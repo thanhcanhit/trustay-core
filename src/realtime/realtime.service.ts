@@ -89,7 +89,11 @@ export class RealtimeService {
 
 	public emitNotify<T = unknown>(payload: NotifyEventPayload<T>): void {
 		const { userId, event, data } = payload;
-		this.emitToUser(userId, event || REALTIME_EVENT.NOTIFY, data);
+		const eventName = event || REALTIME_EVENT.NOTIFY;
+		this.logger.log(
+			`Emitting notify to user ${userId} with event ${eventName} and data: ${JSON.stringify(data)}`,
+		);
+		this.emitToUser(userId, eventName, data);
 	}
 
 	public emitChatMessage(payload: ChatMessagePayload): void {
@@ -123,12 +127,19 @@ export class RealtimeService {
 
 	private emitToUser(userId: string, event: string, data: unknown): void {
 		if (!this.io) {
+			this.logger.warn(`Cannot emit to user ${userId}: no io server attached`);
 			return;
 		}
 		const sockets = this.userIdToSockets.get(userId);
 		if (!sockets || sockets.size === 0) {
+			this.logger.warn(
+				`Cannot emit to user ${userId}: no sockets found (registered users: ${Array.from(this.userIdToSockets.keys()).join(', ')})`,
+			);
 			return;
 		}
+		this.logger.log(
+			`Emitting event ${event} to user ${userId} via ${sockets.size} socket(s): ${Array.from(sockets).join(', ')}`,
+		);
 		sockets.forEach((socketId) => {
 			this.io?.to(socketId).emit(event, data);
 		});

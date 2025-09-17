@@ -2,7 +2,7 @@ import { Body, Controller, Get, Post } from '@nestjs/common';
 import { RealtimeService } from './realtime.service';
 import { BroadcastDto, SendChatDto, SendNotifyDto } from './realtime.types';
 
-@Controller('admin/realtime')
+@Controller('v1/admin/realtime')
 export class RealtimeController {
 	public constructor(private readonly realtimeService: RealtimeService) {}
 

@@ -39,8 +39,9 @@
     </div>
 
     <div class="cols" style="display:flex; gap:24px; align-items:flex-start;">
-      <div class="col" id="clientPane" style="flex:1; min-width: 420px;">
-        <h2>Client (Receiver)</h2>
+      <div class="col" id="clientPane" style="flex:1; min-width: 450px; border: 2px solid #007acc; border-radius: 8px; padding: 16px; background: #f8f9fa;">
+        <h2 style="color: #007acc; margin-top: 0;">📱 Client (Receiver)</h2>
+        <div class="row small" style="margin-bottom: 16px; color: #666;">Connect and listen for real-time events using the shared User ID</div>
         <div class="row">
           <button id="connectBtn">Connect</button>
           <button id="disconnectBtn" disabled>Disconnect</button>
@@ -48,36 +49,42 @@
           <button id="pongBtn" disabled>Send Pong</button>
           <button id="clearBtn">Clear Logs</button>
         </div>
-        <div id="log" aria-live="polite"></div>
+        <div style="margin-top: 16px;">
+          <h4 style="margin-bottom: 8px;">📋 Received Events Log:</h4>
+          <div id="clientLog" style="border: 1px solid #ddd; padding: 10px; height: 400px; overflow: auto; background: #fff; border-radius: 4px; font-family: monospace; font-size: 13px;"></div>
+        </div>
       </div>
-      <div class="col" id="backendPane" style="flex:1; min-width: 420px;">
-        <h2>Backend (Sender)</h2>
-        <div class="row small">Use these to emit from server to the connected client using the same User ID</div>
+      <div class="col" id="backendPane" style="flex:1; min-width: 450px; border: 2px solid #28a745; border-radius: 8px; padding: 16px; background: #f8f9fa;">
+        <h2 style="color: #28a745; margin-top: 0;">🖥️ Backend (Sender)</h2>
+        <div class="row small" style="margin-bottom: 16px; color: #666;">Send events to the connected client using the same User ID via API endpoints</div>
+        
         <div class="row">
-          <label for="adminEvent">Event (broadcast)</label>
-          <input id="adminEvent" placeholder="event name e.g. notify/event" />
+          <label for="adminEvent">Event Name</label>
+          <input id="adminEvent" placeholder="e.g. notify/event, chat/message" />
         </div>
         <div class="row">
           <label for="adminData">Data JSON</label>
-          <input id="adminData" placeholder='{"hello":"world"}' />
+          <input id="adminData" placeholder='{"message":"hello world"}' />
         </div>
-        <div class="row">
-          <button id="statusBtn">Get Status</button>
-          <button id="sendNotifyBtn">Send Notify</button>
-          <button id="sendChatBtn">Send Chat</button>
-          <button id="broadcastBtn">Broadcast</button>
+        
+        <div class="row" style="margin-top: 16px;">
+          <button id="statusBtn" style="background: #17a2b8; color: white;">Get Status</button>
+          <button id="sendNotifyBtn" style="background: #ffc107; color: black;">Send Notify</button>
+          <button id="sendChatBtn" style="background: #6f42c1; color: white;">Send Chat</button>
+          <button id="broadcastBtn" style="background: #fd7e14; color: white;">Broadcast</button>
         </div>
-        <div class="row">
-          <label for="presetSelect">Presets</label>
-          <select id="presetSelect"></select>
-          <button id="applyPresetBtn">Apply Preset</button>
+        
+        <div class="row" style="margin-top: 12px;">
+          <label for="presetSelect">Quick Presets</label>
+          <select id="presetSelect" style="margin-right: 8px;"></select>
+          <button id="applyPresetBtn" style="background: #6c757d; color: white;">Apply Preset</button>
         </div>
-        <h3>Service Actions (quick test)</h3>
-        <div class="row small">Common actions from Notifications/Bookings/Users/Invitations services</div>
-        <div id="actions"></div>
+        
+        <h3 style="color: #28a745; margin-top: 20px; margin-bottom: 8px;">⚡ Service Actions (One-Click Test)</h3>
+        <div class="row small" style="margin-bottom: 12px; color: #666;">Common notification types from various services</div>
+        <div id="actions" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
       </div>
     </div>
-    <div id="log" aria-live="polite"></div>
 
     <!-- Socket.IO client (v4) - match server version 4.8.1; no integrity to avoid mismatch -->
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
@@ -88,9 +95,13 @@
 
         /** @param {string} msg */
         function log(msg) {
-          const el = document.getElementById('log');
+          const el = document.getElementById('clientLog');
           const div = document.createElement('div');
-          div.innerHTML = msg;
+          const timestamp = new Date().toLocaleTimeString();
+          div.innerHTML = '<span class="small" style="color: #999;">[' + timestamp + ']</span> ' + msg;
+          div.style.marginBottom = '4px';
+          div.style.borderBottom = '1px solid #eee';
+          div.style.paddingBottom = '2px';
           el.appendChild(div);
           el.scrollTop = el.scrollHeight;
         }
@@ -135,9 +146,13 @@
         }
 
         function connect() {
-          const { serverUrl, socketPath, forceWs } = getConfig();
+          const { serverUrl, socketPath, forceWs, userId } = getConfig();
           if (!serverUrl) {
             log('<span class="err">Server URL is required</span>');
+            return;
+          }
+          if (!userId) {
+            log('<span class="err">User ID is required for testing</span>');
             return;
           }
           if (socket && socket.connected) {
@@ -155,6 +170,17 @@
           socket.on('connect', function() {
             log('<span class="ok">Connected</span> <span class="small">id=' + socket.id + '</span>');
             setConnected(true);
+            // Auto-register for easier testing
+            const { userId } = getConfig();
+            log('<span class="small">🔍 Debug: userId from form = "' + userId + '"</span>');
+            if (userId) {
+              log('<span class="small">⏰ Auto-registering in 100ms...</span>');
+              setTimeout(function() {
+                register();
+              }, 100);
+            } else {
+              log('<span class="small">⚠️ Set User ID and click REGISTER button to receive events!</span>');
+            }
           });
           socket.on('disconnect', function(reason) {
             log('<span class="err">Disconnected</span> <span class="small">(' + reason + ')</span>');
@@ -175,20 +201,35 @@
 
           // App events from server
           socket.on('realtime/connected', function(data) {
-            log('<span class="evt">realtime/connected</span> ' + JSON.stringify(data));
+            log('<span class="ok">CLIENT GET</span> <span class="evt">🔗 realtime/connected</span> ' + JSON.stringify(data));
+            log('<span class="ok">✅ Successfully registered with server!</span>');
           });
           socket.on('realtime/disconnected', function(data) {
-            log('<span class="evt">realtime/disconnected</span> ' + JSON.stringify(data));
+            log('<span class="ok">CLIENT GET</span> <span class="evt">❌ realtime/disconnected</span> ' + JSON.stringify(data));
           });
           socket.on('notify/event', function(data) {
-            log('<span class="evt">notify/event</span> ' + JSON.stringify(data));
+            log('<span class="ok">CLIENT GET</span> <span class="evt">🔔 notify/event</span> ' + JSON.stringify(data));
           });
           socket.on('chat/message', function(data) {
-            log('<span class="evt">chat/message</span> ' + JSON.stringify(data));
+            log('<span class="ok">CLIENT GET</span> <span class="evt">💬 chat/message</span> ' + JSON.stringify(data));
           });
           socket.on('realtime/ping', function(data) {
-            log('<span class="evt">realtime/ping</span> ' + JSON.stringify(data));
+            log('<span class="ok">CLIENT GET</span> <span class="evt">🏓 realtime/ping</span> ' + JSON.stringify(data));
           });
+
+          // Catch-all for any other events
+          const originalOn = socket.on;
+          const knownEvents = ['connect', 'disconnect', 'connect_error', 'reconnect_attempt', 'reconnect', 'error', 'realtime/connected', 'realtime/disconnected', 'notify/event', 'chat/message', 'realtime/ping'];
+          socket.on = function(event, handler) {
+            if (!knownEvents.includes(event)) {
+              const wrappedHandler = function(data) {
+                log('<span class="ok">CLIENT GET</span> <span class="evt">📡 ' + event + '</span> ' + JSON.stringify(data));
+                return handler.apply(this, arguments);
+              };
+              return originalOn.call(this, event, wrappedHandler);
+            }
+            return originalOn.call(this, event, handler);
+          };
         }
 
         function disconnect() {
@@ -209,7 +250,8 @@
             return;
           }
           socket.emit('realtime/register', { userId: userId });
-          log('<span class="small">Sent</span> realtime/register { userId: "' + userId + '" }');
+          log('<span class="small">CLIENT SENT</span> realtime/register { userId: "' + userId + '" }');
+          log('<span class="small">⏳ Waiting for registration confirmation...</span>');
         }
 
         function sendPong() {
@@ -224,8 +266,8 @@
         // Admin actions
         async function getStatus() {
           const { serverUrl } = getAdminConfig();
-          const res = await getJson(serverUrl.replace(/\/$/, '') + '/admin/realtime/status');
-          log('<span class="evt">GET /admin/realtime/status</span> ' + JSON.stringify(res));
+          const res = await getJson(serverUrl.replace(/\/$/, '') + '/api/v1/admin/realtime/status');
+          log('<span class="evt">GET /api/v1/admin/realtime/status</span> ' + JSON.stringify(res));
         }
 
         async function sendNotify() {
@@ -233,8 +275,8 @@
           if (!userId) return log('<span class="err">Target User ID required</span>');
           let data; try { data = dataText ? JSON.parse(dataText) : { ping: true }; } catch { return log('<span class="err">Invalid JSON data</span>'); }
           const body = { userId, data };
-          const res = await postJson(serverUrl.replace(/\/$/, '') + '/admin/realtime/notify', body);
-          log('<span class="evt">POST /admin/realtime/notify</span> ' + JSON.stringify(body) + ' => ' + JSON.stringify(res));
+          const res = await postJson(serverUrl.replace(/\/$/, '') + '/api/v1/admin/realtime/notify', body);
+          log('<span class="evt">POST /api/v1/admin/realtime/notify</span> ' + JSON.stringify(body) + ' => ' + JSON.stringify(res));
         }
 
         async function sendChat() {
@@ -242,8 +284,8 @@
           if (!userId) return log('<span class="err">Target User ID required (toUserId)</span>');
           let data; try { data = dataText ? JSON.parse(dataText) : { text: 'Hello' }; } catch { return log('<span class="err">Invalid JSON data</span>'); }
           const body = { toUserId: userId, fromUserId: 'tester', conversationId: 'conv-test', message: data };
-          const res = await postJson(serverUrl.replace(/\/$/, '') + '/admin/realtime/chat', body);
-          log('<span class="evt">POST /admin/realtime/chat</span> ' + JSON.stringify(body) + ' => ' + JSON.stringify(res));
+          const res = await postJson(serverUrl.replace(/\/$/, '') + '/api/v1/admin/realtime/chat', body);
+          log('<span class="evt">POST /api/v1/admin/realtime/chat</span> ' + JSON.stringify(body) + ' => ' + JSON.stringify(res));
         }
 
         async function broadcast() {
@@ -251,8 +293,8 @@
           if (!eventName) return log('<span class="err">Event is required for broadcast</span>');
           let data; try { data = dataText ? JSON.parse(dataText) : { ping: true }; } catch { return log('<span class="err">Invalid JSON data</span>'); }
           const body = { event: eventName, data };
-          const res = await postJson(serverUrl.replace(/\/$/, '') + '/admin/realtime/broadcast', body);
-          log('<span class="evt">POST /admin/realtime/broadcast</span> ' + JSON.stringify(body) + ' => ' + JSON.stringify(res));
+          const res = await postJson(serverUrl.replace(/\/$/, '') + '/api/v1/admin/realtime/broadcast', body);
+          log('<span class="evt">POST /api/v1/admin/realtime/broadcast</span> ' + JSON.stringify(body) + ' => ' + JSON.stringify(res));
         }
 
         // Presets and actions
@@ -309,18 +351,19 @@
           PRESETS.forEach(function(p) {
             const btn = document.createElement('button');
             btn.textContent = p.label;
+            btn.style.cssText = 'font-size: 12px; padding: 4px 8px; margin: 2px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;';
             btn.addEventListener('click', async function() {
               const { serverUrl } = getAdminConfig();
               const userId = /** @type {HTMLInputElement} */(document.getElementById('userId')).value.trim();
               const built = p.build({ userId });
               if (p.type === 'broadcast') {
-                const res = await postJson(serverUrl.replace(/\/$/, '') + '/admin/realtime/broadcast', built.body);
+                const res = await postJson(serverUrl.replace(/\/$/, '') + '/api/v1/admin/realtime/broadcast', built.body);
                 log('<span class="evt">[Action] Broadcast</span> ' + JSON.stringify(built.body) + ' => ' + JSON.stringify(res));
               } else if (p.type === 'chat') {
-                const res = await postJson(serverUrl.replace(/\/$/, '') + '/admin/realtime/chat', built.body);
+                const res = await postJson(serverUrl.replace(/\/$/, '') + '/api/v1/admin/realtime/chat', built.body);
                 log('<span class="evt">[Action] Chat</span> ' + JSON.stringify(built.body) + ' => ' + JSON.stringify(res));
               } else {
-                const res = await postJson(serverUrl.replace(/\/$/, '') + '/admin/realtime/notify', built.body);
+                const res = await postJson(serverUrl.replace(/\/$/, '') + '/api/v1/admin/realtime/notify', built.body);
                 log('<span class="evt">[Action] Notify</span> ' + JSON.stringify(built.body) + ' => ' + JSON.stringify(res));
               }
             });
@@ -334,7 +377,7 @@
         document.getElementById('registerBtn').addEventListener('click', register);
         document.getElementById('pongBtn').addEventListener('click', sendPong);
         document.getElementById('clearBtn').addEventListener('click', function() {
-          document.getElementById('log').innerHTML = '';
+          document.getElementById('clientLog').innerHTML = '';
         });
 
         document.getElementById('statusBtn').addEventListener('click', getStatus);
