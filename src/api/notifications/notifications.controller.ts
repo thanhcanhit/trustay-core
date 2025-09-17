@@ -77,7 +77,7 @@ export class NotificationsController {
 		description: 'Lọc theo loại thông báo',
 	})
 	async getUserNotifications(@Request() req, @Query() query: QueryNotificationsDto) {
-		return this.notificationsService.getUserNotifications(req.user.userId, query);
+		return this.notificationsService.getUserNotifications(req.user.id, query);
 	}
 
 	@Patch(':id/read')
@@ -91,7 +91,7 @@ export class NotificationsController {
 	@ApiResponse({ status: 404, description: 'Thông báo không tồn tại' })
 	@ApiResponse({ status: 403, description: 'Không có quyền truy cập thông báo này' })
 	async markAsRead(@Param('id') id: string, @Request() req) {
-		return this.notificationsService.markAsRead(id, req.user.userId);
+		return this.notificationsService.markAsRead(id, req.user.id);
 	}
 
 	@Patch('mark-all-read')
@@ -102,7 +102,7 @@ export class NotificationsController {
 	})
 	@HttpCode(HttpStatus.OK)
 	async markAllAsRead(@Request() req) {
-		return this.notificationsService.markAllAsRead(req.user.userId);
+		return this.notificationsService.markAllAsRead(req.user.id);
 	}
 
 	@Delete(':id')
@@ -115,7 +115,7 @@ export class NotificationsController {
 	@ApiResponse({ status: 404, description: 'Thông báo không tồn tại' })
 	@ApiResponse({ status: 403, description: 'Không có quyền xóa thông báo này' })
 	async deleteNotification(@Param('id') id: string, @Request() req) {
-		return this.notificationsService.deleteNotification(id, req.user.userId);
+		return this.notificationsService.deleteNotification(id, req.user.id);
 	}
 
 	@Get('count')
@@ -126,6 +126,6 @@ export class NotificationsController {
 		type: NotificationCountResponseDto,
 	})
 	async getUnreadCount(@Request() req) {
-		return this.notificationsService.getUnreadCount(req.user.userId);
+		return this.notificationsService.getUnreadCount(req.user.id);
 	}
 }
