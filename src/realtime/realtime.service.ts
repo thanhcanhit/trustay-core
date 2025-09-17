@@ -40,7 +40,9 @@ export class RealtimeService {
 		const sockets = this.userIdToSockets.get(userId) ?? new Set<string>();
 		sockets.add(socket.id);
 		this.userIdToSockets.set(userId, sockets);
-		this.logger.log(`Registered user ${userId} for socket ${socket.id}`);
+		this.logger.log(
+			`Registered user ${userId} for socket ${socket.id} (total sockets: ${sockets.size})`,
+		);
 		this.markAlive(socket.id);
 		this.emitToUser(userId, REALTIME_EVENT.CONNECTED, { socketId: socket.id });
 
@@ -169,5 +171,45 @@ export class RealtimeService {
 
 	private markAlive(socketId: string): void {
 		this.connectionHealth.set(socketId, { lastPongMs: Date.now(), isAlive: true });
+	}
+
+	/**
+	 * Diagnostics helpers for testing and monitoring
+	 */
+	public getStatus(): {
+		ioAttached: boolean;
+		connectedSockets: number;
+		usersOnline: number;
+		mappings: {
+			userIdToSockets: Record<string, string[]>;
+			socketIdToUserId: Record<string, string>;
+		};
+	} {
+		const userIdToSocketsObj: Record<string, string[]> = {};
+		this.userIdToSockets.forEach((set, userId) => {
+			userIdToSocketsObj[userId] = Array.from(set);
+		});
+		const socketIdToUserIdObj: Record<string, string> = {};
+		this.socketIdToUserId.forEach((uid, sid) => {
+			socketIdToUserIdObj[sid] = uid;
+		});
+		return {
+			ioAttached: Boolean(this.io),
+			connectedSockets: this.io ? this.io.sockets.sockets.size : 0,
+			usersOnline: this.userIdToSockets.size,
+			mappings: {
+				userIdToSockets: userIdToSocketsObj,
+				socketIdToUserId: socketIdToUserIdObj,
+			},
+		};
+	}
+
+	public getUserSockets(userId: string): string[] {
+		const sockets = this.userIdToSockets.get(userId);
+		return sockets ? Array.from(sockets) : [];
+	}
+
+	public isUserOnline(userId: string): boolean {
+		return (this.userIdToSockets.get(userId)?.size ?? 0) > 0;
 	}
 }

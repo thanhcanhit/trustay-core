@@ -43,11 +43,13 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 		@MessageBody() payload: RegisterPayload,
 		client: Socket,
 	): Promise<void> {
+		this.logger.log(`Register event from ${client.id} with payload: ${JSON.stringify(payload)}`);
 		await this.realtimeService.registerConnection(client, payload);
 	}
 
 	@SubscribeMessage(REALTIME_EVENT.HEARTBEAT_PONG)
 	public async handlePong(_payload: unknown, client: Socket): Promise<void> {
+		this.logger.log(`PONG received from ${client.id}`);
 		await this.realtimeService.handlePong(client);
 	}
 }
