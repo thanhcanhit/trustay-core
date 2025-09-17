@@ -31,6 +31,21 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
 	public handleConnection(client: Socket): void {
 		this.logger.log(`Socket connected: ${client.id}`);
+
+		// Debug: Listen for ALL events
+		client.onAny((eventName, ...args) => {
+			this.logger.log(`Raw event received: ${eventName} with args: ${JSON.stringify(args)}`);
+		});
+
+		// Manual register handler as backup
+		client.on('realtime/register', async (payload) => {
+			this.logger.log(`Manual register handler - payload: ${JSON.stringify(payload)}`);
+			if (payload && payload.userId) {
+				await this.realtimeService.registerConnection(client, payload);
+			} else {
+				this.logger.error(`Invalid manual register payload: ${JSON.stringify(payload)}`);
+			}
+		});
 	}
 
 	public async handleDisconnect(client: Socket): Promise<void> {
@@ -43,11 +58,25 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 		@MessageBody() payload: RegisterPayload,
 		client: Socket,
 	): Promise<void> {
+		this.logger.log(`Register event from ${client.id} with payload: ${JSON.stringify(payload)}`);
+
+		// Debug: Check if payload is properly received
+		if (!payload || typeof payload !== 'object') {
+			this.logger.error(`Invalid payload received: ${typeof payload} - ${JSON.stringify(payload)}`);
+			return;
+		}
+
+		if (!payload.userId) {
+			this.logger.error(`Missing userId in payload: ${JSON.stringify(payload)}`);
+			return;
+		}
+
 		await this.realtimeService.registerConnection(client, payload);
 	}
 
 	@SubscribeMessage(REALTIME_EVENT.HEARTBEAT_PONG)
 	public async handlePong(_payload: unknown, client: Socket): Promise<void> {
+		this.logger.log(`PONG received from ${client.id}`);
 		await this.realtimeService.handlePong(client);
 	}
 }

@@ -40,7 +40,9 @@ export class RealtimeService {
 		const sockets = this.userIdToSockets.get(userId) ?? new Set<string>();
 		sockets.add(socket.id);
 		this.userIdToSockets.set(userId, sockets);
-		this.logger.log(`Registered user ${userId} for socket ${socket.id}`);
+		this.logger.log(
+			`Registered user ${userId} for socket ${socket.id} (total sockets: ${sockets.size})`,
+		);
 		this.markAlive(socket.id);
 		this.emitToUser(userId, REALTIME_EVENT.CONNECTED, { socketId: socket.id });
 
@@ -87,7 +89,11 @@ export class RealtimeService {
 
 	public emitNotify<T = unknown>(payload: NotifyEventPayload<T>): void {
 		const { userId, event, data } = payload;
-		this.emitToUser(userId, event || REALTIME_EVENT.NOTIFY, data);
+		const eventName = event || REALTIME_EVENT.NOTIFY;
+		this.logger.log(
+			`Emitting notify to user ${userId} with event ${eventName} and data: ${JSON.stringify(data)}`,
+		);
+		this.emitToUser(userId, eventName, data);
 	}
 
 	public emitChatMessage(payload: ChatMessagePayload): void {
@@ -121,12 +127,19 @@ export class RealtimeService {
 
 	private emitToUser(userId: string, event: string, data: unknown): void {
 		if (!this.io) {
+			this.logger.warn(`Cannot emit to user ${userId}: no io server attached`);
 			return;
 		}
 		const sockets = this.userIdToSockets.get(userId);
 		if (!sockets || sockets.size === 0) {
+			this.logger.warn(
+				`Cannot emit to user ${userId}: no sockets found (registered users: ${Array.from(this.userIdToSockets.keys()).join(', ')})`,
+			);
 			return;
 		}
+		this.logger.log(
+			`Emitting event ${event} to user ${userId} via ${sockets.size} socket(s): ${Array.from(sockets).join(', ')}`,
+		);
 		sockets.forEach((socketId) => {
 			this.io?.to(socketId).emit(event, data);
 		});
@@ -169,5 +182,45 @@ export class RealtimeService {
 
 	private markAlive(socketId: string): void {
 		this.connectionHealth.set(socketId, { lastPongMs: Date.now(), isAlive: true });
+	}
+
+	/**
+	 * Diagnostics helpers for testing and monitoring
+	 */
+	public getStatus(): {
+		ioAttached: boolean;
+		connectedSockets: number;
+		usersOnline: number;
+		mappings: {
+			userIdToSockets: Record<string, string[]>;
+			socketIdToUserId: Record<string, string>;
+		};
+	} {
+		const userIdToSocketsObj: Record<string, string[]> = {};
+		this.userIdToSockets.forEach((set, userId) => {
+			userIdToSocketsObj[userId] = Array.from(set);
+		});
+		const socketIdToUserIdObj: Record<string, string> = {};
+		this.socketIdToUserId.forEach((uid, sid) => {
+			socketIdToUserIdObj[sid] = uid;
+		});
+		return {
+			ioAttached: Boolean(this.io),
+			connectedSockets: this.io ? this.io.sockets.sockets.size : 0,
+			usersOnline: this.userIdToSockets.size,
+			mappings: {
+				userIdToSockets: userIdToSocketsObj,
+				socketIdToUserId: socketIdToUserIdObj,
+			},
+		};
+	}
+
+	public getUserSockets(userId: string): string[] {
+		const sockets = this.userIdToSockets.get(userId);
+		return sockets ? Array.from(sockets) : [];
+	}
+
+	public isUserOnline(userId: string): boolean {
+		return (this.userIdToSockets.get(userId)?.size ?? 0) > 0;
 	}
 }

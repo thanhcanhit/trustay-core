@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Realtime Gateway Test</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 20px; }
+      .row { margin-bottom: 12px; }
+      label { display: inline-block; width: 120px; }
+      input { padding: 6px 8px; width: 260px; }
+      button { padding: 6px 12px; margin-right: 8px; }
+      #log { border: 1px solid #ddd; padding: 10px; height: 320px; overflow: auto; background: #fafafa; }
+      .ok { color: #0b7; }
+      .err { color: #b00; }
+      .evt { color: #06c; }
+      .small { color: #666; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>Realtime Gateway Test</h1>
+    <div class="row small">Default server: http://localhost:3000 with Socket.IO path <code>/ws</code></div>
+    <div class="row">
+      <label for="serverUrl">Server URL</label>
+      <input id="serverUrl" value="http://localhost:3000" />
+    </div>
+    <div class="row">
+      <label for="socketPath">Socket Path</label>
+      <input id="socketPath" value="/ws" />
+    </div>
+    <div class="row">
+      <label for="forceWebsocket">Force WebSocket</label>
+      <input id="forceWebsocket" type="checkbox" />
+      <span class="small">(uncheck to allow polling+upgrade; recommended for production behind proxy/CDN)</span>
+    </div>
+    <div class="row">
+      <label for="userId">Shared User ID</label>
+      <input id="userId" placeholder="your-user-id" />
+    </div>
+
+    <div class="cols" style="display:flex; gap:24px; align-items:flex-start;">
+      <div class="col" id="clientPane" style="flex:1; min-width: 450px; border: 2px solid #007acc; border-radius: 8px; padding: 16px; background: #f8f9fa;">
+        <h2 style="color: #007acc; margin-top: 0;">📱 Client (Receiver)</h2>
+        <div class="row small" style="margin-bottom: 16px; color: #666;">Connect and listen for real-time events using the shared User ID</div>
+        <div class="row">
+          <button id="connectBtn">Connect</button>
+          <button id="disconnectBtn" disabled>Disconnect</button>
+          <button id="registerBtn" disabled>Register</button>
+          <button id="pongBtn" disabled>Send Pong</button>
+          <button id="clearBtn">Clear Logs</button>
+        </div>
+        <div style="margin-top: 16px;">
+          <h4 style="margin-bottom: 8px;">📋 Received Events Log:</h4>
+          <div id="clientLog" style="border: 1px solid #ddd; padding: 10px; height: 400px; overflow: auto; background: #fff; border-radius: 4px; font-family: monospace; font-size: 13px;"></div>
+        </div>
+      </div>
+      <div class="col" id="backendPane" style="flex:1; min-width: 450px; border: 2px solid #28a745; border-radius: 8px; padding: 16px; background: #f8f9fa;">
+        <h2 style="color: #28a745; margin-top: 0;">🖥️ Backend (Sender)</h2>
+        <div class="row small" style="margin-bottom: 16px; color: #666;">Send events to the connected client using the same User ID via API endpoints</div>
+        
+        <div class="row">
+          <label for="adminEvent">Event Name</label>
+          <input id="adminEvent" placeholder="e.g. notify/event, chat/message" />
+        </div>
+        <div class="row">
+          <label for="adminData">Data JSON</label>
+          <input id="adminData" placeholder='{"message":"hello world"}' />
+        </div>
+        
+        <div class="row" style="margin-top: 16px;">
+          <button id="statusBtn" style="background: #17a2b8; color: white;">Get Status</button>
+          <button id="sendNotifyBtn" style="background: #ffc107; color: black;">Send Notify</button>
+          <button id="sendChatBtn" style="background: #6f42c1; color: white;">Send Chat</button>
+          <button id="broadcastBtn" style="background: #fd7e14; color: white;">Broadcast</button>
+        </div>
+        
+        <div class="row" style="margin-top: 12px;">
+          <label for="presetSelect">Quick Presets</label>
+          <select id="presetSelect" style="margin-right: 8px;"></select>
+          <button id="applyPresetBtn" style="background: #6c757d; color: white;">Apply Preset</button>
+        </div>
+        
+        <h3 style="color: #28a745; margin-top: 20px; margin-bottom: 8px;">⚡ Service Actions (One-Click Test)</h3>
+        <div class="row small" style="margin-bottom: 12px; color: #666;">Common notification types from various services</div>
+        <div id="actions" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
+      </div>
+    </div>
+
+    <!-- Socket.IO client (v4) - match server version 4.8.1; no integrity to avoid mismatch -->
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
+    <script>
+      (function() {
+        /** @type {import('socket.io-client').Socket | null} */
+        let socket = null;
+
+        /** @param {string} msg */
+        function log(msg) {
+          const el = document.getElementById('clientLog');
+          const div = document.createElement('div');
+          const timestamp = new Date().toLocaleTimeString();
+          div.innerHTML = '<span class="small" style="color: #999;">[' + timestamp + ']</span> ' + msg;
+          div.style.marginBottom = '4px';
+          div.style.borderBottom = '1px solid #eee';
+          div.style.paddingBottom = '2px';
+          el.appendChild(div);
+          el.scrollTop = el.scrollHeight;
+        }
+
+        function setConnected(connected) {
+          document.getElementById('connectBtn').disabled = connected;
+          document.getElementById('disconnectBtn').disabled = !connected;
+          document.getElementById('registerBtn').disabled = !connected;
+          document.getElementById('pongBtn').disabled = !connected;
+        }
+
+        function getConfig() {
+          const serverUrl = /** @type {HTMLInputElement} */(document.getElementById('serverUrl')).value.trim();
+          const socketPath = /** @type {HTMLInputElement} */(document.getElementById('socketPath')).value.trim() || '/ws';
+          const userId = /** @type {HTMLInputElement} */(document.getElementById('userId')).value.trim();
+          const forceWs = /** @type {HTMLInputElement} */(document.getElementById('forceWebsocket')).checked;
+          return { serverUrl, socketPath, userId, forceWs };
+        }
+
+        function getAdminConfig() {
+          const serverUrl = /** @type {HTMLInputElement} */(document.getElementById('serverUrl')).value.trim();
+          const userId = /** @type {HTMLInputElement} */(document.getElementById('userId')).value.trim();
+          const eventName = /** @type {HTMLInputElement} */(document.getElementById('adminEvent')).value.trim();
+          const dataText = /** @type {HTMLInputElement} */(document.getElementById('adminData')).value.trim();
+          return { serverUrl, userId, eventName, dataText };
+        }
+
+        async function postJson(url, body) {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+          const text = await res.text();
+          try { return { ok: res.ok, json: JSON.parse(text) }; } catch { return { ok: res.ok, text }; }
+        }
+
+        async function getJson(url) {
+          const res = await fetch(url, { method: 'GET' });
+          const text = await res.text();
+          try { return { ok: res.ok, json: JSON.parse(text) }; } catch { return { ok: res.ok, text }; }
+        }
+
+        function connect() {
+          const { serverUrl, socketPath, forceWs, userId } = getConfig();
+          if (!serverUrl) {
+            log('<span class="err">Server URL is required</span>');
+            return;
+          }
+          if (!userId) {
+            log('<span class="err">User ID is required for testing</span>');
+            return;
+          }
+          if (socket && socket.connected) {
+            log('<span class="small">Already connected</span>');
+            return;
+          }
+          const options = { path: socketPath };
+          if (forceWs) {
+            // Enforce websocket transport for testing
+            options.transports = ['websocket'];
+          }
+          socket = io(serverUrl, options);
+
+          // Core lifecycle
+          socket.on('connect', function() {
+            log('<span class="ok">Connected</span> <span class="small">id=' + socket.id + '</span>');
+            setConnected(true);
+            // Auto-register for easier testing
+            const { userId } = getConfig();
+            log('<span class="small">🔍 Debug: userId from form = "' + userId + '"</span>');
+            if (userId) {
+              log('<span class="small">⏰ Auto-registering in 100ms...</span>');
+              setTimeout(function() {
+                register();
+              }, 100);
+            } else {
+              log('<span class="small">⚠️ Set User ID and click REGISTER button to receive events!</span>');
+            }
+          });
+          socket.on('disconnect', function(reason) {
+            log('<span class="err">Disconnected</span> <span class="small">(' + reason + ')</span>');
+            setConnected(false);
+          });
+          socket.on('connect_error', function(err) {
+            log('<span class="err">Connect error:</span> ' + (err && err.message ? err.message : String(err)));
+          });
+          socket.io.on('reconnect_attempt', function(attempt) {
+            log('<span class="small">Reconnect attempt:</span> ' + attempt);
+          });
+          socket.io.on('reconnect', function(attempt) {
+            log('<span class="small ok">Reconnected</span> (attempt ' + attempt + ')');
+          });
+          socket.io.on('error', function(err) {
+            log('<span class="err">Manager error:</span> ' + (err && err.message ? err.message : String(err)));
+          });
+
+          // App events from server
+          socket.on('realtime/connected', function(data) {
+            log('<span class="ok">CLIENT GET</span> <span class="evt">🔗 realtime/connected</span> ' + JSON.stringify(data));
+            log('<span class="ok">✅ Successfully registered with server!</span>');
+          });
+          socket.on('realtime/disconnected', function(data) {
+            log('<span class="ok">CLIENT GET</span> <span class="evt">❌ realtime/disconnected</span> ' + JSON.stringify(data));
+          });
+          socket.on('notify/event', function(data) {
+            log('<span class="ok">CLIENT GET</span> <span class="evt">🔔 notify/event</span> ' + JSON.stringify(data));
+          });
+          socket.on('chat/message', function(data) {
+            log('<span class="ok">CLIENT GET</span> <span class="evt">💬 chat/message</span> ' + JSON.stringify(data));
+          });
+          socket.on('realtime/ping', function(data) {
+            log('<span class="ok">CLIENT GET</span> <span class="evt">🏓 realtime/ping</span> ' + JSON.stringify(data));
+          });
+
+          // Catch-all for any other events
+          const originalOn = socket.on;
+          const knownEvents = ['connect', 'disconnect', 'connect_error', 'reconnect_attempt', 'reconnect', 'error', 'realtime/connected', 'realtime/disconnected', 'notify/event', 'chat/message', 'realtime/ping'];
+          socket.on = function(event, handler) {
+            if (!knownEvents.includes(event)) {
+              const wrappedHandler = function(data) {
+                log('<span class="ok">CLIENT GET</span> <span class="evt">📡 ' + event + '</span> ' + JSON.stringify(data));
+                return handler.apply(this, arguments);
+              };
+              return originalOn.call(this, event, wrappedHandler);
+            }
+            return originalOn.call(this, event, handler);
+          };
+        }
+
+        function disconnect() {
+          if (socket) {
+            socket.disconnect();
+            socket = null;
+          }
+        }
+
+        function register() {
+          const { userId } = getConfig();
+          if (!socket || !socket.connected) {
+            log('<span class="err">Not connected</span>');
+            return;
+          }
+          if (!userId) {
+            log('<span class="err">User ID is required to register</span>');
+            return;
+          }
+          socket.emit('realtime/register', { userId: userId });
+          log('<span class="small">CLIENT SENT</span> realtime/register { userId: "' + userId + '" }');
+          log('<span class="small">⏳ Waiting for registration confirmation...</span>');
+        }
+
+        function sendPong() {
+          if (!socket || !socket.connected) {
+            log('<span class="err">Not connected</span>');
+            return;
+          }
+          socket.emit('realtime/pong', { t: Date.now() });
+          log('<span class="small">Sent</span> realtime/pong');
+        }
+
+        // Admin actions
+        async function getStatus() {
+          const { serverUrl } = getAdminConfig();
+          const res = await getJson(serverUrl.replace(/\/$/, '') + '/api/v1/admin/realtime/status');
+          log('<span class="evt">GET /api/v1/admin/realtime/status</span> ' + JSON.stringify(res));
+        }
+
+        async function sendNotify() {
+          const { serverUrl, userId, dataText } = getAdminConfig();
+          if (!userId) return log('<span class="err">Target User ID required</span>');
+          let data; try { data = dataText ? JSON.parse(dataText) : { ping: true }; } catch { return log('<span class="err">Invalid JSON data</span>'); }
+          const body = { userId, data };
+          const res = await postJson(serverUrl.replace(/\/$/, '') + '/api/v1/admin/realtime/notify', body);
+          log('<span class="evt">POST /api/v1/admin/realtime/notify</span> ' + JSON.stringify(body) + ' => ' + JSON.stringify(res));
+        }
+
+        async function sendChat() {
+          const { serverUrl, userId, dataText } = getAdminConfig();
+          if (!userId) return log('<span class="err">Target User ID required (toUserId)</span>');
+          let data; try { data = dataText ? JSON.parse(dataText) : { text: 'Hello' }; } catch { return log('<span class="err">Invalid JSON data</span>'); }
+          const body = { toUserId: userId, fromUserId: 'tester', conversationId: 'conv-test', message: data };
+          const res = await postJson(serverUrl.replace(/\/$/, '') + '/api/v1/admin/realtime/chat', body);
+          log('<span class="evt">POST /api/v1/admin/realtime/chat</span> ' + JSON.stringify(body) + ' => ' + JSON.stringify(res));
+        }
+
+        async function broadcast() {
+          const { serverUrl, eventName, dataText } = getAdminConfig();
+          if (!eventName) return log('<span class="err">Event is required for broadcast</span>');
+          let data; try { data = dataText ? JSON.parse(dataText) : { ping: true }; } catch { return log('<span class="err">Invalid JSON data</span>'); }
+          const body = { event: eventName, data };
+          const res = await postJson(serverUrl.replace(/\/$/, '') + '/api/v1/admin/realtime/broadcast', body);
+          log('<span class="evt">POST /api/v1/admin/realtime/broadcast</span> ' + JSON.stringify(body) + ' => ' + JSON.stringify(res));
+        }
+
+        // Presets and actions
+        /** @type {{ id: string, label: string, type: 'notify'|'chat'|'broadcast', build: (ctx: { userId: string }) => { body: any, eventName?: string } }[]} */
+        const PRESETS = [
+          { id: 'notify-generic', label: 'Notify: Generic envelope', type: 'notify', build: ({ userId }) => ({ body: { userId, data: { type: 'GENERIC', data: { hello: 'world' } } } }) },
+          { id: 'chat-hello', label: 'Chat: Hello message', type: 'chat', build: ({ userId }) => ({ body: { toUserId: userId, fromUserId: 'tester', conversationId: 'conv-1', message: { text: 'Hello from tester' } } }) },
+          { id: 'broadcast-ping', label: 'Broadcast: realtime/ping', type: 'broadcast', build: () => ({ body: { event: 'realtime/ping', data: { t: Date.now() } }, eventName: 'realtime/ping' }) },
+          // NotificationsService common flows (emitted as notify/event)
+          { id: 'notif-welcome', label: 'Notify: Welcome', type: 'notify', build: ({ userId }) => ({ body: { userId, data: { type: 'WELCOME', data: { userId, userName: 'Test User' } } } }) },
+          { id: 'notif-profile-updated', label: 'Notify: Profile Updated', type: 'notify', build: ({ userId }) => ({ body: { userId, data: { type: 'PROFILE_UPDATED', data: { userId } } } }) },
+          { id: 'notif-account-verification', label: 'Notify: Account Verification', type: 'notify', build: ({ userId }) => ({ body: { userId, data: { type: 'ACCOUNT_VERIFICATION', data: { userId } } } }) },
+          { id: 'notif-booking-request', label: 'Notify: Booking Request', type: 'notify', build: ({ userId }) => ({ body: { userId, data: { type: 'BOOKING_REQUEST', data: { roomName: 'Room A', tenantName: 'John', bookingId: 'bk_1', roomId: 'room_1' } } } }) },
+          { id: 'notif-booking-approved', label: 'Notify: Booking Approved', type: 'notify', build: ({ userId }) => ({ body: { userId, data: { type: 'BOOKING_APPROVED', data: { roomName: 'Room A', landlordName: 'Owner', bookingId: 'bk_1' } } } }) },
+          { id: 'notif-booking-rejected', label: 'Notify: Booking Rejected', type: 'notify', build: ({ userId }) => ({ body: { userId, data: { type: 'BOOKING_REJECTED', data: { roomName: 'Room A', reason: 'No vacancy', bookingId: 'bk_1' } } } }) },
+          { id: 'notif-invitation', label: 'Notify: Room Invitation', type: 'notify', build: ({ userId }) => ({ body: { userId, data: { type: 'ROOM_INVITATION', data: { roomName: 'Room A', buildingName: 'Bldg', landlordName: 'Owner', invitationId: 'inv_1' } } } }) },
+          { id: 'notif-invitation-rejected', label: 'Notify: Invitation Rejected', type: 'notify', build: ({ userId }) => ({ body: { userId, data: { type: 'INVITATION_REJECTED', data: { roomName: 'Room A', tenantName: 'John', reason: 'Not suitable', invitationId: 'inv_1' } } } }) },
+          { id: 'notif-payment-received', label: 'Notify: Payment Received', type: 'notify', build: ({ userId }) => ({ body: { userId, data: { type: 'PAYMENT_RECEIVED', data: { amount: 100, paymentType: 'rent', roomName: 'Room A', tenantName: 'John', paymentId: 'pay_1' } } } }) },
+          { id: 'notif-payment-failed', label: 'Notify: Payment Failed', type: 'notify', build: ({ userId }) => ({ body: { userId, data: { type: 'PAYMENT_FAILED', data: { amount: 100, paymentType: 'rent', roomName: 'Room A', reason: 'Card declined', paymentId: 'pay_1' } } } }) },
+          { id: 'notif-system-announcement', label: 'Notify: System Announcement', type: 'notify', build: ({ userId }) => ({ body: { userId, data: { type: 'SYSTEM_ANNOUNCEMENT', data: { announcementTitle: 'Update', announcementContent: 'We updated the system' } } } }) },
+        ];
+
+        function populatePresets() {
+          const sel = /** @type {HTMLSelectElement} */(document.getElementById('presetSelect'));
+          sel.innerHTML = '';
+          PRESETS.forEach(function(p) {
+            const opt = document.createElement('option');
+            opt.value = p.id; opt.textContent = p.label; sel.appendChild(opt);
+          });
+        }
+
+        function applyPreset() {
+          const sel = /** @type {HTMLSelectElement} */(document.getElementById('presetSelect'));
+          const preset = PRESETS.find(function(p) { return p.id === sel.value; });
+          if (!preset) return;
+          const userId = /** @type {HTMLInputElement} */(document.getElementById('userId')).value.trim();
+          const built = preset.build({ userId });
+          if (preset.type === 'broadcast') {
+            document.getElementById('adminEvent').value = built.eventName || 'notify/event';
+            document.getElementById('adminData').value = JSON.stringify(built.body.data);
+          } else if (preset.type === 'chat') {
+            document.getElementById('adminEvent').value = 'chat/message';
+            document.getElementById('adminData').value = JSON.stringify(built.body.message);
+          } else {
+            document.getElementById('adminEvent').value = 'notify/event';
+            document.getElementById('adminData').value = JSON.stringify(built.body.data);
+          }
+          log('<span class="small">Applied preset:</span> ' + preset.label);
+        }
+
+        function renderActions() {
+          const container = document.getElementById('actions');
+          container.innerHTML = '';
+          PRESETS.forEach(function(p) {
+            const btn = document.createElement('button');
+            btn.textContent = p.label;
+            btn.style.cssText = 'font-size: 12px; padding: 4px 8px; margin: 2px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;';
+            btn.addEventListener('click', async function() {
+              const { serverUrl } = getAdminConfig();
+              const userId = /** @type {HTMLInputElement} */(document.getElementById('userId')).value.trim();
+              const built = p.build({ userId });
+              if (p.type === 'broadcast') {
+                const res = await postJson(serverUrl.replace(/\/$/, '') + '/api/v1/admin/realtime/broadcast', built.body);
+                log('<span class="evt">[Action] Broadcast</span> ' + JSON.stringify(built.body) + ' => ' + JSON.stringify(res));
+              } else if (p.type === 'chat') {
+                const res = await postJson(serverUrl.replace(/\/$/, '') + '/api/v1/admin/realtime/chat', built.body);
+                log('<span class="evt">[Action] Chat</span> ' + JSON.stringify(built.body) + ' => ' + JSON.stringify(res));
+              } else {
+                const res = await postJson(serverUrl.replace(/\/$/, '') + '/api/v1/admin/realtime/notify', built.body);
+                log('<span class="evt">[Action] Notify</span> ' + JSON.stringify(built.body) + ' => ' + JSON.stringify(res));
+              }
+            });
+            container.appendChild(btn);
+          });
+        }
+
+        // Wire UI
+        document.getElementById('connectBtn').addEventListener('click', connect);
+        document.getElementById('disconnectBtn').addEventListener('click', disconnect);
+        document.getElementById('registerBtn').addEventListener('click', register);
+        document.getElementById('pongBtn').addEventListener('click', sendPong);
+        document.getElementById('clearBtn').addEventListener('click', function() {
+          document.getElementById('clientLog').innerHTML = '';
+        });
+
+        document.getElementById('statusBtn').addEventListener('click', getStatus);
+        document.getElementById('sendNotifyBtn').addEventListener('click', sendNotify);
+        document.getElementById('sendChatBtn').addEventListener('click', sendChat);
+        document.getElementById('broadcastBtn').addEventListener('click', broadcast);
+        document.getElementById('applyPresetBtn').addEventListener('click', applyPreset);
+
+        populatePresets();
+        renderActions();
+      })();
+    </script>
+  </body>
+  </html>
+
+

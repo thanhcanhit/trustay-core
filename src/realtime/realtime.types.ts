@@ -35,3 +35,22 @@ export const REALTIME_EVENT = {
 } as const;
 
 export type RealtimeEventName = (typeof REALTIME_EVENT)[keyof typeof REALTIME_EVENT];
+
+export interface SendNotifyDto<T = unknown> {
+	userId: string;
+	event?: string;
+	data: T;
+}
+
+export interface SendChatDto<TMessage = unknown> {
+	toUserId: string;
+	fromUserId: string;
+	conversationId: string;
+	message: TMessage;
+	messageId?: string;
+}
+
+export interface BroadcastDto<T = unknown> {
+	event: string;
+	data: T;
+}
