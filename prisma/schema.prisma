@@ -218,6 +218,11 @@ model User {
   isVerifiedBank     Boolean   @default(false) @map("is_verified_bank")
   isOnline           Boolean   @default(false) @map("is_online")
   lastActiveAt       DateTime? @map("last_active_at") @db.Timestamp
+  
+  // Overall Rating fields
+  overallRating      Decimal?  @default(0) @map("overall_rating") @db.Decimal(3, 2)
+  totalRatings       Int       @default(0) @map("total_ratings")
+  
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
@@ -333,6 +338,11 @@ model Building {
   longitude    Decimal? @db.Decimal(10, 7)
   isActive     Boolean  @default(true) @map("is_active")
   isVerified   Boolean  @default(false) @map("is_verified")
+  
+  // Overall Rating fields  
+  overallRating      Decimal?  @default(0) @map("overall_rating") @db.Decimal(3, 2)
+  totalRatings       Int       @default(0) @map("total_ratings")
+  
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -368,6 +378,11 @@ model Room {
   viewCount    Int      @default(0) @map("view_count") // Số lượt xem
   isActive     Boolean  @default(true) @map("is_active")
   isVerified   Boolean  @default(false) @map("is_verified")
+  
+  // Overall Rating fields
+  overallRating      Decimal?  @default(0) @map("overall_rating") @db.Decimal(3, 2)
+  totalRatings       Int       @default(0) @map("total_ratings")
+  
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 

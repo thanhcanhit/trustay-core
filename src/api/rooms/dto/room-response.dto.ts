@@ -283,6 +283,15 @@ export class RoomResponseDto {
 	@Expose()
 	isVerified: boolean;
 
+	@ApiPropertyOptional({ example: 4.5 })
+	@Expose()
+	@Transform(({ value }) => (value ? parseFloat(value.toString()) : 0))
+	overallRating?: number;
+
+	@ApiProperty({ example: 25 })
+	@Expose()
+	totalRatings: number;
+
 	@ApiProperty({ example: '2025-01-01T00:00:00.000Z' })
 	@Expose()
 	createdAt: Date;

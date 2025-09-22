@@ -19,6 +19,12 @@ export class OwnerDto {
 
 	@ApiProperty()
 	verifiedIdentity: boolean;
+
+	@ApiPropertyOptional()
+	overallRating?: number;
+
+	@ApiProperty()
+	totalRatings: number;
 }
 
 export class LocationDto {
@@ -132,6 +138,12 @@ export class ListingItemDto {
 
 	@ApiProperty()
 	availableRooms: number;
+
+	@ApiPropertyOptional()
+	overallRating?: number;
+
+	@ApiProperty()
+	totalRatings: number;
 
 	@ApiPropertyOptional()
 	distance?: number;

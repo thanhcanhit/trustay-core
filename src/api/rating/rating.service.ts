@@ -41,28 +41,35 @@ export class RatingService {
 			throw new BadRequestException('You have already rated this target');
 		}
 
-		// Create rating
-		const rating = await this.prisma.rating.create({
-			data: {
-				...ratingData,
-				targetType,
-				targetId,
-				reviewerId,
-				rentalId,
-			},
-			include: {
-				reviewer: {
-					select: {
-						id: true,
-						firstName: true,
-						lastName: true,
-						avatarUrl: true,
-						isVerifiedPhone: true,
-						isVerifiedEmail: true,
-						isVerifiedIdentity: true,
+		// Create rating and update overall rating
+		const rating = await this.prisma.$transaction(async (tx) => {
+			const newRating = await tx.rating.create({
+				data: {
+					...ratingData,
+					targetType,
+					targetId,
+					reviewerId,
+					rentalId,
+				},
+				include: {
+					reviewer: {
+						select: {
+							id: true,
+							firstName: true,
+							lastName: true,
+							avatarUrl: true,
+							isVerifiedPhone: true,
+							isVerifiedEmail: true,
+							isVerifiedIdentity: true,
+						},
 					},
 				},
-			},
+			});
+
+			// Update overall rating for the target
+			await this.updateOverallRating(tx, targetType, targetId);
+
+			return newRating;
 		});
 
 		return this.formatRatingResponse(rating);
@@ -176,22 +183,29 @@ export class RatingService {
 			throw new ForbiddenException('You can only update your own ratings');
 		}
 
-		const updatedRating = await this.prisma.rating.update({
-			where: { id },
-			data: updateRatingDto,
-			include: {
-				reviewer: {
-					select: {
-						id: true,
-						firstName: true,
-						lastName: true,
-						avatarUrl: true,
-						isVerifiedPhone: true,
-						isVerifiedEmail: true,
-						isVerifiedIdentity: true,
+		const updatedRating = await this.prisma.$transaction(async (tx) => {
+			const updated = await tx.rating.update({
+				where: { id },
+				data: updateRatingDto,
+				include: {
+					reviewer: {
+						select: {
+							id: true,
+							firstName: true,
+							lastName: true,
+							avatarUrl: true,
+							isVerifiedPhone: true,
+							isVerifiedEmail: true,
+							isVerifiedIdentity: true,
+						},
 					},
 				},
-			},
+			});
+
+			// Update overall rating for the target
+			await this.updateOverallRating(tx, updated.targetType, updated.targetId);
+
+			return updated;
 		});
 
 		return this.formatRatingResponse(updatedRating);
@@ -200,7 +214,7 @@ export class RatingService {
 	async remove(id: string, userId: string): Promise<void> {
 		const rating = await this.prisma.rating.findUnique({
 			where: { id },
-			select: { reviewerId: true },
+			select: { reviewerId: true, targetType: true, targetId: true },
 		});
 
 		if (!rating) {
@@ -211,9 +225,59 @@ export class RatingService {
 			throw new ForbiddenException('You can only delete your own ratings');
 		}
 
-		await this.prisma.rating.delete({
-			where: { id },
+		await this.prisma.$transaction(async (tx) => {
+			await tx.rating.delete({
+				where: { id },
+			});
+
+			// Update overall rating for the target
+			await this.updateOverallRating(tx, rating.targetType, rating.targetId);
 		});
+	}
+
+	private async updateOverallRating(
+		tx: any,
+		targetType: RatingTargetType,
+		targetId: string,
+	): Promise<void> {
+		// Calculate new overall rating
+		const ratings = await tx.rating.findMany({
+			where: {
+				targetType,
+				targetId,
+			},
+			select: {
+				rating: true,
+			},
+		});
+
+		const totalRatings = ratings.length;
+		const averageRating =
+			totalRatings > 0 ? ratings.reduce((sum, r) => sum + r.rating, 0) / totalRatings : 0;
+
+		// Update the target model based on type
+		switch (targetType) {
+			case RatingTargetType.tenant:
+			case RatingTargetType.landlord:
+				await tx.user.update({
+					where: { id: targetId },
+					data: {
+						overallRating: averageRating,
+						totalRatings,
+					},
+				});
+				break;
+
+			case RatingTargetType.room:
+				await tx.room.update({
+					where: { id: targetId },
+					data: {
+						overallRating: averageRating,
+						totalRatings,
+					},
+				});
+				break;
+		}
 	}
 
 	// Removed response functionality for simplified version
