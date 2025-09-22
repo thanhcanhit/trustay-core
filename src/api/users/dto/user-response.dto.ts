@@ -113,6 +113,19 @@ export class UserResponseDto {
 	isVerifiedBank: boolean;
 
 	@ApiProperty({
+		description: 'Overall rating',
+		example: 4.5,
+		nullable: true,
+	})
+	overallRating: number | null;
+
+	@ApiProperty({
+		description: 'Total number of ratings received',
+		example: 25,
+	})
+	totalRatings: number;
+
+	@ApiProperty({
 		description: 'Last active timestamp',
 		example: '2024-01-01T10:00:00Z',
 		nullable: true,

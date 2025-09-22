@@ -28,6 +28,13 @@ export class UsersService {
 		private readonly notificationsService: NotificationsService,
 	) {}
 
+	private transformUserResponse(user: any): any {
+		return {
+			...user,
+			overallRating: user.overallRating ? parseFloat(user.overallRating.toString()) : 0,
+		};
+	}
+
 	async createUser(createUserDto: CreateUserDto) {
 		// Check if email already exists
 		const existingUser = await this.prisma.user.findUnique({
@@ -162,7 +169,7 @@ export class UsersService {
 		const totalPages = Math.ceil(total / limit);
 
 		return {
-			data: users,
+			data: users.map((user) => this.transformUserResponse(user)),
 			meta: {
 				page,
 				limit,
@@ -195,6 +202,8 @@ export class UsersService {
 				isVerifiedEmail: true,
 				isVerifiedIdentity: true,
 				isVerifiedBank: true,
+				overallRating: true,
+				totalRatings: true,
 				lastActiveAt: true,
 				createdAt: true,
 				updatedAt: true,
@@ -259,6 +268,8 @@ export class UsersService {
 				isVerifiedEmail: true,
 				isVerifiedIdentity: true,
 				isVerifiedBank: true,
+				overallRating: true,
+				totalRatings: true,
 				lastActiveAt: true,
 				createdAt: true,
 				updatedAt: true,
@@ -710,6 +721,8 @@ export class UsersService {
 				isVerifiedEmail: true,
 				isVerifiedIdentity: true,
 				isVerifiedBank: true,
+				overallRating: true,
+				totalRatings: true,
 				createdAt: true,
 				updatedAt: true,
 			},
@@ -739,6 +752,8 @@ export class UsersService {
 			isVerifiedEmail: user.isVerifiedEmail,
 			isVerifiedIdentity: user.isVerifiedIdentity,
 			isVerifiedBank: user.isVerifiedBank,
+			overallRating: user.overallRating ? parseFloat(user.overallRating.toString()) : 0,
+			totalRatings: user.totalRatings,
 			createdAt: user.createdAt,
 			updatedAt: user.updatedAt,
 		};

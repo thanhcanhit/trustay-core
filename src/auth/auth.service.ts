@@ -33,6 +33,13 @@ export class AuthService {
 		private readonly logger: LoggerService,
 	) {}
 
+	private transformUserResponse(user: any): any {
+		return {
+			...user,
+			overallRating: user.overallRating ? parseFloat(user.overallRating.toString()) : 0,
+		};
+	}
+
 	async preRegister(
 		preRegisterDto: PreRegisterDto,
 		verificationToken: string,
@@ -126,6 +133,8 @@ export class AuthService {
 				isVerifiedEmail: true,
 				isVerifiedIdentity: true,
 				isVerifiedBank: true,
+				overallRating: true,
+				totalRatings: true,
 				lastActiveAt: true,
 				createdAt: true,
 				updatedAt: true,
@@ -180,7 +189,7 @@ export class AuthService {
 
 		return {
 			access_token,
-			user,
+			user: this.transformUserResponse(user),
 			token_type: 'Bearer',
 			expires_in: this.configService.get<number>('JWT_EXPIRES_IN') || 3600,
 			refresh_token,
@@ -264,6 +273,8 @@ export class AuthService {
 				isVerifiedEmail: true,
 				isVerifiedIdentity: true,
 				isVerifiedBank: true,
+				overallRating: true,
+				totalRatings: true,
 				lastActiveAt: true,
 				createdAt: true,
 				updatedAt: true,
@@ -294,7 +305,7 @@ export class AuthService {
 
 		return {
 			access_token,
-			user,
+			user: this.transformUserResponse(user),
 			token_type: 'Bearer',
 			expires_in: this.configService.get<number>('JWT_EXPIRES_IN') || 3600,
 			refresh_token,
@@ -324,6 +335,8 @@ export class AuthService {
 				isVerifiedEmail: true,
 				isVerifiedIdentity: true,
 				isVerifiedBank: true,
+				overallRating: true,
+				totalRatings: true,
 				lastActiveAt: true,
 				createdAt: true,
 				updatedAt: true,
@@ -375,7 +388,7 @@ export class AuthService {
 
 		return {
 			access_token,
-			user: userResponse,
+			user: this.transformUserResponse(userResponse),
 			token_type: 'Bearer',
 			expires_in: this.configService.get<number>('JWT_EXPIRES_IN') || 3600,
 			refresh_token,
@@ -519,6 +532,8 @@ export class AuthService {
 						isVerifiedEmail: true,
 						isVerifiedIdentity: true,
 						isVerifiedBank: true,
+						overallRating: true,
+						totalRatings: true,
 						lastActiveAt: true,
 						createdAt: true,
 						updatedAt: true,
@@ -559,7 +574,7 @@ export class AuthService {
 
 		return {
 			access_token,
-			user: tokenRecord.user,
+			user: this.transformUserResponse(tokenRecord.user),
 			token_type: 'Bearer',
 			expires_in: this.configService.get<number>('JWT_EXPIRES_IN') || 3600,
 			refresh_token: new_refresh_token,

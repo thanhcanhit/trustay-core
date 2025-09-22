@@ -307,6 +307,8 @@ export class RoomSeekingPostService {
 							email: true,
 							phone: true,
 							avatarUrl: true,
+							overallRating: true,
+							totalRatings: true,
 						},
 					},
 					amenities: {
@@ -387,6 +389,8 @@ export class RoomSeekingPostService {
 							email: true,
 							phone: true,
 							avatarUrl: true,
+							overallRating: true,
+							totalRatings: true,
 						},
 					},
 					amenities: {
@@ -613,6 +617,8 @@ export class RoomSeekingPostService {
 							email: true,
 							phone: true,
 							avatarUrl: true,
+							overallRating: true,
+							totalRatings: true,
 						},
 					},
 					amenities: {

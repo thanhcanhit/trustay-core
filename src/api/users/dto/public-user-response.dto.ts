@@ -43,6 +43,12 @@ export class PublicUserResponseDto {
 	@ApiProperty({ description: 'Whether bank account is verified' })
 	isVerifiedBank: boolean;
 
+	@ApiProperty({ description: 'Overall rating', required: false })
+	overallRating?: number;
+
+	@ApiProperty({ description: 'Total number of ratings received' })
+	totalRatings: number;
+
 	@ApiProperty({ description: 'User creation date' })
 	createdAt: Date;
 

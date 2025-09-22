@@ -11,6 +11,7 @@ import { AddressModule } from './api/provinces/address/address.module';
 import { DistrictModule } from './api/provinces/district/district.module';
 import { ProvinceModule } from './api/provinces/province/province.module';
 import { WardModule } from './api/provinces/ward/ward.module';
+import { RatingModule } from './api/rating/rating.module';
 import { ReferenceModule } from './api/reference/reference.module';
 import { RentalsModule } from './api/rentals/rentals.module';
 import { RoomInvitationsModule } from './api/room-invitations/room-invitations.module';
@@ -46,6 +47,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 		ReferenceModule,
 		NotificationsModule,
 		PaymentsModule,
+		RatingModule,
 		RentalsModule,
 		RoomInvitationsModule,
 		RoomsModule,

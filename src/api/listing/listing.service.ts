@@ -485,6 +485,8 @@ export class ListingService {
 									isVerifiedIdentity: true,
 									isOnline: true,
 									lastActiveAt: true,
+									overallRating: true,
+									totalRatings: true,
 								},
 							},
 						},
