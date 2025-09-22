@@ -113,23 +113,13 @@ export class ListingService {
 	 * Generate breadcrumb for room listings
 	 */
 	private async generateRoomListingBreadcrumb(query: ListingQueryDto): Promise<BreadcrumbDto> {
-		const { search, provinceId, districtId, wardId, roomType } = query;
+		const { search, provinceId, districtId, roomType } = query;
 
 		const items = [
 			{ title: 'Trang chủ', path: '/' },
 			{ title: 'Tìm phòng trọ', path: '/rooms' },
 		];
 
-		// Add location breadcrumbs
-		if (wardId) {
-			const ward = await this.prisma.ward.findUnique({
-				where: { id: wardId },
-				select: { name: true },
-			});
-			if (ward) {
-				items.push({ title: ward.name, path: `/rooms?wardId=${wardId}` });
-			}
-		}
 		if (districtId) {
 			const district = await this.prisma.district.findUnique({
 				where: { id: districtId },
@@ -275,23 +265,13 @@ export class ListingService {
 	 * Generate breadcrumb for room seeking posts
 	 */
 	private async generateRoomSeekingBreadcrumb(query: RoomRequestSearchDto): Promise<BreadcrumbDto> {
-		const { search, provinceId, districtId, wardId, roomType } = query;
+		const { search, provinceId, districtId, roomType } = query;
 
 		const items = [
 			{ title: 'Trang chủ', path: '/' },
 			{ title: 'Tìm người thuê', path: '/room-seekings' },
 		];
 
-		// Add location breadcrumbs
-		if (wardId) {
-			const ward = await this.prisma.ward.findUnique({
-				where: { id: wardId },
-				select: { name: true },
-			});
-			if (ward) {
-				items.push({ title: ward.name, path: `/room-seekings?wardId=${wardId}` });
-			}
-		}
 		if (districtId) {
 			const district = await this.prisma.district.findUnique({
 				where: { id: districtId },
