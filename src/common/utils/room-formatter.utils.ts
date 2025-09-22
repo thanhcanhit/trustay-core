@@ -180,10 +180,6 @@ export function formatBaseRoom(
 	isAuthenticated: boolean,
 	ownerStats?: { totalBuildings: number; totalRoomInstances: number },
 ): BaseRoomOutputDto {
-	const maskedAddress = room.building.addressLine1
-		? maskText(room.building.addressLine1, 0, 0)
-		: '';
-
 	return {
 		id: room.id,
 		slug: room.slug,
@@ -194,7 +190,11 @@ export function formatBaseRoom(
 		isVerified: room.isVerified,
 		buildingName: room.building.name || '',
 		buildingVerified: room.building.isVerified,
-		address: isAuthenticated ? room.building.addressLine1 || '' : maskedAddress,
+		address: isAuthenticated
+			? room.building.addressLine1 || ''
+			: room.building.addressLine1
+				? maskText(room.building.addressLine1, 2, 2)
+				: '',
 		availableRooms:
 			room.roomInstances?.filter((instance: any) => instance.status === 'available').length || 0,
 		owner: formatRoomOwner(room.building.owner, isAuthenticated, ownerStats),
@@ -276,9 +276,13 @@ export function formatRoomDetail(
 		totalRooms: room.totalRooms,
 		isActive: room.isActive,
 		buildingDescription: room.building.description,
-		addressLine2: room.building.addressLine2,
-		latitude: room.building.latitude?.toString() || undefined,
-		longitude: room.building.longitude?.toString() || undefined,
+		addressLine2: isAuthenticated
+			? room.building.addressLine2 || undefined
+			: room.building.addressLine2
+				? maskText(room.building.addressLine2, 2, 2)
+				: undefined,
+		latitude: isAuthenticated ? room.building.latitude?.toString() || undefined : undefined,
+		longitude: isAuthenticated ? room.building.longitude?.toString() || undefined : undefined,
 		viewCount: room.viewCount || 0,
 		lastUpdated: room.updatedAt,
 	};
