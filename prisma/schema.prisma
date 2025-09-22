@@ -91,6 +91,12 @@ enum ReviewerType {
   owner
 }
 
+enum RatingTargetType {
+  tenant
+  landlord
+  room
+}
+
 enum AmenityCategory {
   basic
   kitchen
@@ -226,6 +232,7 @@ model User {
   receivedInvitations  RoomInvitation[]   @relation("InvitationReceiver")
   reviewsGiven         Review[]           @relation("ReviewGiver")
   reviewsReceived      Review[]           @relation("ReviewReceiver")
+  ratingsGiven         Rating[]           @relation("RatingGiver")
   notifications        Notification[]
   verificationCodes    VerificationCode[]
   refreshTokens        RefreshToken[]
@@ -693,6 +700,7 @@ model Rental {
   owner          User            @relation("RentalOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   payments       Payment[]
   reviews        Review[]
+  ratings        Rating[]
   monthlyBills   MonthlyBill[]
 
   @@index([roomInstanceId])
@@ -826,6 +834,37 @@ model Review {
   @@index([rentalId])
   @@index([revieweeId])
   @@map("reviews")
+}
+
+// ========================================
+// RATING SYSTEM (ENHANCED)
+// ========================================
+
+model Rating {
+  id         String          @id @default(uuid())
+  targetType RatingTargetType @map("target_type") // tenant, landlord, room
+  targetId   String          @map("target_id") // ID của đối tượng được rating
+  reviewerId String          @map("reviewer_id") // Người đánh giá
+  rentalId   String?         @map("rental_id") // Rental liên quan (optional cho room rating)
+  
+  // Simple rating (1-5 scale)
+  rating   Int     @map("rating") // Required: 1-5
+  content  String? // Review text
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  reviewer User         @relation("RatingGiver", fields: [reviewerId], references: [id], onDelete: Cascade)
+  rental   Rental?      @relation(fields: [rentalId], references: [id], onDelete: SetNull)
+  images   String[] // Simple list of image URLs
+
+  @@index([targetType, targetId])
+  @@index([reviewerId])
+  @@index([rentalId])
+  @@index([rating])
+  @@index([createdAt])
+  @@map("ratings")
 }
 
 // ========================================
