@@ -5,6 +5,8 @@ import { RoomType } from '@prisma/client';
  * Common owner information DTO used across different room endpoints
  */
 export class RoomOwnerOutputDto {
+	@ApiProperty({ description: 'Owner ID' })
+	id: string;
 	@ApiProperty({ description: 'Owner full name (masked if not authenticated)' })
 	name: string;
 

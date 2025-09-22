@@ -53,6 +53,7 @@ export function formatRoomOwner(
 	const fullName = `${owner.firstName || ''} ${owner.lastName || ''}`.trim();
 
 	return {
+		id: owner.id,
 		name: isAuthenticated ? fullName : maskFullName(fullName),
 		avatarUrl: owner.avatarUrl || undefined,
 		gender: owner.gender || undefined,
