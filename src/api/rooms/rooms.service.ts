@@ -167,13 +167,6 @@ export class RoomsService {
 			{ title: 'Tìm phòng trọ', path: '/rooms' },
 		];
 
-		// Add location breadcrumbs
-		if (building.ward?.name) {
-			items.push({
-				title: building.ward.name,
-				path: `/rooms?wardId=${building.ward.id}`,
-			});
-		}
 		if (building.district?.name) {
 			items.push({
 				title: building.district.name,

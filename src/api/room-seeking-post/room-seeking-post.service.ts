@@ -162,20 +162,13 @@ export class RoomSeekingPostService {
 	 * Generate breadcrumb for room seeking detail page
 	 */
 	private async generateRoomSeekingDetailBreadcrumb(post: any): Promise<BreadcrumbDto> {
-		const { title, preferredRoomType, preferredProvince, preferredDistrict, preferredWard } = post;
+		const { title, preferredRoomType, preferredProvince, preferredDistrict } = post;
 
 		const items = [
 			{ title: 'Trang chủ', path: '/' },
 			{ title: 'Tìm người thuê', path: '/room-seekings' },
 		];
 
-		// Add location breadcrumbs
-		if (preferredWard?.name) {
-			items.push({
-				title: preferredWard.name,
-				path: `/room-seekings?wardId=${preferredWard.id}`,
-			});
-		}
 		if (preferredDistrict?.name) {
 			items.push({
 				title: preferredDistrict.name,
