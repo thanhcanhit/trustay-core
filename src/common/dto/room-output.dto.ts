@@ -249,6 +249,9 @@ export class RoomDetailOutputDto extends BaseRoomOutputDto {
 	@ApiPropertyOptional({ description: 'Floor number' })
 	floorNumber?: number;
 
+	@ApiProperty({ description: 'Building ID' })
+	buildingId: string;
+
 	@ApiProperty({ description: 'Total number of room instances' })
 	totalRooms: number;
 

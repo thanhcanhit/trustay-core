@@ -269,6 +269,7 @@ export function formatRoomDetail(
 		costs: formatRoomCosts(room.costs || [], true), // Include details
 		pricing: formatRoomPricing(room.pricing),
 		rules: formatRoomRules(room.rules || [], true), // Include details
+		buildingId: room.building?.id || room.buildingId,
 
 		// Additional detail-only fields
 		description: room.description,
