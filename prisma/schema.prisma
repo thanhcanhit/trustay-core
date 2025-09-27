@@ -192,6 +192,28 @@ enum RoomStatus {
   unavailable // Phòng tạm thời không cho thuê
 }
 
+enum ContractType {
+  monthly_rental    // Thuê theo tháng
+  yearly_rental     // Thuê theo năm  
+  daily_rental      // Thuê theo ngày
+}
+
+enum ContractStatus {
+  draft             // Nháp
+  pending_signature // Chờ ký
+  partially_signed  // Đã ký 1 phần
+  fully_signed      // Đã ký đầy đủ
+  active            // Đang hiệu lực
+  expired           // Hết hạn
+  terminated        // Chấm dứt
+}
+
+enum SignerRole {
+  landlord          // Bên A - Cho thuê
+  tenant            // Bên B - Thuê
+  witness           // Người làm chứng
+}
+
 // ========================================
 // USER MANAGEMENT
 // ========================================
@@ -245,6 +267,10 @@ model User {
   conversationsAsUserA Conversation[]     @relation("ConversationUserA")
   conversationsAsUserB Conversation[]     @relation("ConversationUserB")
   messagesSent         Message[]
+  contractsAsLandlord  Contract[]         @relation("LandlordContracts")
+  contractsAsTenant    Contract[]         @relation("TenantContracts")
+  contractSignatures   ContractSignature[]
+  contractAuditLogs    ContractAuditLog[]
 
   @@map("users")
 }
@@ -418,6 +444,7 @@ model RoomInstance {
   room         Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
   rentals      Rental[]
   monthlyBills MonthlyBill[]
+  contracts    Contract[]
 
   @@unique([roomId, roomNumber]) // Unique room number within same room type
   @@index([roomId])
@@ -717,6 +744,7 @@ model Rental {
   reviews        Review[]
   ratings        Rating[]
   monthlyBills   MonthlyBill[]
+  contract       Contract?
 
   @@index([roomInstanceId])
   @@index([tenantId])
@@ -898,7 +926,7 @@ model RoomSeekingPost {
   // Vị trí mong muốn
   preferredDistrictId Int? @map("preferred_district_id")
   preferredWardId     Int? @map("preferred_ward_id")
-  preferredProvinceId Int  @map("preferred_province_id")
+  preferredProvinceId Int? @map("preferred_province_id")
 
   // Ngân sách
   minBudget Decimal? @map("min_budget") @db.Decimal(15, 2)
@@ -1034,6 +1062,118 @@ model MessageAttachment {
 
   @@index([messageId])
   @@map("message_attachments")
+}
+
+// ========================================
+// ELECTRONIC CONTRACT SYSTEM
+// ========================================
+
+model Contract {
+  id                String          @id @default(uuid())
+  contractCode      String          @unique @map("contract_code") // HD-2025-000001
+  rentalId          String?         @unique @map("rental_id")
+  
+  // Các bên tham gia
+  landlordId        String          @map("landlord_id")
+  tenantId          String          @map("tenant_id") 
+  roomInstanceId    String          @map("room_instance_id")
+  
+  // Loại và trạng thái
+  contractType      ContractType    @default(monthly_rental)
+  status            ContractStatus  @default(draft)
+  
+  // Nội dung hợp đồng (JSON)
+  contractData      Json            @map("contract_data")
+  
+  // Thời hạn hợp đồng
+  startDate         DateTime        @map("start_date") @db.Date
+  endDate           DateTime?       @map("end_date") @db.Date
+  
+  // File PDF và bảo mật
+  pdfUrl            String?         @map("pdf_url")
+  pdfHash           String?         @map("pdf_hash") // SHA-256
+  pdfSize           Int?            @map("pdf_size") // bytes
+  
+  // Thời điểm quan trọng
+  signedAt          DateTime?       @map("signed_at")
+  activatedAt       DateTime?       @map("activated_at")
+  terminatedAt      DateTime?       @map("terminated_at")
+  
+  // Metadata pháp lý
+  legalMetadata     Json            @map("legal_metadata")
+  
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+  
+  // Relations
+  rental            Rental?         @relation(fields: [rentalId], references: [id])
+  landlord          User            @relation("LandlordContracts", fields: [landlordId], references: [id])
+  tenant            User            @relation("TenantContracts", fields: [tenantId], references: [id])
+  roomInstance      RoomInstance    @relation(fields: [roomInstanceId], references: [id])
+  signatures        ContractSignature[]
+  auditLogs         ContractAuditLog[]
+  
+  @@index([status, createdAt])
+  @@index([landlordId])
+  @@index([tenantId])
+  @@index([signedAt])
+  @@map("contracts")
+}
+
+model ContractSignature {
+  id                String          @id @default(uuid())
+  contractId        String          @map("contract_id")
+  signerId          String          @map("signer_id")
+  signerRole        SignerRole      @map("signer_role")
+  
+  // Chữ ký canvas
+  signatureImage    String          @map("signature_image") // Base64 PNG
+  signatureHash     String          @map("signature_hash") // SHA-256 của image
+  
+  // Xác thực theo Nghị định 91/2023/NĐ-CP
+  authenticationMethod String       @map("authentication_method") // "SMS_OTP"
+  authenticationData Json           @map("authentication_data")
+  
+  // Metadata theo Luật Giao dịch điện tử 2023
+  signatureMetadata Json            @map("signature_metadata")
+  
+  // Trạng thái
+  isValid           Boolean         @default(true) @map("is_valid")
+  signedAt          DateTime        @map("signed_at")
+  
+  createdAt         DateTime        @default(now()) @map("created_at")
+  
+  // Relations
+  contract          Contract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  signer            User            @relation(fields: [signerId], references: [id])
+  
+  @@unique([contractId, signerId])
+  @@index([contractId])
+  @@map("contract_signatures")
+}
+
+model ContractAuditLog {
+  id                String          @id @default(uuid())
+  contractId        String          @map("contract_id")
+  userId            String?         @map("user_id")
+  
+  action            String          // created, viewed, signed, modified, terminated
+  actionDetails     Json            @map("action_details")
+  
+  // Thông tin kỹ thuật (bắt buộc theo luật)
+  ipAddress         String          @map("ip_address")
+  userAgent         String          @map("user_agent")
+  sessionId         String?         @map("session_id")
+  
+  timestamp         DateTime        @default(now())
+  
+  // Relations
+  contract          Contract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  user              User?           @relation(fields: [userId], references: [id])
+  
+  @@index([contractId, timestamp])
+  @@index([action])
+  @@map("contract_audit_logs")
 }
 
 // ========================================
