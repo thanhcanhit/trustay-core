@@ -390,3 +390,206 @@ expect(isValid).toBe(true);
 - **Nghị định 99/2011/NĐ-CP**: Decree on Electronic Signatures
 
 This implementation ensures full compliance with Vietnamese law while providing a modern, secure, and user-friendly electronic signature system for rental contracts.
+
+## PDF Export Feature
+
+### Overview
+
+The PDF export feature allows generating professional rental contract documents in Vietnamese format, compliant with legal requirements. The system supports:
+
+- **Vietnamese Contract Template**: Standard format following Vietnamese legal document standards
+- **Signature Integration**: Canvas signatures embedded in PDF documents
+- **Secure Storage**: Encrypted PDF storage with 10-year retention
+- **Integrity Verification**: SHA-256 hash verification for document integrity
+- **Audit Trail**: Complete tracking of PDF generation and access
+
+### API Endpoints
+
+#### Generate Contract PDF
+```
+POST /contracts/:contractId/pdf
+```
+
+**Request Body:**
+```typescript
+{
+  "includeSignatures": true,
+  "options": {
+    "format": "A4",
+    "printBackground": true
+  }
+}
+```
+
+**Response:**
+```typescript
+{
+  "success": true,
+  "pdfUrl": "https://...",
+  "hash": "abc123...",
+  "size": 1024000,
+  "downloadUrl": "https://...",
+  "expiresAt": "2025-01-01T00:00:00Z"
+}
+```
+
+#### Download Contract PDF
+```
+GET /contracts/:contractId/pdf
+```
+
+Returns the PDF file as attachment with proper headers.
+
+#### Get Contract Preview
+```
+GET /contracts/:contractId/pdf/preview
+```
+
+Returns a PNG thumbnail of the contract first page.
+
+#### Verify PDF Integrity
+```
+GET /contracts/:contractId/pdf/verify
+```
+
+**Response:**
+```typescript
+{
+  "valid": true,
+  "hash": "abc123...",
+  "lastVerified": "2025-01-01T00:00:00Z"
+}
+```
+
+### Implementation Details
+
+#### 1. HTML Template Generator
+```typescript
+// Usage
+import { generateContractHTML } from './templates/contract-template';
+
+const html = generateContractHTML({
+  contractNumber: 'HD-2025-000001',
+  parties: { landlord: {...}, tenant: {...} },
+  room: {...},
+  financial: {...},
+  duration: {...},
+  terms: {...},
+  createdAt: new Date(),
+  verificationCode: 'ABC12345'
+});
+```
+
+#### 2. PDF Generation Service
+```typescript
+// Usage
+import { PDFGenerationService } from './services/pdf-generation.service';
+
+const pdfService = new PDFGenerationService();
+const result = await pdfService.generateContractPDF(contractData, {
+  format: 'A4',
+  printBackground: true
+});
+```
+
+#### 3. PDF Storage Service
+```typescript
+// Usage
+import { PDFStorageService } from './services/pdf-storage.service';
+
+const storageService = new PDFStorageService();
+const stored = await storageService.storePDF(pdfResult, contractNumber, {
+  encrypt: true,
+  generateSignedUrl: true,
+  signedUrlExpiry: 168 // 7 days
+});
+```
+
+#### 4. Data Transformation
+```typescript
+// Usage
+import { transformToPDFContract } from './utils/contract-data-transformer.util';
+
+const pdfData = transformToPDFContract(databaseContract);
+```
+
+### Features
+
+#### Vietnamese Legal Compliance
+- **Header Format**: "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM" standard header
+- **Contract Structure**: Traditional Vietnamese contract layout
+- **Legal References**: Proper citation of relevant laws
+- **Signature Sections**: Compliant signature blocks for both parties
+- **Footer Information**: Electronic signature verification details
+
+#### Security Features
+- **Hash Verification**: SHA-256 integrity protection
+- **Encrypted Storage**: AES-256-CBC encryption for stored PDFs
+- **Access Control**: Permission-based PDF access
+- **Audit Logging**: Complete access and generation tracking
+- **Signed URLs**: Time-limited secure access URLs
+
+#### Template Features
+- **Responsive Design**: Optimized for A4 printing
+- **Professional Styling**: Clean, business-appropriate layout
+- **Multi-language Support**: Vietnamese with proper formatting
+- **Currency Formatting**: Vietnamese Dong (VND) formatting
+- **Date Formatting**: Vietnamese date format (DD/MM/YYYY)
+
+### Configuration
+
+#### Environment Variables
+```bash
+# PDF Storage
+PDF_STORAGE_PATH=./uploads/contracts
+PDF_ENCRYPTION_KEY=your-encryption-key
+
+# AWS S3 (Optional)
+S3_BUCKET=your-bucket-name
+AWS_REGION=ap-southeast-1
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+```
+
+#### PDF Generation Options
+```typescript
+interface PDFGenerationOptions {
+  format?: 'A4' | 'A3' | 'Letter';
+  margin?: {
+    top: string;
+    bottom: string;
+    left: string;
+    right: string;
+  };
+  printBackground?: boolean;
+  displayHeaderFooter?: boolean;
+}
+```
+
+### Error Handling
+
+The system includes comprehensive error handling:
+
+- **Contract Not Found**: Returns 404 with appropriate message
+- **Permission Denied**: Returns 403 for unauthorized access
+- **PDF Generation Failure**: Returns 500 with error details
+- **Storage Failure**: Automatic retry with fallback options
+- **Integrity Verification**: Fails safely with detailed error messages
+
+### Performance Optimization
+
+- **Browser Pooling**: Reuses Puppeteer browser instances
+- **Caching**: PDF results cached for repeated requests
+- **Compression**: Optimized PDF size without quality loss
+- **Background Processing**: Async PDF generation for large documents
+- **Memory Management**: Automatic cleanup of resources
+
+### Monitoring and Analytics
+
+- **Generation Metrics**: Track PDF generation success/failure rates
+- **Performance Monitoring**: Monitor generation time and file sizes
+- **Access Patterns**: Track PDF download and verification patterns
+- **Error Analytics**: Detailed error logging and analysis
+- **Storage Analytics**: Monitor storage usage and retention
+
+This PDF export system provides a robust, legally compliant solution for generating rental contract documents in Vietnam.

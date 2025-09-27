@@ -178,6 +178,8 @@ export interface ContractData {
 		landlord: {
 			name: string;
 			idNumber: string;
+			idIssuedDate: Date;
+			idIssuedPlace: string;
 			address: string;
 			phone: string;
 			email?: string;
@@ -185,6 +187,8 @@ export interface ContractData {
 		tenant: {
 			name: string;
 			idNumber: string;
+			idIssuedDate: Date;
+			idIssuedPlace: string;
 			address: string;
 			phone: string;
 			email?: string;
@@ -198,21 +202,28 @@ export interface ContractData {
 		address: string;
 		area: number;
 		roomType: string;
+		amenities: string[];
 	};
 
 	// Điều khoản tài chính
 	financial: {
 		monthlyRent: number;
 		deposit: number;
+		depositMonths: number;
 		currency: string;
 		paymentMethod: string;
 		paymentDueDate: number; // Ngày thanh toán trong tháng
+		electricityPrice: number;
+		waterPrice: number;
+		internetPrice?: number;
+		parkingFee?: number;
 	};
 
 	// Điều khoản thời gian
 	duration: {
 		startDate: string;
 		endDate?: string;
+		rentalMonths: number;
 		noticePeriod: number; // Thời gian báo trước (ngày)
 	};
 
@@ -220,6 +231,7 @@ export interface ContractData {
 	terms: {
 		utilities: string[];
 		restrictions: string[];
+		rules: string[];
 		responsibilities: {
 			landlord: string[];
 			tenant: string[];
