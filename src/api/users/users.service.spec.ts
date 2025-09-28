@@ -39,6 +39,14 @@ describe('UsersService', () => {
 			update: jest.fn(),
 			delete: jest.fn(),
 		},
+		userAddress: {
+			create: jest.fn(),
+			findMany: jest.fn(),
+			findUnique: jest.fn(),
+			update: jest.fn(),
+			updateMany: jest.fn(),
+			delete: jest.fn(),
+		},
 		verification: {
 			findFirst: jest.fn(),
 			update: jest.fn(),
@@ -166,6 +174,7 @@ describe('UsersService', () => {
 					firstName: 'John',
 					lastName: 'Doe',
 					role: 'tenant',
+					overallRating: 0,
 				},
 				{
 					id: 'user-2',
@@ -173,6 +182,7 @@ describe('UsersService', () => {
 					firstName: 'Jane',
 					lastName: 'Smith',
 					role: 'landlord',
+					overallRating: 0,
 				},
 			];
 
@@ -198,7 +208,6 @@ describe('UsersService', () => {
 					totalPages: 1,
 					hasNext: false,
 					hasPrev: false,
-					itemCount: 2,
 				},
 			});
 		});
@@ -331,8 +340,44 @@ describe('UsersService', () => {
 
 			expect(mockPrismaService.user.findUnique).toHaveBeenCalledWith({
 				where: { id: userId },
-				select: expect.any(Object),
-				include: { addresses: true },
+				select: {
+					id: true,
+					email: true,
+					phone: true,
+					firstName: true,
+					lastName: true,
+					avatarUrl: true,
+					dateOfBirth: true,
+					gender: true,
+					role: true,
+					bio: true,
+					idCardNumber: true,
+					bankAccount: true,
+					bankName: true,
+					isVerifiedPhone: true,
+					isVerifiedEmail: true,
+					isVerifiedIdentity: true,
+					isVerifiedBank: true,
+					overallRating: true,
+					totalRatings: true,
+					lastActiveAt: true,
+					createdAt: true,
+					updatedAt: true,
+					addresses: {
+						include: {
+							ward: {
+								select: { id: true, name: true, code: true },
+							},
+							district: {
+								select: { id: true, name: true, code: true },
+							},
+							province: {
+								select: { id: true, name: true, code: true },
+							},
+						},
+						orderBy: [{ isPrimary: 'desc' }, { createdAt: 'desc' }],
+					},
+				},
 			});
 
 			expect(result).toEqual(mockUser);
@@ -356,14 +401,42 @@ describe('UsersService', () => {
 				updatedAt: new Date(),
 			};
 
+			mockPrismaService.user.findUnique.mockResolvedValue({ id: userId });
 			mockPrismaService.user.update.mockResolvedValue(mockUpdatedUser);
 
 			const result = await service.updateProfile(userId, updateProfileDto);
 
+			expect(mockPrismaService.user.findUnique).toHaveBeenCalledWith({
+				where: { id: userId },
+			});
+
 			expect(mockPrismaService.user.update).toHaveBeenCalledWith({
 				where: { id: userId },
-				data: updateProfileDto,
-				select: expect.any(Object),
+				data: {
+					...updateProfileDto,
+					dateOfBirth: undefined,
+					updatedAt: expect.any(Date),
+				},
+				select: {
+					id: true,
+					email: true,
+					phone: true,
+					firstName: true,
+					lastName: true,
+					avatarUrl: true,
+					dateOfBirth: true,
+					gender: true,
+					role: true,
+					bio: true,
+					idCardNumber: true,
+					bankAccount: true,
+					bankName: true,
+					isVerifiedPhone: true,
+					isVerifiedEmail: true,
+					isVerifiedIdentity: true,
+					isVerifiedBank: true,
+					updatedAt: true,
+				},
 			});
 
 			expect(result).toEqual(mockUpdatedUser);
@@ -400,7 +473,8 @@ describe('UsersService', () => {
 			};
 
 			mockPrismaService.district.findUnique.mockResolvedValue(mockDistrict);
-			mockPrismaService.address.create.mockResolvedValue(mockAddress);
+			mockPrismaService.userAddress.updateMany.mockResolvedValue({ count: 0 });
+			mockPrismaService.userAddress.create.mockResolvedValue(mockAddress);
 
 			const result = await service.createAddress(userId, createAddressDto);
 
@@ -409,12 +483,23 @@ describe('UsersService', () => {
 				include: { province: true },
 			});
 
-			expect(mockPrismaService.address.create).toHaveBeenCalledWith({
+			expect(mockPrismaService.userAddress.create).toHaveBeenCalledWith({
 				data: {
 					...createAddressDto,
 					userId,
+					country: createAddressDto.country || 'Vietnam',
 				},
-				select: expect.any(Object),
+				include: {
+					ward: {
+						select: { id: true, name: true, code: true },
+					},
+					district: {
+						select: { id: true, name: true, code: true },
+					},
+					province: {
+						select: { id: true, name: true, code: true },
+					},
+				},
 			});
 
 			expect(result).toEqual(mockAddress);
@@ -429,39 +514,48 @@ describe('UsersService', () => {
 				verificationCode: '123456',
 			};
 
-			const mockVerification = {
-				id: 'verification-123',
-				userId,
-				type: 'phone',
-				code: '123456',
-				expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes from now
-				status: 'pending',
+			const mockUser = { id: userId, phone: '+84901234567' };
+			const mockUpdatedUser = {
+				id: userId,
+				phone: verifyPhoneDto.phone,
+				isVerifiedPhone: true,
 			};
 
-			mockPrismaService.verification.findFirst.mockResolvedValue(mockVerification);
-			mockPrismaService.user.update.mockResolvedValue({
-				id: userId,
-				isVerifiedPhone: true,
-			});
+			mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
+			mockPrismaService.user.findFirst.mockResolvedValue(null); // No existing user with this phone
+			mockPrismaService.user.update.mockResolvedValue(mockUpdatedUser);
 
 			const result = await service.verifyPhone(userId, verifyPhoneDto);
 
-			expect(mockPrismaService.verification.findFirst).toHaveBeenCalledWith({
+			expect(mockPrismaService.user.findUnique).toHaveBeenCalledWith({
+				where: { id: userId },
+			});
+
+			expect(mockPrismaService.user.findFirst).toHaveBeenCalledWith({
 				where: {
-					userId,
-					type: 'phone',
-					code: verifyPhoneDto.verificationCode,
-					status: 'pending',
-					expiresAt: { gt: expect.any(Date) },
+					phone: verifyPhoneDto.phone,
+					id: { not: userId },
 				},
 			});
 
 			expect(mockPrismaService.user.update).toHaveBeenCalledWith({
 				where: { id: userId },
-				data: { isVerifiedPhone: true },
+				data: {
+					phone: verifyPhoneDto.phone,
+					isVerifiedPhone: true,
+					updatedAt: expect.any(Date),
+				},
+				select: {
+					id: true,
+					phone: true,
+					isVerifiedPhone: true,
+				},
 			});
 
-			expect(result).toEqual({ success: true });
+			expect(result).toEqual({
+				message: 'Phone number verified successfully',
+				user: mockUpdatedUser,
+			});
 		});
 
 		it('should throw error for invalid verification code', async () => {
@@ -487,24 +581,48 @@ describe('UsersService', () => {
 				verificationCode: '123456',
 			};
 
-			const mockVerification = {
-				id: 'verification-123',
-				userId,
-				type: 'email',
-				code: '123456',
-				expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-				status: 'pending',
+			const mockUser = { id: userId, email: 'test@example.com' };
+			const mockUpdatedUser = {
+				id: userId,
+				email: verifyEmailDto.email,
+				isVerifiedEmail: true,
 			};
 
-			mockPrismaService.verification.findFirst.mockResolvedValue(mockVerification);
-			mockPrismaService.user.update.mockResolvedValue({
-				id: userId,
-				isVerifiedEmail: true,
-			});
+			mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
+			mockPrismaService.user.findFirst.mockResolvedValue(null); // No existing user with this email
+			mockPrismaService.user.update.mockResolvedValue(mockUpdatedUser);
 
 			const result = await service.verifyEmail(userId, verifyEmailDto);
 
-			expect(result).toEqual({ success: true });
+			expect(mockPrismaService.user.findUnique).toHaveBeenCalledWith({
+				where: { id: userId },
+			});
+
+			expect(mockPrismaService.user.findFirst).toHaveBeenCalledWith({
+				where: {
+					email: verifyEmailDto.email,
+					id: { not: userId },
+				},
+			});
+
+			expect(mockPrismaService.user.update).toHaveBeenCalledWith({
+				where: { id: userId },
+				data: {
+					email: verifyEmailDto.email,
+					isVerifiedEmail: true,
+					updatedAt: expect.any(Date),
+				},
+				select: {
+					id: true,
+					email: true,
+					isVerifiedEmail: true,
+				},
+			});
+
+			expect(result).toEqual({
+				message: 'Email verified successfully',
+				user: mockUpdatedUser,
+			});
 		});
 	});
 
@@ -516,22 +634,51 @@ describe('UsersService', () => {
 				idCardImages: ['https://example.com/front.jpg', 'https://example.com/back.jpg'],
 			};
 
-			mockPrismaService.user.update.mockResolvedValue({
+			const mockUser = { id: userId };
+			const mockUpdatedUser = {
 				id: userId,
+				idCardNumber: verifyIdentityDto.idCardNumber,
+				idCardImages: verifyIdentityDto.idCardImages,
 				isVerifiedIdentity: true,
-			});
+			};
+
+			mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
+			mockPrismaService.user.findFirst.mockResolvedValue(null); // No existing user with this ID card
+			mockPrismaService.user.update.mockResolvedValue(mockUpdatedUser);
 
 			const result = await service.verifyIdentity(userId, verifyIdentityDto);
+
+			expect(mockPrismaService.user.findUnique).toHaveBeenCalledWith({
+				where: { id: userId },
+			});
+
+			expect(mockPrismaService.user.findFirst).toHaveBeenCalledWith({
+				where: {
+					idCardNumber: verifyIdentityDto.idCardNumber,
+					id: { not: userId },
+				},
+			});
 
 			expect(mockPrismaService.user.update).toHaveBeenCalledWith({
 				where: { id: userId },
 				data: {
 					idCardNumber: verifyIdentityDto.idCardNumber,
+					idCardImages: verifyIdentityDto.idCardImages,
+					isVerifiedIdentity: true,
+					updatedAt: expect.any(Date),
+				},
+				select: {
+					id: true,
+					idCardNumber: true,
+					idCardImages: true,
 					isVerifiedIdentity: true,
 				},
 			});
 
-			expect(result).toEqual({ success: true });
+			expect(result).toEqual({
+				message: 'Identity verified successfully',
+				user: mockUpdatedUser,
+			});
 		});
 	});
 
@@ -552,30 +699,48 @@ describe('UsersService', () => {
 				imageId: 'img-123',
 			};
 
+			const mockUser = { id: userId, avatarUrl: null };
 			const mockUpdatedUser = {
 				id: userId,
+				firstName: 'John',
+				lastName: 'Doe',
 				avatarUrl: mockUploadResult.imagePath,
 				updatedAt: new Date(),
 			};
 
-			// mockUploadService.uploadFile.mockResolvedValue(mockUploadResult);
+			mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
+			mockUploadService.uploadImage.mockResolvedValue(mockUploadResult);
 			mockPrismaService.user.update.mockResolvedValue(mockUpdatedUser);
 
 			const result = await service.updateAvatar(userId, mockFile);
 
-			// expect(mockUploadService.uploadFile).toHaveBeenCalledWith(
-			//   mockFile,
-			//   'avatars',
-			//   expect.any(String)
-			// );
+			expect(mockPrismaService.user.findUnique).toHaveBeenCalledWith({
+				where: { id: userId },
+			});
+
+			expect(mockUploadService.uploadImage).toHaveBeenCalledWith(mockFile, {
+				altText: 'User avatar',
+			});
 
 			expect(mockPrismaService.user.update).toHaveBeenCalledWith({
 				where: { id: userId },
-				data: { avatarUrl: mockUploadResult.imagePath },
-				select: expect.any(Object),
+				data: {
+					avatarUrl: mockUploadResult.imagePath,
+					updatedAt: expect.any(Date),
+				},
+				select: {
+					id: true,
+					firstName: true,
+					lastName: true,
+					avatarUrl: true,
+					updatedAt: true,
+				},
 			});
 
-			expect(result).toEqual(mockUpdatedUser);
+			expect(result).toEqual({
+				message: 'Avatar uploaded successfully',
+				user: mockUpdatedUser,
+			});
 		});
 	});
 
@@ -627,22 +792,61 @@ describe('UsersService', () => {
 				isVerifiedEmail: true,
 				overallRating: 4.5,
 				totalRatings: 10,
+				avatarUrl: null,
+				gender: null,
+				bio: null,
+				isVerifiedIdentity: false,
+				isVerifiedBank: false,
+				createdAt: new Date(),
+				updatedAt: new Date(),
 			};
 
 			mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
 
 			const result = await service.getPublicUser(userId, false);
 
+			expect(mockPrismaService.user.findUnique).toHaveBeenCalledWith({
+				where: { id: userId },
+				select: {
+					id: true,
+					email: true,
+					phone: true,
+					firstName: true,
+					lastName: true,
+					avatarUrl: true,
+					gender: true,
+					role: true,
+					bio: true,
+					isVerifiedPhone: true,
+					isVerifiedEmail: true,
+					isVerifiedIdentity: true,
+					isVerifiedBank: true,
+					overallRating: true,
+					totalRatings: true,
+					createdAt: true,
+					updatedAt: true,
+				},
+			});
+
 			expect(result).toEqual({
 				id: userId,
-				name: 'J*** D***',
-				email: 't***@example.com',
-				phone: '+8490****567',
+				firstName: undefined,
+				lastName: undefined,
+				name: 'J*** D**',
+				email: 'test@ex*******om',
+				phone: '+84******567',
+				avatarUrl: null,
+				gender: null,
 				role: 'tenant',
+				bio: null,
 				isVerifiedPhone: true,
 				isVerifiedEmail: true,
+				isVerifiedIdentity: false,
+				isVerifiedBank: false,
 				overallRating: 4.5,
 				totalRatings: 10,
+				createdAt: expect.any(Date),
+				updatedAt: expect.any(Date),
 			});
 		});
 	});
