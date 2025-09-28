@@ -164,7 +164,8 @@ export class RatingController {
 	})
 	async findOne(@Param('id') id: string, @Req() req: any): Promise<RatingResponseDto> {
 		const isAuthenticated = Boolean(req.user);
-		return this.ratingService.findOne(id, { isAuthenticated });
+		const currentUserId = req.user?.id;
+		return this.ratingService.findOne(id, { isAuthenticated, currentUserId });
 	}
 
 	@Patch(':id')

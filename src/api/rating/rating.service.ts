@@ -213,7 +213,7 @@ export class RatingService {
 
 	async findOne(
 		id: string,
-		context: { isAuthenticated: boolean } = { isAuthenticated: false },
+		context: { isAuthenticated: boolean; currentUserId?: string } = { isAuthenticated: false },
 	): Promise<RatingResponseDto> {
 		const rating = await this.prisma.rating.findUnique({
 			where: { id },
@@ -248,16 +248,15 @@ export class RatingService {
 	): Promise<RatingResponseDto> {
 		const rating = await this.prisma.rating.findUnique({
 			where: { id },
-			select: { reviewerId: true },
+			select: { reviewerId: true, targetType: true, targetId: true },
 		});
 
 		if (!rating) {
 			throw new NotFoundException('Rating not found');
 		}
 
-		if (rating.reviewerId !== userId) {
-			throw new ForbiddenException('You can only update your own ratings');
-		}
+		// Check if user can update this rating
+		await this.validateRatingOwnership(rating.reviewerId, userId, 'update');
 
 		const updatedRating = await this.prisma.$transaction(async (tx) => {
 			const updated = await tx.rating.update({
@@ -284,7 +283,10 @@ export class RatingService {
 			return updated;
 		});
 
-		return this.formatRatingResponse(updatedRating);
+		return this.formatRatingResponse(updatedRating, {
+			isAuthenticated: true,
+			currentUserId: userId,
+		});
 	}
 
 	async remove(id: string, userId: string): Promise<void> {
@@ -297,9 +299,8 @@ export class RatingService {
 			throw new NotFoundException('Rating not found');
 		}
 
-		if (rating.reviewerId !== userId) {
-			throw new ForbiddenException('You can only delete your own ratings');
-		}
+		// Check if user can delete this rating
+		await this.validateRatingOwnership(rating.reviewerId, userId, 'delete');
 
 		await this.prisma.$transaction(async (tx) => {
 			await tx.rating.delete({
@@ -501,11 +502,21 @@ export class RatingService {
 
 	// Removed response validation for simplified version
 
+	private async validateRatingOwnership(
+		reviewerId: string,
+		userId: string,
+		action: 'update' | 'delete',
+	): Promise<void> {
+		if (reviewerId !== userId) {
+			throw new ForbiddenException(`You can only ${action} your own ratings`);
+		}
+	}
+
 	private formatRatingResponse(
 		rating: any,
-		context: { isAuthenticated: boolean } = { isAuthenticated: false },
+		context: { isAuthenticated: boolean; currentUserId?: string } = { isAuthenticated: false },
 	): RatingResponseDto {
-		const { isAuthenticated } = context;
+		const { isAuthenticated, currentUserId } = context;
 
 		// Format reviewer information
 		let reviewer = {
@@ -548,6 +559,7 @@ export class RatingService {
 			updatedAt: rating.updatedAt,
 			reviewer,
 			images: rating.images || [],
+			isCurrentUser: currentUserId ? rating.reviewerId === currentUserId : false,
 		};
 	}
 }
