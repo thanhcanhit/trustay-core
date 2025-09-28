@@ -1,210 +1,95 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+import { AppModule } from '../../app.module';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AuthTestUtils, createTestModule } from '../../test-utils';
-import { RoommateSeekingPostController } from './roommate-seeking-post.controller';
-import { RoommateSeekingPostService } from './roommate-seeking-post.service';
+import { AuthTestUtils } from '../../test-utils';
 
-describe('RoommateSeekingPostController', () => {
+describe('RoommateSeekingPostController (Integration)', () => {
 	let app: INestApplication;
-	let service: RoommateSeekingPostService;
 	let authUtils: AuthTestUtils;
-	let module: TestingModule;
+	let prismaService: PrismaService;
 
 	beforeAll(async () => {
-		module = await Test.createTestingModule({
-			controllers: [RoommateSeekingPostController],
-			providers: [
-				{
-					provide: PrismaService,
-					useValue: {
-						user: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							findFirst: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							deleteMany: jest.fn(),
-							count: jest.fn(),
-						},
-						userAddress: {
-							create: jest.fn(),
-							findMany: jest.fn(),
-							findUnique: jest.fn(),
-							update: jest.fn(),
-							updateMany: jest.fn(),
-							delete: jest.fn(),
-						},
-						building: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						room: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						roomInstance: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						roommateSeekingPost: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						rental: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							findFirst: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						province: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						district: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						ward: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						refreshToken: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							deleteMany: jest.fn(),
-						},
-					},
-				},
-				{
-					provide: RoommateSeekingPostService,
-					useValue: {
-						create: jest.fn(),
-						findMyPosts: jest.fn(),
-						findOne: jest.fn(),
-						update: jest.fn(),
-						remove: jest.fn(),
-						updateStatus: jest.fn(),
-					},
-				},
-			],
+		const moduleFixture: TestingModule = await Test.createTestingModule({
+			imports: [AppModule],
 		}).compile();
 
-		app = module.createNestApplication();
+		app = moduleFixture.createNestApplication();
+		app.setGlobalPrefix('api');
 		app.useGlobalPipes(new ValidationPipe({ transform: true }));
 		await app.init();
 
-		service = module.get<RoommateSeekingPostService>(RoommateSeekingPostService);
-		authUtils = new AuthTestUtils();
-	});
-
-	beforeEach(() => {
-		jest.clearAllMocks();
+		prismaService = moduleFixture.get<PrismaService>(PrismaService);
+		authUtils = new AuthTestUtils(app);
 	});
 
 	afterAll(async () => {
-		await module.close();
+		await app.close();
 	});
 
 	describe('POST /roommate-seeking-posts', () => {
-		it('should create a roommate seeking post', async () => {
+		it('should create a roommate seeking post with sample data from Postman collection', async () => {
 			// Arrange
 			const tenant = await authUtils.createDefaultTenant();
 			const headers = authUtils.getAuthHeaders(tenant);
 
 			const createDto = {
-				title: 'Tìm người ở ghép phòng trọ',
-				description: 'Phòng trọ đẹp, gần trường học',
+				title: 'Tìm người ở ghép phòng trọ gần trường ĐH Bách Khoa',
+				description:
+					'Sinh viên năm 3 tìm người ở ghép phòng trọ gần trường ĐH Bách Khoa, ưu tiên khu vực Thủ Đức. Cần phòng có điều hòa, wifi, gần chợ và bến xe buýt.',
 				monthlyRent: 2000000,
-				depositAmount: 1000000,
-				seekingCount: 2,
-				maxOccupancy: 4,
+				depositAmount: 4000000,
+				seekingCount: 1,
+				maxOccupancy: 2,
 				currentOccupancy: 1,
-				availableFromDate: '2024-01-01',
-				minimumStayMonths: 6,
+				availableFromDate: '2024-09-01',
+				minimumStayMonths: 3,
+				maximumStayMonths: 12,
 				currency: 'VND',
-			};
-
-			const mockResponse = {
-				id: 'post-1',
-				title: createDto.title,
-				description: createDto.description,
-				slug: 'tim-nguoi-o-ghep-phong-tro',
-				tenantId: tenant.id,
-				monthlyRent: createDto.monthlyRent,
-				depositAmount: createDto.depositAmount,
-				seekingCount: createDto.seekingCount,
-				approvedCount: 0,
-				remainingSlots: createDto.seekingCount,
-				maxOccupancy: createDto.maxOccupancy,
-				currentOccupancy: createDto.currentOccupancy,
-				availableFromDate: '2024-01-01T00:00:00.000Z',
-				minimumStayMonths: createDto.minimumStayMonths,
-				currency: createDto.currency,
-				status: 'active',
+				preferredGender: 'male',
+				additionalRequirements: 'Không hút thuốc, giữ gìn vệ sinh chung',
 				requiresLandlordApproval: false,
-				isActive: true,
-				viewCount: 0,
-				contactCount: 0,
-				createdAt: '2024-01-01T00:00:00.000Z',
-				updatedAt: '2024-01-01T00:00:00.000Z',
-				tenant: {
-					id: tenant.id,
-					firstName: tenant.firstName,
-					lastName: tenant.lastName,
-					avatarUrl: tenant.avatarUrl,
-					phoneNumber: tenant.phoneNumber,
-				},
+				expiresAt: '2024-12-31',
 			};
-
-			jest.spyOn(service, 'create').mockResolvedValue(mockResponse as any);
 
 			// Act
 			const response = await request(app.getHttpServer())
-				.post('/roommate-seeking-posts')
+				.post('/api/roommate-seeking-posts')
 				.set(headers)
 				.send(createDto)
 				.expect(201);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.create).toHaveBeenCalledWith(createDto, tenant.id);
+			expect(response.body).toMatchObject({
+				title: createDto.title,
+				description: createDto.description,
+				tenantId: tenant.id,
+				monthlyRent: createDto.monthlyRent,
+				depositAmount: createDto.depositAmount,
+				seekingCount: createDto.seekingCount,
+				maxOccupancy: createDto.maxOccupancy,
+				currentOccupancy: createDto.currentOccupancy,
+				minimumStayMonths: createDto.minimumStayMonths,
+				maximumStayMonths: createDto.maximumStayMonths,
+				currency: createDto.currency,
+				preferredGender: createDto.preferredGender,
+				additionalRequirements: createDto.additionalRequirements,
+				status: 'draft',
+				requiresLandlordApproval: false,
+				isActive: true,
+			});
+
+			// Verify post was created in database
+			const createdPost = await prismaService.roommateSeekingPost.findUnique({
+				where: { id: response.body.id },
+				include: { tenant: true },
+			});
+
+			expect(createdPost).toBeTruthy();
+			expect(createdPost?.tenantId).toBe(tenant.id);
+			expect(createdPost?.title).toBe(createDto.title);
+			expect(createdPost?.description).toBe(createDto.description);
 		});
 
 		it('should return 401 when not authenticated', async () => {
@@ -221,7 +106,7 @@ describe('RoommateSeekingPostController', () => {
 
 			// Act & Assert
 			await request(app.getHttpServer())
-				.post('/roommate-seeking-posts')
+				.post('/api/roommate-seeking-posts')
 				.send(createDto)
 				.expect(401);
 		});
@@ -239,7 +124,7 @@ describe('RoommateSeekingPostController', () => {
 
 			// Act & Assert
 			await request(app.getHttpServer())
-				.post('/roommate-seeking-posts')
+				.post('/api/roommate-seeking-posts')
 				.set(headers)
 				.send(invalidDto)
 				.expect(400);
@@ -247,245 +132,197 @@ describe('RoommateSeekingPostController', () => {
 	});
 
 	describe('GET /roommate-seeking-posts/me', () => {
-		it('should return my posts', async () => {
+		it('should return my posts with pagination', async () => {
 			// Arrange
 			const tenant = await authUtils.createDefaultTenant();
 			const headers = authUtils.getAuthHeaders(tenant);
 
-			const mockResponse = {
-				data: [
-					{
-						id: 'post-1',
-						title: 'My Post 1',
-						description: 'Description 1',
-						slug: 'my-post-1',
-						tenantId: tenant.id,
-						monthlyRent: 2000000,
-						depositAmount: 1000000,
-						seekingCount: 2,
-						approvedCount: 0,
-						remainingSlots: 2,
-						maxOccupancy: 4,
-						currentOccupancy: 1,
-						availableFromDate: '2024-01-01T00:00:00.000Z',
-						minimumStayMonths: 6,
-						currency: 'VND',
-						status: 'active',
-						requiresLandlordApproval: false,
-						isActive: true,
-						viewCount: 0,
-						contactCount: 0,
-						createdAt: '2024-01-01T00:00:00.000Z',
-						updatedAt: '2024-01-01T00:00:00.000Z',
-						tenant: {
-							id: tenant.id,
-							firstName: tenant.firstName,
-							lastName: tenant.lastName,
-							avatarUrl: tenant.avatarUrl,
-							phoneNumber: tenant.phoneNumber,
-						},
-					},
-				],
-				meta: {
-					page: 1,
-					limit: 10,
-					total: 1,
-					totalPages: 1,
-					hasNextPage: false,
-					hasPreviousPage: false,
-				},
-			};
+			// Create multiple test posts
+			await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				title: 'Tìm người ở ghép phòng trọ gần trường ĐH Bách Khoa',
+				description: 'Sinh viên năm 3 tìm người ở ghép phòng trọ gần trường ĐH Bách Khoa',
+				monthlyRent: 2000000,
+				depositAmount: 4000000,
+				seekingCount: 1,
+				maxOccupancy: 2,
+				currentOccupancy: 1,
+			});
 
-			jest.spyOn(service, 'findMyPosts').mockResolvedValue(mockResponse as any);
+			await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				title: 'Tìm người ở ghép phòng trọ khu vực Thủ Đức',
+				description: 'Cần tìm người ở ghép phòng trọ khu vực Thủ Đức, gần trường học',
+				monthlyRent: 2500000,
+				depositAmount: 5000000,
+				seekingCount: 1,
+				maxOccupancy: 2,
+				currentOccupancy: 1,
+			});
 
 			// Act
 			const response = await request(app.getHttpServer())
-				.get('/roommate-seeking-posts/me')
+				.get('/api/roommate-seeking-posts/me?page=1&limit=10')
 				.set(headers)
 				.expect(200);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.findMyPosts).toHaveBeenCalledWith({}, tenant.id);
+			expect(response.body.data).toHaveLength(2);
+			expect(response.body.meta.total).toBe(2);
+			expect(response.body.meta.page).toBe(1);
+			expect(response.body.meta.limit).toBe(10);
+			expect(response.body.data[0]).toMatchObject({
+				tenantId: tenant.id,
+			});
 		});
 
 		it('should return 401 when not authenticated', async () => {
 			// Act & Assert
-			await request(app.getHttpServer()).get('/roommate-seeking-posts/me').expect(401);
+			await request(app.getHttpServer()).get('/api/roommate-seeking-posts/me').expect(401);
 		});
 	});
 
 	describe('GET /roommate-seeking-posts/:id', () => {
 		it('should return post details without authentication', async () => {
 			// Arrange
-			const postId = 'post-1';
-			const mockResponse = {
-				id: postId,
-				title: 'Post 1',
-				description: 'Description 1',
-				slug: 'post-1',
-				tenantId: 'tenant-1',
+			const tenant = await authUtils.createDefaultTenant();
+			const post = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				title: 'Tìm người ở ghép phòng trọ gần trường ĐH Bách Khoa',
+				description:
+					'Sinh viên năm 3 tìm người ở ghép phòng trọ gần trường ĐH Bách Khoa, ưu tiên khu vực Thủ Đức',
 				monthlyRent: 2000000,
-				depositAmount: 1000000,
-				seekingCount: 2,
-				approvedCount: 0,
-				remainingSlots: 2,
-				maxOccupancy: 4,
+				depositAmount: 4000000,
+				seekingCount: 1,
+				maxOccupancy: 2,
 				currentOccupancy: 1,
-				availableFromDate: '2024-01-01T00:00:00.000Z',
-				minimumStayMonths: 6,
-				currency: 'VND',
-				status: 'active',
-				requiresLandlordApproval: false,
-				isActive: true,
-				viewCount: 0,
-				contactCount: 0,
-				createdAt: '2024-01-01T00:00:00.000Z',
-				updatedAt: '2024-01-01T00:00:00.000Z',
-				tenant: {
-					id: 'tenant-1',
-					firstName: 'John',
-					lastName: 'Doe',
-					avatarUrl: null,
-					phoneNumber: '+84901234567',
-				},
-				isOwner: false,
-				canEdit: false,
-				canApply: true,
-			};
-
-			jest.spyOn(service, 'findOne').mockResolvedValue(mockResponse as any);
+			});
 
 			// Act
 			const response = await request(app.getHttpServer())
-				.get(`/roommate-seeking-posts/${postId}`)
+				.get(`/api/roommate-seeking-posts/${post.id}`)
 				.expect(200);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.findOne).toHaveBeenCalledWith(postId, undefined, { isAuthenticated: false });
+			expect(response.body).toMatchObject({
+				id: post.id,
+				title: 'Tìm người ở ghép phòng trọ gần trường ĐH Bách Khoa',
+				description:
+					'Sinh viên năm 3 tìm người ở ghép phòng trọ gần trường ĐH Bách Khoa, ưu tiên khu vực Thủ Đức',
+				tenantId: tenant.id,
+				monthlyRent: 2000000,
+				depositAmount: 4000000,
+				seekingCount: 1,
+				maxOccupancy: 2,
+				currentOccupancy: 1,
+				isOwner: false,
+				canEdit: false,
+				canApply: true,
+			});
 		});
 
-		it('should return post details with authentication', async () => {
+		it('should return post details with authentication as owner', async () => {
 			// Arrange
 			const tenant = await authUtils.createDefaultTenant();
 			const headers = authUtils.getAuthHeaders(tenant);
-			const postId = 'post-1';
-
-			const mockResponse = {
-				id: postId,
-				title: 'Post 1',
-				description: 'Description 1',
-				slug: 'post-1',
-				tenantId: tenant.id,
-				monthlyRent: 2000000,
-				depositAmount: 1000000,
-				seekingCount: 2,
-				approvedCount: 0,
-				remainingSlots: 2,
-				maxOccupancy: 4,
+			const post = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				title: 'Tìm người ở ghép phòng trọ khu vực Thủ Đức',
+				description: 'Cần tìm người ở ghép phòng trọ khu vực Thủ Đức, gần trường học',
+				monthlyRent: 2500000,
+				depositAmount: 5000000,
+				seekingCount: 1,
+				maxOccupancy: 2,
 				currentOccupancy: 1,
-				availableFromDate: '2024-01-01T00:00:00.000Z',
-				minimumStayMonths: 6,
-				currency: 'VND',
-				status: 'active',
-				requiresLandlordApproval: false,
-				isActive: true,
-				viewCount: 0,
-				contactCount: 0,
-				createdAt: '2024-01-01T00:00:00.000Z',
-				updatedAt: '2024-01-01T00:00:00.000Z',
-				tenant: {
-					id: tenant.id,
-					firstName: tenant.firstName,
-					lastName: tenant.lastName,
-					avatarUrl: tenant.avatarUrl,
-					phoneNumber: tenant.phoneNumber,
-				},
-				isOwner: true,
-				canEdit: true,
-				canApply: false,
-			};
-
-			jest.spyOn(service, 'findOne').mockResolvedValue(mockResponse as any);
+			});
 
 			// Act
 			const response = await request(app.getHttpServer())
-				.get(`/roommate-seeking-posts/${postId}`)
+				.get(`/api/roommate-seeking-posts/${post.id}`)
 				.set(headers)
 				.expect(200);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.findOne).toHaveBeenCalledWith(postId, undefined, { isAuthenticated: true });
+			expect(response.body).toMatchObject({
+				id: post.id,
+				title: 'Tìm người ở ghép phòng trọ khu vực Thủ Đức',
+				description: 'Cần tìm người ở ghép phòng trọ khu vực Thủ Đức, gần trường học',
+				tenantId: tenant.id,
+				monthlyRent: 2500000,
+				depositAmount: 5000000,
+				seekingCount: 1,
+				maxOccupancy: 2,
+				currentOccupancy: 1,
+				isOwner: true,
+				canEdit: true,
+				canApply: false,
+			});
 		});
 
 		it('should return 404 when post not found', async () => {
 			// Arrange
-			const postId = 'non-existent';
-			jest.spyOn(service, 'findOne').mockRejectedValue(new Error('Not found'));
+			const postId = 'non-existent-id';
 
 			// Act & Assert
-			await request(app.getHttpServer()).get(`/roommate-seeking-posts/${postId}`).expect(500);
+			await request(app.getHttpServer()).get(`/api/roommate-seeking-posts/${postId}`).expect(404);
 		});
 	});
 
 	describe('PATCH /roommate-seeking-posts/:id', () => {
-		it('should update post successfully', async () => {
+		it('should update post successfully with sample data', async () => {
 			// Arrange
 			const tenant = await authUtils.createDefaultTenant();
 			const headers = authUtils.getAuthHeaders(tenant);
-			const postId = 'post-1';
+			const post = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				title: 'Tìm người ở ghép phòng trọ gần trường ĐH Bách Khoa',
+				description: 'Sinh viên năm 3 tìm người ở ghép phòng trọ gần trường ĐH Bách Khoa',
+				monthlyRent: 2000000,
+				depositAmount: 4000000,
+				seekingCount: 1,
+				maxOccupancy: 2,
+				currentOccupancy: 1,
+			});
 
 			const updateDto = {
-				title: 'Updated Title',
-				description: 'Updated Description',
-			};
-
-			const mockResponse = {
-				id: postId,
-				title: updateDto.title,
-				description: updateDto.description,
-				slug: 'updated-title',
-				tenantId: tenant.id,
-				monthlyRent: 2000000,
-				depositAmount: 1000000,
+				title: 'Tìm người ở ghép phòng trọ gần trường ĐH Bách Khoa - Cập nhật',
+				description:
+					'Sinh viên năm 3 tìm người ở ghép phòng trọ gần trường ĐH Bách Khoa, ưu tiên khu vực Thủ Đức. Cần phòng có điều hòa, wifi, gần chợ và bến xe buýt. Có thể chia sẻ phòng với bạn cùng lớp.',
+				monthlyRent: 2500000,
+				depositAmount: 5000000,
 				seekingCount: 2,
-				approvedCount: 0,
-				remainingSlots: 2,
-				maxOccupancy: 4,
+				maxOccupancy: 3,
 				currentOccupancy: 1,
-				availableFromDate: '2024-01-01T00:00:00.000Z',
-				minimumStayMonths: 6,
-				currency: 'VND',
-				status: 'active',
-				requiresLandlordApproval: false,
-				isActive: true,
-				viewCount: 0,
-				contactCount: 0,
-				createdAt: '2024-01-01T00:00:00.000Z',
-				updatedAt: '2024-01-01T00:00:00.000Z',
-				tenant: {
-					id: tenant.id,
-					firstName: tenant.firstName,
-					lastName: tenant.lastName,
-					avatarUrl: tenant.avatarUrl,
-					phoneNumber: tenant.phoneNumber,
-				},
+				preferredGender: 'female',
+				additionalRequirements: 'Không hút thuốc, giữ gìn vệ sinh chung, yêu thích âm nhạc',
 			};
-
-			jest.spyOn(service, 'update').mockResolvedValue(mockResponse as any);
 
 			// Act
 			const response = await request(app.getHttpServer())
-				.patch(`/roommate-seeking-posts/${postId}`)
+				.patch(`/api/roommate-seeking-posts/${post.id}`)
 				.set(headers)
 				.send(updateDto)
 				.expect(200);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.update).toHaveBeenCalledWith(postId, updateDto, tenant.id);
+			expect(response.body).toMatchObject({
+				id: post.id,
+				title: updateDto.title,
+				description: updateDto.description,
+				tenantId: tenant.id,
+				monthlyRent: updateDto.monthlyRent,
+				depositAmount: updateDto.depositAmount,
+				seekingCount: updateDto.seekingCount,
+				maxOccupancy: updateDto.maxOccupancy,
+				currentOccupancy: updateDto.currentOccupancy,
+				preferredGender: updateDto.preferredGender,
+				additionalRequirements: updateDto.additionalRequirements,
+			});
+
+			// Verify post was updated in database
+			const updatedPost = await prismaService.roommateSeekingPost.findUnique({
+				where: { id: post.id },
+			});
+
+			expect(updatedPost?.title).toBe(updateDto.title);
+			expect(updatedPost?.description).toBe(updateDto.description);
+			expect(updatedPost?.monthlyRent).toBe(updateDto.monthlyRent);
+			expect(updatedPost?.depositAmount).toBe(updateDto.depositAmount);
 		});
 
 		it('should return 401 when not authenticated', async () => {
@@ -495,7 +332,7 @@ describe('RoommateSeekingPostController', () => {
 
 			// Act & Assert
 			await request(app.getHttpServer())
-				.patch(`/roommate-seeking-posts/${postId}`)
+				.patch(`/api/roommate-seeking-posts/${postId}`)
 				.send(updateDto)
 				.expect(401);
 		});
@@ -506,18 +343,28 @@ describe('RoommateSeekingPostController', () => {
 			// Arrange
 			const tenant = await authUtils.createDefaultTenant();
 			const headers = authUtils.getAuthHeaders(tenant);
-			const postId = 'post-1';
-
-			jest.spyOn(service, 'remove').mockResolvedValue(undefined);
+			const post = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				title: 'Tìm người ở ghép phòng trọ để xóa',
+				description: 'Bài đăng này sẽ bị xóa trong test',
+				monthlyRent: 2000000,
+				depositAmount: 4000000,
+				seekingCount: 1,
+				maxOccupancy: 2,
+				currentOccupancy: 1,
+			});
 
 			// Act
 			await request(app.getHttpServer())
-				.delete(`/roommate-seeking-posts/${postId}`)
+				.delete(`/api/roommate-seeking-posts/${post.id}`)
 				.set(headers)
 				.expect(204);
 
-			// Assert
-			expect(service.remove).toHaveBeenCalledWith(postId, tenant.id);
+			// Assert - Verify post was deleted from database
+			const deletedPost = await prismaService.roommateSeekingPost.findUnique({
+				where: { id: post.id },
+			});
+
+			expect(deletedPost).toBeNull();
 		});
 
 		it('should return 401 when not authenticated', async () => {
@@ -525,7 +372,9 @@ describe('RoommateSeekingPostController', () => {
 			const postId = 'post-1';
 
 			// Act & Assert
-			await request(app.getHttpServer()).delete(`/roommate-seeking-posts/${postId}`).expect(401);
+			await request(app.getHttpServer())
+				.delete(`/api/roommate-seeking-posts/${postId}`)
+				.expect(401);
 		});
 	});
 
@@ -534,53 +383,39 @@ describe('RoommateSeekingPostController', () => {
 			// Arrange
 			const tenant = await authUtils.createDefaultTenant();
 			const headers = authUtils.getAuthHeaders(tenant);
-			const postId = 'post-1';
-			const status = 'paused';
-
-			const mockResponse = {
-				id: postId,
-				title: 'Post 1',
-				description: 'Description 1',
-				slug: 'post-1',
-				tenantId: tenant.id,
+			const post = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				title: 'Tìm người ở ghép phòng trọ để test status',
+				description: 'Bài đăng này sẽ được test thay đổi status',
 				monthlyRent: 2000000,
-				depositAmount: 1000000,
-				seekingCount: 2,
-				approvedCount: 0,
-				remainingSlots: 2,
-				maxOccupancy: 4,
+				depositAmount: 4000000,
+				seekingCount: 1,
+				maxOccupancy: 2,
 				currentOccupancy: 1,
-				availableFromDate: '2024-01-01T00:00:00.000Z',
-				minimumStayMonths: 6,
-				currency: 'VND',
-				status,
-				requiresLandlordApproval: false,
-				isActive: true,
-				viewCount: 0,
-				contactCount: 0,
-				createdAt: '2024-01-01T00:00:00.000Z',
-				updatedAt: '2024-01-01T00:00:00.000Z',
-				tenant: {
-					id: tenant.id,
-					firstName: tenant.firstName,
-					lastName: tenant.lastName,
-					avatarUrl: tenant.avatarUrl,
-					phoneNumber: tenant.phoneNumber,
-				},
-			};
-
-			jest.spyOn(service, 'updateStatus').mockResolvedValue(mockResponse as any);
+			});
+			const status = 'paused';
 
 			// Act
 			const response = await request(app.getHttpServer())
-				.patch(`/roommate-seeking-posts/${postId}/status`)
+				.patch(`/api/roommate-seeking-posts/${post.id}/status`)
 				.set(headers)
 				.send({ status })
 				.expect(200);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.updateStatus).toHaveBeenCalledWith(postId, status, tenant.id);
+			expect(response.body).toMatchObject({
+				id: post.id,
+				title: 'Tìm người ở ghép phòng trọ để test status',
+				description: 'Bài đăng này sẽ được test thay đổi status',
+				tenantId: tenant.id,
+				status,
+			});
+
+			// Verify status was updated in database
+			const updatedPost = await prismaService.roommateSeekingPost.findUnique({
+				where: { id: post.id },
+			});
+
+			expect(updatedPost?.status).toBe(status);
 		});
 
 		it('should return 401 when not authenticated', async () => {
@@ -590,7 +425,7 @@ describe('RoommateSeekingPostController', () => {
 
 			// Act & Assert
 			await request(app.getHttpServer())
-				.patch(`/roommate-seeking-posts/${postId}/status`)
+				.patch(`/api/roommate-seeking-posts/${postId}/status`)
 				.send({ status })
 				.expect(401);
 		});

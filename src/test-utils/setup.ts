@@ -1,5 +1,6 @@
 // Jest setup file
 import 'reflect-metadata';
+import { TestDatabase } from './test-database';
 
 // Mock console methods to reduce noise in tests
 global.console = {
@@ -11,31 +12,27 @@ global.console = {
 	error: jest.fn(),
 };
 
-// Mock external services
-jest.mock('../prisma/prisma.service', () => ({
-	PrismaService: jest.fn().mockImplementation(() => ({
-		user: {
-			create: jest.fn(),
-			findMany: jest.fn(),
-			findUnique: jest.fn(),
-			findFirst: jest.fn(),
-			update: jest.fn(),
-			delete: jest.fn(),
-			count: jest.fn(),
-		},
-		address: {
-			create: jest.fn(),
-			findMany: jest.fn(),
-			findUnique: jest.fn(),
-			update: jest.fn(),
-			delete: jest.fn(),
-		},
-		verification: {
-			findFirst: jest.fn(),
-			update: jest.fn(),
-		},
-	})),
-}));
+// Global test database instance
+let testDatabase: TestDatabase;
+
+// Setup test database before all tests
+beforeAll(async () => {
+	testDatabase = new TestDatabase();
+	await testDatabase.setup();
+});
+
+// Clean database before each test
+beforeEach(async () => {
+	await testDatabase.cleanDatabase();
+});
+
+// Teardown test database after all tests
+afterAll(async () => {
+	await testDatabase.teardown();
+});
+
+// Export test database for use in tests
+export { testDatabase };
 
 jest.mock('../common/services/upload.service', () => ({
 	UploadService: jest.fn().mockImplementation(() => ({

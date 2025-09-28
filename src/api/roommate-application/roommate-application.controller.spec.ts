@@ -2,167 +2,70 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AuthTestUtils, createTestModule } from '../../test-utils';
+import { AuthTestUtils } from '../../test-utils';
+import { TestDatabase } from '../../test-utils/test-database';
 import { RoommateApplicationController } from './roommate-application.controller';
 import { RoommateApplicationService } from './roommate-application.service';
 
 describe('RoommateApplicationController', () => {
 	let app: INestApplication;
-	let service: RoommateApplicationService;
 	let authUtils: AuthTestUtils;
 	let module: TestingModule;
+	let testDatabase: TestDatabase;
 
 	beforeAll(async () => {
+		testDatabase = new TestDatabase();
+		await testDatabase.setup();
+
 		module = await Test.createTestingModule({
 			controllers: [RoommateApplicationController],
 			providers: [
+				RoommateApplicationService,
 				{
 					provide: PrismaService,
-					useValue: {
-						user: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							findFirst: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							deleteMany: jest.fn(),
-							count: jest.fn(),
-						},
-						userAddress: {
-							create: jest.fn(),
-							findMany: jest.fn(),
-							findUnique: jest.fn(),
-							update: jest.fn(),
-							updateMany: jest.fn(),
-							delete: jest.fn(),
-						},
-						building: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						room: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						roomInstance: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						roommateSeekingPost: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						roommateApplication: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							findFirst: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-							groupBy: jest.fn(),
-						},
-						rental: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							findFirst: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						province: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						district: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						ward: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						refreshToken: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							deleteMany: jest.fn(),
-						},
-					},
-				},
-				{
-					provide: RoommateApplicationService,
-					useValue: {
-						create: jest.fn(),
-						findMyApplications: jest.fn(),
-						findApplicationsForMyPosts: jest.fn(),
-						findOne: jest.fn(),
-						update: jest.fn(),
-						respondToApplication: jest.fn(),
-						cancel: jest.fn(),
-						bulkRespondToApplications: jest.fn(),
-						getApplicationStatistics: jest.fn(),
-					},
+					useValue: testDatabase.getPrisma(),
 				},
 			],
 		}).compile();
 
 		app = module.createNestApplication();
+		app.setGlobalPrefix('api');
 		app.useGlobalPipes(new ValidationPipe({ transform: true }));
 		await app.init();
 
-		service = module.get<RoommateApplicationService>(RoommateApplicationService);
-		authUtils = new AuthTestUtils();
+		authUtils = new AuthTestUtils(app);
 	});
 
-	beforeEach(() => {
-		jest.clearAllMocks();
+	beforeEach(async () => {
+		await testDatabase.cleanDatabase();
 	});
 
 	afterAll(async () => {
-		await module.close();
+		if (app) {
+			await app.close();
+		}
+		if (module) {
+			await module.close();
+		}
+		if (testDatabase) {
+			await testDatabase.teardown();
+		}
 	});
 
-	describe('POST /roommate-applications', () => {
+	describe('POST /api/roommate-applications', () => {
 		it('should create application successfully', async () => {
 			// Arrange
-			const applicant = await authUtils.createDefaultTenant();
+			const tenant = await authUtils.createDefaultTenant();
+			const applicant = await authUtils.createTestUser();
 			const headers = authUtils.getAuthHeaders(applicant);
 
+			const roommatePost = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				status: 'active' as const,
+				remainingSlots: 2,
+			});
+
 			const createDto = {
-				roommateSeekingPostId: 'post-1',
+				roommateSeekingPostId: roommatePost.id,
 				fullName: 'John Doe',
 				occupation: 'Developer',
 				phoneNumber: '+84901234567',
@@ -172,54 +75,31 @@ describe('RoommateApplicationController', () => {
 				isUrgent: false,
 			};
 
-			const mockResponse = {
-				id: 'app-1',
-				roommateSeekingPostId: createDto.roommateSeekingPostId,
-				applicantId: applicant.id,
-				fullName: createDto.fullName,
-				occupation: createDto.occupation,
-				phoneNumber: createDto.phoneNumber,
-				moveInDate: '2024-01-01T00:00:00.000Z',
-				intendedStayMonths: createDto.intendedStayMonths,
-				applicationMessage: createDto.applicationMessage,
-				status: 'pending',
-				isUrgent: createDto.isUrgent,
-				createdAt: '2024-01-01T00:00:00.000Z',
-				updatedAt: '2024-01-01T00:00:00.000Z',
-				applicant: {
-					id: applicant.id,
-					firstName: applicant.firstName,
-					lastName: applicant.lastName,
-					avatarUrl: applicant.avatarUrl,
-					email: applicant.email,
-				},
-				roommateSeekingPost: {
-					id: 'post-1',
-					title: 'Room for rent',
-					slug: 'room-for-rent',
-					tenantId: 'tenant-1',
-					monthlyRent: 2000000,
-					tenant: {
-						id: 'tenant-1',
-						firstName: 'Jane',
-						lastName: 'Smith',
-						avatarUrl: null,
-					},
-				},
-			};
-
-			jest.spyOn(service, 'create').mockResolvedValue(mockResponse as any);
-
 			// Act
 			const response = await request(app.getHttpServer())
-				.post('/roommate-applications')
+				.post('/api/api/roommate-applications')
 				.set(headers)
 				.send(createDto)
 				.expect(201);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.create).toHaveBeenCalledWith(createDto, applicant.id);
+			expect(response.body).toMatchObject({
+				roommateSeekingPostId: createDto.roommateSeekingPostId,
+				applicantId: applicant.id,
+				fullName: createDto.fullName,
+				occupation: createDto.occupation,
+				phoneNumber: createDto.phoneNumber,
+				status: 'pending',
+				isUrgent: createDto.isUrgent,
+			});
+
+			// Verify application was created in database
+			const prismaService = module.get<PrismaService>(PrismaService);
+			const createdApplication = await prismaService.roommateApplication.findFirst({
+				where: { applicantId: applicant.id },
+			});
+			expect(createdApplication).toBeTruthy();
+			expect(createdApplication?.fullName).toBe(createDto.fullName);
 		});
 
 		it('should return 401 when not authenticated', async () => {
@@ -232,12 +112,15 @@ describe('RoommateApplicationController', () => {
 			};
 
 			// Act & Assert
-			await request(app.getHttpServer()).post('/roommate-applications').send(createDto).expect(401);
+			await request(app.getHttpServer())
+				.post('/api/api/roommate-applications')
+				.send(createDto)
+				.expect(401);
 		});
 
 		it('should return 400 for invalid data', async () => {
 			// Arrange
-			const applicant = await authUtils.createDefaultTenant();
+			const applicant = await authUtils.createTestUser();
 			const headers = authUtils.getAuthHeaders(applicant);
 
 			const invalidDto = {
@@ -249,336 +132,265 @@ describe('RoommateApplicationController', () => {
 
 			// Act & Assert
 			await request(app.getHttpServer())
-				.post('/roommate-applications')
+				.post('/api/api/roommate-applications')
 				.set(headers)
 				.send(invalidDto)
 				.expect(400);
 		});
 	});
 
-	describe('GET /roommate-applications/my-applications', () => {
+	describe('GET /api/roommate-applications/my-applications', () => {
 		it('should return my applications', async () => {
 			// Arrange
-			const applicant = await authUtils.createDefaultTenant();
+			const tenant = await authUtils.createDefaultTenant();
+			const applicant = await authUtils.createTestUser();
 			const headers = authUtils.getAuthHeaders(applicant);
 
-			const mockResponse = {
-				data: [
-					{
-						id: 'app-1',
-						roommateSeekingPostId: 'post-1',
-						applicantId: applicant.id,
-						fullName: 'John Doe',
-						occupation: 'Developer',
-						phoneNumber: '+84901234567',
-						moveInDate: '2024-01-01T00:00:00.000Z',
-						intendedStayMonths: 6,
-						applicationMessage: 'I am interested',
-						status: 'pending',
-						isUrgent: false,
-						createdAt: '2024-01-01T00:00:00.000Z',
-						updatedAt: '2024-01-01T00:00:00.000Z',
-						applicant: {
-							id: applicant.id,
-							firstName: applicant.firstName,
-							lastName: applicant.lastName,
-							avatarUrl: applicant.avatarUrl,
-							email: applicant.email,
-						},
-						roommateSeekingPost: {
-							id: 'post-1',
-							title: 'Room for rent',
-							slug: 'room-for-rent',
-							tenantId: 'tenant-1',
-							monthlyRent: 2000000,
-							tenant: {
-								id: 'tenant-1',
-								firstName: 'Jane',
-								lastName: 'Smith',
-								avatarUrl: null,
-							},
-						},
-					},
-				],
-				meta: {
-					page: 1,
-					limit: 10,
-					total: 1,
-					totalPages: 1,
-					hasNextPage: false,
-					hasPreviousPage: false,
-				},
-			};
+			const roommatePost = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				status: 'active' as const,
+				remainingSlots: 2,
+			});
 
-			jest.spyOn(service, 'findMyApplications').mockResolvedValue(mockResponse as any);
+			// Create test application
+			const prismaService = module.get<PrismaService>(PrismaService);
+			await prismaService.roommateApplication.create({
+				data: {
+					roommateSeekingPostId: roommatePost.id,
+					applicantId: applicant.id,
+					fullName: 'John Doe',
+					occupation: 'Developer',
+					phoneNumber: '+84901234567',
+					moveInDate: new Date('2024-01-01'),
+					intendedStayMonths: 6,
+					applicationMessage: 'I am interested',
+					status: 'pending',
+					isUrgent: false,
+				},
+			});
 
 			// Act
 			const response = await request(app.getHttpServer())
-				.get('/roommate-applications/my-applications')
+				.get('/api/api/roommate-applications/my-applications')
 				.set(headers)
 				.expect(200);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.findMyApplications).toHaveBeenCalledWith({}, applicant.id);
+			expect(response.body.data).toHaveLength(1);
+			expect(response.body.data[0]).toMatchObject({
+				applicantId: applicant.id,
+				fullName: 'John Doe',
+				status: 'pending',
+			});
+			expect(response.body.meta.total).toBe(1);
 		});
 
 		it('should return 401 when not authenticated', async () => {
 			// Act & Assert
-			await request(app.getHttpServer()).get('/roommate-applications/my-applications').expect(401);
+			await request(app.getHttpServer())
+				.get('/api/api/roommate-applications/my-applications')
+				.expect(401);
 		});
 	});
 
-	describe('GET /roommate-applications/for-my-posts', () => {
+	describe('GET /api/roommate-applications/for-my-posts', () => {
 		it('should return applications for my posts', async () => {
 			// Arrange
 			const tenant = await authUtils.createDefaultTenant();
+			const applicant = await authUtils.createTestUser();
 			const headers = authUtils.getAuthHeaders(tenant);
 
-			const mockResponse = {
-				data: [
-					{
-						id: 'app-1',
-						roommateSeekingPostId: 'post-1',
-						applicantId: 'applicant-1',
-						fullName: 'John Doe',
-						occupation: 'Developer',
-						phoneNumber: '+84901234567',
-						moveInDate: '2024-01-01T00:00:00.000Z',
-						intendedStayMonths: 6,
-						applicationMessage: 'I am interested',
-						status: 'pending',
-						isUrgent: false,
-						createdAt: '2024-01-01T00:00:00.000Z',
-						updatedAt: '2024-01-01T00:00:00.000Z',
-						applicant: {
-							id: 'applicant-1',
-							firstName: 'John',
-							lastName: 'Doe',
-							avatarUrl: null,
-							email: 'john@example.com',
-						},
-						roommateSeekingPost: {
-							id: 'post-1',
-							title: 'Room for rent',
-							slug: 'room-for-rent',
-							tenantId: tenant.id,
-							monthlyRent: 2000000,
-							tenant: {
-								id: tenant.id,
-								firstName: tenant.firstName,
-								lastName: tenant.lastName,
-								avatarUrl: tenant.avatarUrl,
-							},
-						},
-					},
-				],
-				meta: {
-					page: 1,
-					limit: 10,
-					total: 1,
-					totalPages: 1,
-					hasNextPage: false,
-					hasPreviousPage: false,
-				},
-			};
+			const roommatePost = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				status: 'active' as const,
+				remainingSlots: 2,
+			});
 
-			jest.spyOn(service, 'findApplicationsForMyPosts').mockResolvedValue(mockResponse as any);
+			// Create test application
+			const prismaService = module.get<PrismaService>(PrismaService);
+			await prismaService.roommateApplication.create({
+				data: {
+					roommateSeekingPostId: roommatePost.id,
+					applicantId: applicant.id,
+					fullName: 'John Doe',
+					occupation: 'Developer',
+					phoneNumber: '+84901234567',
+					moveInDate: new Date('2024-01-01'),
+					intendedStayMonths: 6,
+					applicationMessage: 'I am interested',
+					status: 'pending',
+					isUrgent: false,
+				},
+			});
 
 			// Act
 			const response = await request(app.getHttpServer())
-				.get('/roommate-applications/for-my-posts')
+				.get('/api/roommate-applications/for-my-posts')
 				.set(headers)
 				.expect(200);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.findApplicationsForMyPosts).toHaveBeenCalledWith({}, tenant.id);
+			expect(response.body.data).toHaveLength(1);
+			expect(response.body.data[0]).toMatchObject({
+				applicantId: applicant.id,
+				fullName: 'John Doe',
+				status: 'pending',
+			});
+			expect(response.body.meta.total).toBe(1);
 		});
 
 		it('should return 401 when not authenticated', async () => {
 			// Act & Assert
-			await request(app.getHttpServer()).get('/roommate-applications/for-my-posts').expect(401);
+			await request(app.getHttpServer()).get('/api/roommate-applications/for-my-posts').expect(401);
 		});
 	});
 
-	describe('GET /roommate-applications/:id', () => {
+	describe('GET /api/roommate-applications/:id', () => {
 		it('should return application details without authentication', async () => {
 			// Arrange
-			const applicationId = 'app-1';
-			const mockResponse = {
-				id: applicationId,
-				roommateSeekingPostId: 'post-1',
-				applicantId: 'applicant-1',
-				fullName: 'John Doe',
-				occupation: 'Developer',
-				phoneNumber: '+84901234567',
-				moveInDate: '2024-01-01T00:00:00.000Z',
-				intendedStayMonths: 6,
-				applicationMessage: 'I am interested',
-				status: 'pending',
-				isUrgent: false,
-				createdAt: '2024-01-01T00:00:00.000Z',
-				updatedAt: '2024-01-01T00:00:00.000Z',
-				applicant: {
-					id: 'applicant-1',
-					firstName: 'John',
-					lastName: 'Doe',
-					avatarUrl: null,
-					email: 'john@example.com',
-				},
-				roommateSeekingPost: {
-					id: 'post-1',
-					title: 'Room for rent',
-					slug: 'room-for-rent',
-					tenantId: 'tenant-1',
-					monthlyRent: 2000000,
-					tenant: {
-						id: 'tenant-1',
-						firstName: 'Jane',
-						lastName: 'Smith',
-						avatarUrl: null,
-					},
-				},
-			};
+			const tenant = await authUtils.createDefaultTenant();
+			const applicant = await authUtils.createTestUser();
 
-			jest.spyOn(service, 'findOne').mockResolvedValue(mockResponse as any);
+			const roommatePost = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				status: 'active' as const,
+				remainingSlots: 2,
+			});
+
+			const prismaService = module.get<PrismaService>(PrismaService);
+			const application = await prismaService.roommateApplication.create({
+				data: {
+					roommateSeekingPostId: roommatePost.id,
+					applicantId: applicant.id,
+					fullName: 'John Doe',
+					occupation: 'Developer',
+					phoneNumber: '+84901234567',
+					moveInDate: new Date('2024-01-01'),
+					intendedStayMonths: 6,
+					applicationMessage: 'I am interested',
+					status: 'pending',
+					isUrgent: false,
+				},
+			});
 
 			// Act
 			const response = await request(app.getHttpServer())
-				.get(`/roommate-applications/${applicationId}`)
+				.get(`/api/roommate-applications/${application.id}`)
 				.expect(200);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.findOne).toHaveBeenCalledWith(applicationId, undefined);
+			expect(response.body).toMatchObject({
+				id: application.id,
+				applicantId: applicant.id,
+				fullName: 'John Doe',
+				status: 'pending',
+			});
 		});
 
 		it('should return application details with authentication', async () => {
 			// Arrange
-			const applicant = await authUtils.createDefaultTenant();
+			const tenant = await authUtils.createDefaultTenant();
+			const applicant = await authUtils.createTestUser();
 			const headers = authUtils.getAuthHeaders(applicant);
-			const applicationId = 'app-1';
 
-			const mockResponse = {
-				id: applicationId,
-				roommateSeekingPostId: 'post-1',
-				applicantId: applicant.id,
-				fullName: 'John Doe',
-				occupation: 'Developer',
-				phoneNumber: '+84901234567',
-				moveInDate: '2024-01-01T00:00:00.000Z',
-				intendedStayMonths: 6,
-				applicationMessage: 'I am interested',
-				status: 'pending',
-				isUrgent: false,
-				createdAt: '2024-01-01T00:00:00.000Z',
-				updatedAt: '2024-01-01T00:00:00.000Z',
-				applicant: {
-					id: applicant.id,
-					firstName: applicant.firstName,
-					lastName: applicant.lastName,
-					avatarUrl: applicant.avatarUrl,
-					email: applicant.email,
-				},
-				roommateSeekingPost: {
-					id: 'post-1',
-					title: 'Room for rent',
-					slug: 'room-for-rent',
-					tenantId: 'tenant-1',
-					monthlyRent: 2000000,
-					tenant: {
-						id: 'tenant-1',
-						firstName: 'Jane',
-						lastName: 'Smith',
-						avatarUrl: null,
-					},
-				},
-			};
+			const roommatePost = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				status: 'active' as const,
+				remainingSlots: 2,
+			});
 
-			jest.spyOn(service, 'findOne').mockResolvedValue(mockResponse as any);
+			const prismaService = module.get<PrismaService>(PrismaService);
+			const application = await prismaService.roommateApplication.create({
+				data: {
+					roommateSeekingPostId: roommatePost.id,
+					applicantId: applicant.id,
+					fullName: 'John Doe',
+					occupation: 'Developer',
+					phoneNumber: '+84901234567',
+					moveInDate: new Date('2024-01-01'),
+					intendedStayMonths: 6,
+					applicationMessage: 'I am interested',
+					status: 'pending',
+					isUrgent: false,
+				},
+			});
 
 			// Act
 			const response = await request(app.getHttpServer())
-				.get(`/roommate-applications/${applicationId}`)
+				.get(`/api/roommate-applications/${application.id}`)
 				.set(headers)
 				.expect(200);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.findOne).toHaveBeenCalledWith(applicationId, applicant.id);
+			expect(response.body).toMatchObject({
+				id: application.id,
+				applicantId: applicant.id,
+				fullName: 'John Doe',
+				status: 'pending',
+			});
 		});
 
 		it('should return 404 when application not found', async () => {
 			// Arrange
 			const applicationId = 'non-existent';
-			jest.spyOn(service, 'findOne').mockRejectedValue(new Error('Not found'));
 
 			// Act & Assert
-			await request(app.getHttpServer()).get(`/roommate-applications/${applicationId}`).expect(500);
+			await request(app.getHttpServer())
+				.get(`/api/roommate-applications/${applicationId}`)
+				.expect(404);
 		});
 	});
 
-	describe('PATCH /roommate-applications/:id', () => {
+	describe('PATCH /api/roommate-applications/:id', () => {
 		it('should update application successfully', async () => {
 			// Arrange
-			const applicant = await authUtils.createDefaultTenant();
+			const tenant = await authUtils.createDefaultTenant();
+			const applicant = await authUtils.createTestUser();
 			const headers = authUtils.getAuthHeaders(applicant);
-			const applicationId = 'app-1';
+
+			const roommatePost = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				status: 'active' as const,
+				remainingSlots: 2,
+			});
+
+			const prismaService = module.get<PrismaService>(PrismaService);
+			const application = await prismaService.roommateApplication.create({
+				data: {
+					roommateSeekingPostId: roommatePost.id,
+					applicantId: applicant.id,
+					fullName: 'John Doe',
+					occupation: 'Developer',
+					phoneNumber: '+84901234567',
+					moveInDate: new Date('2024-01-01'),
+					intendedStayMonths: 6,
+					applicationMessage: 'I am interested',
+					status: 'pending',
+					isUrgent: false,
+				},
+			});
 
 			const updateDto = {
 				fullName: 'Updated Name',
 				applicationMessage: 'Updated message',
 			};
 
-			const mockResponse = {
-				id: applicationId,
-				roommateSeekingPostId: 'post-1',
-				applicantId: applicant.id,
-				fullName: updateDto.fullName,
-				occupation: 'Developer',
-				phoneNumber: '+84901234567',
-				moveInDate: '2024-01-01T00:00:00.000Z',
-				intendedStayMonths: 6,
-				applicationMessage: updateDto.applicationMessage,
-				status: 'pending',
-				isUrgent: false,
-				createdAt: '2024-01-01T00:00:00.000Z',
-				updatedAt: '2024-01-01T00:00:00.000Z',
-				applicant: {
-					id: applicant.id,
-					firstName: applicant.firstName,
-					lastName: applicant.lastName,
-					avatarUrl: applicant.avatarUrl,
-					email: applicant.email,
-				},
-				roommateSeekingPost: {
-					id: 'post-1',
-					title: 'Room for rent',
-					slug: 'room-for-rent',
-					tenantId: 'tenant-1',
-					monthlyRent: 2000000,
-					tenant: {
-						id: 'tenant-1',
-						firstName: 'Jane',
-						lastName: 'Smith',
-						avatarUrl: null,
-					},
-				},
-			};
-
-			jest.spyOn(service, 'update').mockResolvedValue(mockResponse as any);
-
 			// Act
 			const response = await request(app.getHttpServer())
-				.patch(`/roommate-applications/${applicationId}`)
+				.patch(`/api/roommate-applications/${application.id}`)
 				.set(headers)
 				.send(updateDto)
 				.expect(200);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.update).toHaveBeenCalledWith(applicationId, updateDto, applicant.id);
+			expect(response.body).toMatchObject({
+				id: application.id,
+				applicantId: applicant.id,
+				fullName: updateDto.fullName,
+				applicationMessage: updateDto.applicationMessage,
+			});
+
+			// Verify database was updated
+			const updatedApplication = await prismaService.roommateApplication.findUnique({
+				where: { id: application.id },
+			});
+			expect(updatedApplication?.fullName).toBe(updateDto.fullName);
+			expect(updatedApplication?.applicationMessage).toBe(updateDto.applicationMessage);
 		});
 
 		it('should return 401 when not authenticated', async () => {
@@ -588,78 +400,66 @@ describe('RoommateApplicationController', () => {
 
 			// Act & Assert
 			await request(app.getHttpServer())
-				.patch(`/roommate-applications/${applicationId}`)
+				.patch(`/api/roommate-applications/${applicationId}`)
 				.send(updateDto)
 				.expect(401);
 		});
 	});
 
-	describe('PATCH /roommate-applications/:id/respond', () => {
+	describe('PATCH /api/roommate-applications/:id/respond', () => {
 		it('should respond to application successfully', async () => {
 			// Arrange
 			const tenant = await authUtils.createDefaultTenant();
+			const applicant = await authUtils.createTestUser();
 			const headers = authUtils.getAuthHeaders(tenant);
-			const applicationId = 'app-1';
+
+			const roommatePost = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				status: 'active' as const,
+				remainingSlots: 2,
+			});
+
+			const prismaService = module.get<PrismaService>(PrismaService);
+			const application = await prismaService.roommateApplication.create({
+				data: {
+					roommateSeekingPostId: roommatePost.id,
+					applicantId: applicant.id,
+					fullName: 'John Doe',
+					occupation: 'Developer',
+					phoneNumber: '+84901234567',
+					moveInDate: new Date('2024-01-01'),
+					intendedStayMonths: 6,
+					applicationMessage: 'I am interested',
+					status: 'pending',
+					isUrgent: false,
+				},
+			});
 
 			const respondDto = {
 				status: 'approved_by_tenant',
 				response: 'Welcome to the room!',
 			};
 
-			const mockResponse = {
-				id: applicationId,
-				roommateSeekingPostId: 'post-1',
-				applicantId: 'applicant-1',
-				fullName: 'John Doe',
-				occupation: 'Developer',
-				phoneNumber: '+84901234567',
-				moveInDate: '2024-01-01T00:00:00.000Z',
-				intendedStayMonths: 6,
-				applicationMessage: 'I am interested',
-				status: respondDto.status,
-				tenantResponse: respondDto.response,
-				tenantRespondedAt: '2024-01-01T00:00:00.000Z',
-				isUrgent: false,
-				createdAt: '2024-01-01T00:00:00.000Z',
-				updatedAt: '2024-01-01T00:00:00.000Z',
-				applicant: {
-					id: 'applicant-1',
-					firstName: 'John',
-					lastName: 'Doe',
-					avatarUrl: null,
-					email: 'john@example.com',
-				},
-				roommateSeekingPost: {
-					id: 'post-1',
-					title: 'Room for rent',
-					slug: 'room-for-rent',
-					tenantId: tenant.id,
-					monthlyRent: 2000000,
-					tenant: {
-						id: tenant.id,
-						firstName: tenant.firstName,
-						lastName: tenant.lastName,
-						avatarUrl: tenant.avatarUrl,
-					},
-				},
-			};
-
-			jest.spyOn(service, 'respondToApplication').mockResolvedValue(mockResponse as any);
-
 			// Act
 			const response = await request(app.getHttpServer())
-				.patch(`/roommate-applications/${applicationId}/respond`)
+				.patch(`/api/roommate-applications/${application.id}/respond`)
 				.set(headers)
 				.send(respondDto)
 				.expect(200);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.respondToApplication).toHaveBeenCalledWith(
-				applicationId,
-				respondDto,
-				tenant.id,
-			);
+			expect(response.body).toMatchObject({
+				id: application.id,
+				applicantId: applicant.id,
+				status: respondDto.status,
+				tenantResponse: respondDto.response,
+			});
+
+			// Verify database was updated
+			const updatedApplication = await prismaService.roommateApplication.findUnique({
+				where: { id: application.id },
+			});
+			expect(updatedApplication?.status).toBe(respondDto.status);
+			expect(updatedApplication?.tenantResponse).toBe(respondDto.response);
 		});
 
 		it('should return 401 when not authenticated', async () => {
@@ -669,29 +469,47 @@ describe('RoommateApplicationController', () => {
 
 			// Act & Assert
 			await request(app.getHttpServer())
-				.patch(`/roommate-applications/${applicationId}/respond`)
+				.patch(`/api/roommate-applications/${applicationId}/respond`)
 				.send(respondDto)
 				.expect(401);
 		});
 	});
 
-	describe('PATCH /roommate-applications/:id/cancel', () => {
+	describe('PATCH /api/roommate-applications/:id/cancel', () => {
 		it('should cancel application successfully', async () => {
 			// Arrange
-			const applicant = await authUtils.createDefaultTenant();
+			const tenant = await authUtils.createDefaultTenant();
+			const applicant = await authUtils.createTestUser();
 			const headers = authUtils.getAuthHeaders(applicant);
-			const applicationId = 'app-1';
 
-			jest.spyOn(service, 'cancel').mockResolvedValue(undefined);
+			const roommatePost = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				status: 'active' as const,
+				remainingSlots: 2,
+			});
+
+			const prismaService = module.get<PrismaService>(PrismaService);
+			const application = await prismaService.roommateApplication.create({
+				data: {
+					roommateSeekingPostId: roommatePost.id,
+					applicantId: applicant.id,
+					fullName: 'John Doe',
+					phoneNumber: '+84901234567',
+					moveInDate: new Date('2024-01-01'),
+					status: 'pending',
+				},
+			});
 
 			// Act
 			await request(app.getHttpServer())
-				.patch(`/roommate-applications/${applicationId}/cancel`)
+				.patch(`/api/roommate-applications/${application.id}/cancel`)
 				.set(headers)
 				.expect(204);
 
-			// Assert
-			expect(service.cancel).toHaveBeenCalledWith(applicationId, applicant.id);
+			// Assert - Verify application was cancelled in database
+			const cancelledApplication = await prismaService.roommateApplication.findUnique({
+				where: { id: application.id },
+			});
+			expect(cancelledApplication?.status).toBe('cancelled');
 		});
 
 		it('should return 401 when not authenticated', async () => {
@@ -700,42 +518,78 @@ describe('RoommateApplicationController', () => {
 
 			// Act & Assert
 			await request(app.getHttpServer())
-				.patch(`/roommate-applications/${applicationId}/cancel`)
+				.patch(`/api/roommate-applications/${applicationId}/cancel`)
 				.expect(401);
 		});
 	});
 
-	describe('POST /roommate-applications/bulk-respond', () => {
+	describe('POST /api/roommate-applications/bulk-respond', () => {
 		it('should process bulk responses successfully', async () => {
 			// Arrange
 			const tenant = await authUtils.createDefaultTenant();
+			const applicant1 = await authUtils.createTestUser();
+			const applicant2 = await authUtils.createTestUser();
 			const headers = authUtils.getAuthHeaders(tenant);
 
+			const roommatePost = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				status: 'active' as const,
+				remainingSlots: 5,
+			});
+
+			const prismaService = module.get<PrismaService>(PrismaService);
+			const application1 = await prismaService.roommateApplication.create({
+				data: {
+					roommateSeekingPostId: roommatePost.id,
+					applicantId: applicant1.id,
+					fullName: 'John Doe 1',
+					phoneNumber: '+84901234567',
+					moveInDate: new Date('2024-01-01'),
+					status: 'pending',
+				},
+			});
+
+			const application2 = await prismaService.roommateApplication.create({
+				data: {
+					roommateSeekingPostId: roommatePost.id,
+					applicantId: applicant2.id,
+					fullName: 'John Doe 2',
+					phoneNumber: '+84901234568',
+					moveInDate: new Date('2024-01-01'),
+					status: 'pending',
+				},
+			});
+
 			const bulkDto = {
-				applicationIds: ['app-1', 'app-2'],
+				applicationIds: [application1.id, application2.id],
 				status: 'approved_by_tenant',
 				response: 'All approved!',
 			};
 
-			const mockResponse = {
-				successCount: 2,
-				failureCount: 0,
-				errors: [],
-				processedApplications: ['app-1', 'app-2'],
-			};
-
-			jest.spyOn(service, 'bulkRespondToApplications').mockResolvedValue(mockResponse as any);
-
 			// Act
 			const response = await request(app.getHttpServer())
-				.post('/roommate-applications/bulk-respond')
+				.post('/api/roommate-applications/bulk-respond')
 				.set(headers)
 				.send(bulkDto)
 				.expect(200);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.bulkRespondToApplications).toHaveBeenCalledWith(bulkDto, tenant.id);
+			expect(response.body).toMatchObject({
+				successCount: 2,
+				failureCount: 0,
+				errors: [],
+				processedApplications: [application1.id, application2.id],
+			});
+
+			// Verify applications were updated
+			const updatedApp1 = await prismaService.roommateApplication.findUnique({
+				where: { id: application1.id },
+			});
+			const updatedApp2 = await prismaService.roommateApplication.findUnique({
+				where: { id: application2.id },
+			});
+
+			expect(updatedApp1?.status).toBe('approved_by_tenant');
+			expect(updatedApp2?.status).toBe('approved_by_tenant');
 		});
 
 		it('should return 401 when not authenticated', async () => {
@@ -747,103 +601,130 @@ describe('RoommateApplicationController', () => {
 
 			// Act & Assert
 			await request(app.getHttpServer())
-				.post('/roommate-applications/bulk-respond')
+				.post('/api/roommate-applications/bulk-respond')
 				.send(bulkDto)
 				.expect(401);
 		});
 	});
 
-	describe('GET /roommate-applications/statistics/my-applications', () => {
+	describe('GET /api/roommate-applications/statistics/my-applications', () => {
 		it('should return statistics for my applications', async () => {
 			// Arrange
-			const applicant = await authUtils.createDefaultTenant();
+			const tenant = await authUtils.createDefaultTenant();
+			const applicant = await authUtils.createTestUser();
 			const headers = authUtils.getAuthHeaders(applicant);
 
-			const mockResponse = {
-				total: 10,
-				pending: 5,
-				approvedByTenant: 3,
-				rejectedByTenant: 2,
-				approvedByLandlord: 0,
-				rejectedByLandlord: 0,
-				cancelled: 0,
-				expired: 0,
-				urgent: 2,
-				dailyStats: [
-					{ date: '2024-01-01', count: 2 },
-					{ date: '2024-01-02', count: 1 },
-				],
-				statusBreakdown: [
-					{ status: 'pending', count: 5, percentage: 50 },
-					{ status: 'approved_by_tenant', count: 3, percentage: 30 },
-					{ status: 'rejected_by_tenant', count: 2, percentage: 20 },
-				],
-			};
+			const roommatePost = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				status: 'active' as const,
+				remainingSlots: 5,
+			});
 
-			jest.spyOn(service, 'getApplicationStatistics').mockResolvedValue(mockResponse as any);
+			const prismaService = module.get<PrismaService>(PrismaService);
+			await prismaService.roommateApplication.createMany({
+				data: [
+					{
+						roommateSeekingPostId: roommatePost.id,
+						applicantId: applicant.id,
+						fullName: 'John Doe 1',
+						phoneNumber: '+84901234567',
+						moveInDate: new Date('2024-01-01'),
+						status: 'pending',
+					},
+					{
+						roommateSeekingPostId: roommatePost.id,
+						applicantId: applicant.id,
+						fullName: 'John Doe 2',
+						phoneNumber: '+84901234568',
+						moveInDate: new Date('2024-01-01'),
+						status: 'approved_by_tenant',
+					},
+					{
+						roommateSeekingPostId: roommatePost.id,
+						applicantId: applicant.id,
+						fullName: 'John Doe 3',
+						phoneNumber: '+84901234569',
+						moveInDate: new Date('2024-01-01'),
+						status: 'rejected_by_tenant',
+					},
+				],
+			});
 
 			// Act
 			const response = await request(app.getHttpServer())
-				.get('/roommate-applications/statistics/my-applications')
+				.get('/api/roommate-applications/statistics/my-applications')
 				.set(headers)
 				.expect(200);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.getApplicationStatistics).toHaveBeenCalledWith(applicant.id, false);
+			expect(response.body).toMatchObject({
+				total: 3,
+				pending: 1,
+				approvedByTenant: 1,
+				rejectedByTenant: 1,
+			});
 		});
 
 		it('should return 401 when not authenticated', async () => {
 			// Act & Assert
 			await request(app.getHttpServer())
-				.get('/roommate-applications/statistics/my-applications')
+				.get('/api/roommate-applications/statistics/my-applications')
 				.expect(401);
 		});
 	});
 
-	describe('GET /roommate-applications/statistics/for-my-posts', () => {
+	describe('GET /api/roommate-applications/statistics/for-my-posts', () => {
 		it('should return statistics for my posts', async () => {
 			// Arrange
 			const tenant = await authUtils.createDefaultTenant();
+			const applicant1 = await authUtils.createTestUser();
+			const applicant2 = await authUtils.createTestUser();
 			const headers = authUtils.getAuthHeaders(tenant);
 
-			const mockResponse = {
-				total: 5,
-				pending: 3,
-				approvedByTenant: 2,
-				rejectedByTenant: 0,
-				approvedByLandlord: 0,
-				rejectedByLandlord: 0,
-				cancelled: 0,
-				expired: 0,
-				urgent: 1,
-				dailyStats: [
-					{ date: '2024-01-01', count: 1 },
-					{ date: '2024-01-02', count: 2 },
-				],
-				statusBreakdown: [
-					{ status: 'pending', count: 3, percentage: 60 },
-					{ status: 'approved_by_tenant', count: 2, percentage: 40 },
-				],
-			};
+			const roommatePost = await authUtils.createTestRoommateSeekingPost(tenant.id, {
+				status: 'active' as const,
+				remainingSlots: 5,
+			});
 
-			jest.spyOn(service, 'getApplicationStatistics').mockResolvedValue(mockResponse as any);
+			const prismaService = module.get<PrismaService>(PrismaService);
+			await prismaService.roommateApplication.createMany({
+				data: [
+					{
+						roommateSeekingPostId: roommatePost.id,
+						applicantId: applicant1.id,
+						fullName: 'John Doe 1',
+						phoneNumber: '+84901234567',
+						moveInDate: new Date('2024-01-01'),
+						status: 'pending',
+					},
+					{
+						roommateSeekingPostId: roommatePost.id,
+						applicantId: applicant2.id,
+						fullName: 'John Doe 2',
+						phoneNumber: '+84901234568',
+						moveInDate: new Date('2024-01-01'),
+						status: 'approved_by_tenant',
+					},
+				],
+			});
 
 			// Act
 			const response = await request(app.getHttpServer())
-				.get('/roommate-applications/statistics/for-my-posts')
+				.get('/api/roommate-applications/statistics/for-my-posts')
 				.set(headers)
 				.expect(200);
 
 			// Assert
-			expect(response.body).toEqual(mockResponse);
-			expect(service.getApplicationStatistics).toHaveBeenCalledWith(tenant.id, true);
+			expect(response.body).toMatchObject({
+				total: 2,
+				pending: 1,
+				approvedByTenant: 1,
+			});
 		});
 
 		it('should return 401 when not authenticated', async () => {
 			// Act & Assert
 			await request(app.getHttpServer())
-				.get('/roommate-applications/statistics/for-my-posts')
+				.get('/api/roommate-applications/statistics/for-my-posts')
 				.expect(401);
 		});
 	});

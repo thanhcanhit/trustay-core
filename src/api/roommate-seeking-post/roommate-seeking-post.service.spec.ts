@@ -1,33 +1,25 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../prisma/prisma.service';
-import { createTestModule } from '../../test-utils';
+import { TestDatabase } from '../../test-utils/test-database';
 import { RoommateSeekingPostService } from './roommate-seeking-post.service';
 
 describe('RoommateSeekingPostService', () => {
 	let service: RoommateSeekingPostService;
 	let prismaService: PrismaService;
 	let module: TestingModule;
+	let testDatabase: TestDatabase;
 
 	beforeAll(async () => {
+		testDatabase = new TestDatabase();
+		await testDatabase.setup();
+
 		module = await Test.createTestingModule({
 			providers: [
 				RoommateSeekingPostService,
 				{
 					provide: PrismaService,
-					useValue: {
-						roommateSeekingPost: {
-							create: jest.fn(),
-							findUnique: jest.fn(),
-							findMany: jest.fn(),
-							update: jest.fn(),
-							delete: jest.fn(),
-							count: jest.fn(),
-						},
-						rental: {
-							findFirst: jest.fn(),
-						},
-					},
+					useValue: testDatabase.getPrisma(),
 				},
 			],
 		}).compile();
@@ -36,17 +28,32 @@ describe('RoommateSeekingPostService', () => {
 		prismaService = module.get<PrismaService>(PrismaService);
 	});
 
-	beforeEach(() => {
-		jest.clearAllMocks();
+	beforeEach(async () => {
+		await testDatabase.cleanDatabase();
 	});
 
 	afterAll(async () => {
+		await testDatabase.teardown();
 		await module.close();
 	});
 
 	describe('create', () => {
 		it('should create a roommate seeking post successfully', async () => {
-			// Arrange
+			// Arrange - Create test user first
+			const testUser = await prismaService.user.create({
+				data: {
+					id: 'tenant-1',
+					passwordHash: 'password',
+					firstName: 'John',
+					lastName: 'Doe',
+					email: 'john.doe@example.com',
+					phone: '+84901234567',
+					dateOfBirth: new Date('1990-01-01'),
+					isVerifiedPhone: true,
+					isVerifiedEmail: true,
+				},
+			});
+
 			const createDto = {
 				title: 'Tìm người ở ghép phòng trọ',
 				description: 'Phòng trọ đẹp, gần trường học',
@@ -61,12 +68,14 @@ describe('RoommateSeekingPostService', () => {
 				currency: 'VND',
 			};
 
-			const mockPost = {
-				id: 'post-1',
+			// Act
+			const result = await service.create(createDto, testUser.id);
+
+			// Assert
+			expect(result).toMatchObject({
 				title: createDto.title,
 				description: createDto.description,
-				slug: 'tim-nguoi-o-ghep-phong-tro',
-				tenantId: 'tenant-1',
+				tenantId: testUser.id,
 				monthlyRent: createDto.monthlyRent,
 				depositAmount: createDto.depositAmount,
 				seekingCount: createDto.seekingCount,
@@ -74,7 +83,6 @@ describe('RoommateSeekingPostService', () => {
 				remainingSlots: createDto.seekingCount,
 				maxOccupancy: createDto.maxOccupancy,
 				currentOccupancy: createDto.currentOccupancy,
-				availableFromDate: new Date(createDto.availableFromDate),
 				minimumStayMonths: createDto.minimumStayMonths,
 				currency: createDto.currency,
 				status: 'active',
@@ -82,64 +90,34 @@ describe('RoommateSeekingPostService', () => {
 				isActive: true,
 				viewCount: 0,
 				contactCount: 0,
-				createdAt: new Date(),
-				updatedAt: new Date(),
-				tenant: {
-					id: 'tenant-1',
-					firstName: 'John',
-					lastName: 'Doe',
-					avatarUrl: null,
-					phoneNumber: '+84901234567',
-				},
-			};
-
-			jest.spyOn(prismaService.roommateSeekingPost, 'create').mockResolvedValue(mockPost as any);
-
-			// Act
-			const result = await service.create(createDto, 'tenant-1');
-
-			// Assert
-			expect(result).toEqual({
-				id: mockPost.id,
-				title: mockPost.title,
-				description: mockPost.description,
-				slug: mockPost.slug,
-				tenantId: mockPost.tenantId,
-				monthlyRent: mockPost.monthlyRent,
-				depositAmount: mockPost.depositAmount,
-				seekingCount: mockPost.seekingCount,
-				approvedCount: mockPost.approvedCount,
-				remainingSlots: mockPost.remainingSlots,
-				maxOccupancy: mockPost.maxOccupancy,
-				currentOccupancy: mockPost.currentOccupancy,
-				availableFromDate: mockPost.availableFromDate.toISOString(),
-				minimumStayMonths: mockPost.minimumStayMonths,
-				currency: mockPost.currency,
-				status: mockPost.status,
-				requiresLandlordApproval: mockPost.requiresLandlordApproval,
-				isActive: mockPost.isActive,
-				viewCount: mockPost.viewCount,
-				contactCount: mockPost.contactCount,
-				createdAt: mockPost.createdAt.toISOString(),
-				updatedAt: mockPost.updatedAt.toISOString(),
-				tenant: mockPost.tenant,
 			});
-
-			expect(prismaService.roommateSeekingPost.create).toHaveBeenCalledWith({
-				data: {
-					...createDto,
-					slug: expect.any(String),
-					tenantId: 'tenant-1',
-					remainingSlots: createDto.seekingCount,
-					availableFromDate: new Date(createDto.availableFromDate),
-					expiresAt: undefined,
-				},
-				include: expect.any(Object),
+			expect(result.id).toBeDefined();
+			expect(result.slug).toBeDefined();
+			expect(result.availableFromDate).toBe(new Date(createDto.availableFromDate).toISOString());
+			expect(result.tenant).toMatchObject({
+				id: testUser.id,
+				firstName: testUser.firstName,
+				lastName: testUser.lastName,
+				phone: testUser.phone,
 			});
 		});
 
 		it('should throw BadRequestException when no room info provided', async () => {
-			// Arrange
+			// Arrange - Create test user first
+			const testUser = await prismaService.user.create({
+				data: {
+					id: 'tenant-2',
+					passwordHash: 'password',
+					firstName: 'Jane',
+					lastName: 'Doe',
+					email: 'jane.doe@example.com',
+					phone: '+84901234568',
+					dateOfBirth: new Date('1990-01-01'),
+					isVerifiedPhone: true,
+					isVerifiedEmail: true,
+				},
+			});
+
 			const createDto = {
 				title: 'Tìm người ở ghép',
 				description: 'Mô tả',
@@ -151,8 +129,8 @@ describe('RoommateSeekingPostService', () => {
 			};
 
 			// Act & Assert
-			await expect(service.create(createDto, 'tenant-1')).rejects.toThrow(BadRequestException);
-			await expect(service.create(createDto, 'tenant-1')).rejects.toThrow(
+			await expect(service.create(createDto, testUser.id)).rejects.toThrow(BadRequestException);
+			await expect(service.create(createDto, testUser.id)).rejects.toThrow(
 				'Phải cung cấp thông tin phòng (roomInstanceId hoặc externalAddress)',
 			);
 		});

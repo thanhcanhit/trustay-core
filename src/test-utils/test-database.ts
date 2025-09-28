@@ -6,9 +6,7 @@ export class TestDatabase {
 	async setup(): Promise<void> {
 		// Use main database URL for testing
 		const databaseUrl =
-			process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/trustay';
-
-		console.log('Using database URL:', databaseUrl);
+			process.env.DATABASE_URL || 'postgresql://nestjs:atrustay2025@localhost:1206/trustay_db';
 
 		// Create PrismaClient with main database URL
 		this.prisma = new PrismaClient({
@@ -20,9 +18,13 @@ export class TestDatabase {
 			log: ['error'], // Only log errors in tests
 		});
 
-		await this.prisma.$connect();
-		console.log('Database connected successfully');
-		await this.cleanDatabase();
+		try {
+			await this.prisma.$connect();
+			await this.cleanDatabase();
+		} catch (error) {
+			console.error('Failed to connect to test database:', error);
+			throw new Error('Database connection failed');
+		}
 	}
 
 	async cleanDatabase(): Promise<void> {
@@ -43,8 +45,8 @@ export class TestDatabase {
 			await this.prisma.user.deleteMany();
 			await this.prisma.verificationCode.deleteMany();
 			await this.prisma.refreshToken.deleteMany();
-		} catch (error) {
-			console.warn('Error cleaning database:', error.message);
+		} catch {
+			// Silently handle cleanup errors
 		}
 	}
 

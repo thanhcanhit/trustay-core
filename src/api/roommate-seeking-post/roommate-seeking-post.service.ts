@@ -309,7 +309,7 @@ export class RoommateSeekingPostService {
 					firstName: true,
 					lastName: true,
 					avatarUrl: true,
-					phoneNumber: true,
+					phone: true,
 				},
 			},
 			roomInstance: {
@@ -324,7 +324,7 @@ export class RoommateSeekingPostService {
 								select: {
 									id: true,
 									name: true,
-									address: true,
+									addressLine1: true,
 								},
 							},
 						},
@@ -391,8 +391,28 @@ export class RoommateSeekingPostService {
 			contactCount: post.contactCount,
 			createdAt: post.createdAt.toISOString(),
 			updatedAt: post.updatedAt.toISOString(),
-			tenant: post.tenant,
-			roomInstance: post.roomInstance,
+			tenant: post.tenant
+				? {
+						...post.tenant,
+						phoneNumber: post.tenant.phone, // Map phone to phoneNumber for response
+					}
+				: undefined,
+			roomInstance: post.roomInstance
+				? {
+						...post.roomInstance,
+						room: post.roomInstance.room
+							? {
+									...post.roomInstance.room,
+									building: post.roomInstance.room.building
+										? {
+												...post.roomInstance.room.building,
+												address: post.roomInstance.room.building.addressLine1, // Map addressLine1 to address
+											}
+										: undefined,
+								}
+							: undefined,
+					}
+				: undefined,
 			externalProvince: post.externalProvince,
 			externalDistrict: post.externalDistrict,
 			externalWard: post.externalWard,
