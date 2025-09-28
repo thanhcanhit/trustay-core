@@ -65,7 +65,7 @@ export class AuthTestUtils {
 	private readonly userRecords = new Map<string, UserRecord>();
 	private readonly userPasswords = new Map<string, string>();
 
-	constructor(private readonly app: Pick<INestApplication, 'get'>) {
+	constructor(private readonly app?: Pick<INestApplication, 'get'>) {
 		this.prisma = this.safeGet(PrismaService);
 		this.authService = this.safeGet(AuthService);
 		this.passwordService = this.safeGet(PasswordService) ?? new PasswordService();
@@ -75,6 +75,13 @@ export class AuthTestUtils {
 				secret: process.env.JWT_SECRET ?? 'test-secret',
 			});
 		this.prismaIsMock = this.isMockFunction((this.prisma as any)?.user?.create);
+	}
+
+	/**
+	 * Create a new instance of AuthTestUtils for testing
+	 */
+	static create(app?: Pick<INestApplication, 'get'>): AuthTestUtils {
+		return new AuthTestUtils(app);
 	}
 
 	private safeGet<T>(token: Type<T>): T | undefined {
@@ -240,6 +247,47 @@ export class AuthTestUtils {
 
 	async createTenantUser(options: CreateTestUserOptions = {}): Promise<TestUser> {
 		return this.createTestUser({ ...options, role: 'tenant' });
+	}
+
+	/**
+	 * Create a default landlord user with common test data
+	 */
+	async createDefaultLandlord(): Promise<TestUser> {
+		return this.createLandlordUser({
+			email: 'landlord@test.com',
+			firstName: 'Landlord',
+			lastName: 'Test',
+			phone: '+84901234567',
+		});
+	}
+
+	/**
+	 * Create a default tenant user with common test data
+	 */
+	async createDefaultTenant(): Promise<TestUser> {
+		return this.createTenantUser({
+			email: 'tenant@test.com',
+			firstName: 'Tenant',
+			lastName: 'Test',
+			phone: '+84901234568',
+		});
+	}
+
+	/**
+	 * Create multiple test users at once
+	 */
+	async createTestUsers(count: number, role: UserRole = 'tenant'): Promise<TestUser[]> {
+		const users: TestUser[] = [];
+		for (let i = 0; i < count; i++) {
+			const user = await this.createTestUser({
+				role,
+				email: `user${i + 1}@test.com`,
+				firstName: `User${i + 1}`,
+				lastName: 'Test',
+			});
+			users.push(user);
+		}
+		return users;
 	}
 
 	getAuthHeaders(user: TestUser): Record<string, string> {
@@ -462,9 +510,19 @@ export async function createTestModule(): Promise<TestingModule> {
 						create: jest.fn(),
 						findUnique: jest.fn(),
 						findMany: jest.fn(),
+						findFirst: jest.fn(),
 						update: jest.fn(),
 						delete: jest.fn(),
 						deleteMany: jest.fn(),
+						count: jest.fn(),
+					},
+					userAddress: {
+						create: jest.fn(),
+						findMany: jest.fn(),
+						findUnique: jest.fn(),
+						update: jest.fn(),
+						updateMany: jest.fn(),
+						delete: jest.fn(),
 					},
 					building: {
 						create: jest.fn(),
@@ -472,6 +530,7 @@ export async function createTestModule(): Promise<TestingModule> {
 						findMany: jest.fn(),
 						update: jest.fn(),
 						delete: jest.fn(),
+						count: jest.fn(),
 					},
 					room: {
 						create: jest.fn(),
@@ -479,6 +538,15 @@ export async function createTestModule(): Promise<TestingModule> {
 						findMany: jest.fn(),
 						update: jest.fn(),
 						delete: jest.fn(),
+						count: jest.fn(),
+					},
+					roomInstance: {
+						create: jest.fn(),
+						findUnique: jest.fn(),
+						findMany: jest.fn(),
+						update: jest.fn(),
+						delete: jest.fn(),
+						count: jest.fn(),
 					},
 					roomSeekingPost: {
 						create: jest.fn(),
@@ -486,8 +554,38 @@ export async function createTestModule(): Promise<TestingModule> {
 						findMany: jest.fn(),
 						update: jest.fn(),
 						delete: jest.fn(),
+						count: jest.fn(),
 					},
 					roommateSeekingPost: {
+						create: jest.fn(),
+						findUnique: jest.fn(),
+						findMany: jest.fn(),
+						update: jest.fn(),
+						delete: jest.fn(),
+						count: jest.fn(),
+					},
+					tenantRoomPreferences: {
+						create: jest.fn(),
+						findUnique: jest.fn(),
+						findMany: jest.fn(),
+						update: jest.fn(),
+						delete: jest.fn(),
+					},
+					province: {
+						create: jest.fn(),
+						findUnique: jest.fn(),
+						findMany: jest.fn(),
+						update: jest.fn(),
+						delete: jest.fn(),
+					},
+					district: {
+						create: jest.fn(),
+						findUnique: jest.fn(),
+						findMany: jest.fn(),
+						update: jest.fn(),
+						delete: jest.fn(),
+					},
+					ward: {
 						create: jest.fn(),
 						findUnique: jest.fn(),
 						findMany: jest.fn(),

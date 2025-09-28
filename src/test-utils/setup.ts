@@ -58,3 +58,14 @@ jest.mock('@prisma/client', () => ({
 		$on: jest.fn(),
 	})),
 }));
+
+// Helper functions for test database setup
+export async function setupTestDatabase(): Promise<void> {
+	// Add any database setup logic here
+	// This could include creating test database, running migrations, etc.
+}
+
+export async function cleanupTestDatabase(): Promise<void> {
+	// Add any database cleanup logic here
+	// This could include dropping test database, cleaning up data, etc.
+}
