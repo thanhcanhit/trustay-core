@@ -65,8 +65,8 @@ export class RatingService {
 
 	async findAll(
 		query: RatingQueryDto,
-		context: { isAuthenticated: boolean } = { isAuthenticated: false },
-	): Promise<PaginatedResponseDto<RatingResponseDto>> {
+		context: { isAuthenticated: boolean; currentUserId?: string } = { isAuthenticated: false },
+	): Promise<PaginatedResponseDto<RatingResponseDto> & { stats: RatingStatsDto }> {
 		const {
 			page = 1,
 			limit = 20,
@@ -79,6 +79,20 @@ export class RatingService {
 			sortBy = 'createdAt',
 			sortOrder = 'desc',
 		} = query;
+
+		// Convert string parameters to numbers
+		const pageNum = typeof page === 'string' ? parseInt(page, 10) : page;
+		const limitNum = typeof limit === 'string' ? parseInt(limit, 10) : limit;
+		const minRatingNum = minRating
+			? typeof minRating === 'string'
+				? parseInt(minRating, 10)
+				: minRating
+			: undefined;
+		const maxRatingNum = maxRating
+			? typeof maxRating === 'string'
+				? parseInt(maxRating, 10)
+				: maxRating
+			: undefined;
 
 		const where: any = {};
 
@@ -95,24 +109,30 @@ export class RatingService {
 			where.rentalId = rentalId;
 		}
 
-		if (minRating || maxRating) {
+		if (minRatingNum || maxRatingNum) {
 			where.rating = {};
-			if (minRating) {
-				where.rating.gte = minRating;
+			if (minRatingNum) {
+				where.rating.gte = minRatingNum;
 			}
-			if (maxRating) {
-				where.rating.lte = maxRating;
+			if (maxRatingNum) {
+				where.rating.lte = maxRatingNum;
 			}
 		}
 
-		const skip = (page - 1) * limit;
+		const skip = (pageNum - 1) * limitNum;
 
-		const [ratings, total] = await Promise.all([
-			this.prisma.rating.findMany({
+		// If current user is authenticated and we're not filtering by specific reviewer,
+		// we need to get all ratings and sort them to put current user's reviews first
+		const shouldPrioritizeCurrentUser =
+			context.isAuthenticated && context.currentUserId && !reviewerId;
+
+		let ratings: any[];
+		let total: number;
+
+		if (shouldPrioritizeCurrentUser) {
+			// Get all ratings for the query
+			const allRatings = await this.prisma.rating.findMany({
 				where,
-				skip,
-				take: limit,
-				orderBy: { [sortBy]: sortOrder },
 				include: {
 					reviewer: {
 						select: {
@@ -126,13 +146,69 @@ export class RatingService {
 						},
 					},
 				},
-			}),
-			this.prisma.rating.count({ where }),
-		]);
+			});
+
+			// Sort to put current user's reviews first, then by the specified sort order
+			allRatings.sort((a, b) => {
+				const aIsCurrentUser = a.reviewerId === context.currentUserId;
+				const bIsCurrentUser = b.reviewerId === context.currentUserId;
+
+				// Current user's reviews come first
+				if (aIsCurrentUser && !bIsCurrentUser) {
+					return -1;
+				}
+				if (!aIsCurrentUser && bIsCurrentUser) {
+					return 1;
+				}
+
+				// For same user type, sort by the specified criteria
+				const aValue = a[sortBy];
+				const bValue = b[sortBy];
+
+				if (sortOrder === 'desc') {
+					return bValue > aValue ? 1 : bValue < aValue ? -1 : 0;
+				} else {
+					return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
+				}
+			});
+
+			total = allRatings.length;
+			ratings = allRatings.slice(skip, skip + limitNum);
+		} else {
+			// Use normal query with database sorting
+			[ratings, total] = await Promise.all([
+				this.prisma.rating.findMany({
+					where,
+					skip,
+					take: limitNum,
+					orderBy: { [sortBy]: sortOrder },
+					include: {
+						reviewer: {
+							select: {
+								id: true,
+								firstName: true,
+								lastName: true,
+								avatarUrl: true,
+								isVerifiedPhone: true,
+								isVerifiedEmail: true,
+								isVerifiedIdentity: true,
+							},
+						},
+					},
+				}),
+				this.prisma.rating.count({ where }),
+			]);
+		}
 
 		const formattedRatings = ratings.map((rating) => this.formatRatingResponse(rating, context));
 
-		return PaginatedResponseDto.create(formattedRatings, page, limit, total);
+		// Get stats for the filtered results
+		const stats = await this.getRatingStatsForQuery(where);
+
+		return {
+			...PaginatedResponseDto.create(formattedRatings, pageNum, limitNum, total),
+			stats,
+		};
 	}
 
 	async findOne(
@@ -318,6 +394,38 @@ export class RatingService {
 	}
 
 	// Removed helpful functionality for simplified version
+
+	private async getRatingStatsForQuery(where: any): Promise<RatingStatsDto> {
+		const ratings = await this.prisma.rating.findMany({
+			where,
+			select: {
+				rating: true,
+			},
+		});
+
+		if (ratings.length === 0) {
+			return {
+				totalRatings: 0,
+				averageRating: 0,
+				distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+			};
+		}
+
+		const totalRatings = ratings.length;
+		const averageRating = ratings.reduce((sum, r) => sum + r.rating, 0) / totalRatings;
+
+		// Calculate distribution
+		const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+		ratings.forEach((rating) => {
+			distribution[rating.rating as keyof typeof distribution]++;
+		});
+
+		return {
+			totalRatings,
+			averageRating: Math.round(averageRating * 10) / 10,
+			distribution,
+		};
+	}
 
 	private async checkDuplicateRating(
 		targetType: RatingTargetType,

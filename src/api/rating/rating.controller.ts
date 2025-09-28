@@ -66,8 +66,8 @@ export class RatingController {
 	@Get()
 	@UseGuards(OptionalJwtAuthGuard)
 	@ApiOperation({
-		summary: 'Get all ratings',
-		description: 'Retrieve ratings with filtering and pagination',
+		summary: 'Get ratings with filters',
+		description: 'Get all ratings with optional filters and pagination',
 	})
 	@ApiQuery({
 		name: 'targetType',
@@ -78,29 +78,32 @@ export class RatingController {
 	@ApiQuery({
 		name: 'targetId',
 		required: false,
+		type: String,
 		description: 'Filter by target ID',
 	})
 	@ApiQuery({
 		name: 'reviewerId',
 		required: false,
+		type: String,
 		description: 'Filter by reviewer ID',
 	})
 	@ApiQuery({
 		name: 'rentalId',
 		required: false,
+		type: String,
 		description: 'Filter by rental ID',
 	})
 	@ApiQuery({
 		name: 'minRating',
 		required: false,
 		type: Number,
-		description: 'Filter by minimum rating (1-5)',
+		description: 'Minimum rating filter',
 	})
 	@ApiQuery({
 		name: 'maxRating',
 		required: false,
 		type: Number,
-		description: 'Filter by maximum rating (1-5)',
+		description: 'Maximum rating filter',
 	})
 	@ApiQuery({
 		name: 'page',
@@ -117,6 +120,7 @@ export class RatingController {
 	@ApiQuery({
 		name: 'sortBy',
 		required: false,
+		type: String,
 		description: 'Sort field',
 	})
 	@ApiQuery({
@@ -133,35 +137,10 @@ export class RatingController {
 	async findAll(
 		@Query() query: RatingQueryDto,
 		@Req() req: any,
-	): Promise<PaginatedResponseDto<RatingResponseDto>> {
+	): Promise<PaginatedResponseDto<RatingResponseDto> & { stats: RatingStatsDto }> {
 		const isAuthenticated = Boolean(req.user);
-		return this.ratingService.findAll(query, { isAuthenticated });
-	}
-
-	@Get('stats/:targetType/:targetId')
-	@ApiOperation({
-		summary: 'Get rating statistics',
-		description: 'Get aggregated rating statistics for a target',
-	})
-	@ApiParam({
-		name: 'targetType',
-		enum: RatingTargetType,
-		description: 'Target type',
-	})
-	@ApiParam({
-		name: 'targetId',
-		description: 'Target ID',
-	})
-	@ApiResponse({
-		status: 200,
-		description: 'Rating statistics retrieved successfully',
-		type: RatingStatsDto,
-	})
-	async getStats(
-		@Param('targetType') targetType: RatingTargetType,
-		@Param('targetId') targetId: string,
-	): Promise<RatingStatsDto> {
-		return this.ratingService.getRatingStats(targetType, targetId);
+		const currentUserId = req.user?.id;
+		return this.ratingService.findAll(query, { isAuthenticated, currentUserId });
 	}
 
 	@Get(':id')
@@ -250,64 +229,16 @@ export class RatingController {
 
 	// Removed response and helpful functionality for simplified version
 
-	// Additional endpoints for specific use cases
-
-	@Get('target/:targetType/:targetId')
-	@UseGuards(OptionalJwtAuthGuard)
-	@ApiOperation({
-		summary: 'Get ratings for a specific target',
-		description: 'Get all ratings for a specific tenant, landlord, or room',
-	})
-	@ApiParam({
-		name: 'targetType',
-		enum: RatingTargetType,
-		description: 'Target type',
-	})
-	@ApiParam({
-		name: 'targetId',
-		description: 'Target ID',
-	})
-	@ApiQuery({
-		name: 'page',
-		required: false,
-		type: Number,
-		description: 'Page number',
-	})
-	@ApiQuery({
-		name: 'limit',
-		required: false,
-		type: Number,
-		description: 'Items per page',
-	})
-	@ApiResponse({
-		status: 200,
-		description: 'Target ratings retrieved successfully',
-		type: PaginatedResponseDto<RatingResponseDto>,
-	})
-	async getRatingsForTarget(
-		@Param('targetType') targetType: RatingTargetType,
-		@Param('targetId') targetId: string,
-		@Query() query: { page?: number; limit?: number },
-		@Req() req: any,
-	): Promise<PaginatedResponseDto<RatingResponseDto>> {
-		const isAuthenticated = Boolean(req.user);
-		const ratingQuery: RatingQueryDto = {
-			...query,
-			targetType,
-			targetId,
-		};
-		return this.ratingService.findAll(ratingQuery, { isAuthenticated });
-	}
-
 	@Get('user/:userId')
 	@UseGuards(OptionalJwtAuthGuard)
 	@ApiOperation({
-		summary: 'Get ratings given by a user',
-		description: 'Get all ratings created by a specific user',
+		summary: 'Get reviews created by a user',
+		description:
+			'Get all reviews/ratings that were created by a specific user (reviews they wrote)',
 	})
 	@ApiParam({
 		name: 'userId',
-		description: 'User ID',
+		description: 'User ID of the reviewer',
 	})
 	@ApiQuery({
 		name: 'page',
@@ -321,21 +252,60 @@ export class RatingController {
 		type: Number,
 		description: 'Items per page',
 	})
+	@ApiQuery({
+		name: 'targetType',
+		required: false,
+		enum: RatingTargetType,
+		description: 'Filter by target type (tenant, landlord, room)',
+	})
+	@ApiQuery({
+		name: 'minRating',
+		required: false,
+		type: Number,
+		description: 'Minimum rating filter',
+	})
+	@ApiQuery({
+		name: 'maxRating',
+		required: false,
+		type: Number,
+		description: 'Maximum rating filter',
+	})
+	@ApiQuery({
+		name: 'sortBy',
+		required: false,
+		type: String,
+		description: 'Sort field',
+	})
+	@ApiQuery({
+		name: 'sortOrder',
+		required: false,
+		enum: ['asc', 'desc'],
+		description: 'Sort order',
+	})
 	@ApiResponse({
 		status: 200,
-		description: 'User ratings retrieved successfully',
+		description: 'User created reviews retrieved successfully',
 		type: PaginatedResponseDto<RatingResponseDto>,
 	})
-	async getUserRatings(
+	async getUserCreatedReviews(
 		@Param('userId') userId: string,
-		@Query() query: { page?: number; limit?: number },
+		@Query() query: {
+			page?: number;
+			limit?: number;
+			targetType?: RatingTargetType;
+			minRating?: number;
+			maxRating?: number;
+			sortBy?: string;
+			sortOrder?: 'asc' | 'desc';
+		},
 		@Req() req: any,
-	): Promise<PaginatedResponseDto<RatingResponseDto>> {
+	): Promise<PaginatedResponseDto<RatingResponseDto> & { stats: RatingStatsDto }> {
 		const isAuthenticated = Boolean(req.user);
+		const currentUserId = req.user?.id;
 		const ratingQuery: RatingQueryDto = {
 			...query,
 			reviewerId: userId,
 		};
-		return this.ratingService.findAll(ratingQuery, { isAuthenticated });
+		return this.ratingService.findAll(ratingQuery, { isAuthenticated, currentUserId });
 	}
 }
