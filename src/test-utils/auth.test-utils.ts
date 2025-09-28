@@ -378,6 +378,9 @@ export class AuthTestUtils {
 			data: {
 				...data,
 				requester: { connect: { id: tenantId } },
+				preferredProvince: { connect: { id: data.preferredProvinceId } },
+				preferredDistrict: { connect: { id: data.preferredDistrictId } },
+				preferredWard: { connect: { id: data.preferredWardId } },
 			} as Prisma.RoomSeekingPostCreateInput,
 		});
 	}

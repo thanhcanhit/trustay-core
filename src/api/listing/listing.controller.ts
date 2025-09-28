@@ -1,10 +1,10 @@
 import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { OptionalJwtAuthGuard } from '../../auth/guards/optional-jwt-auth.guard';
-import { CombinedListingWithMetaResponseDto } from './dto/combined-listing.dto';
 import { ListingQueryDto, RoomRequestSearchDto } from './dto/listing-query.dto';
 import { PaginatedListingResponseDto } from './dto/paginated-listing-response.dto';
 import { PaginatedRoomSeekingResponseDto } from './dto/paginated-room-seeking-response.dto';
+import { RoommateSeekingWithMetaResponseDto } from './dto/roommate-seeking-with-meta.dto';
 import { ListingService } from './listing.service';
 
 @ApiTags('Listings')
@@ -197,28 +197,17 @@ export class ListingController {
 		return this.listingService.findAllRoomRequests(query, { isAuthenticated, userId });
 	}
 
-	@Get('/combined')
+	@Get('/roommate-seeking-posts')
 	@ApiOperation({
-		summary: 'Search combined listings (rooms + roommate seeking posts)',
-		description:
-			'Find both available rooms and roommate seeking posts in a unified search with intelligent preference-based matching',
+		summary: 'Search roommate seeking posts',
+		description: 'Find posts from tenants looking for roommates (ở ghép) with filters',
 	})
-	@ApiQuery({
-		name: 'search',
-		required: false,
-		description: 'Search keyword for room/building name or post title',
-	})
-	@ApiQuery({ name: 'provinceId', required: false, description: 'Filter by province ID' })
-	@ApiQuery({ name: 'districtId', required: false, description: 'Filter by district ID' })
-	@ApiQuery({ name: 'wardId', required: false, description: 'Filter by ward ID' })
-	@ApiQuery({
-		name: 'roomType',
-		required: false,
-		description: 'Filter by room type',
-		enum: ['boarding_house', 'dormitory', 'sleepbox', 'apartment', 'whole_house'],
-	})
-	@ApiQuery({ name: 'minPrice', required: false, description: 'Minimum monthly rent/budget (VND)' })
-	@ApiQuery({ name: 'maxPrice', required: false, description: 'Maximum monthly rent/budget (VND)' })
+	@ApiQuery({ name: 'search', required: false, description: 'Search keyword in title/description' })
+	@ApiQuery({ name: 'provinceId', required: false, description: 'Filter by external province ID' })
+	@ApiQuery({ name: 'districtId', required: false, description: 'Filter by external district ID' })
+	@ApiQuery({ name: 'wardId', required: false, description: 'Filter by external ward ID' })
+	@ApiQuery({ name: 'minPrice', required: false, description: 'Minimum monthly rent (VND)' })
+	@ApiQuery({ name: 'maxPrice', required: false, description: 'Maximum monthly rent (VND)' })
 	@ApiQuery({
 		name: 'sortBy',
 		required: false,
@@ -235,17 +224,17 @@ export class ListingController {
 	@ApiQuery({ name: 'limit', required: false, description: 'Items per page' })
 	@ApiResponse({
 		status: 200,
-		description: 'Combined listings retrieved successfully',
-		type: CombinedListingWithMetaResponseDto,
+		description: 'Roommate seeking posts retrieved successfully',
+		type: RoommateSeekingWithMetaResponseDto,
 	})
 	@ApiResponse({ status: 400, description: 'Invalid query parameters' })
 	@UseGuards(OptionalJwtAuthGuard)
-	async getCombinedListings(
+	async getRoommateSeekingPosts(
 		@Query() query: ListingQueryDto,
 		@Req() req: any,
-	): Promise<CombinedListingWithMetaResponseDto> {
+	): Promise<RoommateSeekingWithMetaResponseDto> {
 		const isAuthenticated = Boolean(req.user);
 		const userId = req.user?.id;
-		return this.listingService.findCombinedListings(query, { isAuthenticated, userId });
+		return this.listingService.findAllRoommateSeekings(query, { isAuthenticated, userId });
 	}
 }

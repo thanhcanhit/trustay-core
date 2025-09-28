@@ -5,14 +5,10 @@ import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { maskEmail, maskFullName, maskPhone } from '../../common/utils/mask.utils';
 import { formatRoomListItem, getOwnerStats } from '../../common/utils/room-formatter.utils';
 import { PrismaService } from '../../prisma/prisma.service';
-import {
-	CombinedListingWithMetaResponseDto,
-	RoomListingDto,
-	RoommateSeekingPostDto,
-} from './dto/combined-listing.dto';
 import { ListingQueryDto, RoomRequestSearchDto } from './dto/listing-query.dto';
 import { ListingWithMetaResponseDto } from './dto/listing-with-meta.dto';
 import { RoomSeekingWithMetaResponseDto } from './dto/room-seeking-with-meta.dto';
+import { RoommateSeekingWithMetaResponseDto } from './dto/roommate-seeking-with-meta.dto';
 
 @Injectable()
 export class ListingService {
@@ -331,6 +327,85 @@ export class ListingService {
 			});
 		}
 
+		return { items };
+	}
+
+	/**
+	 * Generate SEO for roommate seeking posts
+	 */
+	private async generateRoommateSeekingSeo(query: ListingQueryDto): Promise<SeoDto> {
+		const { search, provinceId, districtId, wardId, minPrice, maxPrice } = query;
+		const locationParts: string[] = [];
+		if (wardId) {
+			const ward = await this.prisma.ward.findUnique({
+				where: { id: wardId },
+				select: { name: true },
+			});
+			if (ward) locationParts.push(ward.name);
+		}
+		if (districtId) {
+			const district = await this.prisma.district.findUnique({
+				where: { id: districtId },
+				select: { name: true },
+			});
+			if (district) locationParts.push(district.name);
+		}
+		if (provinceId) {
+			const province = await this.prisma.province.findUnique({
+				where: { id: provinceId },
+				select: { name: true },
+			});
+			if (province) locationParts.push(province.name);
+		}
+		let budgetText = '';
+		if (minPrice && maxPrice)
+			budgetText = `từ ${(minPrice / 1000000).toFixed(1)} triệu đến ${(maxPrice / 1000000).toFixed(1)} triệu`;
+		else if (minPrice) budgetText = `từ ${(minPrice / 1000000).toFixed(1)} triệu`;
+		else if (maxPrice) budgetText = `dưới ${(maxPrice / 1000000).toFixed(1)} triệu`;
+		let title = 'Tìm bạn ở ghép';
+		if (search) title = `Tìm bạn ở ghép "${search}"`;
+		else if (locationParts.length > 0) title = `Tìm bạn ở ghép tại ${locationParts.join(', ')}`;
+		if (budgetText) title += ` ${budgetText}`;
+		title += ' | Trustay';
+		let description = 'Kết nối người ở ghép nhanh chóng, an toàn';
+		if (locationParts.length > 0) description += ` tại ${locationParts.join(', ')}`;
+		if (budgetText) description += ` với chi phí ${budgetText}`;
+		const keywords = ['ở ghép', 'tìm bạn ở ghép', ...locationParts, budgetText ? 'ngân sách' : '']
+			.filter(Boolean)
+			.join(', ');
+		return { title, description, keywords };
+	}
+
+	/**
+	 * Generate breadcrumb for roommate seeking posts
+	 */
+	private async generateRoommateSeekingBreadcrumb(query: ListingQueryDto): Promise<BreadcrumbDto> {
+		const { search, provinceId, districtId } = query;
+		const items = [
+			{ title: 'Trang chủ', path: '/' },
+			{ title: 'Ở ghép', path: '/roommate-seekings' },
+		];
+		if (districtId) {
+			const district = await this.prisma.district.findUnique({
+				where: { id: districtId },
+				select: { name: true },
+			});
+			if (district)
+				items.push({ title: district.name, path: `/roommate-seekings?districtId=${districtId}` });
+		}
+		if (provinceId) {
+			const province = await this.prisma.province.findUnique({
+				where: { id: provinceId },
+				select: { name: true },
+			});
+			if (province)
+				items.push({ title: province.name, path: `/roommate-seekings?provinceId=${provinceId}` });
+		}
+		if (search)
+			items.push({
+				title: `"${search}"`,
+				path: `/roommate-seekings?search=${encodeURIComponent(search)}`,
+			});
 		return { items };
 	}
 
@@ -916,11 +991,11 @@ export class ListingService {
 		};
 	}
 
-	async findCombinedListings(
+	async findAllRoommateSeekings(
 		query: ListingQueryDto,
 		context: { isAuthenticated: boolean; userId?: string } = { isAuthenticated: false },
-	): Promise<CombinedListingWithMetaResponseDto> {
-		const { isAuthenticated, userId } = context;
+	): Promise<RoommateSeekingWithMetaResponseDto> {
+		const { isAuthenticated } = context;
 		const {
 			page = 1,
 			limit = 20,
@@ -928,239 +1003,36 @@ export class ListingService {
 			provinceId,
 			districtId,
 			wardId,
-			roomType,
 			minPrice,
 			maxPrice,
 			sortBy = 'createdAt',
 			sortOrder = 'desc',
 		} = query;
 
-		const skip = (page - 1) * limit;
-
-		// Fetch user preferences for enhanced search
-		let roomPreferences = null;
-		if (
-			userId &&
-			!search &&
-			!provinceId &&
-			!districtId &&
-			!wardId &&
-			!roomType &&
-			!minPrice &&
-			!maxPrice
-		) {
-			roomPreferences = await this.prisma.tenantRoomPreferences.findUnique({
-				where: { tenantId: userId },
-			});
-		}
-
-		// Build room search criteria
-		const roomWhere: any = {
-			isActive: true,
-			building: {
-				isActive: true,
-			},
-			roomInstances: {
-				some: {
-					isActive: true,
-					status: 'available',
-				},
-			},
-		};
-
-		// Build roommate seeking post search criteria
-		const roommateWhere: any = {
-			status: 'active',
-			isPublic: true,
-		};
-
-		// Apply search filters to both
+		const where: any = { status: 'active', isActive: true };
 		if (search) {
-			roomWhere.OR = [
-				{ name: { contains: search, mode: 'insensitive' } },
-				{ description: { contains: search, mode: 'insensitive' } },
-				{ building: { name: { contains: search, mode: 'insensitive' } } },
-			];
-
-			roommateWhere.OR = [
+			where.OR = [
 				{ title: { contains: search, mode: 'insensitive' } },
 				{ description: { contains: search, mode: 'insensitive' } },
 			];
 		}
-
-		// Apply location filters
-		if (provinceId || (roomPreferences?.isActive && roomPreferences.preferredProvinceIds?.length)) {
-			const finalProvinceId = provinceId || roomPreferences?.preferredProvinceIds?.[0];
-			if (finalProvinceId) {
-				roomWhere.building.provinceId = finalProvinceId;
-				roommateWhere.externalProvinceId = finalProvinceId;
-			}
+		if (provinceId) where.externalProvinceId = provinceId;
+		if (districtId) where.externalDistrictId = districtId;
+		if (wardId) where.externalWardId = wardId;
+		if (minPrice || maxPrice) {
+			where.monthlyRent = {};
+			if (minPrice) where.monthlyRent.gte = minPrice;
+			if (maxPrice) where.monthlyRent.lte = maxPrice;
 		}
 
-		if (districtId || (roomPreferences?.isActive && roomPreferences.preferredDistrictIds?.length)) {
-			const finalDistrictId = districtId || roomPreferences?.preferredDistrictIds?.[0];
-			if (finalDistrictId) {
-				roomWhere.building.districtId = finalDistrictId;
-				roommateWhere.externalDistrictId = finalDistrictId;
-			}
-		}
+		const orderBy: any = { [sortBy === 'price' ? 'createdAt' : sortBy]: sortOrder };
 
-		if (wardId) {
-			roomWhere.building.wardId = wardId;
-			roommateWhere.externalWardId = wardId;
-		}
-
-		// Apply room type filters - skip for roommate posts since they don't have this field
-		if (roomType || (roomPreferences?.isActive && roomPreferences.preferredRoomTypes?.length)) {
-			const finalRoomType = roomType || roomPreferences?.preferredRoomTypes?.[0];
-			if (finalRoomType) {
-				roomWhere.roomType = finalRoomType;
-				// Skip roomType filter for roommate posts as they don't have this field
-			}
-		}
-
-		// Apply budget filters with expansion for better matching
-		let finalMinPrice = minPrice;
-		let finalMaxPrice = maxPrice;
-
-		if (roomPreferences?.isActive && !minPrice && !maxPrice) {
-			finalMinPrice = roomPreferences.minBudget
-				? Math.floor(Number(roomPreferences.minBudget) * 0.8)
-				: undefined;
-			finalMaxPrice = roomPreferences.maxBudget
-				? Math.ceil(Number(roomPreferences.maxBudget) * 1.2)
-				: undefined;
-		}
-
-		if (finalMinPrice || finalMaxPrice) {
-			// For rooms - filter by pricing
-			roomWhere.pricing = {};
-			if (finalMinPrice) {
-				roomWhere.pricing.basePriceMonthly = { gte: finalMinPrice };
-			}
-			if (finalMaxPrice) {
-				roomWhere.pricing.basePriceMonthly = {
-					...roomWhere.pricing.basePriceMonthly,
-					lte: finalMaxPrice,
-				};
-			}
-
-			// For roommate posts - filter by monthlyRent
-			if (finalMinPrice) {
-				roommateWhere.monthlyRent = { gte: finalMinPrice };
-			}
-			if (finalMaxPrice) {
-				roommateWhere.monthlyRent = {
-					...roommateWhere.monthlyRent,
-					lte: finalMaxPrice,
-				};
-			}
-		}
-
-		// Determine split between rooms and roommate posts
-		const roomLimit = Math.ceil(limit * 0.7); // 70% rooms
-		const roommateLimit = Math.floor(limit * 0.3); // 30% roommate posts
-
-		// Fetch both types in parallel
-		const [rooms, roommateSeekingPosts, roomsTotal, roommateTotal] = await Promise.all([
-			this.prisma.room.findMany({
-				where: roomWhere,
-				skip: Math.floor(skip * 0.7),
-				take: roomLimit,
-				orderBy: { [sortBy === 'price' ? 'createdAt' : sortBy]: sortOrder },
-				include: {
-					building: {
-						select: {
-							id: true,
-							name: true,
-							addressLine1: true,
-							addressLine2: true,
-							latitude: true,
-							longitude: true,
-							isVerified: true,
-							province: { select: { id: true, name: true, code: true } },
-							district: { select: { id: true, name: true, code: true } },
-							ward: { select: { id: true, name: true, code: true } },
-							owner: {
-								select: {
-									id: true,
-									firstName: true,
-									lastName: true,
-									avatarUrl: true,
-									gender: true,
-									isVerifiedPhone: true,
-									isVerifiedEmail: true,
-									isVerifiedIdentity: true,
-									isOnline: true,
-									lastActiveAt: true,
-									overallRating: true,
-									totalRatings: true,
-								},
-							},
-						},
-					},
-					roomInstances: {
-						select: { id: true, roomNumber: true, status: true, isActive: true },
-						where: { isActive: true, status: 'available' },
-						take: 1,
-					},
-					images: {
-						select: { id: true, imageUrl: true, altText: true, sortOrder: true, isPrimary: true },
-						orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
-						take: 4,
-					},
-					amenities: {
-						select: {
-							id: true,
-							customValue: true,
-							notes: true,
-							systemAmenity: {
-								select: { id: true, name: true, nameEn: true, category: true },
-							},
-						},
-					},
-					costs: {
-						select: {
-							id: true,
-							baseRate: true,
-							currency: true,
-							notes: true,
-							systemCostType: {
-								select: { id: true, name: true, nameEn: true, category: true, defaultUnit: true },
-							},
-						},
-					},
-					pricing: {
-						select: {
-							id: true,
-							basePriceMonthly: true,
-							currency: true,
-							depositAmount: true,
-							depositMonths: true,
-							utilityIncluded: true,
-							utilityCostMonthly: true,
-							minimumStayMonths: true,
-							maximumStayMonths: true,
-							priceNegotiable: true,
-						},
-					},
-					rules: {
-						select: {
-							id: true,
-							customValue: true,
-							isEnforced: true,
-							notes: true,
-							systemRule: { select: { id: true, ruleType: true, name: true, nameEn: true } },
-						},
-					},
-				},
-			}),
-
+		const [posts, total] = await Promise.all([
 			this.prisma.roommateSeekingPost.findMany({
-				where: roommateWhere,
-				skip: Math.floor(skip * 0.3),
-				take: roommateLimit,
-				orderBy: { [sortBy === 'price' ? 'createdAt' : sortBy]: sortOrder },
+				where,
+				orderBy,
+				skip: (page - 1) * limit,
+				take: limit,
 				include: {
 					tenant: {
 						select: {
@@ -1174,99 +1046,40 @@ export class ListingService {
 					},
 				},
 			}),
-
-			this.prisma.room.count({ where: roomWhere }),
-			this.prisma.roommateSeekingPost.count({ where: roommateWhere }),
+			this.prisma.roommateSeekingPost.count({ where }),
 		]);
 
-		// Format room listings
-		const uniqueOwnerIds = [...new Set(rooms.map((room) => room.building.owner.id))];
-		const ownerStatsMap = new Map<string, { totalBuildings: number; totalRoomInstances: number }>();
-		await Promise.all(
-			uniqueOwnerIds.map(async (ownerId) => {
-				const stats = await getOwnerStats(this.prisma, ownerId);
-				ownerStatsMap.set(ownerId, stats);
-			}),
-		);
-
-		const formattedRooms: RoomListingDto[] = rooms.map((room) => ({
-			...formatRoomListItem(room, isAuthenticated, {
-				includeDistance: false,
-				ownerStats: ownerStatsMap.get(room.building.owner.id),
-			}),
-			type: 'room' as const,
-		}));
-
-		// Format roommate seeking posts
-		const formattedRoommateSeekingPosts: RoommateSeekingPostDto[] = roommateSeekingPosts.map(
-			(post) => {
-				const requesterFullName =
-					`${post.tenant.firstName || ''} ${post.tenant.lastName || ''}`.trim();
-				const maskedRequesterName = maskFullName(requesterFullName);
-				const maskedEmail = post.tenant.email ? maskEmail(post.tenant.email) : '';
-				const maskedPhone = post.tenant.phone ? maskPhone(post.tenant.phone) : '';
-
-				return {
-					id: post.id,
-					type: 'roommate_seeking' as const,
-					title: post.title,
-					description: post.description,
-					slug: post.slug,
-					minBudget: undefined, // No minBudget in schema
-					maxBudget: Number(post.monthlyRent),
-					currency: post.currency,
-					preferredRoomType: undefined, // Not in schema
-					occupancy: post.seekingCount,
-					moveInDate: post.availableFromDate,
-					status: post.status,
-					viewCount: post.viewCount,
-					contactCount: post.contactCount,
-					createdAt: post.createdAt,
-					requester: {
-						id: post.tenant.id,
-						name: isAuthenticated ? requesterFullName : maskedRequesterName,
-						email: isAuthenticated ? post.tenant.email : maskedEmail,
-						phone: isAuthenticated ? post.tenant.phone : maskedPhone,
-						avatarUrl: post.tenant.avatarUrl,
-					},
-					preferredProvince: undefined, // Will be populated from external location if needed
-					preferredDistrict: undefined,
-					preferredWard: undefined,
-					amenities: [], // Will be populated if needed
-				};
-			},
-		);
-
-		// Combine and sort results
-		const combinedData = [...formattedRooms, ...formattedRoommateSeekingPosts];
-
-		// Sort combined results
-		combinedData.sort((a, b) => {
-			if (sortBy === 'createdAt') {
-				const aDate = 'createdAt' in a ? new Date(a.createdAt) : new Date();
-				const bDate = 'createdAt' in b ? new Date(b.createdAt) : new Date();
-				return sortOrder === 'desc'
-					? bDate.getTime() - aDate.getTime()
-					: aDate.getTime() - bDate.getTime();
-			}
-			return 0; // Default sorting fallback
+		const formatted = posts.map((post) => {
+			const fullName = `${post.tenant.firstName || ''} ${post.tenant.lastName || ''}`.trim();
+			const maskedName = maskFullName(fullName);
+			const maskedEmail = post.tenant.email ? maskEmail(post.tenant.email) : '';
+			const maskedPhone = post.tenant.phone ? maskPhone(post.tenant.phone) : '';
+			return {
+				id: post.id,
+				title: post.title,
+				description: post.description,
+				slug: post.slug,
+				maxBudget: Number(post.monthlyRent),
+				currency: post.currency,
+				occupancy: post.seekingCount,
+				moveInDate: post.availableFromDate,
+				status: post.status,
+				viewCount: post.viewCount,
+				contactCount: post.contactCount,
+				createdAt: post.createdAt,
+				requester: {
+					id: post.tenant.id,
+					name: isAuthenticated ? fullName : maskedName,
+					email: isAuthenticated ? post.tenant.email : maskedEmail,
+					phone: isAuthenticated ? post.tenant.phone : maskedPhone,
+					avatarUrl: post.tenant.avatarUrl,
+				},
+			};
 		});
 
-		const totalCombined = roomsTotal + roommateTotal;
-		const paginatedResponse = PaginatedResponseDto.create(combinedData, page, limit, totalCombined);
-
-		// Generate SEO and breadcrumb
-		const seo = await this.generateRoomListingSeo(query);
-		const breadcrumb = await this.generateRoomListingBreadcrumb(query);
-
-		return {
-			...paginatedResponse,
-			seo,
-			breadcrumb,
-			stats: {
-				totalRooms: roomsTotal,
-				totalRoommateSeekingPosts: roommateTotal,
-			},
-		};
+		const paginated = PaginatedResponseDto.create(formatted, page, limit, total);
+		const seo = await this.generateRoommateSeekingSeo(query);
+		const breadcrumb = await this.generateRoommateSeekingBreadcrumb(query);
+		return { ...paginated, seo, breadcrumb };
 	}
 }

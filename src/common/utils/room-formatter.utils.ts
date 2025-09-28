@@ -149,8 +149,8 @@ export function formatRoomPricing(pricing: any): RoomPricingOutputDto | undefine
 
 	return {
 		basePriceMonthly:
-			pricing.basePriceMonthly !== null ? pricing.basePriceMonthly.toString() : undefined,
-		depositAmount: pricing.depositAmount !== null ? pricing.depositAmount.toString() : undefined,
+			pricing.basePriceMonthly != null ? pricing.basePriceMonthly.toString() : undefined,
+		depositAmount: pricing.depositAmount != null ? pricing.depositAmount.toString() : undefined,
 		utilityIncluded: pricing.utilityIncluded,
 	};
 }
