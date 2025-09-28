@@ -26,19 +26,8 @@ export class RatingService {
 		// Validate target exists and permissions
 		await this.validateRatingPermission(targetType, targetId, reviewerId, rentalId);
 
-		// Check if user already rated this target
-		const existingRating = await this.prisma.rating.findFirst({
-			where: {
-				targetType,
-				targetId,
-				reviewerId,
-				...(rentalId && { rentalId }),
-			},
-		});
-
-		if (existingRating) {
-			throw new BadRequestException('You have already rated this target');
-		}
+		// Check if user already rated this target (one rating per user per target)
+		await this.checkDuplicateRating(targetType, targetId, reviewerId);
 
 		// Create rating and update overall rating
 		const rating = await this.prisma.$transaction(async (tx) => {
@@ -330,63 +319,69 @@ export class RatingService {
 
 	// Removed helpful functionality for simplified version
 
+	private async checkDuplicateRating(
+		targetType: RatingTargetType,
+		targetId: string,
+		reviewerId: string,
+	): Promise<void> {
+		const existingRating = await this.prisma.rating.findFirst({
+			where: {
+				targetType,
+				targetId,
+				reviewerId,
+			},
+		});
+
+		if (existingRating) {
+			throw new BadRequestException(
+				`You have already rated this ${targetType}. Each user can only rate a target once.`,
+			);
+		}
+	}
+
 	private async validateRatingPermission(
 		targetType: RatingTargetType,
 		targetId: string,
 		reviewerId: string,
-		rentalId?: string,
+		_rentalId?: string,
 	): Promise<void> {
+		// Simplified validation - only check basic rules
+
+		// Can't rate yourself
+		if (targetId === reviewerId) {
+			throw new BadRequestException('You cannot rate yourself');
+		}
+
+		// Validate target type
+		if (!Object.values(RatingTargetType).includes(targetType)) {
+			throw new BadRequestException('Invalid rating target type');
+		}
+
+		// Optional: Validate target exists (basic check)
 		switch (targetType) {
 			case RatingTargetType.tenant:
 			case RatingTargetType.landlord: {
-				// For tenant/landlord ratings, must have a rental relationship
-				if (!rentalId) {
-					throw new BadRequestException('Rental ID is required for tenant/landlord ratings');
-				}
-
-				const rental = await this.prisma.rental.findUnique({
-					where: { id: rentalId },
-					select: { tenantId: true, ownerId: true, status: true },
+				// Check if target user exists
+				const user = await this.prisma.user.findUnique({
+					where: { id: targetId },
+					select: { id: true },
 				});
 
-				if (!rental) {
-					throw new NotFoundException('Rental not found');
-				}
-
-				// Validate the reviewer is part of this rental
-				if (rental.tenantId !== reviewerId && rental.ownerId !== reviewerId) {
-					throw new ForbiddenException('You are not part of this rental');
-				}
-
-				// Validate the target is the other party in the rental
-				if (targetType === RatingTargetType.tenant && rental.tenantId !== targetId) {
-					throw new BadRequestException('Target ID does not match rental tenant');
-				}
-				if (targetType === RatingTargetType.landlord && rental.ownerId !== targetId) {
-					throw new BadRequestException('Target ID does not match rental owner');
-				}
-
-				// Can't rate yourself
-				if (targetId === reviewerId) {
-					throw new BadRequestException('You cannot rate yourself');
+				if (!user) {
+					throw new NotFoundException('Target user not found');
 				}
 				break;
 			}
 
 			case RatingTargetType.room: {
-				// For room ratings, check if user has stayed in the room
-				const roomRental = await this.prisma.rental.findFirst({
-					where: {
-						tenantId: reviewerId,
-						roomInstance: {
-							roomId: targetId,
-						},
-						status: { in: ['terminated', 'expired'] }, // Only completed stays
-					},
+				// Check if target room exists
+				const room = await this.prisma.room.findUnique({
+					where: { id: targetId },
+					select: { id: true },
 				});
 
-				if (!roomRental) {
-					throw new ForbiddenException('You can only rate rooms you have stayed in');
+				if (!room) {
+					throw new NotFoundException('Target room not found');
 				}
 				break;
 			}
