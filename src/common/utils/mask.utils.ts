@@ -228,7 +228,6 @@ export function maskSensitiveData(
 			return maskIdNumber(data);
 		case 'name':
 			return maskFullName(data);
-		case 'text':
 		default:
 			return maskText(data, 2, 2);
 	}

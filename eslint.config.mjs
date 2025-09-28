@@ -24,7 +24,7 @@ export default tseslint.config(
       },
       sourceType: "commonjs",
       parserOptions: {
-        projectService: false, // Disable để tránh performance issues
+        projectService: false, // Disable project service to avoid performance issues during lint runs
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -41,8 +41,6 @@ export default tseslint.config(
       "@typescript-eslint/explicit-function-return-type": "off",
       "@typescript-eslint/explicit-module-boundary-types": "off",
       "@typescript-eslint/ban-ts-comment": "warn",
-      "@typescript-eslint/prefer-optional-chain": "warn",
-      "@typescript-eslint/prefer-nullish-coalescing": "warn",
       
       // General JavaScript/TypeScript
       "no-console": "warn",

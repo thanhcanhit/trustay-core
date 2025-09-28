@@ -2170,6 +2170,489 @@
       "description": "Booking request endpoints for tenant-landlord booking workflow"
     },
     {
+      "name": "👥 Roommate Seeking Posts",
+      "item": [
+        {
+          "name": "⚡ Quick Login (Default Tenant)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if ([200, 201].includes(pm.response.code)) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.access_token && response.access_token.length > 0) {",
+                  "        pm.collectionVariables.set('accessToken', response.access_token);",
+                  "        console.log('✅ Access Token saved successfully');",
+                  "    }",
+                  "    if (response.refresh_token) {",
+                  "        pm.collectionVariables.set('refreshToken', response.refresh_token);",
+                  "        console.log('✅ Refresh Token saved successfully');",
+                  "    }",
+                  "    if (response.user && response.user.id) {",
+                  "        pm.collectionVariables.set('userId', response.user.id);",
+                  "        console.log('👤 User ID saved:', response.user.id);",
+                  "        console.log('🏠 User Role:', response.user.role);",
+                  "    }",
+                  "    console.log('⚡ Quick Login (Tenant) successful!');",
+                  "  } else {",
+                  "    console.log('❌ Quick Login failed with status:', pm.response.code);",
+                  "    console.log('📝 Response body:', pm.response.text());",
+                  "  }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{defaultTenantEmail}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Login as default tenant for roommate seeking actions"
+          },
+          "response": []
+        },
+        {
+          "name": "📝 Create Roommate Seeking Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('roommateSeekingPostId', response.id);",
+                  "    pm.collectionVariables.set('roommateSeekingPostSlug', response.slug);",
+                  "    console.log('📝 Roommate seeking post created successfully!');",
+                  "    console.log('🆔 Post ID saved:', response.id);",
+                  "    console.log('🔗 Post Slug generated:', response.slug);",
+                  "    console.log('👤 Poster:', response.tenant.firstName, response.tenant.lastName);",
+                  "    console.log('💰 Budget:', response.minBudget ? response.minBudget.toLocaleString() : 'N/A', '-', response.maxBudget.toLocaleString(), response.currency);",
+                  "    console.log('🏠 Room Type:', response.preferredRoomType || 'Any');",
+                  "    console.log('👥 Seeking Count:', response.seekingCount || 'Not specified');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"{{roommateSeekingPostTitle}}\",\n  \"description\": \"{{roommateSeekingPostDescription}}\",\n  \"externalAddress\": \"{{roommateSeekingPostAddress}}\",\n  \"monthlyRent\": {{roommateSeekingPostMonthlyRent}},\n  \"depositAmount\": {{roommateSeekingPostDepositAmount}},\n  \"seekingCount\": {{roommateSeekingPostSeekingCount}},\n  \"maxOccupancy\": {{roommateSeekingPostMaxOccupancy}},\n  \"currentOccupancy\": {{roommateSeekingPostCurrentOccupancy}},\n  \"availableFromDate\": \"{{roommateSeekingPostAvailableFromDate}}\",\n  \"minimumStayMonths\": {{roommateSeekingPostMinimumStayMonths}},\n  \"currency\": \"{{roommateSeekingPostCurrency}}\",\n  \"isActive\": {{roommateSeekingPostIsActive}}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/roommate-seeking-posts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "roommate-seeking-posts"]
+            },
+            "description": "Create a new roommate seeking post (requires authentication). Slug will be auto-generated from title."
+          },
+          "response": []
+        },
+        {
+          "name": "📋 Get My Roommate Seeking Posts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/roommate-seeking-posts/me?page={{roommateSeekingPostPage}}&limit={{roommateSeekingPostLimit}}&search={{roommateSeekingPostSearch}}&sortBy={{roommateSeekingPostSortBy}}&sortOrder={{roommateSeekingPostSortOrder}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "roommate-seeking-posts", "me"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "{{roommateSeekingPostPage}}",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{roommateSeekingPostLimit}}",
+                  "description": "Items per page"
+                },
+                {
+                  "key": "search",
+                  "value": "{{roommateSeekingPostSearch}}",
+                  "description": "Search in title and description"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "{{roommateSeekingPostSortBy}}",
+                  "description": "Sort field (createdAt, updatedAt, title, maxBudget, viewCount, contactCount)"
+                },
+                {
+                  "key": "sortOrder",
+                  "value": "{{roommateSeekingPostSortOrder}}",
+                  "description": "Sort order (asc, desc)"
+                }
+              ]
+            },
+            "description": "Get my roommate seeking posts with pagination and search (requires authentication)"
+          },
+          "response": []
+        },
+        {
+          "name": "🔍 Get Roommate Seeking Post Details",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('🔍 Roommate seeking post details retrieved successfully!');",
+                  "    console.log('📝 Title:', response.title);",
+                  "    console.log('💰 Budget:', response.minBudget ? response.minBudget.toLocaleString() : 'N/A', '-', response.maxBudget.toLocaleString(), response.currency);",
+                  "console.log('👤 Poster:', response.tenant.firstName, response.tenant.lastName);",
+                  "console.log('📊 Views:', response.viewCount, '| Contacts:', response.contactCount);",
+                  "console.log('🏠 Room Type:', response.preferredRoomType || 'Any');",
+                  "console.log('📍 Location:', response.externalAddress || 'N/A');",
+                  "console.log('👥 Seeking:', response.seekingCount, 'people');",
+                  "console.log('🏠 Max Occupancy:', response.maxOccupancy);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/roommate-seeking-posts/{{roommateSeekingPostId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "roommate-seeking-posts", "{{roommateSeekingPostId}}"]
+            },
+            "description": "Get detailed information about a roommate seeking post (public endpoint)"
+          },
+          "response": []
+        },
+        {
+          "name": "✏️ Update Roommate Seeking Post",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"{{roommateSeekingPostTitleUpdated}}\",\n  \"description\": \"{{roommateSeekingPostDescriptionUpdated}}\",\n  \"maxBudget\": {{roommateSeekingPostMaxBudgetUpdated}},\n  \"seekingCount\": {{roommateSeekingPostSeekingCountUpdated}},\n  \"availableFromDate\": \"{{roommateSeekingPostAvailableFromDateUpdated}}\",\n  \"isActive\": {{roommateSeekingPostIsActiveUpdated}}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/roommate-seeking-posts/{{roommateSeekingPostId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "roommate-seeking-posts", "{{roommateSeekingPostId}}"]
+            },
+            "description": "Update roommate seeking post (owner only). Slug will be auto-regenerated if title changes."
+          },
+          "response": []
+        },
+        {
+          "name": "🔄 Update Roommate Seeking Post Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": {{roommateSeekingPostNewStatus}}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/roommate-seeking-posts/{{roommateSeekingPostId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "roommate-seeking-posts", "{{roommateSeekingPostId}}", "status"]
+            },
+            "description": "Update roommate seeking post status (active/inactive)"
+          },
+          "response": []
+        },
+        {
+          "name": "🗑️ Delete Roommate Seeking Post",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/roommate-seeking-posts/{{roommateSeekingPostId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "roommate-seeking-posts", "{{roommateSeekingPostId}}"]
+            },
+            "description": "Delete roommate seeking post (owner only)"
+          },
+          "response": []
+        }
+      ],
+      "description": "Roommate seeking post management endpoints for tenants looking for roommates. Slugs are auto-generated from titles."
+    },
+    {
+      "name": "📋 Roommate Applications",
+      "item": [
+        {
+          "name": "⚡ Quick Login (Default Tenant)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if ([200, 201].includes(pm.response.code)) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.access_token && response.access_token.length > 0) {",
+                  "        pm.collectionVariables.set('accessToken', response.access_token);",
+                  "        console.log('✅ Access Token saved successfully');",
+                  "    }",
+                  "    if (response.refresh_token) {",
+                  "        pm.collectionVariables.set('refreshToken', response.refresh_token);",
+                  "        console.log('✅ Refresh Token saved successfully');",
+                  "    }",
+                  "    if (response.user && response.user.id) {",
+                  "        pm.collectionVariables.set('userId', response.user.id);",
+                  "        console.log('👤 User ID saved:', response.user.id);",
+                  "        console.log('🏠 User Role:', response.user.role);",
+                  "    }",
+                  "    console.log('⚡ Quick Login (Tenant) successful!');",
+                  "  } else {",
+                  "    console.log('❌ Quick Login failed with status:', pm.response.code);",
+                  "    console.log('📝 Response body:', pm.response.text());",
+                  "  }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{defaultTenantEmail}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Login as default tenant for roommate application actions"
+          },
+          "response": []
+        },
+        {
+          "name": "📝 Create Roommate Application",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('roommateApplicationId', response.id);",
+                  "    console.log('📝 Roommate application created successfully!');",
+                  "    console.log('🆔 Application ID saved:', response.id);",
+                  "    console.log('👤 Applicant:', response.applicant.firstName, response.applicant.lastName);",
+                  "    console.log('📅 Move-in Date:', response.moveInDate);",
+                  "    console.log('⏱️ Stay Duration:', response.intendedStayMonths, 'months');",
+                  "    console.log('📞 Contact:', response.phoneNumber);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roommateSeekingPostId\": \"{{roommateSeekingPostId}}\",\n  \"fullName\": \"{{roommateApplicationFullName}}\",\n  \"occupation\": \"{{roommateApplicationOccupation}}\",\n  \"phoneNumber\": \"{{roommateApplicationPhoneNumber}}\",\n  \"moveInDate\": \"{{roommateApplicationMoveInDate}}\",\n  \"intendedStayMonths\": {{roommateApplicationIntendedStayMonths}},\n  \"applicationMessage\": \"{{roommateApplicationMessage}}\",\n  \"isUrgent\": {{roommateApplicationIsUrgent}}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/roommate-applications",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "roommate-applications"]
+            },
+            "description": "Create a new roommate application (requires authentication)"
+          },
+          "response": []
+        },
+        {
+          "name": "📋 Get My Applications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/roommate-applications/my-applications?page={{roommateApplicationPage}}&limit={{roommateApplicationLimit}}&status={{roommateApplicationStatus}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "roommate-applications", "my-applications"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "{{roommateApplicationPage}}",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{roommateApplicationLimit}}",
+                  "description": "Items per page"
+                },
+                {
+                  "key": "status",
+                  "value": "{{roommateApplicationStatus}}",
+                  "description": "Filter by status (pending, approved_by_tenant, approved_by_landlord, rejected, cancelled)"
+                }
+              ]
+            },
+            "description": "Get my roommate applications with pagination and status filter (requires authentication)"
+          },
+          "response": []
+        },
+        {
+          "name": "📋 Get Applications for My Posts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/roommate-applications/for-my-posts?page={{roommateApplicationPage}}&limit={{roommateApplicationLimit}}&status={{roommateApplicationStatus}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "roommate-applications", "for-my-posts"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "{{roommateApplicationPage}}",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{roommateApplicationLimit}}",
+                  "description": "Items per page"
+                },
+                {
+                  "key": "status",
+                  "value": "{{roommateApplicationStatus}}",
+                  "description": "Filter by status (pending, approved_by_tenant, approved_by_landlord, rejected, cancelled)"
+                }
+              ]
+            },
+            "description": "Get applications for my roommate seeking posts (requires authentication)"
+          },
+          "response": []
+        },
+        {
+          "name": "🔍 Get Application Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/roommate-applications/{{roommateApplicationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "roommate-applications", "{{roommateApplicationId}}"]
+            },
+            "description": "Get detailed information about a roommate application (applicant or post owner only)"
+          },
+          "response": []
+        },
+        {
+          "name": "✅ Respond to Application (Tenant)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"{{roommateApplicationRespondStatus}}\",\n  \"response\": \"{{roommateApplicationRespondMessage}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/roommate-applications/{{roommateApplicationId}}/respond",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "roommate-applications", "{{roommateApplicationId}}", "respond"]
+            },
+            "description": "Respond to a roommate application (approve/reject as tenant or landlord)"
+          },
+          "response": []
+        },
+        {
+          "name": "❌ Cancel Application",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancellationReason\": \"{{roommateApplicationCancellationReason}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/roommate-applications/{{roommateApplicationId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "roommate-applications", "{{roommateApplicationId}}", "cancel"]
+            },
+            "description": "Cancel my roommate application (applicant only)"
+          },
+          "response": []
+        },
+        {
+          "name": "📊 Get Application Statistics (My Applications)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/roommate-applications/statistics/my-applications",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "roommate-applications", "statistics", "my-applications"]
+            },
+            "description": "Get statistics for my roommate applications (requires authentication)"
+          },
+          "response": []
+        },
+        {
+          "name": "📊 Get Application Statistics (For My Posts)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/roommate-applications/statistics/for-my-posts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "roommate-applications", "statistics", "for-my-posts"]
+            },
+            "description": "Get statistics for applications to my roommate seeking posts (requires authentication)"
+          },
+          "response": []
+        }
+      ],
+      "description": "Roommate application management endpoints for applying to and managing roommate seeking posts"
+    },
+    {
       "name": "🔧 Utilities",
       "item": [
         {
@@ -2230,7 +2713,8 @@
           "const publicEndpoints = [",
           "    'Login', 'Register', 'Verification', 'Password Strength', 'Generate', 'Health', 'Documentation',",
           "    'Provinces', 'Districts', 'Wards', 'Get Room by Slug',",
-          "    'Get Room Seeking Post Details'",
+          "    'Get Room Seeking Post Details', 'Get Roommate Seeking Post Details',",
+          "    'Get All Ratings', 'Get Rating Statistics', 'Get Ratings for Target', 'Get User Ratings', 'Get Rating Details'",
           "];",
           "",
           "const isPublicEndpoint = publicEndpoints.some(endpoint => requestName.includes(endpoint));",
@@ -2361,6 +2845,259 @@
           "}"
         ]
       }
+    },
+    {
+      "name": "⭐ Ratings",
+      "item": [
+        {
+          "name": "⚡ Quick Login (Default Tenant)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if ([200, 201].includes(pm.response.code)) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.access_token && response.access_token.length > 0) {",
+                  "        pm.collectionVariables.set('accessToken', response.access_token);",
+                  "        console.log('✅ Access Token saved successfully');",
+                  "    }",
+                  "    if (response.refresh_token) {",
+                  "        pm.collectionVariables.set('refreshToken', response.refresh_token);",
+                  "        console.log('✅ Refresh Token saved successfully');",
+                  "    }",
+                  "    if (response.user && response.user.id) {",
+                  "        pm.collectionVariables.set('userId', response.user.id);",
+                  "        console.log('👤 User ID saved:', response.user.id);",
+                  "        console.log('🏠 User Role:', response.user.role);",
+                  "    }",
+                  "    console.log('⚡ Quick Login (Tenant) successful!');",
+                  "  } else {",
+                  "    console.log('❌ Quick Login failed with status:', pm.response.code);",
+                  "    console.log('📝 Response body:', pm.response.text());",
+                  "  }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{defaultTenantEmail}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Login as default tenant for rating actions"
+          },
+          "response": []
+        },
+        {
+          "name": "📝 Create Rating",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('ratingId', response.id);",
+                  "    console.log('📝 Rating created successfully!');",
+                  "    console.log('🆔 Rating ID saved:', response.id);",
+                  "    console.log('⭐ Rating:', response.rating);",
+                  "    console.log('📝 Content:', response.content);",
+                  "    console.log('🎯 Target:', response.targetType, response.targetId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetType\": \"{{ratingTargetType}}\",\n  \"targetId\": \"{{ratingTargetId}}\",\n  \"rentalId\": \"{{ratingRentalId}}\",\n  \"rating\": {{ratingValue}},\n  \"content\": \"{{ratingContent}}\",\n  \"images\": [\"{{ratingImages}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings"]
+            },
+            "description": "Create a new rating (requires authentication)"
+          },
+          "response": []
+        },
+        {
+          "name": "📋 Get All Ratings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings?page={{ratingPage}}&limit={{ratingLimit}}&targetType={{ratingTargetType}}&minRating={{ratingMinRating}}&maxRating={{ratingMaxRating}}&sortBy={{ratingSortBy}}&sortOrder={{ratingSortOrder}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings"],
+              "query": [
+                { "key": "page", "value": "{{ratingPage}}" },
+                { "key": "limit", "value": "{{ratingLimit}}" },
+                { "key": "targetType", "value": "{{ratingTargetType}}" },
+                { "key": "minRating", "value": "{{ratingMinRating}}" },
+                { "key": "maxRating", "value": "{{ratingMaxRating}}" },
+                { "key": "sortBy", "value": "{{ratingSortBy}}" },
+                { "key": "sortOrder", "value": "{{ratingSortOrder}}" }
+              ]
+            },
+            "description": "Get all ratings with filtering and pagination"
+          },
+          "response": []
+        },
+        {
+          "name": "📊 Get Rating Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings/stats/{{ratingTargetType}}/{{ratingTargetId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings", "stats", "{{ratingTargetType}}", "{{ratingTargetId}}"]
+            },
+            "description": "Get rating statistics for a specific target"
+          },
+          "response": []
+        },
+        {
+          "name": "🎯 Get Ratings for Target",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings/target/{{ratingTargetType}}/{{ratingTargetId}}?page={{ratingPage}}&limit={{ratingLimit}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings", "target", "{{ratingTargetType}}", "{{ratingTargetId}}"],
+              "query": [
+                { "key": "page", "value": "{{ratingPage}}" },
+                { "key": "limit", "value": "{{ratingLimit}}" }
+              ]
+            },
+            "description": "Get all ratings for a specific target"
+          },
+          "response": []
+        },
+        {
+          "name": "👤 Get User Ratings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings/user/{{userId}}?page={{ratingPage}}&limit={{ratingLimit}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings", "user", "{{userId}}"],
+              "query": [
+                { "key": "page", "value": "{{ratingPage}}" },
+                { "key": "limit", "value": "{{ratingLimit}}" }
+              ]
+            },
+            "description": "Get all ratings created by a specific user"
+          },
+          "response": []
+        },
+        {
+          "name": "🔍 Get Rating Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings/{{ratingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings", "{{ratingId}}"]
+            },
+            "description": "Get a specific rating by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "✏️ Update Rating",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('✏️ Rating updated successfully!');",
+                  "    console.log('⭐ New Rating:', response.rating);",
+                  "    console.log('📝 New Content:', response.content);",
+                  "    console.log('🕒 Updated At:', response.updatedAt);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating\": {{ratingUpdatedValue}},\n  \"content\": \"{{ratingUpdatedContent}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings/{{ratingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings", "{{ratingId}}"]
+            },
+            "description": "Update an existing rating (only by original reviewer)"
+          },
+          "response": []
+        },
+        {
+          "name": "🗑️ Delete Rating",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('🗑️ Rating deleted successfully!');",
+                  "    console.log('📝 Message:', response.message);",
+                  "    // Clear the rating ID variable",
+                  "    pm.collectionVariables.set('ratingId', '');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings/{{ratingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings", "{{ratingId}}"]
+            },
+            "description": "Delete an existing rating (only by original reviewer)"
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [
@@ -3643,46 +4380,334 @@
       "description": "Prisma enum RoomStatus"
     },
     {
-      "key": "roomSeekingPostId",
+      "key": "roommateSeekingPostId",
       "value": "",
       "type": "string",
-      "description": "Room seeking post ID (auto-saved from creation)"
+      "description": "Roommate seeking post ID (auto-populated after creation)"
     },
     {
-      "key": "roomSeekingPostSlug",
+      "key": "roommateSeekingPostSlug",
       "value": "",
       "type": "string",
-      "description": "Room seeking post slug (auto-saved from creation)"
+      "description": "Roommate seeking post slug (auto-generated from title after creation)"
     },
     {
-      "key": "searchKeyword",
-      "value": "apartment",
+      "key": "roommateSeekingPostTitle",
+      "value": "Tìm người ở ghép Q1, gần Bách Khoa",
       "type": "string",
-      "description": "Default search keyword for listings"
+      "description": "Roommate seeking post title"
     },
     {
-      "key": "testProvinceId",
+      "key": "roommateSeekingPostDescription",
+      "value": "Cần 1 bạn ở ghép, phòng sạch sẽ, yên tĩnh, gần trường đại học",
+      "type": "string",
+      "description": "Roommate seeking post description"
+    },
+    {
+      "key": "roommateSeekingPostAddress",
+      "value": "123 Nguyễn Thái Học, Q1, TP.HCM",
+      "type": "string",
+      "description": "External address for roommate seeking post"
+    },
+    {
+      "key": "roommateSeekingPostMonthlyRent",
+      "value": "2500000",
+      "type": "string",
+      "description": "Monthly rent amount (VND)"
+    },
+    {
+      "key": "roommateSeekingPostDepositAmount",
+      "value": "2500000",
+      "type": "string",
+      "description": "Deposit amount (VND)"
+    },
+    {
+      "key": "roommateSeekingPostSeekingCount",
       "value": "1",
       "type": "string",
-      "description": "Test province ID for location filtering (Ho Chi Minh City)"
+      "description": "Number of people seeking"
     },
     {
-      "key": "testDistrictId",
+      "key": "roommateSeekingPostMaxOccupancy",
+      "value": "2",
+      "type": "string",
+      "description": "Maximum occupancy for the room"
+    },
+    {
+      "key": "roommateSeekingPostCurrentOccupancy",
       "value": "1",
       "type": "string",
-      "description": "Test district ID for location filtering"
+      "description": "Current occupancy in the room"
     },
     {
-      "key": "enumSearchPostStatus",
-      "value": "[\"draft\",\"active\",\"paused\",\"closed\",\"expired\"]",
+      "key": "roommateSeekingPostAvailableFromDate",
+      "value": "2025-10-01",
       "type": "string",
-      "description": "Prisma enum SearchPostStatus for room seeking posts"
+      "description": "Available from date (YYYY-MM-DD)"
     },
     {
-      "key": "enumGender",
-      "value": "[\"male\",\"female\",\"other\"]",
+      "key": "roommateSeekingPostMinimumStayMonths",
+      "value": "3",
       "type": "string",
-      "description": "Prisma enum Gender"
+      "description": "Minimum stay duration in months"
+    },
+    {
+      "key": "roommateSeekingPostCurrency",
+      "value": "VND",
+      "type": "string",
+      "description": "Currency for rent and deposit"
+    },
+    {
+      "key": "roommateSeekingPostIsActive",
+      "value": "true",
+      "type": "string",
+      "description": "Whether the post is active"
+    },
+    {
+      "key": "roommateSeekingPostPage",
+      "value": "1",
+      "type": "string",
+      "description": "Page number for roommate seeking posts pagination"
+    },
+    {
+      "key": "roommateSeekingPostLimit",
+      "value": "20",
+      "type": "string",
+      "description": "Items per page for roommate seeking posts pagination"
+    },
+    {
+      "key": "roommateSeekingPostSearch",
+      "value": "",
+      "type": "string",
+      "description": "Search term for roommate seeking posts"
+    },
+    {
+      "key": "roommateSeekingPostSortBy",
+      "value": "createdAt",
+      "type": "string",
+      "description": "Sort field for roommate seeking posts (createdAt, updatedAt, title, maxBudget, viewCount, contactCount)"
+    },
+    {
+      "key": "roommateSeekingPostSortOrder",
+      "value": "desc",
+      "type": "string",
+      "description": "Sort order for roommate seeking posts (asc, desc)"
+    },
+    {
+      "key": "roommateSeekingPostTitleUpdated",
+      "value": "Tìm người ở ghép Q1, gần Bách Khoa - Cập nhật",
+      "type": "string",
+      "description": "Updated roommate seeking post title"
+    },
+    {
+      "key": "roommateSeekingPostDescriptionUpdated",
+      "value": "Cần 1 bạn ở ghép, phòng sạch sẽ, yên tĩnh, gần trường đại học. Có thể chia sẻ phòng với bạn cùng lớp.",
+      "type": "string",
+      "description": "Updated roommate seeking post description"
+    },
+    {
+      "key": "roommateSeekingPostMaxBudgetUpdated",
+      "value": "3000000",
+      "type": "string",
+      "description": "Updated maximum budget"
+    },
+    {
+      "key": "roommateSeekingPostSeekingCountUpdated",
+      "value": "2",
+      "type": "string",
+      "description": "Updated seeking count"
+    },
+    {
+      "key": "roommateSeekingPostAvailableFromDateUpdated",
+      "value": "2025-11-01",
+      "type": "string",
+      "description": "Updated available from date"
+    },
+    {
+      "key": "roommateSeekingPostIsActiveUpdated",
+      "value": "true",
+      "type": "string",
+      "description": "Updated active status"
+    },
+    {
+      "key": "roommateSeekingPostNewStatus",
+      "value": "false",
+      "type": "string",
+      "description": "New status for roommate seeking post (true/false)"
+    },
+    {
+      "key": "roommateApplicationId",
+      "value": "",
+      "type": "string",
+      "description": "Roommate application ID (auto-populated after creation)"
+    },
+    {
+      "key": "roommateApplicationFullName",
+      "value": "Nguyễn Văn A",
+      "type": "string",
+      "description": "Full name for roommate application"
+    },
+    {
+      "key": "roommateApplicationOccupation",
+      "value": "Sinh viên",
+      "type": "string",
+      "description": "Occupation for roommate application"
+    },
+    {
+      "key": "roommateApplicationPhoneNumber",
+      "value": "+84901234567",
+      "type": "string",
+      "description": "Phone number for roommate application"
+    },
+    {
+      "key": "roommateApplicationMoveInDate",
+      "value": "2025-10-15",
+      "type": "string",
+      "description": "Move-in date for roommate application (YYYY-MM-DD)"
+    },
+    {
+      "key": "roommateApplicationIntendedStayMonths",
+      "value": "6",
+      "type": "string",
+      "description": "Intended stay duration in months"
+    },
+    {
+      "key": "roommateApplicationMessage",
+      "value": "Xin chào, tôi quan tâm đến bài đăng tìm người ở ghép của bạn.",
+      "type": "string",
+      "description": "Application message"
+    },
+    {
+      "key": "roommateApplicationIsUrgent",
+      "value": "false",
+      "type": "string",
+      "description": "Whether the application is urgent"
+    },
+    {
+      "key": "roommateApplicationPage",
+      "value": "1",
+      "type": "string",
+      "description": "Page number for roommate applications pagination"
+    },
+    {
+      "key": "roommateApplicationLimit",
+      "value": "20",
+      "type": "string",
+      "description": "Items per page for roommate applications pagination"
+    },
+    {
+      "key": "roommateApplicationStatus",
+      "value": "",
+      "type": "string",
+      "description": "Filter by application status (pending, approved_by_tenant, approved_by_landlord, rejected, cancelled)"
+    },
+    {
+      "key": "roommateApplicationRespondStatus",
+      "value": "approved_by_tenant",
+      "type": "string",
+      "description": "Response status for application (approved_by_tenant, approved_by_landlord, rejected)"
+    },
+    {
+      "key": "roommateApplicationRespondMessage",
+      "value": "Chào bạn, tôi đồng ý với đơn ứng tuyển của bạn.",
+      "type": "string",
+      "description": "Response message for application"
+    },
+    {
+      "key": "roommateApplicationCancellationReason",
+      "value": "Đã tìm được phòng khác phù hợp hơn",
+      "type": "string",
+      "description": "Cancellation reason for application"
+    },
+    {
+      "key": "ratingId",
+      "value": "",
+      "type": "string",
+      "description": "Rating ID for operations"
+    },
+    {
+      "key": "ratingTargetType",
+      "value": "room",
+      "type": "string",
+      "description": "Target type for rating (tenant, landlord, room)"
+    },
+    {
+      "key": "ratingTargetId",
+      "value": "",
+      "type": "string",
+      "description": "Target ID being rated"
+    },
+    {
+      "key": "ratingRentalId",
+      "value": "",
+      "type": "string",
+      "description": "Rental ID for tenant/landlord ratings"
+    },
+    {
+      "key": "ratingValue",
+      "value": "5",
+      "type": "string",
+      "description": "Rating value (1-5)"
+    },
+    {
+      "key": "ratingContent",
+      "value": "Excellent service, highly recommended!",
+      "type": "string",
+      "description": "Rating content/review text"
+    },
+    {
+      "key": "ratingImages",
+      "value": "https://example.com/image1.jpg,https://example.com/image2.jpg",
+      "type": "string",
+      "description": "Comma-separated image URLs for rating"
+    },
+    {
+      "key": "ratingPage",
+      "value": "1",
+      "type": "string",
+      "description": "Page number for rating pagination"
+    },
+    {
+      "key": "ratingLimit",
+      "value": "10",
+      "type": "string",
+      "description": "Items per page for rating pagination"
+    },
+    {
+      "key": "ratingMinRating",
+      "value": "4",
+      "type": "string",
+      "description": "Minimum rating filter"
+    },
+    {
+      "key": "ratingMaxRating",
+      "value": "5",
+      "type": "string",
+      "description": "Maximum rating filter"
+    },
+    {
+      "key": "ratingSortBy",
+      "value": "createdAt",
+      "type": "string",
+      "description": "Sort field for ratings"
+    },
+    {
+      "key": "ratingSortOrder",
+      "value": "desc",
+      "type": "string",
+      "description": "Sort order for ratings (asc, desc)"
+    },
+    {
+      "key": "ratingUpdatedValue",
+      "value": "4",
+      "type": "string",
+      "description": "Updated rating value"
+    },
+    {
+      "key": "ratingUpdatedContent",
+      "value": "Updated review - still good but found minor issues",
+      "type": "string",
+      "description": "Updated rating content"
     }
   ]
 }

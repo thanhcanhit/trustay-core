@@ -4,6 +4,7 @@ import { OptionalJwtAuthGuard } from '../../auth/guards/optional-jwt-auth.guard'
 import { ListingQueryDto, RoomRequestSearchDto } from './dto/listing-query.dto';
 import { PaginatedListingResponseDto } from './dto/paginated-listing-response.dto';
 import { PaginatedRoomSeekingResponseDto } from './dto/paginated-room-seeking-response.dto';
+import { RoommateSeekingWithMetaResponseDto } from './dto/roommate-seeking-with-meta.dto';
 import { ListingService } from './listing.service';
 
 @ApiTags('Listings')
@@ -102,7 +103,8 @@ export class ListingController {
 		@Req() req: any,
 	): Promise<PaginatedListingResponseDto> {
 		const isAuthenticated = Boolean(req.user);
-		return this.listingService.findAllListings(query, { isAuthenticated });
+		const userId = req.user?.id;
+		return this.listingService.findAllListings(query, { isAuthenticated, userId });
 	}
 
 	@Get('/room-seeking-posts')
@@ -191,6 +193,48 @@ export class ListingController {
 		@Req() req: any,
 	): Promise<PaginatedRoomSeekingResponseDto> {
 		const isAuthenticated = Boolean(req.user);
-		return this.listingService.findAllRoomRequests(query, { isAuthenticated });
+		const userId = req.user?.id;
+		return this.listingService.findAllRoomRequests(query, { isAuthenticated, userId });
+	}
+
+	@Get('/roommate-seeking-posts')
+	@ApiOperation({
+		summary: 'Search roommate seeking posts',
+		description: 'Find posts from tenants looking for roommates (ở ghép) with filters',
+	})
+	@ApiQuery({ name: 'search', required: false, description: 'Search keyword in title/description' })
+	@ApiQuery({ name: 'provinceId', required: false, description: 'Filter by external province ID' })
+	@ApiQuery({ name: 'districtId', required: false, description: 'Filter by external district ID' })
+	@ApiQuery({ name: 'wardId', required: false, description: 'Filter by external ward ID' })
+	@ApiQuery({ name: 'minPrice', required: false, description: 'Minimum monthly rent (VND)' })
+	@ApiQuery({ name: 'maxPrice', required: false, description: 'Maximum monthly rent (VND)' })
+	@ApiQuery({
+		name: 'sortBy',
+		required: false,
+		description: 'Sort field',
+		enum: ['createdAt', 'price'],
+	})
+	@ApiQuery({
+		name: 'sortOrder',
+		required: false,
+		description: 'Sort order',
+		enum: ['asc', 'desc'],
+	})
+	@ApiQuery({ name: 'page', required: false, description: 'Page number' })
+	@ApiQuery({ name: 'limit', required: false, description: 'Items per page' })
+	@ApiResponse({
+		status: 200,
+		description: 'Roommate seeking posts retrieved successfully',
+		type: RoommateSeekingWithMetaResponseDto,
+	})
+	@ApiResponse({ status: 400, description: 'Invalid query parameters' })
+	@UseGuards(OptionalJwtAuthGuard)
+	async getRoommateSeekingPosts(
+		@Query() query: ListingQueryDto,
+		@Req() req: any,
+	): Promise<RoommateSeekingWithMetaResponseDto> {
+		const isAuthenticated = Boolean(req.user);
+		const userId = req.user?.id;
+		return this.listingService.findAllRoommateSeekings(query, { isAuthenticated, userId });
 	}
 }

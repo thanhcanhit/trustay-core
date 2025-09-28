@@ -252,8 +252,8 @@ export class AuthService {
 				gender: registerDto.gender,
 				role: registerDto.role,
 				// In development, mark as verified if email is provided
-				isVerifiedEmail: nodeEnv === 'development' ? true : false,
-				isVerifiedPhone: nodeEnv === 'development' && !!registerDto.phone ? true : false,
+				isVerifiedEmail: nodeEnv === 'development',
+				isVerifiedPhone: nodeEnv === 'development' && !!registerDto.phone,
 			},
 			select: {
 				id: true,
@@ -384,7 +384,7 @@ export class AuthService {
 		const refresh_token = await this.generateRefreshToken(user.id);
 
 		// Remove password hash from response
-		const { passwordHash, ...userResponse } = user;
+		const { passwordHash: _passwordHash, ...userResponse } = user;
 
 		return {
 			access_token,
@@ -401,7 +401,7 @@ export class AuthService {
 		});
 
 		if (user && (await this.passwordService.comparePassword(password, user.passwordHash))) {
-			const { passwordHash, ...result } = user;
+			const { passwordHash: _passwordHash, ...result } = user;
 			return result;
 		}
 		return null;
@@ -463,10 +463,15 @@ export class AuthService {
 
 		// Determine strength level based on score
 		let level = 'Very Weak';
-		if (validation.score >= 80) level = 'Strong';
-		else if (validation.score >= 60) level = 'Good';
-		else if (validation.score >= 40) level = 'Fair';
-		else if (validation.score >= 20) level = 'Weak';
+		if (validation.score >= 80) {
+			level = 'Strong';
+		} else if (validation.score >= 60) {
+			level = 'Good';
+		} else if (validation.score >= 40) {
+			level = 'Fair';
+		} else if (validation.score >= 20) {
+			level = 'Weak';
+		}
 
 		return {
 			...validation,

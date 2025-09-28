@@ -143,7 +143,9 @@ export function formatRoomCosts(
  * Transform pricing data
  */
 export function formatRoomPricing(pricing: any): RoomPricingOutputDto | undefined {
-	if (!pricing) return undefined;
+	if (!pricing) {
+		return undefined;
+	}
 
 	return {
 		basePriceMonthly:

@@ -255,7 +255,7 @@ export class VerificationService {
 				phone: payload.phone,
 				type: payload.type,
 			};
-		} catch (error) {
+		} catch (_error) {
 			return { isValid: false };
 		}
 	}

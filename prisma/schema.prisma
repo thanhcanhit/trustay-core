@@ -184,6 +184,25 @@ enum ChatMessageType {
   request
 }
 
+enum RoommatePostStatus {
+  draft
+  pending_approval // Chờ landlord duyệt
+  active
+  paused
+  closed
+  expired
+}
+
+enum RoommateApplicationStatus {
+  pending
+  approved_by_tenant
+  rejected_by_tenant
+  approved_by_landlord // Chỉ áp dụng cho platform rooms
+  rejected_by_landlord // Chỉ áp dụng cho platform rooms
+  cancelled
+  expired
+}
+
 enum RoomStatus {
   available // Phòng trống, sẵn sàng cho thuê
   occupied // Phòng đã có người ở
@@ -264,6 +283,10 @@ model User {
   verificationCodes    VerificationCode[]
   refreshTokens        RefreshToken[]
   roomRequests         RoomSeekingPost[]
+  roommateSeekingPosts RoommateSeekingPost[]
+  roommateApplications RoommateApplication[]
+  roomPreferences      TenantRoomPreferences?
+  roommatePreferences  TenantRoommatePreferences?
   conversationsAsUserA Conversation[]     @relation("ConversationUserA")
   conversationsAsUserB Conversation[]     @relation("ConversationUserB")
   messagesSent         Message[]
@@ -445,6 +468,7 @@ model RoomInstance {
   rentals      Rental[]
   monthlyBills MonthlyBill[]
   contracts    Contract[]
+  roommateSeekingPosts RoommateSeekingPost[]
 
   @@unique([roomId, roomNumber]) // Unique room number within same room type
   @@index([roomId])
@@ -745,6 +769,7 @@ model Rental {
   ratings        Rating[]
   monthlyBills   MonthlyBill[]
   contract       Contract?
+  roommateSeekingPosts RoommateSeekingPost[]
 
   @@index([roomInstanceId])
   @@index([tenantId])
@@ -977,6 +1002,142 @@ model RoomSeekingPost {
 }
 
 // ========================================
+// ROOMMATE SEEKING SYSTEM
+// ========================================
+
+model RoommateSeekingPost {
+  id          String  @id @default(uuid())
+  title       String
+  description String
+  slug        String  @unique
+
+  // Thông tin người đăng (tenant hiện tại)
+  tenantId    String @map("tenant_id")
+
+  // Platform room info - nếu phòng có trong platform
+  roomInstanceId String? @map("room_instance_id")
+  rentalId       String? @map("rental_id") // Rental hiện tại của tenant
+
+  // External room info - nếu phòng ngoài platform
+  externalAddress     String? @map("external_address")
+  externalDistrictId  Int?    @map("external_district_id")
+  externalProvinceId  Int?    @map("external_province_id")
+  externalWardId      Int?    @map("external_ward_id")
+
+  // Thông tin cơ bản
+  monthlyRent          Decimal @map("monthly_rent") @db.Decimal(15, 2)
+  currency             String  @default("VND")
+  depositAmount        Decimal @map("deposit_amount") @db.Decimal(15, 2)
+  utilityCostPerPerson Decimal? @map("utility_cost_per_person") @db.Decimal(15, 2)
+
+  // Số lượng người cần tìm
+  seekingCount     Int @map("seeking_count") // Số người cần tìm ban đầu
+  approvedCount    Int @default(0) @map("approved_count") // Số người đã được chốt/approve
+  remainingSlots   Int @map("remaining_slots") // Số slot còn lại = seekingCount - approvedCount
+  maxOccupancy     Int @map("max_occupancy") // Tối đa bao nhiêu người ở ghép
+  currentOccupancy Int @default(1) @map("current_occupancy") // Hiện tại có bao nhiêu người (bao gồm tenant)
+
+  // Yêu cầu về roommate (tối giản)
+  preferredGender       Gender? @map("preferred_gender")
+  additionalRequirements String? @map("additional_requirements") // Text tự do cho các yêu cầu khác
+
+  // Thời gian
+  availableFromDate DateTime @map("available_from_date") @db.Date
+  minimumStayMonths Int      @default(1) @map("minimum_stay_months")
+  maximumStayMonths Int?     @map("maximum_stay_months")
+
+  // Trạng thái & phê duyệt
+  status               RoommatePostStatus @default(draft)
+  requiresLandlordApproval Boolean        @default(false) @map("requires_landlord_approval")
+  isApprovedByLandlord     Boolean?       @map("is_approved_by_landlord") // null = chưa xét, true/false = đã xét
+  landlordNotes            String?        @map("landlord_notes")
+
+  // Visibility
+  isActive  Boolean   @default(true) @map("is_active")
+  expiresAt DateTime? @map("expires_at")
+
+  // Stats
+  viewCount    Int @default(0) @map("view_count")
+  contactCount Int @default(0) @map("contact_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant         User             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  roomInstance   RoomInstance?    @relation(fields: [roomInstanceId], references: [id], onDelete: SetNull)
+  rental         Rental?          @relation(fields: [rentalId], references: [id], onDelete: SetNull)
+
+  // External location relations
+  externalProvince Province? @relation("RoommatePostExternalProvince", fields: [externalProvinceId], references: [id], onDelete: SetNull)
+  externalDistrict District? @relation("RoommatePostExternalDistrict", fields: [externalDistrictId], references: [id], onDelete: SetNull)
+  externalWard     Ward?     @relation("RoommatePostExternalWard", fields: [externalWardId], references: [id], onDelete: SetNull)
+
+  // Applications
+  applications RoommateApplication[]
+
+  @@index([tenantId])
+  @@index([roomInstanceId])
+  @@index([rentalId])
+  @@index([status])
+  @@index([externalProvinceId])
+  @@index([externalDistrictId])
+  @@index([monthlyRent])
+  @@index([availableFromDate])
+  @@index([expiresAt])
+  @@index([remainingSlots])
+  @@index([approvedCount])
+  @@index([createdAt])
+  @@map("roommate_seeking_posts")
+}
+
+model RoommateApplication {
+  id                     String  @id @default(uuid())
+  roommateSeekingPostId  String  @map("roommate_seeking_post_id")
+  applicantId            String  @map("applicant_id")
+
+  // Thông tin cơ bản của applicant
+  fullName        String  @map("full_name")
+  occupation      String?
+  phoneNumber     String  @map("phone_number")
+
+  // Thông tin ở ghép
+  moveInDate              DateTime @map("move_in_date") @db.Date
+  intendedStayMonths      Int?     @map("intended_stay_months")
+
+  // Message & yêu cầu
+  applicationMessage      String? @map("application_message")
+
+  // Trạng thái
+  status                  RoommateApplicationStatus @default(pending)
+
+  // Phản hồi từ tenant
+  tenantResponse          String?   @map("tenant_response")
+  tenantRespondedAt       DateTime? @map("tenant_responded_at")
+
+  // Phản hồi từ landlord (chỉ áp dụng cho platform rooms)
+  landlordResponse        String?   @map("landlord_response")
+  landlordRespondedAt     DateTime? @map("landlord_responded_at")
+
+  // Metadata
+  isUrgent               Boolean   @default(false) @map("is_urgent")
+
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  roommateSeekingPost RoommateSeekingPost @relation(fields: [roommateSeekingPostId], references: [id], onDelete: Cascade)
+  applicant           User                @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+
+  @@index([roommateSeekingPostId])
+  @@index([applicantId])
+  @@index([status])
+  @@index([moveInDate])
+  @@index([createdAt])
+  @@map("roommate_applications")
+}
+
+// ========================================
 // ERROR LOGGING
 // ========================================
 
@@ -1002,6 +1163,89 @@ model ErrorLog {
   @@index([userId])
   @@index([createdAt])
   @@map("error_logs")
+}
+
+// ========================================
+// TENANT PREFERENCES (OPTIMIZED FOR MATCHING)
+// ========================================
+
+// Preferences về phòng mong muốn - tương tự RoomSeekingPost
+model TenantRoomPreferences {
+  id       String @id @default(uuid())
+  tenantId String @unique @map("tenant_id")
+
+  // Vị trí ưu tiên (giống RoomSeekingPost)
+  preferredProvinceIds Int[] @map("preferred_province_ids")
+  preferredDistrictIds Int[] @map("preferred_district_ids")
+
+  // Ngân sách (giống RoomSeekingPost)
+  minBudget Decimal? @map("min_budget") @db.Decimal(15, 2)
+  maxBudget Decimal  @map("max_budget") @db.Decimal(15, 2)
+  currency  String   @default("VND")
+
+  // Loại phòng ưu tiên (giống RoomSeekingPost nhưng multiple)
+  preferredRoomTypes RoomType[] @map("preferred_room_types")
+
+  // Số người ở (giống RoomSeekingPost)
+  maxOccupancy Int? @map("max_occupancy") // Tối đa bao nhiêu người ở chung
+
+  // Tiện ích quan trọng (subset của SystemAmenity)
+  requiresAmenityIds String[] @map("requires_amenity_ids") // Must-have amenities
+
+  // Thời gian thuê
+  availableFromDate DateTime? @map("available_from_date") @db.Date
+  minLeaseTerm      Int?      @default(3) @map("min_lease_term") // months
+
+  // Metadata
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant User @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([maxBudget])
+  @@index([preferredProvinceIds])
+  @@index([availableFromDate])
+  @@map("tenant_room_preferences")
+}
+
+// Preferences về roommate - tối giản nhất cho matching
+model TenantRoommatePreferences {
+  id       String @id @default(uuid())
+  tenantId String @unique @map("tenant_id")
+
+  // Thông tin cơ bản (for matching algorithm)
+  preferredGender Gender? @map("preferred_gender")
+  preferredAgeMin Int?    @map("preferred_age_min")
+  preferredAgeMax Int?    @map("preferred_age_max")
+
+  // Lifestyle preferences (boolean for easy matching)
+  allowsSmoking Boolean @default(false) @map("allows_smoking")
+  allowsPets    Boolean @default(false) @map("allows_pets")
+  allowsGuests  Boolean @default(true) @map("allows_guests")
+
+  // Cleanliness & social level (1-5 scale for scoring)
+  cleanlinessLevel       Int? @map("cleanliness_level") // 1-5
+  socialInteractionLevel Int? @map("social_interaction_level") // 1-5 (1=minimal, 5=high)
+
+  // Deal breakers (most important for filtering)
+  dealBreakers String[] @map("deal_breakers") // ["smoking", "pets", "loud_music"]
+
+  // Metadata
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant User @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([preferredGender])
+  @@index([allowsSmoking])
+  @@index([allowsPets])
+  @@map("tenant_roommate_preferences")
 }
 
 // ========================================
@@ -1213,6 +1457,7 @@ model Province {
   userAddresses UserAddress[]
   buildings     Building[]
   roomRequests  RoomSeekingPost[]
+  roommateSeekingPostsExternal RoommateSeekingPost[] @relation("RoommatePostExternalProvince")
 
   @@index([code])
   @@map("provinces")
@@ -1232,6 +1477,7 @@ model District {
   userAddresses UserAddress[]
   buildings     Building[]
   roomRequests  RoomSeekingPost[]
+  roommateSeekingPostsExternal RoommateSeekingPost[] @relation("RoommatePostExternalDistrict")
 
   @@index([code])
   @@index([provinceId])
@@ -1252,6 +1498,7 @@ model Ward {
   userAddresses UserAddress[]
   buildings     Building[]
   roomRequests  RoomSeekingPost[]
+  roommateSeekingPostsExternal RoommateSeekingPost[] @relation("RoommatePostExternalWard")
 
   @@index([code])
   @@index([districtId])

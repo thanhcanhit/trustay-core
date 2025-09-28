@@ -1,5 +1,4 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Gender, UserRole } from '@prisma/client';
 import {
 	IsEmail,
 	IsEnum,
@@ -9,6 +8,8 @@ import {
 	IsString,
 	MinLength,
 } from 'class-validator';
+import { Gender } from '../../common/enums/gender.enum';
+import { UserRole } from '../../common/enums/user-role.enum';
 
 export class PreRegisterDto {
 	@ApiProperty({

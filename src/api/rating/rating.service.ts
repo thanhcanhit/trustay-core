@@ -6,13 +6,12 @@ import {
 } from '@nestjs/common';
 import { RatingTargetType } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
-import { maskEmail, maskFullName, maskPhone } from '../../common/utils/mask.utils';
+import { maskFullName } from '../../common/utils/mask.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
 	CreateRatingDto,
 	RatingQueryDto,
 	RatingResponseDto,
-	RatingResponseTextDto,
 	RatingStatsDto,
 	UpdateRatingDto,
 } from './dto';
@@ -27,19 +26,8 @@ export class RatingService {
 		// Validate target exists and permissions
 		await this.validateRatingPermission(targetType, targetId, reviewerId, rentalId);
 
-		// Check if user already rated this target
-		const existingRating = await this.prisma.rating.findFirst({
-			where: {
-				targetType,
-				targetId,
-				reviewerId,
-				...(rentalId && { rentalId }),
-			},
-		});
-
-		if (existingRating) {
-			throw new BadRequestException('You have already rated this target');
-		}
+		// Check if user already rated this target (one rating per user per target)
+		await this.checkDuplicateRating(targetType, targetId, reviewerId);
 
 		// Create rating and update overall rating
 		const rating = await this.prisma.$transaction(async (tx) => {
@@ -77,8 +65,8 @@ export class RatingService {
 
 	async findAll(
 		query: RatingQueryDto,
-		context: { isAuthenticated: boolean } = { isAuthenticated: false },
-	): Promise<PaginatedResponseDto<RatingResponseDto>> {
+		context: { isAuthenticated: boolean; currentUserId?: string } = { isAuthenticated: false },
+	): Promise<PaginatedResponseDto<RatingResponseDto> & { stats: RatingStatsDto }> {
 		const {
 			page = 1,
 			limit = 20,
@@ -92,27 +80,59 @@ export class RatingService {
 			sortOrder = 'desc',
 		} = query;
 
+		// Convert string parameters to numbers
+		const pageNum = typeof page === 'string' ? parseInt(page, 10) : page;
+		const limitNum = typeof limit === 'string' ? parseInt(limit, 10) : limit;
+		const minRatingNum = minRating
+			? typeof minRating === 'string'
+				? parseInt(minRating, 10)
+				: minRating
+			: undefined;
+		const maxRatingNum = maxRating
+			? typeof maxRating === 'string'
+				? parseInt(maxRating, 10)
+				: maxRating
+			: undefined;
+
 		const where: any = {};
 
-		if (targetType) where.targetType = targetType;
-		if (targetId) where.targetId = targetId;
-		if (reviewerId) where.reviewerId = reviewerId;
-		if (rentalId) where.rentalId = rentalId;
-
-		if (minRating || maxRating) {
-			where.rating = {};
-			if (minRating) where.rating.gte = minRating;
-			if (maxRating) where.rating.lte = maxRating;
+		if (targetType) {
+			where.targetType = targetType;
+		}
+		if (targetId) {
+			where.targetId = targetId;
+		}
+		if (reviewerId) {
+			where.reviewerId = reviewerId;
+		}
+		if (rentalId) {
+			where.rentalId = rentalId;
 		}
 
-		const skip = (page - 1) * limit;
+		if (minRatingNum || maxRatingNum) {
+			where.rating = {};
+			if (minRatingNum) {
+				where.rating.gte = minRatingNum;
+			}
+			if (maxRatingNum) {
+				where.rating.lte = maxRatingNum;
+			}
+		}
 
-		const [ratings, total] = await Promise.all([
-			this.prisma.rating.findMany({
+		const skip = (pageNum - 1) * limitNum;
+
+		// If current user is authenticated and we're not filtering by specific reviewer,
+		// we need to get all ratings and sort them to put current user's reviews first
+		const shouldPrioritizeCurrentUser =
+			context.isAuthenticated && context.currentUserId && !reviewerId;
+
+		let ratings: any[];
+		let total: number;
+
+		if (shouldPrioritizeCurrentUser) {
+			// Get all ratings for the query
+			const allRatings = await this.prisma.rating.findMany({
 				where,
-				skip,
-				take: limit,
-				orderBy: { [sortBy]: sortOrder },
 				include: {
 					reviewer: {
 						select: {
@@ -126,18 +146,74 @@ export class RatingService {
 						},
 					},
 				},
-			}),
-			this.prisma.rating.count({ where }),
-		]);
+			});
+
+			// Sort to put current user's reviews first, then by the specified sort order
+			allRatings.sort((a, b) => {
+				const aIsCurrentUser = a.reviewerId === context.currentUserId;
+				const bIsCurrentUser = b.reviewerId === context.currentUserId;
+
+				// Current user's reviews come first
+				if (aIsCurrentUser && !bIsCurrentUser) {
+					return -1;
+				}
+				if (!aIsCurrentUser && bIsCurrentUser) {
+					return 1;
+				}
+
+				// For same user type, sort by the specified criteria
+				const aValue = a[sortBy];
+				const bValue = b[sortBy];
+
+				if (sortOrder === 'desc') {
+					return bValue > aValue ? 1 : bValue < aValue ? -1 : 0;
+				} else {
+					return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
+				}
+			});
+
+			total = allRatings.length;
+			ratings = allRatings.slice(skip, skip + limitNum);
+		} else {
+			// Use normal query with database sorting
+			[ratings, total] = await Promise.all([
+				this.prisma.rating.findMany({
+					where,
+					skip,
+					take: limitNum,
+					orderBy: { [sortBy]: sortOrder },
+					include: {
+						reviewer: {
+							select: {
+								id: true,
+								firstName: true,
+								lastName: true,
+								avatarUrl: true,
+								isVerifiedPhone: true,
+								isVerifiedEmail: true,
+								isVerifiedIdentity: true,
+							},
+						},
+					},
+				}),
+				this.prisma.rating.count({ where }),
+			]);
+		}
 
 		const formattedRatings = ratings.map((rating) => this.formatRatingResponse(rating, context));
 
-		return PaginatedResponseDto.create(formattedRatings, page, limit, total);
+		// Get stats for the filtered results
+		const stats = await this.getRatingStatsForQuery(where);
+
+		return {
+			...PaginatedResponseDto.create(formattedRatings, pageNum, limitNum, total),
+			stats,
+		};
 	}
 
 	async findOne(
 		id: string,
-		context: { isAuthenticated: boolean } = { isAuthenticated: false },
+		context: { isAuthenticated: boolean; currentUserId?: string } = { isAuthenticated: false },
 	): Promise<RatingResponseDto> {
 		const rating = await this.prisma.rating.findUnique({
 			where: { id },
@@ -172,16 +248,15 @@ export class RatingService {
 	): Promise<RatingResponseDto> {
 		const rating = await this.prisma.rating.findUnique({
 			where: { id },
-			select: { reviewerId: true },
+			select: { reviewerId: true, targetType: true, targetId: true },
 		});
 
 		if (!rating) {
 			throw new NotFoundException('Rating not found');
 		}
 
-		if (rating.reviewerId !== userId) {
-			throw new ForbiddenException('You can only update your own ratings');
-		}
+		// Check if user can update this rating
+		await this.validateRatingOwnership(rating.reviewerId, userId, 'update');
 
 		const updatedRating = await this.prisma.$transaction(async (tx) => {
 			const updated = await tx.rating.update({
@@ -208,7 +283,10 @@ export class RatingService {
 			return updated;
 		});
 
-		return this.formatRatingResponse(updatedRating);
+		return this.formatRatingResponse(updatedRating, {
+			isAuthenticated: true,
+			currentUserId: userId,
+		});
 	}
 
 	async remove(id: string, userId: string): Promise<void> {
@@ -221,9 +299,8 @@ export class RatingService {
 			throw new NotFoundException('Rating not found');
 		}
 
-		if (rating.reviewerId !== userId) {
-			throw new ForbiddenException('You can only delete your own ratings');
-		}
+		// Check if user can delete this rating
+		await this.validateRatingOwnership(rating.reviewerId, userId, 'delete');
 
 		await this.prisma.$transaction(async (tx) => {
 			await tx.rating.delete({
@@ -319,63 +396,101 @@ export class RatingService {
 
 	// Removed helpful functionality for simplified version
 
+	private async getRatingStatsForQuery(where: any): Promise<RatingStatsDto> {
+		const ratings = await this.prisma.rating.findMany({
+			where,
+			select: {
+				rating: true,
+			},
+		});
+
+		if (ratings.length === 0) {
+			return {
+				totalRatings: 0,
+				averageRating: 0,
+				distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+			};
+		}
+
+		const totalRatings = ratings.length;
+		const averageRating = ratings.reduce((sum, r) => sum + r.rating, 0) / totalRatings;
+
+		// Calculate distribution
+		const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+		ratings.forEach((rating) => {
+			distribution[rating.rating as keyof typeof distribution]++;
+		});
+
+		return {
+			totalRatings,
+			averageRating: Math.round(averageRating * 10) / 10,
+			distribution,
+		};
+	}
+
+	private async checkDuplicateRating(
+		targetType: RatingTargetType,
+		targetId: string,
+		reviewerId: string,
+	): Promise<void> {
+		const existingRating = await this.prisma.rating.findFirst({
+			where: {
+				targetType,
+				targetId,
+				reviewerId,
+			},
+		});
+
+		if (existingRating) {
+			throw new BadRequestException(
+				`You have already rated this ${targetType}. Each user can only rate a target once.`,
+			);
+		}
+	}
+
 	private async validateRatingPermission(
 		targetType: RatingTargetType,
 		targetId: string,
 		reviewerId: string,
-		rentalId?: string,
+		_rentalId?: string,
 	): Promise<void> {
+		// Simplified validation - only check basic rules
+
+		// Can't rate yourself
+		if (targetId === reviewerId) {
+			throw new BadRequestException('You cannot rate yourself');
+		}
+
+		// Validate target type
+		if (!Object.values(RatingTargetType).includes(targetType)) {
+			throw new BadRequestException('Invalid rating target type');
+		}
+
+		// Optional: Validate target exists (basic check)
 		switch (targetType) {
 			case RatingTargetType.tenant:
 			case RatingTargetType.landlord: {
-				// For tenant/landlord ratings, must have a rental relationship
-				if (!rentalId) {
-					throw new BadRequestException('Rental ID is required for tenant/landlord ratings');
-				}
-
-				const rental = await this.prisma.rental.findUnique({
-					where: { id: rentalId },
-					select: { tenantId: true, ownerId: true, status: true },
+				// Check if target user exists
+				const user = await this.prisma.user.findUnique({
+					where: { id: targetId },
+					select: { id: true },
 				});
 
-				if (!rental) {
-					throw new NotFoundException('Rental not found');
-				}
-
-				// Validate the reviewer is part of this rental
-				if (rental.tenantId !== reviewerId && rental.ownerId !== reviewerId) {
-					throw new ForbiddenException('You are not part of this rental');
-				}
-
-				// Validate the target is the other party in the rental
-				if (targetType === RatingTargetType.tenant && rental.tenantId !== targetId) {
-					throw new BadRequestException('Target ID does not match rental tenant');
-				}
-				if (targetType === RatingTargetType.landlord && rental.ownerId !== targetId) {
-					throw new BadRequestException('Target ID does not match rental owner');
-				}
-
-				// Can't rate yourself
-				if (targetId === reviewerId) {
-					throw new BadRequestException('You cannot rate yourself');
+				if (!user) {
+					throw new NotFoundException('Target user not found');
 				}
 				break;
 			}
 
 			case RatingTargetType.room: {
-				// For room ratings, check if user has stayed in the room
-				const roomRental = await this.prisma.rental.findFirst({
-					where: {
-						tenantId: reviewerId,
-						roomInstance: {
-							roomId: targetId,
-						},
-						status: { in: ['terminated', 'expired'] }, // Only completed stays
-					},
+				// Check if target room exists
+				const room = await this.prisma.room.findUnique({
+					where: { id: targetId },
+					select: { id: true },
 				});
 
-				if (!roomRental) {
-					throw new ForbiddenException('You can only rate rooms you have stayed in');
+				if (!room) {
+					throw new NotFoundException('Target room not found');
 				}
 				break;
 			}
@@ -387,11 +502,21 @@ export class RatingService {
 
 	// Removed response validation for simplified version
 
+	private async validateRatingOwnership(
+		reviewerId: string,
+		userId: string,
+		action: 'update' | 'delete',
+	): Promise<void> {
+		if (reviewerId !== userId) {
+			throw new ForbiddenException(`You can only ${action} your own ratings`);
+		}
+	}
+
 	private formatRatingResponse(
 		rating: any,
-		context: { isAuthenticated: boolean } = { isAuthenticated: false },
+		context: { isAuthenticated: boolean; currentUserId?: string } = { isAuthenticated: false },
 	): RatingResponseDto {
-		const { isAuthenticated } = context;
+		const { isAuthenticated, currentUserId } = context;
 
 		// Format reviewer information
 		let reviewer = {
@@ -434,6 +559,7 @@ export class RatingService {
 			updatedAt: rating.updatedAt,
 			reviewer,
 			images: rating.images || [],
+			isCurrentUser: currentUserId ? rating.reviewerId === currentUserId : false,
 		};
 	}
 }

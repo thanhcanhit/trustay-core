@@ -20,8 +20,10 @@
       "!*.config.mjs",
       "!jest.config.js",
       "!webpack.config.js",
-      "!logs/**/*"
-    ]
+      "!logs/**/*",
+      "!scripts/data/crawled_rooms.json"
+    ],
+    "maxSize": 15728640
   },
   "formatter": {
     "enabled": true,
@@ -36,7 +38,6 @@
     "enabled": true,
     "rules": {
       "recommended": true,
-
       "style": {
         "noNonNullAssertion": "off",
         "useImportType": "off",
@@ -44,7 +45,6 @@
         "useTemplate": "warn",
         "useNumberNamespace": "off"
       },
-
       "suspicious": {
         "noThenProperty": "off",
         "noExplicitAny": "off",
@@ -53,29 +53,24 @@
         "noAsyncPromiseExecutor": "warn",
         "noEmptyBlockStatements": "off"
       },
-
       "complexity": {
         "noExcessiveCognitiveComplexity": "off",
         "noForEach": "off",
         "useLiteralKeys": "off",
         "useOptionalChain": "warn"
       },
-
       "correctness": {
         "noUnusedVariables": "warn",
         "noUnusedImports": "warn",
         "useExhaustiveDependencies": "off",
         "useHookAtTopLevel": "off"
       },
-
       "security": {
         "noDangerouslySetInnerHtml": "off"
       },
-
       "performance": {
         "noDelete": "warn"
       },
-
       "nursery": {
         "useSortedClasses": "off"
       }

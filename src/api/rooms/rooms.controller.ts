@@ -250,7 +250,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		return ApiResponseDto.success(room, 'Room retrieved successfully');
 	}
 
-	@Get('public/slug/:slug')
+	@Get('public/:slug')
 	@UseGuards(OptionalJwtAuthGuard)
 	@ApiOperation({
 		summary: 'Get room details by slug (Public API)',
@@ -260,7 +260,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	@ApiParam({
 		name: 'slug',
 		description: 'Room slug identifier',
-		example: 'van528-quan-10-phong-101887',
+		example: 'nhu-quynhquan-go-vap-phong-ap2653',
 	})
 	@ApiResponse({
 		status: 200,
@@ -272,37 +272,6 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		description: 'Room not found',
 	})
 	async getRoomBySlug(
-		@Param('slug') slug: string,
-		@Req() req: Request,
-	): Promise<RoomDetailWithMetaResponseDto> {
-		const clientIp =
-			req.ip || req.connection?.remoteAddress || (req.headers['x-forwarded-for'] as string);
-		const isAuthenticated = Boolean((req as any).user);
-		return this.roomsService.getRoomBySlug(slug, clientIp, { isAuthenticated });
-	}
-
-	@Get('public/:slug')
-	@UseGuards(OptionalJwtAuthGuard)
-	@ApiOperation({
-		summary: 'Get room details by slug (Public API - Alternative)',
-		description:
-			'Alternative public endpoint for backward compatibility. Returns comprehensive room information including pricing, amenities, and availability.',
-	})
-	@ApiParam({
-		name: 'slug',
-		description: 'Room slug identifier',
-		example: 'nguyen-thi-c-nhungbinh-tan-phong-an3570',
-	})
-	@ApiResponse({
-		status: 200,
-		description: 'Room details retrieved successfully',
-		type: RoomDetailWithMetaResponseDto,
-	})
-	@ApiResponse({
-		status: 404,
-		description: 'Room not found',
-	})
-	async getRoomBySlugAlt(
 		@Param('slug') slug: string,
 		@Req() req: Request,
 	): Promise<RoomDetailWithMetaResponseDto> {
