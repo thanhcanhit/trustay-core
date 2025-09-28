@@ -40,7 +40,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 		// Manual register handler as backup
 		client.on('realtime/register', async (payload) => {
 			this.logger.log(`Manual register handler - payload: ${JSON.stringify(payload)}`);
-			if (payload && payload.userId) {
+			if (payload?.userId) {
 				await this.realtimeService.registerConnection(client, payload);
 			} else {
 				this.logger.error(`Invalid manual register payload: ${JSON.stringify(payload)}`);

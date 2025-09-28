@@ -66,7 +66,9 @@ export class BuildingResponseDto {
 	@ApiPropertyOptional({ example: 10.7626 })
 	@Expose()
 	@Transform(({ value }) => {
-		if (value === null || value === undefined) return undefined;
+		if (value === null || value === undefined) {
+			return undefined;
+		}
 		try {
 			return parseFloat(value.toString());
 		} catch {
@@ -78,7 +80,9 @@ export class BuildingResponseDto {
 	@ApiPropertyOptional({ example: 106.6834 })
 	@Expose()
 	@Transform(({ value }) => {
-		if (value === null || value === undefined) return undefined;
+		if (value === null || value === undefined) {
+			return undefined;
+		}
 		try {
 			return parseFloat(value.toString());
 		} catch {

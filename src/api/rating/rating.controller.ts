@@ -26,7 +26,6 @@ import {
 	CreateRatingDto,
 	RatingQueryDto,
 	RatingResponseDto,
-	RatingResponseTextDto,
 	RatingStatsDto,
 	UpdateRatingDto,
 } from './dto';

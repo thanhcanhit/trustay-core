@@ -124,11 +124,21 @@ export class UsersService {
 			];
 		}
 
-		if (role) where.role = role;
-		if (gender) where.gender = gender;
-		if (isVerifiedEmail !== undefined) where.isVerifiedEmail = isVerifiedEmail;
-		if (isVerifiedPhone !== undefined) where.isVerifiedPhone = isVerifiedPhone;
-		if (isVerifiedIdentity !== undefined) where.isVerifiedIdentity = isVerifiedIdentity;
+		if (role) {
+			where.role = role;
+		}
+		if (gender) {
+			where.gender = gender;
+		}
+		if (isVerifiedEmail !== undefined) {
+			where.isVerifiedEmail = isVerifiedEmail;
+		}
+		if (isVerifiedPhone !== undefined) {
+			where.isVerifiedPhone = isVerifiedPhone;
+		}
+		if (isVerifiedIdentity !== undefined) {
+			where.isVerifiedIdentity = isVerifiedIdentity;
+		}
 
 		// Build order by clause
 		const orderBy: any = {};

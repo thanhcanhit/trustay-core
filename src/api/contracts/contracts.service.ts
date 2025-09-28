@@ -178,11 +178,17 @@ export class ContractsService {
 			...(userRole === UserRole.tenant ? { tenantId: userId } : { ownerId: userId }),
 		};
 
-		if (rentalId) where.id = rentalId;
+		if (rentalId) {
+			where.id = rentalId;
+		}
 		if (fromStartDate || toStartDate) {
 			where.contractStartDate = {};
-			if (fromStartDate) where.contractStartDate.gte = new Date(fromStartDate);
-			if (toStartDate) where.contractStartDate.lte = new Date(toStartDate);
+			if (fromStartDate) {
+				where.contractStartDate.gte = new Date(fromStartDate);
+			}
+			if (toStartDate) {
+				where.contractStartDate.lte = new Date(toStartDate);
+			}
 		}
 
 		// Get rentals that would have contracts
@@ -216,13 +222,14 @@ export class ContractsService {
 		// Convert rentals to contracts
 		const contracts: ContractResponseDto[] = [];
 		for (const rental of rentals) {
-			try {
-				const contract = await this.convertRentalToContract(rental);
-				// Apply status filter
-				if (!status || contract.status === status) {
-					contracts.push(contract);
-				}
-			} catch (error) {}
+			const contract = await this.convertRentalToContract(rental).catch(() => null);
+			if (!contract) {
+				continue;
+			}
+			// Apply status filter
+			if (!status || contract.status === status) {
+				contracts.push(contract);
+			}
 		}
 
 		return PaginatedResponseDto.create(contracts, page, limit, total);
@@ -288,8 +295,12 @@ export class ContractsService {
 
 		// Update rental with contract changes
 		const updateData: any = {};
-		if (dto.endDate) updateData.contractEndDate = new Date(dto.endDate);
-		if (dto.documentUrl) updateData.contractDocumentUrl = dto.documentUrl;
+		if (dto.endDate) {
+			updateData.contractEndDate = new Date(dto.endDate);
+		}
+		if (dto.documentUrl) {
+			updateData.contractDocumentUrl = dto.documentUrl;
+		}
 
 		const updatedRental = await this.prisma.rental.update({
 			where: { id: rentalId },
@@ -346,7 +357,7 @@ export class ContractsService {
 
 		// For now, we'll store amendments as rental updates
 		// In a full implementation, you'd have a separate amendments table
-		const notes = `Amendment: ${dto.description} - Changes: ${JSON.stringify(dto.changes)}`;
+		const _notes = `Amendment: ${dto.description} - Changes: ${JSON.stringify(dto.changes)}`;
 
 		await this.prisma.rental.update({
 			where: { id: rentalId },

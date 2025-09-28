@@ -143,12 +143,14 @@ export function formatRoomCosts(
  * Transform pricing data
  */
 export function formatRoomPricing(pricing: any): RoomPricingOutputDto | undefined {
-	if (!pricing) return undefined;
+	if (!pricing) {
+		return undefined;
+	}
 
 	return {
 		basePriceMonthly:
-			pricing.basePriceMonthly != null ? pricing.basePriceMonthly.toString() : undefined,
-		depositAmount: pricing.depositAmount != null ? pricing.depositAmount.toString() : undefined,
+			pricing.basePriceMonthly !== null ? pricing.basePriceMonthly.toString() : undefined,
+		depositAmount: pricing.depositAmount !== null ? pricing.depositAmount.toString() : undefined,
 		utilityIncluded: pricing.utilityIncluded,
 	};
 }

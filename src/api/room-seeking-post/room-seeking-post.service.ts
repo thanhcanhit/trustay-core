@@ -102,9 +102,15 @@ export class RoomSeekingPostService {
 
 		// Get location info
 		const locationParts = [];
-		if (preferredWard?.name) locationParts.push(preferredWard.name);
-		if (preferredDistrict?.name) locationParts.push(preferredDistrict.name);
-		if (preferredProvince?.name) locationParts.push(preferredProvince.name);
+		if (preferredWard?.name) {
+			locationParts.push(preferredWard.name);
+		}
+		if (preferredDistrict?.name) {
+			locationParts.push(preferredDistrict.name);
+		}
+		if (preferredProvince?.name) {
+			locationParts.push(preferredProvince.name);
+		}
 
 		// Get budget info
 		let budgetText = '';

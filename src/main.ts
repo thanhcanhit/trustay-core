@@ -1,9 +1,9 @@
+import { join } from 'node:path';
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { join } from 'path';
 import { AppModule } from './app.module';
 import { PasswordService } from './auth/services/password.service';
 import { AppConfigService } from './config/config.service';

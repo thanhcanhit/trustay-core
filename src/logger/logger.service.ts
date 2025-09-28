@@ -1,9 +1,4 @@
-import {
-	forwardRef,
-	Inject,
-	Injectable,
-	type LoggerService as NestLoggerService,
-} from '@nestjs/common';
+import { Injectable, type LoggerService as NestLoggerService } from '@nestjs/common';
 import { createLogger, format, type Logger, transports } from 'winston';
 
 interface ErrorLogData {
