@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Gender } from '@prisma/client';
 import {
 	IsBoolean,
 	IsDateString,
@@ -10,6 +9,7 @@ import {
 	IsUUID,
 	Min,
 } from 'class-validator';
+import { Gender } from '../../../common/enums/gender.enum';
 
 export class CreateRoommateSeekingPostDto {
 	@ApiProperty({ description: 'Tiêu đề bài đăng tìm người ở ghép' })

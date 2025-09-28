@@ -4,8 +4,8 @@ import {
 	Injectable,
 	NotFoundException,
 } from '@nestjs/common';
-import { RoommatePostStatus } from '@prisma/client';
 import { PaginatedResponseDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { RoommatePostStatus } from '../../common/enums/roommate-post-status.enum';
 import { generateSlug, generateUniqueSlug } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import {

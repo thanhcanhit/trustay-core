@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RoommateApplicationStatus } from '@prisma/client';
 import { IsArray, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { RoommateApplicationStatus } from '../../../common/enums/roommate-application-status.enum';
 
 export class BulkRespondApplicationsDto {
 	@ApiProperty({

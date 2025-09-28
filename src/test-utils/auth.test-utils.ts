@@ -18,6 +18,7 @@ interface UserRecord {
 	lastName: string;
 	role: UserRole;
 	phone?: string | null;
+	avatarUrl?: string | null;
 	isVerifiedEmail: boolean;
 	isVerifiedPhone: boolean;
 	createdAt: Date;
@@ -34,6 +35,8 @@ export interface TestUser {
 	accessToken: string;
 	refreshToken: string;
 	authPayload?: AuthResponseDto;
+	avatarUrl?: string | null;
+	phoneNumber?: string | null;
 }
 
 interface CreateTestUserOptions {
@@ -238,6 +241,8 @@ export class AuthTestUtils {
 			accessToken: tokens.accessToken,
 			refreshToken: tokens.refreshToken,
 			authPayload: tokens.authPayload,
+			avatarUrl: persistedUser.avatarUrl,
+			phoneNumber: persistedUser.phone,
 		};
 	}
 

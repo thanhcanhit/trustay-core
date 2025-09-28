@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { RoommateApplicationStatus } from '@prisma/client';
+import { RoommateApplicationStatus } from '../../../common/enums/roommate-application-status.enum';
 
 export class ApplicationStatisticsDto {
 	@ApiProperty({ description: 'Tổng số đơn ứng tuyển' })

@@ -4,8 +4,9 @@ import {
 	Injectable,
 	NotFoundException,
 } from '@nestjs/common';
-import { RoommateApplicationStatus, RoommatePostStatus } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
+import { RoommateApplicationStatus } from '../../common/enums/roommate-application-status.enum';
+import { RoommatePostStatus } from '../../common/enums/roommate-post-status.enum';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
 	ApplicationStatisticsDto,
@@ -431,7 +432,7 @@ export class RoommateApplicationService {
 			urgent: urgentCount,
 			dailyStats: this.processDailyStats(dailyStats),
 			statusBreakdown: statusCounts.map((item) => ({
-				status: item.status,
+				status: item.status as RoommateApplicationStatus,
 				count: item._count,
 				percentage: total > 0 ? Math.round((item._count / total) * 100) : 0,
 			})),

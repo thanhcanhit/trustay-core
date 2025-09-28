@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Gender, RoommatePostStatus } from '@prisma/client';
+import { Gender } from '../../../common/enums/gender.enum';
+import { RoommatePostStatus } from '../../../common/enums/roommate-post-status.enum';
 
 export class RoommateSeekingPostResponseDto {
 	@ApiProperty()

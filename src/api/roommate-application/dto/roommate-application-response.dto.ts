@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RoommateApplicationStatus } from '@prisma/client';
+import { RoommateApplicationStatus } from '../../../common/enums/roommate-application-status.enum';
 
 export class RoommateApplicationResponseDto {
 	@ApiProperty()

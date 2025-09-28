@@ -13,12 +13,13 @@ import {
 	UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RoommatePostStatus, User } from '@prisma/client';
+import { User } from '@prisma/client';
 import { Request } from 'express';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../../auth/guards/optional-jwt-auth.guard';
 import { PaginatedResponseDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { RoommatePostStatus } from '../../common/enums/roommate-post-status.enum';
 import {
 	CreateRoommateSeekingPostDto,
 	RoommateSeekingDetailWithMetaResponseDto,

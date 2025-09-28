@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { RoommateApplicationStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { RoommateApplicationStatus } from '../../../common/enums/roommate-application-status.enum';
 
 export class QueryRoommateApplicationDto {
 	@ApiPropertyOptional({
