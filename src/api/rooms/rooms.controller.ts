@@ -250,7 +250,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		return ApiResponseDto.success(room, 'Room retrieved successfully');
 	}
 
-	@Get('public/slug/:slug')
+	@Get('public/:slug')
 	@UseGuards(OptionalJwtAuthGuard)
 	@ApiOperation({
 		summary: 'Get room details by slug (Public API)',
@@ -260,7 +260,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	@ApiParam({
 		name: 'slug',
 		description: 'Room slug identifier',
-		example: 'van528-quan-10-phong-101887',
+		example: 'nhu-quynhquan-go-vap-phong-ap2653',
 	})
 	@ApiResponse({
 		status: 200,
