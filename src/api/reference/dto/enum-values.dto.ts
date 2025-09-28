@@ -1,27 +1,4 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-	AmenityCategory,
-	BillingCycle,
-	BillStatus,
-	BookingStatus,
-	CostCategory,
-	CostType,
-	Gender,
-	InvitationStatus,
-	PaymentMethod,
-	PaymentStatus,
-	PaymentType,
-	RentalStatus,
-	ReviewerType,
-	RoomType,
-	RuleCategory,
-	SearchPostStatus,
-	UserRole,
-	VerificationStatus,
-	VerificationType,
-	Visibility,
-} from '@prisma/client';
-
 export class EnumValueDto {
 	@ApiProperty({ description: 'Enum key' })
 	key: string;

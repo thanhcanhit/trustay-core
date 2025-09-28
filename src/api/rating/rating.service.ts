@@ -6,13 +6,12 @@ import {
 } from '@nestjs/common';
 import { RatingTargetType } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
-import { maskEmail, maskFullName, maskPhone } from '../../common/utils/mask.utils';
+import { maskFullName } from '../../common/utils/mask.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
 	CreateRatingDto,
 	RatingQueryDto,
 	RatingResponseDto,
-	RatingResponseTextDto,
 	RatingStatsDto,
 	UpdateRatingDto,
 } from './dto';
@@ -94,15 +93,27 @@ export class RatingService {
 
 		const where: any = {};
 
-		if (targetType) where.targetType = targetType;
-		if (targetId) where.targetId = targetId;
-		if (reviewerId) where.reviewerId = reviewerId;
-		if (rentalId) where.rentalId = rentalId;
+		if (targetType) {
+			where.targetType = targetType;
+		}
+		if (targetId) {
+			where.targetId = targetId;
+		}
+		if (reviewerId) {
+			where.reviewerId = reviewerId;
+		}
+		if (rentalId) {
+			where.rentalId = rentalId;
+		}
 
 		if (minRating || maxRating) {
 			where.rating = {};
-			if (minRating) where.rating.gte = minRating;
-			if (maxRating) where.rating.lte = maxRating;
+			if (minRating) {
+				where.rating.gte = minRating;
+			}
+			if (maxRating) {
+				where.rating.lte = maxRating;
+			}
 		}
 
 		const skip = (page - 1) * limit;

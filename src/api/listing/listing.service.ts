@@ -31,21 +31,27 @@ export class ListingService {
 				where: { id: wardId },
 				select: { name: true },
 			});
-			if (ward) locationParts.push(ward.name);
+			if (ward) {
+				locationParts.push(ward.name);
+			}
 		}
 		if (districtId) {
 			const district = await this.prisma.district.findUnique({
 				where: { id: districtId },
 				select: { name: true },
 			});
-			if (district) locationParts.push(district.name);
+			if (district) {
+				locationParts.push(district.name);
+			}
 		}
 		if (provinceId) {
 			const province = await this.prisma.province.findUnique({
 				where: { id: provinceId },
 				select: { name: true },
 			});
-			if (province) locationParts.push(province.name);
+			if (province) {
+				locationParts.push(province.name);
+			}
 		}
 
 		// Get room type info
@@ -183,21 +189,27 @@ export class ListingService {
 				where: { id: wardId },
 				select: { name: true },
 			});
-			if (ward) locationParts.push(ward.name);
+			if (ward) {
+				locationParts.push(ward.name);
+			}
 		}
 		if (districtId) {
 			const district = await this.prisma.district.findUnique({
 				where: { id: districtId },
 				select: { name: true },
 			});
-			if (district) locationParts.push(district.name);
+			if (district) {
+				locationParts.push(district.name);
+			}
 		}
 		if (provinceId) {
 			const province = await this.prisma.province.findUnique({
 				where: { id: provinceId },
 				select: { name: true },
 			});
-			if (province) locationParts.push(province.name);
+			if (province) {
+				locationParts.push(province.name);
+			}
 		}
 
 		// Get room type info
@@ -337,16 +349,6 @@ export class ListingService {
 			roomType,
 			minPrice,
 			maxPrice,
-			minArea,
-			maxArea,
-			amenities,
-			maxOccupancy,
-			isVerified,
-			latitude,
-			longitude,
-			radius,
-			sortBy = 'createdAt',
-			sortOrder = 'desc',
 		} = query;
 
 		const skip = (page - 1) * limit;
@@ -370,7 +372,7 @@ export class ListingService {
 
 		// Apply user preferences to expand search criteria
 		let expandedQuery = query;
-		if (userPreferences && userPreferences.isActive) {
+		if (userPreferences?.isActive) {
 			expandedQuery = {
 				...query,
 				// Use preferences for location if not specified
@@ -484,13 +486,19 @@ export class ListingService {
 
 		if (finalMinArea || finalMaxArea) {
 			where.areaSqm = {};
-			if (finalMinArea) where.areaSqm.gte = finalMinArea;
-			if (finalMaxArea) where.areaSqm.lte = finalMaxArea;
+			if (finalMinArea) {
+				where.areaSqm.gte = finalMinArea;
+			}
+			if (finalMaxArea) {
+				where.areaSqm.lte = finalMaxArea;
+			}
 		}
 
 		if (finalMinPrice || finalMaxPrice) {
 			where.pricing = {};
-			if (finalMinPrice) where.pricing.basePriceMonthly = { gte: finalMinPrice };
+			if (finalMinPrice) {
+				where.pricing.basePriceMonthly = { gte: finalMinPrice };
+			}
 			if (finalMaxPrice) {
 				where.pricing.basePriceMonthly = {
 					...where.pricing.basePriceMonthly,
@@ -706,7 +714,7 @@ export class ListingService {
 		query: RoomRequestSearchDto,
 		context: { isAuthenticated: boolean; userId?: string } = { isAuthenticated: false },
 	): Promise<RoomSeekingWithMetaResponseDto> {
-		const { isAuthenticated, userId } = context;
+		const { isAuthenticated } = context;
 		const {
 			page = 1,
 			limit = 20,
@@ -726,23 +734,6 @@ export class ListingService {
 			sortBy = 'createdAt',
 			sortOrder = 'desc',
 		} = query;
-
-		// Fetch user roommate preferences if authenticated and no explicit filters
-		let roommatePreferences = null;
-		if (
-			userId &&
-			!search &&
-			!provinceId &&
-			!districtId &&
-			!wardId &&
-			!minBudget &&
-			!maxBudget &&
-			!roomType
-		) {
-			roommatePreferences = await this.prisma.tenantRoommatePreferences.findUnique({
-				where: { tenantId: userId },
-			});
-		}
 
 		const where: Prisma.RoomSeekingPostWhereInput = {};
 
@@ -883,8 +874,8 @@ export class ListingService {
 				preferredDistrictId: item.preferredDistrictId,
 				preferredWardId: item.preferredWardId,
 				preferredProvinceId: item.preferredProvinceId,
-				minBudget: item.minBudget != null ? Number(item.minBudget) : undefined,
-				maxBudget: item.maxBudget != null ? Number(item.maxBudget) : undefined,
+				minBudget: item.minBudget !== null ? Number(item.minBudget) : undefined,
+				maxBudget: item.maxBudget !== null ? Number(item.maxBudget) : undefined,
 				currency: item.currency,
 				preferredRoomType: item.preferredRoomType,
 				occupancy: item.occupancy,
@@ -948,7 +939,6 @@ export class ListingService {
 
 		// Fetch user preferences for enhanced search
 		let roomPreferences = null;
-		let roommatePreferences = null;
 		if (
 			userId &&
 			!search &&
@@ -959,14 +949,9 @@ export class ListingService {
 			!minPrice &&
 			!maxPrice
 		) {
-			[roomPreferences, roommatePreferences] = await Promise.all([
-				this.prisma.tenantRoomPreferences.findUnique({
-					where: { tenantId: userId },
-				}),
-				this.prisma.tenantRoommatePreferences.findUnique({
-					where: { tenantId: userId },
-				}),
-			]);
+			roomPreferences = await this.prisma.tenantRoomPreferences.findUnique({
+				where: { tenantId: userId },
+			});
 		}
 
 		// Build room search criteria
@@ -1050,7 +1035,9 @@ export class ListingService {
 		if (finalMinPrice || finalMaxPrice) {
 			// For rooms - filter by pricing
 			roomWhere.pricing = {};
-			if (finalMinPrice) roomWhere.pricing.basePriceMonthly = { gte: finalMinPrice };
+			if (finalMinPrice) {
+				roomWhere.pricing.basePriceMonthly = { gte: finalMinPrice };
+			}
 			if (finalMaxPrice) {
 				roomWhere.pricing.basePriceMonthly = {
 					...roomWhere.pricing.basePriceMonthly,
@@ -1059,7 +1046,9 @@ export class ListingService {
 			}
 
 			// For roommate posts - filter by monthlyRent
-			if (finalMinPrice) roommateWhere.monthlyRent = { gte: finalMinPrice };
+			if (finalMinPrice) {
+				roommateWhere.monthlyRent = { gte: finalMinPrice };
+			}
 			if (finalMaxPrice) {
 				roommateWhere.monthlyRent = {
 					...roommateWhere.monthlyRent,

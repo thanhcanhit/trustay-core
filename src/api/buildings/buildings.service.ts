@@ -222,7 +222,9 @@ export class BuildingsService {
 			const baseSlug = generateBuildingSlug(newName, district.name);
 			if (baseSlug !== existingBuilding.slug) {
 				newSlug = await generateUniqueSlug(baseSlug, async (slug: string) => {
-					if (slug === existingBuilding.slug) return false; // Same slug is OK
+					if (slug === existingBuilding.slug) {
+						return false;
+					} // Same slug is OK
 					const existing = await this.prisma.building.findUnique({
 						where: { slug },
 						select: { id: true },

@@ -11,7 +11,7 @@ export class OptionalJwtAuthGuard extends AuthGuard('jwt') {
 			const result = await super.canActivate(context);
 			// If authentication succeeds, req.user will be populated by handleRequest
 			return result as boolean;
-		} catch (error) {
+		} catch {
 			// If authentication fails (invalid token, expired, etc.), set user to null
 			request.user = null;
 			return true; // Allow anonymous access
@@ -21,9 +21,9 @@ export class OptionalJwtAuthGuard extends AuthGuard('jwt') {
 	handleRequest<TUser = any>(
 		err: any,
 		user: TUser,
-		info: any,
-		context: ExecutionContext,
-		status?: any,
+		_info: any,
+		_context: ExecutionContext,
+		_status?: any,
 	): TUser {
 		// If there's an error or no user, return null for anonymous access
 		if (err || !user) {

@@ -2,28 +2,15 @@ import {
 	BadRequestException,
 	Body,
 	Controller,
-	Delete,
-	NotFoundException,
-	Param,
 	Post,
-	Put,
 	UploadedFile,
 	UploadedFiles,
-	UseGuards,
 	UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
-import {
-	ApiBearerAuth,
-	ApiBody,
-	ApiConsumes,
-	ApiOperation,
-	ApiResponse,
-	ApiTags,
-} from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { User } from '@prisma/client';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { MultipleUploadRequestDto, UploadRequestDto } from '../dto/upload-request.dto';
 import { MultipleUploadResponseDto, UploadResponseDto } from '../dto/upload-response.dto';
 import { UploadService } from '../services/upload.service';
@@ -60,7 +47,7 @@ export class UploadController {
 	async uploadImage(
 		@UploadedFile() file: Express.Multer.File,
 		@Body() uploadRequest: UploadRequestDto,
-		@CurrentUser() user: User,
+		@CurrentUser() _user: User,
 	): Promise<UploadResponseDto> {
 		if (!file) {
 			throw new BadRequestException('No file uploaded');
@@ -109,7 +96,7 @@ export class UploadController {
 	async uploadImages(
 		@UploadedFiles() files: Express.Multer.File[],
 		@Body() uploadRequest: MultipleUploadRequestDto,
-		@CurrentUser() user: User,
+		@CurrentUser() _user: User,
 	): Promise<MultipleUploadResponseDto> {
 		if (!files || files.length === 0) {
 			throw new BadRequestException('No files uploaded');

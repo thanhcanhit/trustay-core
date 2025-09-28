@@ -128,14 +128,24 @@ export class PaymentsService {
 		};
 
 		// Add optional filters
-		if (rentalId) baseWhere.rentalId = rentalId;
-		if (paymentType) baseWhere.paymentType = paymentType;
-		if (paymentStatus) baseWhere.paymentStatus = paymentStatus;
+		if (rentalId) {
+			baseWhere.rentalId = rentalId;
+		}
+		if (paymentType) {
+			baseWhere.paymentType = paymentType;
+		}
+		if (paymentStatus) {
+			baseWhere.paymentStatus = paymentStatus;
+		}
 
 		if (fromDate || toDate) {
 			baseWhere.createdAt = {};
-			if (fromDate) baseWhere.createdAt.gte = new Date(fromDate);
-			if (toDate) baseWhere.createdAt.lte = new Date(toDate);
+			if (fromDate) {
+				baseWhere.createdAt.gte = new Date(fromDate);
+			}
+			if (toDate) {
+				baseWhere.createdAt.lte = new Date(toDate);
+			}
 		}
 
 		const [payments, total] = await Promise.all([

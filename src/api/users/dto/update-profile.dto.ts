@@ -1,6 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Gender, UserRole } from '@prisma/client';
-import { Transform } from 'class-transformer';
 import { IsDateString, IsEnum, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
 
 export class UpdateProfileDto {

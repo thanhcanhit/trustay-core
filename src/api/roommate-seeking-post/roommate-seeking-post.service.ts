@@ -141,7 +141,7 @@ export class RoommateSeekingPostService {
 	async findOne(
 		id: string,
 		clientIp?: string,
-		options?: { isAuthenticated?: boolean },
+		_options?: { isAuthenticated?: boolean },
 	): Promise<RoommateSeekingDetailWithMetaResponseDto> {
 		const post = await this.prisma.roommateSeekingPost.findUnique({
 			where: { id },
@@ -273,7 +273,9 @@ export class RoommateSeekingPostService {
 		dto: CreateRoommateSeekingPostDto,
 		tenantId: string,
 	): Promise<void> {
-		if (!dto.roomInstanceId) return;
+		if (!dto.roomInstanceId) {
+			return;
+		}
 
 		// Check if user has active rental for this room
 		const rental = await this.prisma.rental.findFirst({

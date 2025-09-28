@@ -106,9 +106,15 @@ export class RoomsService {
 
 		// Get location info
 		const locationParts = [];
-		if (building.ward?.name) locationParts.push(building.ward.name);
-		if (building.district?.name) locationParts.push(building.district.name);
-		if (building.province?.name) locationParts.push(building.province.name);
+		if (building.ward?.name) {
+			locationParts.push(building.ward.name);
+		}
+		if (building.district?.name) {
+			locationParts.push(building.district.name);
+		}
+		if (building.province?.name) {
+			locationParts.push(building.province.name);
+		}
 
 		// Get price info
 		const price = pricing?.basePriceMonthly ? Number(pricing.basePriceMonthly) : 0;
@@ -624,7 +630,9 @@ export class RoomsService {
 
 		// Helper function to safely convert Decimal values
 		const safeDecimal = (value: any) => {
-			if (value === null || value === undefined) return null;
+			if (value === null || value === undefined) {
+				return null;
+			}
 			return value;
 		};
 
@@ -877,7 +885,9 @@ export class RoomsService {
 			const baseSlug = generateRoomSlug(existingRoom.building.slug, updateRoomDto.name);
 			if (baseSlug !== existingRoom.slug) {
 				newSlug = await generateUniqueSlug(baseSlug, async (slug: string) => {
-					if (slug === existingRoom.slug) return false; // Same slug is OK
+					if (slug === existingRoom.slug) {
+						return false;
+					} // Same slug is OK
 					const existing = await this.prisma.room.findUnique({
 						where: { slug },
 						select: { id: true },
@@ -1642,11 +1652,7 @@ export class RoomsService {
 			),
 		);
 
-		try {
-			await Promise.all(validationPromises);
-		} catch (error) {
-			throw error; // Re-throw the first validation error
-		}
+		await Promise.all(validationPromises);
 
 		// Update all room instances in transaction
 		const updatedCount = await this.prisma.$transaction(async (tx) => {

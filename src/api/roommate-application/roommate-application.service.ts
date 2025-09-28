@@ -102,9 +102,15 @@ export class RoommateApplicationService {
 
 		// Build where clause
 		const where: any = { applicantId };
-		if (status) where.status = status;
-		if (roommateSeekingPostId) where.roommateSeekingPostId = roommateSeekingPostId;
-		if (isUrgent !== undefined) where.isUrgent = isUrgent;
+		if (status) {
+			where.status = status;
+		}
+		if (roommateSeekingPostId) {
+			where.roommateSeekingPostId = roommateSeekingPostId;
+		}
+		if (isUrgent !== undefined) {
+			where.isUrgent = isUrgent;
+		}
 		if (search) {
 			where.OR = [
 				{ fullName: { contains: search, mode: 'insensitive' } },
@@ -156,9 +162,15 @@ export class RoommateApplicationService {
 				tenantId,
 			},
 		};
-		if (status) where.status = status;
-		if (roommateSeekingPostId) where.roommateSeekingPostId = roommateSeekingPostId;
-		if (isUrgent !== undefined) where.isUrgent = isUrgent;
+		if (status) {
+			where.status = status;
+		}
+		if (roommateSeekingPostId) {
+			where.roommateSeekingPostId = roommateSeekingPostId;
+		}
+		if (isUrgent !== undefined) {
+			where.isUrgent = isUrgent;
+		}
 		if (search) {
 			where.OR = [
 				{ fullName: { contains: search, mode: 'insensitive' } },

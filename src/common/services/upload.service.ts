@@ -1,8 +1,8 @@
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as crypto from 'crypto';
-import * as fs from 'fs/promises';
-import * as path from 'path';
 import sharp from 'sharp';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -56,7 +56,7 @@ export class UploadService {
 			altText?: string;
 		} = {},
 	): Promise<UploadResult> {
-		const { altText } = options;
+		const { altText: _altText } = options;
 
 		// Validate file
 		this.validateFile(file);
@@ -321,7 +321,7 @@ export class UploadService {
 	}
 
 	async updateRoomImageOrder(
-		roomId: string,
+		_roomId: string,
 		imageOrders: { id: string; sortOrder: number }[],
 	): Promise<void> {
 		for (const { id, sortOrder } of imageOrders) {
