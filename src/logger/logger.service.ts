@@ -21,6 +21,59 @@ export class LoggerService implements NestLoggerService {
 	private logger: Logger;
 	private prismaService?: any; // We'll inject this lazily to avoid circular dependency
 
+	private safeStringify(value: unknown): string {
+		try {
+			const seen = new WeakSet<object>();
+			return JSON.stringify(value, (_key: string, val: unknown) => {
+				if (typeof val === 'object' && val !== null) {
+					if (seen.has(val as object)) {
+						return '[Circular]';
+					}
+					seen.add(val as object);
+				}
+				return val as unknown as Record<string, unknown>;
+			});
+		} catch {
+			return String(value);
+		}
+	}
+
+	private formatMessage(input: unknown): string {
+		if (typeof input === 'string') {
+			return input;
+		}
+		if (input instanceof Error) {
+			return input.message;
+		}
+		if (
+			input &&
+			typeof input === 'object' &&
+			'message' in (input as Record<string, unknown>) &&
+			typeof (input as Record<string, unknown>).message === 'string'
+		) {
+			return (input as Record<string, unknown>).message as string;
+		}
+		return this.safeStringify(input);
+	}
+
+	private extractStack(input: unknown, fallback?: string): string | undefined {
+		if (typeof fallback === 'string' && fallback.length > 0) {
+			return fallback;
+		}
+		if (input instanceof Error) {
+			return input.stack;
+		}
+		if (
+			input &&
+			typeof input === 'object' &&
+			'stack' in (input as Record<string, unknown>) &&
+			typeof (input as Record<string, unknown>).stack === 'string'
+		) {
+			return (input as Record<string, unknown>).stack as string;
+		}
+		return undefined;
+	}
+
 	constructor() {
 		this.logger = createLogger({
 			level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
@@ -116,39 +169,43 @@ export class LoggerService implements NestLoggerService {
 		}
 	}
 
-	log(message: string, context?: string) {
-		this.logger.info(message, { context });
+	log(message: unknown, context?: string) {
+		const messageStr: string = this.formatMessage(message);
+		this.logger.info(messageStr, { context });
 	}
 
-	error(message: string, trace?: string, context?: string) {
-		this.logger.error(message, { context, trace });
+	error(message: unknown, trace?: string, context?: string) {
+		const messageStr: string = this.formatMessage(message);
+		const stackStr: string | undefined = this.extractStack(message, trace);
+		this.logger.error(messageStr, { context, trace: stackStr });
 
-		// Save to database
 		this.saveErrorToDatabase({
-			message,
-			stack: trace,
+			message: messageStr,
+			stack: stackStr,
 			level: 'error',
 			context,
 		});
 	}
 
-	warn(message: string, context?: string) {
-		this.logger.warn(message, { context });
+	warn(message: unknown, context?: string) {
+		const messageStr: string = this.formatMessage(message);
+		this.logger.warn(messageStr, { context });
 
-		// Save to database for warnings that might be important
 		this.saveErrorToDatabase({
-			message,
+			message: messageStr,
 			level: 'warn',
 			context,
 		});
 	}
 
-	debug(message: string, context?: string) {
-		this.logger.debug(message, { context });
+	debug(message: unknown, context?: string) {
+		const messageStr: string = this.formatMessage(message);
+		this.logger.debug(messageStr, { context });
 	}
 
-	verbose(message: string, context?: string) {
-		this.logger.verbose(message, { context });
+	verbose(message: unknown, context?: string) {
+		const messageStr: string = this.formatMessage(message);
+		this.logger.verbose(messageStr, { context });
 	}
 
 	// Enhanced methods for specific use cases
