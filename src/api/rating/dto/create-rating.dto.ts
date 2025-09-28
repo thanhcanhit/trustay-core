@@ -7,7 +7,6 @@ import {
 	IsNotEmpty,
 	IsOptional,
 	IsString,
-	IsUUID,
 	Max,
 	Min,
 } from 'class-validator';
@@ -22,12 +21,12 @@ export class CreateRatingDto {
 	targetType: RatingTargetType;
 
 	@ApiProperty({ description: 'ID of the target being rated' })
-	@IsUUID()
+	@IsString()
 	@IsNotEmpty()
 	targetId: string;
 
 	@ApiProperty({ description: 'Related rental ID', required: false })
-	@IsUUID()
+	@IsString()
 	@IsOptional()
 	rentalId?: string;
 

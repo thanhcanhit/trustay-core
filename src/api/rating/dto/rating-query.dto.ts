@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { RatingTargetType } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination.dto';
 
 export class RatingQueryDto extends PaginationQueryDto {
@@ -15,17 +15,17 @@ export class RatingQueryDto extends PaginationQueryDto {
 	targetType?: RatingTargetType;
 
 	@ApiProperty({ description: 'Filter by target ID', required: false })
-	@IsUUID()
+	@IsString()
 	@IsOptional()
 	targetId?: string;
 
 	@ApiProperty({ description: 'Filter by reviewer ID', required: false })
-	@IsUUID()
+	@IsString()
 	@IsOptional()
 	reviewerId?: string;
 
 	@ApiProperty({ description: 'Filter by rental ID', required: false })
-	@IsUUID()
+	@IsString()
 	@IsOptional()
 	rentalId?: string;
 

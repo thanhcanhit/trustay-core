@@ -54,6 +54,12 @@ export class RatingResponseDto {
 		type: [String],
 	})
 	images: string[];
+
+	@ApiProperty({
+		description: 'Whether this review was created by the current user',
+		example: true,
+	})
+	isCurrentUser: boolean;
 }
 
 export class RatingStatsDto {

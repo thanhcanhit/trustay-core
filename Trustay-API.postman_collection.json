@@ -2415,7 +2415,8 @@
           "const publicEndpoints = [",
           "    'Login', 'Register', 'Verification', 'Password Strength', 'Generate', 'Health', 'Documentation',",
           "    'Provinces', 'Districts', 'Wards', 'Get Room by Slug',",
-          "    'Get Room Seeking Post Details', 'Get Roommate Seeking Post Details'",
+          "    'Get Room Seeking Post Details', 'Get Roommate Seeking Post Details',",
+          "    'Get All Ratings', 'Get Rating Statistics', 'Get Ratings for Target', 'Get User Ratings', 'Get Rating Details'",
           "];",
           "",
           "const isPublicEndpoint = publicEndpoints.some(endpoint => requestName.includes(endpoint));",
@@ -2546,6 +2547,259 @@
           "}"
         ]
       }
+    },
+    {
+      "name": "⭐ Ratings",
+      "item": [
+        {
+          "name": "⚡ Quick Login (Default Tenant)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if ([200, 201].includes(pm.response.code)) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.access_token && response.access_token.length > 0) {",
+                  "        pm.collectionVariables.set('accessToken', response.access_token);",
+                  "        console.log('✅ Access Token saved successfully');",
+                  "    }",
+                  "    if (response.refresh_token) {",
+                  "        pm.collectionVariables.set('refreshToken', response.refresh_token);",
+                  "        console.log('✅ Refresh Token saved successfully');",
+                  "    }",
+                  "    if (response.user && response.user.id) {",
+                  "        pm.collectionVariables.set('userId', response.user.id);",
+                  "        console.log('👤 User ID saved:', response.user.id);",
+                  "        console.log('🏠 User Role:', response.user.role);",
+                  "    }",
+                  "    console.log('⚡ Quick Login (Tenant) successful!');",
+                  "  } else {",
+                  "    console.log('❌ Quick Login failed with status:', pm.response.code);",
+                  "    console.log('📝 Response body:', pm.response.text());",
+                  "  }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{defaultTenantEmail}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Login as default tenant for rating actions"
+          },
+          "response": []
+        },
+        {
+          "name": "📝 Create Rating",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('ratingId', response.id);",
+                  "    console.log('📝 Rating created successfully!');",
+                  "    console.log('🆔 Rating ID saved:', response.id);",
+                  "    console.log('⭐ Rating:', response.rating);",
+                  "    console.log('📝 Content:', response.content);",
+                  "    console.log('🎯 Target:', response.targetType, response.targetId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetType\": \"{{ratingTargetType}}\",\n  \"targetId\": \"{{ratingTargetId}}\",\n  \"rentalId\": \"{{ratingRentalId}}\",\n  \"rating\": {{ratingValue}},\n  \"content\": \"{{ratingContent}}\",\n  \"images\": [\"{{ratingImages}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings"]
+            },
+            "description": "Create a new rating (requires authentication)"
+          },
+          "response": []
+        },
+        {
+          "name": "📋 Get All Ratings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings?page={{ratingPage}}&limit={{ratingLimit}}&targetType={{ratingTargetType}}&minRating={{ratingMinRating}}&maxRating={{ratingMaxRating}}&sortBy={{ratingSortBy}}&sortOrder={{ratingSortOrder}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings"],
+              "query": [
+                { "key": "page", "value": "{{ratingPage}}" },
+                { "key": "limit", "value": "{{ratingLimit}}" },
+                { "key": "targetType", "value": "{{ratingTargetType}}" },
+                { "key": "minRating", "value": "{{ratingMinRating}}" },
+                { "key": "maxRating", "value": "{{ratingMaxRating}}" },
+                { "key": "sortBy", "value": "{{ratingSortBy}}" },
+                { "key": "sortOrder", "value": "{{ratingSortOrder}}" }
+              ]
+            },
+            "description": "Get all ratings with filtering and pagination"
+          },
+          "response": []
+        },
+        {
+          "name": "📊 Get Rating Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings/stats/{{ratingTargetType}}/{{ratingTargetId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings", "stats", "{{ratingTargetType}}", "{{ratingTargetId}}"]
+            },
+            "description": "Get rating statistics for a specific target"
+          },
+          "response": []
+        },
+        {
+          "name": "🎯 Get Ratings for Target",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings/target/{{ratingTargetType}}/{{ratingTargetId}}?page={{ratingPage}}&limit={{ratingLimit}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings", "target", "{{ratingTargetType}}", "{{ratingTargetId}}"],
+              "query": [
+                { "key": "page", "value": "{{ratingPage}}" },
+                { "key": "limit", "value": "{{ratingLimit}}" }
+              ]
+            },
+            "description": "Get all ratings for a specific target"
+          },
+          "response": []
+        },
+        {
+          "name": "👤 Get User Ratings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings/user/{{userId}}?page={{ratingPage}}&limit={{ratingLimit}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings", "user", "{{userId}}"],
+              "query": [
+                { "key": "page", "value": "{{ratingPage}}" },
+                { "key": "limit", "value": "{{ratingLimit}}" }
+              ]
+            },
+            "description": "Get all ratings created by a specific user"
+          },
+          "response": []
+        },
+        {
+          "name": "🔍 Get Rating Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings/{{ratingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings", "{{ratingId}}"]
+            },
+            "description": "Get a specific rating by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "✏️ Update Rating",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('✏️ Rating updated successfully!');",
+                  "    console.log('⭐ New Rating:', response.rating);",
+                  "    console.log('📝 New Content:', response.content);",
+                  "    console.log('🕒 Updated At:', response.updatedAt);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating\": {{ratingUpdatedValue}},\n  \"content\": \"{{ratingUpdatedContent}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings/{{ratingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings", "{{ratingId}}"]
+            },
+            "description": "Update an existing rating (only by original reviewer)"
+          },
+          "response": []
+        },
+        {
+          "name": "🗑️ Delete Rating",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('🗑️ Rating deleted successfully!');",
+                  "    console.log('📝 Message:', response.message);",
+                  "    // Clear the rating ID variable",
+                  "    pm.collectionVariables.set('ratingId', '');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ratings/{{ratingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "ratings", "{{ratingId}}"]
+            },
+            "description": "Delete an existing rating (only by original reviewer)"
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [
@@ -4066,6 +4320,96 @@
       "value": "Đã tìm được phòng khác phù hợp hơn",
       "type": "string",
       "description": "Cancellation reason for application"
+    },
+    {
+      "key": "ratingId",
+      "value": "",
+      "type": "string",
+      "description": "Rating ID for operations"
+    },
+    {
+      "key": "ratingTargetType",
+      "value": "room",
+      "type": "string",
+      "description": "Target type for rating (tenant, landlord, room)"
+    },
+    {
+      "key": "ratingTargetId",
+      "value": "",
+      "type": "string",
+      "description": "Target ID being rated"
+    },
+    {
+      "key": "ratingRentalId",
+      "value": "",
+      "type": "string",
+      "description": "Rental ID for tenant/landlord ratings"
+    },
+    {
+      "key": "ratingValue",
+      "value": "5",
+      "type": "string",
+      "description": "Rating value (1-5)"
+    },
+    {
+      "key": "ratingContent",
+      "value": "Excellent service, highly recommended!",
+      "type": "string",
+      "description": "Rating content/review text"
+    },
+    {
+      "key": "ratingImages",
+      "value": "https://example.com/image1.jpg,https://example.com/image2.jpg",
+      "type": "string",
+      "description": "Comma-separated image URLs for rating"
+    },
+    {
+      "key": "ratingPage",
+      "value": "1",
+      "type": "string",
+      "description": "Page number for rating pagination"
+    },
+    {
+      "key": "ratingLimit",
+      "value": "10",
+      "type": "string",
+      "description": "Items per page for rating pagination"
+    },
+    {
+      "key": "ratingMinRating",
+      "value": "4",
+      "type": "string",
+      "description": "Minimum rating filter"
+    },
+    {
+      "key": "ratingMaxRating",
+      "value": "5",
+      "type": "string",
+      "description": "Maximum rating filter"
+    },
+    {
+      "key": "ratingSortBy",
+      "value": "createdAt",
+      "type": "string",
+      "description": "Sort field for ratings"
+    },
+    {
+      "key": "ratingSortOrder",
+      "value": "desc",
+      "type": "string",
+      "description": "Sort order for ratings (asc, desc)"
+    },
+    {
+      "key": "ratingUpdatedValue",
+      "value": "4",
+      "type": "string",
+      "description": "Updated rating value"
+    },
+    {
+      "key": "ratingUpdatedContent",
+      "value": "Updated review - still good but found minor issues",
+      "type": "string",
+      "description": "Updated rating content"
     }
   ]
 }
