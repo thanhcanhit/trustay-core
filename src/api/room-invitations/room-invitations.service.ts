@@ -147,7 +147,6 @@ export class RoomInvitationsService {
 				rentalMonths,
 				...(dto.roomSeekingPostId && { roomSeekingPostId: dto.roomSeekingPostId }),
 				status: InvitationStatus.pending,
-				isConfirmedBySender: false, // Cần xác nhận trước khi gửi đến tenant
 			},
 			include: {
 				recipient: true,
@@ -155,10 +154,6 @@ export class RoomInvitationsService {
 				room: { include: { building: true } },
 			},
 		});
-
-		// KHÔNG gửi notification ngay - phải đợi landlord confirm trước
-		// Thông báo cho landlord về cần confirm
-		// TODO: Gửi email/SMS confirmation link
 
 		return this.transformToResponseDto(roomInvitation);
 	}
@@ -229,8 +224,6 @@ export class RoomInvitationsService {
 		const where = {
 			recipientId,
 			...(status && { status }),
-			// Chỉ hiển thị những invitation đã được landlord confirm
-			isConfirmedBySender: true,
 		};
 
 		const [invitations, total] = await Promise.all([
@@ -360,7 +353,19 @@ export class RoomInvitationsService {
 			include: {
 				recipient: true,
 				sender: true,
-				room: { include: { building: true } },
+				room: {
+					include: {
+						building: {
+							include: {
+								owner: true,
+							},
+						},
+						roomInstances: {
+							where: { status: 'available' },
+							take: 1,
+						},
+					},
+				},
 			},
 		});
 
@@ -376,10 +381,13 @@ export class RoomInvitationsService {
 			throw new BadRequestException('Invitation is already confirmed');
 		}
 
-		if (invitation.status === InvitationStatus.withdrawn) {
-			throw new BadRequestException('Cannot confirm withdrawn invitation');
+		if (invitation.status !== InvitationStatus.accepted) {
+			throw new BadRequestException(
+				'Can only confirm invitations that have been accepted by tenant',
+			);
 		}
 
+		// Update invitation to confirmed
 		const updatedInvitation = await this.prisma.roomInvitation.update({
 			where: { id: invitationId },
 			data: {
@@ -389,23 +397,52 @@ export class RoomInvitationsService {
 			include: {
 				recipient: true,
 				sender: true,
-				room: { include: { building: true } },
+				room: {
+					include: {
+						building: true,
+					},
+				},
 			},
 		});
 
-		// Chỉ sau khi confirm thì mới gửi notification cho tenant
-		if (invitation.recipientId) {
-			await this.notificationsService.notifyRoomInvitation(invitation.recipientId, {
-				roomName: invitation.room.name,
-				landlordName: `${invitation.sender.firstName} ${invitation.sender.lastName}`,
+		// ===== TỰ ĐỘNG TẠO RENTAL AFTER FINAL CONFIRMATION =====
+
+		// Check if room instance is still available
+		if (invitation.room.roomInstances.length === 0) {
+			throw new BadRequestException('No available room instance for this invitation');
+		}
+
+		const roomInstance = invitation.room.roomInstances[0];
+
+		// Tạo Rental tự động
+		const rental = await this.prisma.rental.create({
+			data: {
 				invitationId: invitation.id,
-				roomId: invitation.room.id,
+				roomInstanceId: roomInstance.id,
+				tenantId: invitation.recipientId!,
+				ownerId: invitation.room.building.ownerId,
+				contractStartDate: invitation.moveInDate || new Date(),
+				contractEndDate: null,
+				monthlyRent: invitation.monthlyRent,
+				depositPaid: invitation.depositAmount,
+				status: 'active',
+			},
+		});
+
+		// Gửi notification cho cả 2 bên
+		if (invitation.recipientId) {
+			await this.notificationsService.notifyRentalCreated(invitation.recipientId, {
+				roomName: invitation.room.name,
+				rentalId: rental.id,
+				startDate: (invitation.moveInDate || new Date()).toISOString(),
 			});
 		}
-		// Nếu là email invitation, gửi email
-		else if (invitation.recipientEmail) {
-			// TODO: Send email to recipientEmail
-		}
+
+		await this.notificationsService.notifyRentalCreated(invitation.room.building.ownerId, {
+			roomName: invitation.room.name,
+			rentalId: rental.id,
+			startDate: (invitation.moveInDate || new Date()).toISOString(),
+		});
 
 		return this.transformToResponseDto(updatedInvitation);
 	}

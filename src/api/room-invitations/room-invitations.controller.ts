@@ -159,22 +159,21 @@ export class RoomInvitationsController {
 
 	@Post(':id/confirm')
 	@ApiOperation({
-		summary: 'Xác nhận lời mời (Landlord)',
-		description:
-			'Landlord xác nhận lại lời mời qua email/SMS. Chỉ khi confirmed, tenant mới nhận được lời mời.',
+		summary: 'Xác nhận invitation sau khi tenant accept (Landlord)',
+		description: 'Sau khi tenant accept, landlord confirm để tự động tạo rental',
 	})
 	@ApiResponse({
 		status: 200,
-		description: 'Xác nhận lời mời thành công',
+		description: 'Xác nhận thành công, tự động tạo rental',
 		type: RoomInvitationResponseDto,
 	})
 	@ApiResponse({
 		status: 400,
-		description: 'Lời mời đã được xác nhận hoặc đã bị thu hồi',
+		description: 'Invitation chưa được accept hoặc đã confirmed rồi',
 	})
 	@ApiResponse({
 		status: 403,
-		description: 'Chỉ landlord có thể xác nhận lời mời của mình',
+		description: 'Chỉ landlord có thể confirm invitation của mình',
 	})
 	@ApiResponse({
 		status: 404,

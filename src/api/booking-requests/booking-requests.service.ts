@@ -111,10 +111,6 @@ export class BookingRequestsService {
 			},
 		});
 
-		// KHÔNG gửi notification ngay - phải đợi tenant confirm trước
-		// Thông báo cho tenant về cần confirm
-		// TODO: Gửi email/SMS confirmation link
-
 		return bookingRequest;
 	}
 
@@ -132,8 +128,6 @@ export class BookingRequestsService {
 				...(roomId && { id: roomId }),
 			},
 			...(status && { status }),
-			// Chỉ hiển thị những booking đã được tenant confirm
-			isConfirmedByTenant: true,
 		};
 
 		const [bookingRequests, total] = await Promise.all([
@@ -336,6 +330,10 @@ export class BookingRequestsService {
 								owner: true,
 							},
 						},
+						roomInstances: {
+							where: { status: 'available' },
+							take: 1,
+						},
 					},
 				},
 			},
@@ -353,8 +351,10 @@ export class BookingRequestsService {
 			throw new BadRequestException('Booking request is already confirmed');
 		}
 
-		if (bookingRequest.status === BookingStatus.cancelled) {
-			throw new BadRequestException('Cannot confirm a cancelled booking request');
+		if (bookingRequest.status !== BookingStatus.approved) {
+			throw new BadRequestException(
+				'Can only confirm booking requests that have been approved by landlord',
+			);
 		}
 
 		// Update booking request to confirmed
@@ -374,98 +374,48 @@ export class BookingRequestsService {
 			},
 		});
 
-		// Chỉ sau khi confirm thì mới gửi notification cho landlord
-		await this.notificationsService.notifyBookingRequest(bookingRequest.room.building.ownerId, {
-			roomName: bookingRequest.room.name,
-			tenantName: `${bookingRequest.tenant.firstName} ${bookingRequest.tenant.lastName}`,
-			bookingId: bookingRequest.id,
-			roomId: bookingRequest.room.id,
-		});
+		// ===== TỰ ĐỘNG TẠO RENTAL AFTER FINAL CONFIRMATION =====
 
-		return updatedBooking;
-	}
-
-	async finalConfirmBookingRequest(bookingRequestId: string, tenantId: string) {
-		const bookingRequest = await this.prisma.bookingRequest.findUnique({
-			where: { id: bookingRequestId },
-			include: {
-				tenant: true,
-				room: {
-					include: {
-						building: {
-							include: {
-								owner: true,
-							},
-						},
-						roomInstances: {
-							where: { status: 'available' },
-							take: 1,
-						},
-					},
-				},
-			},
-		});
-
-		if (!bookingRequest) {
-			throw new NotFoundException('Booking request not found');
+		// Check if room instance is still available
+		if (bookingRequest.room.roomInstances.length === 0) {
+			throw new BadRequestException('No available room instance for this booking');
 		}
 
-		if (bookingRequest.tenantId !== tenantId) {
-			throw new ForbiddenException('You can only final confirm your own booking requests');
-		}
+		const roomInstance = bookingRequest.room.roomInstances[0];
 
-		if (bookingRequest.isFinalConfirmedByTenant) {
-			throw new BadRequestException('Booking request is already final confirmed');
-		}
-
-		if (bookingRequest.status !== BookingStatus.approved) {
-			throw new BadRequestException(
-				'Can only final confirm booking requests that have been approved by landlord',
-			);
-		}
-
-		if (bookingRequest.status === BookingStatus.cancelled) {
-			throw new BadRequestException('Cannot final confirm a cancelled booking request');
-		}
-
-		// Update booking request to final confirmed
-		const updatedBooking = await this.prisma.bookingRequest.update({
-			where: { id: bookingRequestId },
+		// Tạo Rental tự động
+		const rental = await this.prisma.rental.create({
 			data: {
-				isFinalConfirmedByTenant: true,
-				finalConfirmedAt: new Date(),
+				bookingRequestId: bookingRequest.id,
+				roomInstanceId: roomInstance.id,
+				tenantId: bookingRequest.tenantId,
+				ownerId: bookingRequest.room.building.ownerId,
+				contractStartDate: bookingRequest.moveInDate,
+				contractEndDate: bookingRequest.moveOutDate,
+				monthlyRent: bookingRequest.monthlyRent,
+				depositPaid: bookingRequest.depositAmount,
+				status: 'active',
 			},
-			include: {
-				tenant: true,
-				room: {
-					include: {
-						building: true,
-					},
-				},
-			},
 		});
 
-		// ===== TRIGGER ACTIONS AFTER FINAL CONFIRMATION =====
-		// TODO: Implement these actions:
-		// 1. Tạo Rental record
-		// 2. Tạo Contract draft
-		// 3. Assign roomInstance cho tenant
-		// 4. Update room availability
-		// 5. Gửi notification cho cả 2 bên
-		// 6. Gửi email/SMS xác nhận
-
-		// Notification tạm thời
-		await this.notificationsService.notifyBookingApproved(tenantId, {
+		// Gửi notification cho cả 2 bên
+		await this.notificationsService.notifyRentalCreated(tenantId, {
 			roomName: bookingRequest.room.name,
-			bookingId: bookingRequest.id,
+			rentalId: rental.id,
+			startDate: bookingRequest.moveInDate.toISOString(),
 		});
 
-		await this.notificationsService.notifyBookingApproved(bookingRequest.room.building.ownerId, {
+		await this.notificationsService.notifyRentalCreated(bookingRequest.room.building.ownerId, {
 			roomName: bookingRequest.room.name,
-			bookingId: bookingRequest.id,
+			rentalId: rental.id,
+			startDate: bookingRequest.moveInDate.toISOString(),
 		});
 
-		return updatedBooking;
+		// Return booking với rental info
+		return {
+			...updatedBooking,
+			rental,
+		};
 	}
 
 	async cancelBookingRequest(

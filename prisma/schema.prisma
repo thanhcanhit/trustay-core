@@ -687,6 +687,11 @@ model RoomInvitation {
   moveInDate        DateTime?        @map("move_in_date") @db.Date
   rentalMonths      Int?             @map("rental_months")
   status            InvitationStatus @default(pending)
+
+  // Landlord confirm sau khi tenant accept để tự động tạo rental
+  isConfirmedBySender Boolean  @default(false) @map("is_confirmed_by_sender")
+  confirmedAt         DateTime? @map("confirmed_at")
+
   message           String?
   expiresAt         DateTime?        @map("expires_at")
   respondedAt       DateTime?        @map("responded_at")
@@ -727,13 +732,9 @@ model BookingRequest {
   messageToOwner String?       @map("message_to_owner")
   ownerNotes     String?       @map("owner_notes")
 
-  // Anti-spam: Tenant confirm trước khi gửi đến landlord
+  // Tenant confirm sau khi landlord approve để tự động tạo rental
   isConfirmedByTenant Boolean  @default(false) @map("is_confirmed_by_tenant")
   confirmedAt         DateTime? @map("confirmed_at")
-
-  // Final confirmation: Sau khi landlord approve, tenant confirm lại lần cuối
-  isFinalConfirmedByTenant Boolean  @default(false) @map("is_final_confirmed_by_tenant")
-  finalConfirmedAt         DateTime? @map("final_confirmed_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
