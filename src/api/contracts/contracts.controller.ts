@@ -102,6 +102,44 @@ export class ContractsController {
 	}
 
 	/**
+	 * Helper API: Tạo hợp đồng từ Rental (auto-fill thông tin)
+	 */
+	@Post('from-rental/:rentalId')
+	@ApiOperation({
+		summary: 'Create contract from rental',
+		description:
+			'Create a new contract automatically filled with rental information. You can optionally provide additional contract data to override defaults.',
+	})
+	@ApiParam({
+		name: 'rentalId',
+		description: 'Rental ID to create contract from',
+	})
+	@ApiResponse({
+		status: 201,
+		description: 'Contract created successfully from rental',
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Rental already has contract or invalid status',
+	})
+	@ApiResponse({
+		status: 403,
+		description: 'Not authorized to create contract for this rental',
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'Rental not found',
+	})
+	async createContractFromRental(
+		@Param('rentalId') rentalId: string,
+		@Body() additionalData: Record<string, any>,
+		@Req() req: any,
+	) {
+		this.logger.log(`Creating contract from rental ${rentalId} by user ${req.user.id}`);
+		return this.contractsNewService.createContractFromRental(rentalId, req.user.id, additionalData);
+	}
+
+	/**
 	 * MVP API 3: Lấy danh sách hợp đồng của user
 	 */
 	@Get()

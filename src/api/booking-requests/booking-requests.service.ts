@@ -383,19 +383,49 @@ export class BookingRequestsService {
 
 		const roomInstance = bookingRequest.room.roomInstances[0];
 
-		// Tạo Rental tự động
-		const rental = await this.prisma.rental.create({
-			data: {
-				bookingRequestId: bookingRequest.id,
+		// Kiểm tra room instance status phải là available
+		if (roomInstance.status !== 'available') {
+			throw new BadRequestException(
+				`Room instance ${roomInstance.roomNumber} is not available (current status: ${roomInstance.status})`,
+			);
+		}
+
+		// Kiểm tra không có active rental nào cho roomInstance này
+		const existingRental = await this.prisma.rental.findFirst({
+			where: {
 				roomInstanceId: roomInstance.id,
-				tenantId: bookingRequest.tenantId,
-				ownerId: bookingRequest.room.building.ownerId,
-				contractStartDate: bookingRequest.moveInDate,
-				contractEndDate: bookingRequest.moveOutDate,
-				monthlyRent: bookingRequest.monthlyRent,
-				depositPaid: bookingRequest.depositAmount,
 				status: 'active',
 			},
+		});
+
+		if (existingRental) {
+			throw new BadRequestException(`Room instance ${roomInstance.roomNumber} is already rented`);
+		}
+
+		// Tạo Rental tự động và update RoomInstance status trong transaction
+		const rental = await this.prisma.$transaction(async (tx) => {
+			// Create rental
+			const newRental = await tx.rental.create({
+				data: {
+					bookingRequestId: bookingRequest.id,
+					roomInstanceId: roomInstance.id,
+					tenantId: bookingRequest.tenantId,
+					ownerId: bookingRequest.room.building.ownerId,
+					contractStartDate: bookingRequest.moveInDate,
+					contractEndDate: bookingRequest.moveOutDate,
+					monthlyRent: bookingRequest.monthlyRent,
+					depositPaid: bookingRequest.depositAmount,
+					status: 'active',
+				},
+			});
+
+			// Update room instance status to rented
+			await tx.roomInstance.update({
+				where: { id: roomInstance.id },
+				data: { status: 'rented' as any },
+			});
+
+			return newRental;
 		});
 
 		// Gửi notification cho cả 2 bên

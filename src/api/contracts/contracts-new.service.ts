@@ -36,6 +36,47 @@ export class ContractsNewService {
 			throw new NotFoundException('Room instance not found');
 		}
 
+		// Nếu có rentalId, verify và validate
+		if (dto.rentalId) {
+			const rental = await this.prisma.rental.findUnique({
+				where: { id: dto.rentalId },
+				include: { contract: true },
+			});
+
+			if (!rental) {
+				throw new NotFoundException('Rental not found');
+			}
+
+			// Check nếu rental đã có contract rồi
+			if (rental.contract) {
+				throw new BadRequestException(
+					`Rental already has a contract (${rental.contract.contractCode})`,
+				);
+			}
+
+			// Validate landlordId, tenantId, roomInstanceId phải khớp với Rental
+			if (rental.tenantId !== dto.tenantId) {
+				throw new BadRequestException('Tenant ID in contract does not match rental tenant');
+			}
+
+			if (rental.ownerId !== dto.landlordId) {
+				throw new BadRequestException('Landlord ID in contract does not match rental owner');
+			}
+
+			if (rental.roomInstanceId !== dto.roomInstanceId) {
+				throw new BadRequestException(
+					'Room instance ID in contract does not match rental room instance',
+				);
+			}
+
+			// Kiểm tra rental phải active
+			if (rental.status !== 'active') {
+				throw new BadRequestException(
+					`Cannot create contract for rental with status: ${rental.status}`,
+				);
+			}
+		}
+
 		// Generate contract code
 		const contractCode = await this.generateContractCode();
 
@@ -79,6 +120,82 @@ export class ContractsNewService {
 		});
 
 		return this.formatContractResponse(contract);
+	}
+
+	/**
+	 * Helper: Tạo Contract từ Rental (tự động điền thông tin từ rental)
+	 */
+	async createContractFromRental(
+		rentalId: string,
+		userId: string,
+		additionalContractData?: Record<string, any>,
+	) {
+		const rental = await this.prisma.rental.findUnique({
+			where: { id: rentalId },
+			include: {
+				contract: true,
+				tenant: true,
+				owner: true,
+				roomInstance: {
+					include: {
+						room: {
+							include: {
+								building: true,
+							},
+						},
+					},
+				},
+			},
+		});
+
+		if (!rental) {
+			throw new NotFoundException('Rental not found');
+		}
+
+		// Check quyền (phải là landlord hoặc tenant)
+		if (rental.ownerId !== userId && rental.tenantId !== userId) {
+			throw new ForbiddenException('You are not authorized to create contract for this rental');
+		}
+
+		// Check nếu đã có contract rồi
+		if (rental.contract) {
+			throw new BadRequestException(
+				`Rental already has a contract (${rental.contract.contractCode})`,
+			);
+		}
+
+		// Check rental phải active
+		if (rental.status !== 'active') {
+			throw new BadRequestException(
+				`Cannot create contract for rental with status: ${rental.status}`,
+			);
+		}
+
+		// Tự động tạo contractData từ rental
+		const contractData = {
+			monthlyRent: rental.monthlyRent.toNumber(),
+			depositAmount: rental.depositPaid.toNumber(),
+			roomNumber: rental.roomInstance.roomNumber,
+			roomName: rental.roomInstance.room.name,
+			buildingName: rental.roomInstance.room.building.name,
+			buildingAddress: rental.roomInstance.room.building.addressLine1,
+			...additionalContractData, // Allow override/extend
+		};
+
+		// Tạo contract
+		return this.createContract(
+			{
+				rentalId: rental.id,
+				landlordId: rental.ownerId,
+				tenantId: rental.tenantId,
+				roomInstanceId: rental.roomInstanceId,
+				contractType: 'monthly_rental',
+				startDate: rental.contractStartDate.toISOString(),
+				endDate: rental.contractEndDate?.toISOString(),
+				contractData,
+			},
+			userId,
+		);
 	}
 
 	/**
