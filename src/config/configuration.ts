@@ -30,6 +30,10 @@ export interface AppConfig {
 		maxFileSize: number;
 		allowedTypes: string[];
 	};
+	rateLimit: {
+		ttl: number;
+		limit: number;
+	};
 	resend: {
 		apiKey: string;
 	};
@@ -66,6 +70,10 @@ const getConfig = (): AppConfig => ({
 	upload: {
 		maxFileSize: parseInt(process.env.MAX_FILE_SIZE ?? '5242880', 10),
 		allowedTypes: process.env.ALLOWED_FILE_TYPES?.split(',') ?? ['image/jpeg', 'image/png'],
+	},
+	rateLimit: {
+		ttl: parseInt(process.env.RATE_LIMIT_TTL ?? '60000', 10),
+		limit: parseInt(process.env.RATE_LIMIT_LIMIT ?? '100', 10),
 	},
 	resend: {
 		apiKey: process.env.RESEND_API_KEY ?? '',

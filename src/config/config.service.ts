@@ -82,4 +82,12 @@ export class AppConfigService {
 			allowedTypes: this.configService.get<string[]>('upload.allowedTypes')!,
 		};
 	}
+
+	// Rate limiting configuration getters
+	get rateLimitConfig() {
+		return {
+			ttl: this.configService.get<number>('rateLimit.ttl')!,
+			limit: this.configService.get<number>('rateLimit.limit')!,
+		};
+	}
 }
