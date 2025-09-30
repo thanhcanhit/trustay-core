@@ -212,25 +212,25 @@ enum RoomStatus {
 }
 
 enum ContractType {
-  monthly_rental    // Thuê theo tháng
-  yearly_rental     // Thuê theo năm  
-  daily_rental      // Thuê theo ngày
+  monthly_rental // Thuê theo tháng
+  yearly_rental // Thuê theo năm  
+  daily_rental // Thuê theo ngày
 }
 
 enum ContractStatus {
-  draft             // Nháp
+  draft // Nháp
   pending_signature // Chờ ký
-  partially_signed  // Đã ký 1 phần
-  fully_signed      // Đã ký đầy đủ
-  active            // Đang hiệu lực
-  expired           // Hết hạn
-  terminated        // Chấm dứt
+  partially_signed // Đã ký 1 phần
+  fully_signed // Đã ký đầy đủ
+  active // Đang hiệu lực
+  expired // Hết hạn
+  terminated // Chấm dứt
 }
 
 enum SignerRole {
-  landlord          // Bên A - Cho thuê
-  tenant            // Bên B - Thuê
-  witness           // Người làm chứng
+  landlord // Bên A - Cho thuê
+  tenant // Bên B - Thuê
+  witness // Người làm chứng
 }
 
 // ========================================
@@ -259,26 +259,26 @@ model User {
   isVerifiedBank     Boolean   @default(false) @map("is_verified_bank")
   isOnline           Boolean   @default(false) @map("is_online")
   lastActiveAt       DateTime? @map("last_active_at") @db.Timestamp
-  
+
   // Overall Rating fields
-  overallRating      Decimal?  @default(0) @map("overall_rating") @db.Decimal(3, 2)
-  totalRatings       Int       @default(0) @map("total_ratings")
-  
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
+  overallRating Decimal? @default(0) @map("overall_rating") @db.Decimal(3, 2)
+  totalRatings  Int      @default(0) @map("total_ratings")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
   addresses            UserAddress[]
-  ownedBuildings       Building[]         @relation("BuildingOwner")
+  ownedBuildings       Building[]                 @relation("BuildingOwner")
   bookingRequests      BookingRequest[]
-  rentalsAsTenant      Rental[]           @relation("RentalTenant")
-  rentalsAsOwner       Rental[]           @relation("RentalOwner")
+  rentalsAsTenant      Rental[]                   @relation("RentalTenant")
+  rentalsAsOwner       Rental[]                   @relation("RentalOwner")
   payments             Payment[]
-  sentInvitations      RoomInvitation[]   @relation("InvitationSender")
-  receivedInvitations  RoomInvitation[]   @relation("InvitationReceiver")
-  reviewsGiven         Review[]           @relation("ReviewGiver")
-  reviewsReceived      Review[]           @relation("ReviewReceiver")
-  ratingsGiven         Rating[]           @relation("RatingGiver")
+  sentInvitations      RoomInvitation[]           @relation("InvitationSender")
+  receivedInvitations  RoomInvitation[]           @relation("InvitationReceiver")
+  reviewsGiven         Review[]                   @relation("ReviewGiver")
+  reviewsReceived      Review[]                   @relation("ReviewReceiver")
+  ratingsGiven         Rating[]                   @relation("RatingGiver")
   notifications        Notification[]
   verificationCodes    VerificationCode[]
   refreshTokens        RefreshToken[]
@@ -287,11 +287,11 @@ model User {
   roommateApplications RoommateApplication[]
   roomPreferences      TenantRoomPreferences?
   roommatePreferences  TenantRoommatePreferences?
-  conversationsAsUserA Conversation[]     @relation("ConversationUserA")
-  conversationsAsUserB Conversation[]     @relation("ConversationUserB")
+  conversationsAsUserA Conversation[]             @relation("ConversationUserA")
+  conversationsAsUserB Conversation[]             @relation("ConversationUserB")
   messagesSent         Message[]
-  contractsAsLandlord  Contract[]         @relation("LandlordContracts")
-  contractsAsTenant    Contract[]         @relation("TenantContracts")
+  contractsAsLandlord  Contract[]                 @relation("LandlordContracts")
+  contractsAsTenant    Contract[]                 @relation("TenantContracts")
   contractSignatures   ContractSignature[]
   contractAuditLogs    ContractAuditLog[]
 
@@ -387,13 +387,13 @@ model Building {
   longitude    Decimal? @db.Decimal(10, 7)
   isActive     Boolean  @default(true) @map("is_active")
   isVerified   Boolean  @default(false) @map("is_verified")
-  
+
   // Overall Rating fields  
-  overallRating      Decimal?  @default(0) @map("overall_rating") @db.Decimal(3, 2)
-  totalRatings       Int       @default(0) @map("total_ratings")
-  
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  overallRating Decimal? @default(0) @map("overall_rating") @db.Decimal(3, 2)
+  totalRatings  Int      @default(0) @map("total_ratings")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
   owner    User     @relation("BuildingOwner", fields: [ownerId], references: [id], onDelete: Cascade)
@@ -427,17 +427,17 @@ model Room {
   viewCount    Int      @default(0) @map("view_count") // Số lượt xem
   isActive     Boolean  @default(true) @map("is_active")
   isVerified   Boolean  @default(false) @map("is_verified")
-  
+
   // Overall Rating fields
-  overallRating      Decimal?  @default(0) @map("overall_rating") @db.Decimal(3, 2)
-  totalRatings       Int       @default(0) @map("total_ratings")
-  
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  overallRating Decimal? @default(0) @map("overall_rating") @db.Decimal(3, 2)
+  totalRatings  Int      @default(0) @map("total_ratings")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
   building        Building         @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  roomInstances   RoomInstance[]   // Các phòng cụ thể
+  roomInstances   RoomInstance[] // Các phòng cụ thể
   amenities       RoomAmenity[]
   costs           RoomCost[]
   images          RoomImage[]
@@ -464,10 +464,10 @@ model RoomInstance {
   updatedAt  DateTime   @updatedAt @map("updated_at")
 
   // Relations
-  room         Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  rentals      Rental[]
-  monthlyBills MonthlyBill[]
-  contracts    Contract[]
+  room                 Room                  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  rentals              Rental[]
+  monthlyBills         MonthlyBill[]
+  contracts            Contract[]
   roommateSeekingPosts RoommateSeekingPost[]
 
   @@unique([roomId, roomNumber]) // Unique room number within same room type
@@ -726,12 +726,21 @@ model BookingRequest {
   status         BookingStatus @default(pending)
   messageToOwner String?       @map("message_to_owner")
   ownerNotes     String?       @map("owner_notes")
-  createdAt      DateTime      @default(now()) @map("created_at")
-  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  // Anti-spam: Tenant confirm trước khi gửi đến landlord
+  isConfirmedByTenant Boolean  @default(false) @map("is_confirmed_by_tenant")
+  confirmedAt         DateTime? @map("confirmed_at")
+
+  // Final confirmation: Sau khi landlord approve, tenant confirm lại lần cuối
+  isFinalConfirmedByTenant Boolean  @default(false) @map("is_final_confirmed_by_tenant")
+  finalConfirmedAt         DateTime? @map("final_confirmed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  room   Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  tenant User @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  room   Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  tenant User    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   rental Rental?
 
   @@index([roomId])
@@ -759,16 +768,16 @@ model Rental {
   updatedAt             DateTime     @updatedAt @map("updated_at")
 
   // Relations
-  bookingRequest BookingRequest? @relation(fields: [bookingRequestId], references: [id])
-  invitation     RoomInvitation? @relation(fields: [invitationId], references: [id])
-  roomInstance   RoomInstance    @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
-  tenant         User            @relation("RentalTenant", fields: [tenantId], references: [id], onDelete: Cascade)
-  owner          User            @relation("RentalOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  payments       Payment[]
-  reviews        Review[]
-  ratings        Rating[]
-  monthlyBills   MonthlyBill[]
-  contract       Contract?
+  bookingRequest       BookingRequest?       @relation(fields: [bookingRequestId], references: [id])
+  invitation           RoomInvitation?       @relation(fields: [invitationId], references: [id])
+  roomInstance         RoomInstance          @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
+  tenant               User                  @relation("RentalTenant", fields: [tenantId], references: [id], onDelete: Cascade)
+  owner                User                  @relation("RentalOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  payments             Payment[]
+  reviews              Review[]
+  ratings              Rating[]
+  monthlyBills         MonthlyBill[]
+  contract             Contract?
   roommateSeekingPosts RoommateSeekingPost[]
 
   @@index([roomInstanceId])
@@ -909,22 +918,22 @@ model Review {
 // ========================================
 
 model Rating {
-  id         String          @id @default(uuid())
+  id         String           @id @default(uuid())
   targetType RatingTargetType @map("target_type") // tenant, landlord, room
-  targetId   String          @map("target_id") // ID của đối tượng được rating
-  reviewerId String          @map("reviewer_id") // Người đánh giá
-  rentalId   String?         @map("rental_id") // Rental liên quan (optional cho room rating)
-  
+  targetId   String           @map("target_id") // ID của đối tượng được rating
+  reviewerId String           @map("reviewer_id") // Người đánh giá
+  rentalId   String?          @map("rental_id") // Rental liên quan (optional cho room rating)
+
   // Simple rating (1-5 scale)
-  rating   Int     @map("rating") // Required: 1-5
-  content  String? // Review text
-  
+  rating  Int     @map("rating") // Required: 1-5
+  content String? // Review text
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  reviewer User         @relation("RatingGiver", fields: [reviewerId], references: [id], onDelete: Cascade)
-  rental   Rental?      @relation(fields: [rentalId], references: [id], onDelete: SetNull)
+  reviewer User     @relation("RatingGiver", fields: [reviewerId], references: [id], onDelete: Cascade)
+  rental   Rental?  @relation(fields: [rentalId], references: [id], onDelete: SetNull)
   images   String[] // Simple list of image URLs
 
   @@index([targetType, targetId])
@@ -1006,28 +1015,28 @@ model RoomSeekingPost {
 // ========================================
 
 model RoommateSeekingPost {
-  id          String  @id @default(uuid())
+  id          String @id @default(uuid())
   title       String
   description String
-  slug        String  @unique
+  slug        String @unique
 
   // Thông tin người đăng (tenant hiện tại)
-  tenantId    String @map("tenant_id")
+  tenantId String @map("tenant_id")
 
   // Platform room info - nếu phòng có trong platform
   roomInstanceId String? @map("room_instance_id")
   rentalId       String? @map("rental_id") // Rental hiện tại của tenant
 
   // External room info - nếu phòng ngoài platform
-  externalAddress     String? @map("external_address")
-  externalDistrictId  Int?    @map("external_district_id")
-  externalProvinceId  Int?    @map("external_province_id")
-  externalWardId      Int?    @map("external_ward_id")
+  externalAddress    String? @map("external_address")
+  externalDistrictId Int?    @map("external_district_id")
+  externalProvinceId Int?    @map("external_province_id")
+  externalWardId     Int?    @map("external_ward_id")
 
   // Thông tin cơ bản
-  monthlyRent          Decimal @map("monthly_rent") @db.Decimal(15, 2)
-  currency             String  @default("VND")
-  depositAmount        Decimal @map("deposit_amount") @db.Decimal(15, 2)
+  monthlyRent          Decimal  @map("monthly_rent") @db.Decimal(15, 2)
+  currency             String   @default("VND")
+  depositAmount        Decimal  @map("deposit_amount") @db.Decimal(15, 2)
   utilityCostPerPerson Decimal? @map("utility_cost_per_person") @db.Decimal(15, 2)
 
   // Số lượng người cần tìm
@@ -1038,7 +1047,7 @@ model RoommateSeekingPost {
   currentOccupancy Int @default(1) @map("current_occupancy") // Hiện tại có bao nhiêu người (bao gồm tenant)
 
   // Yêu cầu về roommate (tối giản)
-  preferredGender       Gender? @map("preferred_gender")
+  preferredGender        Gender? @map("preferred_gender")
   additionalRequirements String? @map("additional_requirements") // Text tự do cho các yêu cầu khác
 
   // Thời gian
@@ -1047,10 +1056,10 @@ model RoommateSeekingPost {
   maximumStayMonths Int?     @map("maximum_stay_months")
 
   // Trạng thái & phê duyệt
-  status               RoommatePostStatus @default(draft)
-  requiresLandlordApproval Boolean        @default(false) @map("requires_landlord_approval")
-  isApprovedByLandlord     Boolean?       @map("is_approved_by_landlord") // null = chưa xét, true/false = đã xét
-  landlordNotes            String?        @map("landlord_notes")
+  status                   RoommatePostStatus @default(draft)
+  requiresLandlordApproval Boolean            @default(false) @map("requires_landlord_approval")
+  isApprovedByLandlord     Boolean?           @map("is_approved_by_landlord") // null = chưa xét, true/false = đã xét
+  landlordNotes            String?            @map("landlord_notes")
 
   // Visibility
   isActive  Boolean   @default(true) @map("is_active")
@@ -1064,9 +1073,9 @@ model RoommateSeekingPost {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  tenant         User             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  roomInstance   RoomInstance?    @relation(fields: [roomInstanceId], references: [id], onDelete: SetNull)
-  rental         Rental?          @relation(fields: [rentalId], references: [id], onDelete: SetNull)
+  tenant       User          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  roomInstance RoomInstance? @relation(fields: [roomInstanceId], references: [id], onDelete: SetNull)
+  rental       Rental?       @relation(fields: [rentalId], references: [id], onDelete: SetNull)
 
   // External location relations
   externalProvince Province? @relation("RoommatePostExternalProvince", fields: [externalProvinceId], references: [id], onDelete: SetNull)
@@ -1092,38 +1101,38 @@ model RoommateSeekingPost {
 }
 
 model RoommateApplication {
-  id                     String  @id @default(uuid())
-  roommateSeekingPostId  String  @map("roommate_seeking_post_id")
-  applicantId            String  @map("applicant_id")
+  id                    String @id @default(uuid())
+  roommateSeekingPostId String @map("roommate_seeking_post_id")
+  applicantId           String @map("applicant_id")
 
   // Thông tin cơ bản của applicant
-  fullName        String  @map("full_name")
-  occupation      String?
-  phoneNumber     String  @map("phone_number")
+  fullName    String  @map("full_name")
+  occupation  String?
+  phoneNumber String  @map("phone_number")
 
   // Thông tin ở ghép
-  moveInDate              DateTime @map("move_in_date") @db.Date
-  intendedStayMonths      Int?     @map("intended_stay_months")
+  moveInDate         DateTime @map("move_in_date") @db.Date
+  intendedStayMonths Int?     @map("intended_stay_months")
 
   // Message & yêu cầu
-  applicationMessage      String? @map("application_message")
+  applicationMessage String? @map("application_message")
 
   // Trạng thái
-  status                  RoommateApplicationStatus @default(pending)
+  status RoommateApplicationStatus @default(pending)
 
   // Phản hồi từ tenant
-  tenantResponse          String?   @map("tenant_response")
-  tenantRespondedAt       DateTime? @map("tenant_responded_at")
+  tenantResponse    String?   @map("tenant_response")
+  tenantRespondedAt DateTime? @map("tenant_responded_at")
 
   // Phản hồi từ landlord (chỉ áp dụng cho platform rooms)
-  landlordResponse        String?   @map("landlord_response")
-  landlordRespondedAt     DateTime? @map("landlord_responded_at")
+  landlordResponse    String?   @map("landlord_response")
+  landlordRespondedAt DateTime? @map("landlord_responded_at")
 
   // Metadata
-  isUrgent               Boolean   @default(false) @map("is_urgent")
+  isUrgent Boolean @default(false) @map("is_urgent")
 
-  createdAt              DateTime  @default(now()) @map("created_at")
-  updatedAt              DateTime  @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
   roommateSeekingPost RoommateSeekingPost @relation(fields: [roommateSeekingPostId], references: [id], onDelete: Cascade)
@@ -1313,50 +1322,50 @@ model MessageAttachment {
 // ========================================
 
 model Contract {
-  id                String          @id @default(uuid())
-  contractCode      String          @unique @map("contract_code") // HD-2025-000001
-  rentalId          String?         @unique @map("rental_id")
-  
+  id           String  @id @default(uuid())
+  contractCode String  @unique @map("contract_code") // HD-2025-000001
+  rentalId     String? @unique @map("rental_id")
+
   // Các bên tham gia
-  landlordId        String          @map("landlord_id")
-  tenantId          String          @map("tenant_id") 
-  roomInstanceId    String          @map("room_instance_id")
-  
+  landlordId     String @map("landlord_id")
+  tenantId       String @map("tenant_id")
+  roomInstanceId String @map("room_instance_id")
+
   // Loại và trạng thái
-  contractType      ContractType    @default(monthly_rental)
-  status            ContractStatus  @default(draft)
-  
+  contractType ContractType   @default(monthly_rental)
+  status       ContractStatus @default(draft)
+
   // Nội dung hợp đồng (JSON)
-  contractData      Json            @map("contract_data")
-  
+  contractData Json @map("contract_data")
+
   // Thời hạn hợp đồng
-  startDate         DateTime        @map("start_date") @db.Date
-  endDate           DateTime?       @map("end_date") @db.Date
-  
+  startDate DateTime  @map("start_date") @db.Date
+  endDate   DateTime? @map("end_date") @db.Date
+
   // File PDF và bảo mật
-  pdfUrl            String?         @map("pdf_url")
-  pdfHash           String?         @map("pdf_hash") // SHA-256
-  pdfSize           Int?            @map("pdf_size") // bytes
-  
+  pdfUrl  String? @map("pdf_url")
+  pdfHash String? @map("pdf_hash") // SHA-256
+  pdfSize Int?    @map("pdf_size") // bytes
+
   // Thời điểm quan trọng
-  signedAt          DateTime?       @map("signed_at")
-  activatedAt       DateTime?       @map("activated_at")
-  terminatedAt      DateTime?       @map("terminated_at")
-  
+  signedAt     DateTime? @map("signed_at")
+  activatedAt  DateTime? @map("activated_at")
+  terminatedAt DateTime? @map("terminated_at")
+
   // Metadata pháp lý
-  legalMetadata     Json            @map("legal_metadata")
-  
-  createdAt         DateTime        @default(now()) @map("created_at")
-  updatedAt         DateTime        @updatedAt @map("updated_at")
-  
+  legalMetadata Json @map("legal_metadata")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
   // Relations
-  rental            Rental?         @relation(fields: [rentalId], references: [id])
-  landlord          User            @relation("LandlordContracts", fields: [landlordId], references: [id])
-  tenant            User            @relation("TenantContracts", fields: [tenantId], references: [id])
-  roomInstance      RoomInstance    @relation(fields: [roomInstanceId], references: [id])
-  signatures        ContractSignature[]
-  auditLogs         ContractAuditLog[]
-  
+  rental       Rental?             @relation(fields: [rentalId], references: [id])
+  landlord     User                @relation("LandlordContracts", fields: [landlordId], references: [id])
+  tenant       User                @relation("TenantContracts", fields: [tenantId], references: [id])
+  roomInstance RoomInstance        @relation(fields: [roomInstanceId], references: [id])
+  signatures   ContractSignature[]
+  auditLogs    ContractAuditLog[]
+
   @@index([status, createdAt])
   @@index([landlordId])
   @@index([tenantId])
@@ -1365,56 +1374,56 @@ model Contract {
 }
 
 model ContractSignature {
-  id                String          @id @default(uuid())
-  contractId        String          @map("contract_id")
-  signerId          String          @map("signer_id")
-  signerRole        SignerRole      @map("signer_role")
-  
+  id         String     @id @default(uuid())
+  contractId String     @map("contract_id")
+  signerId   String     @map("signer_id")
+  signerRole SignerRole @map("signer_role")
+
   // Chữ ký canvas
-  signatureImage    String          @map("signature_image") // Base64 PNG
-  signatureHash     String          @map("signature_hash") // SHA-256 của image
-  
+  signatureImage String @map("signature_image") // Base64 PNG
+  signatureHash  String @map("signature_hash") // SHA-256 của image
+
   // Xác thực theo Nghị định 91/2023/NĐ-CP
-  authenticationMethod String       @map("authentication_method") // "SMS_OTP"
-  authenticationData Json           @map("authentication_data")
-  
+  authenticationMethod String @map("authentication_method") // "SMS_OTP"
+  authenticationData   Json   @map("authentication_data")
+
   // Metadata theo Luật Giao dịch điện tử 2023
-  signatureMetadata Json            @map("signature_metadata")
-  
+  signatureMetadata Json @map("signature_metadata")
+
   // Trạng thái
-  isValid           Boolean         @default(true) @map("is_valid")
-  signedAt          DateTime        @map("signed_at")
-  
-  createdAt         DateTime        @default(now()) @map("created_at")
-  
+  isValid  Boolean  @default(true) @map("is_valid")
+  signedAt DateTime @map("signed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
   // Relations
-  contract          Contract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
-  signer            User            @relation(fields: [signerId], references: [id])
-  
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  signer   User     @relation(fields: [signerId], references: [id])
+
   @@unique([contractId, signerId])
   @@index([contractId])
   @@map("contract_signatures")
 }
 
 model ContractAuditLog {
-  id                String          @id @default(uuid())
-  contractId        String          @map("contract_id")
-  userId            String?         @map("user_id")
-  
-  action            String          // created, viewed, signed, modified, terminated
-  actionDetails     Json            @map("action_details")
-  
+  id         String  @id @default(uuid())
+  contractId String  @map("contract_id")
+  userId     String? @map("user_id")
+
+  action        String // created, viewed, signed, modified, terminated
+  actionDetails Json   @map("action_details")
+
   // Thông tin kỹ thuật (bắt buộc theo luật)
-  ipAddress         String          @map("ip_address")
-  userAgent         String          @map("user_agent")
-  sessionId         String?         @map("session_id")
-  
-  timestamp         DateTime        @default(now())
-  
+  ipAddress String  @map("ip_address")
+  userAgent String  @map("user_agent")
+  sessionId String? @map("session_id")
+
+  timestamp DateTime @default(now())
+
   // Relations
-  contract          Contract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
-  user              User?           @relation(fields: [userId], references: [id])
-  
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  user     User?    @relation(fields: [userId], references: [id])
+
   @@index([contractId, timestamp])
   @@index([action])
   @@map("contract_audit_logs")
@@ -1453,10 +1462,10 @@ model Province {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  districts     District[]
-  userAddresses UserAddress[]
-  buildings     Building[]
-  roomRequests  RoomSeekingPost[]
+  districts                    District[]
+  userAddresses                UserAddress[]
+  buildings                    Building[]
+  roomRequests                 RoomSeekingPost[]
   roommateSeekingPostsExternal RoommateSeekingPost[] @relation("RoommatePostExternalProvince")
 
   @@index([code])
@@ -1472,11 +1481,11 @@ model District {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  province      Province          @relation(fields: [provinceId], references: [id], onDelete: Cascade)
-  wards         Ward[]
-  userAddresses UserAddress[]
-  buildings     Building[]
-  roomRequests  RoomSeekingPost[]
+  province                     Province              @relation(fields: [provinceId], references: [id], onDelete: Cascade)
+  wards                        Ward[]
+  userAddresses                UserAddress[]
+  buildings                    Building[]
+  roomRequests                 RoomSeekingPost[]
   roommateSeekingPostsExternal RoommateSeekingPost[] @relation("RoommatePostExternalDistrict")
 
   @@index([code])
@@ -1494,10 +1503,10 @@ model Ward {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  district      District          @relation(fields: [districtId], references: [id], onDelete: Cascade)
-  userAddresses UserAddress[]
-  buildings     Building[]
-  roomRequests  RoomSeekingPost[]
+  district                     District              @relation(fields: [districtId], references: [id], onDelete: Cascade)
+  userAddresses                UserAddress[]
+  buildings                    Building[]
+  roomRequests                 RoomSeekingPost[]
   roommateSeekingPostsExternal RoommateSeekingPost[] @relation("RoommatePostExternalWard")
 
   @@index([code])

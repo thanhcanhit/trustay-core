@@ -9,16 +9,25 @@ import {
 	NotFoundException,
 	Param,
 	Post,
+	Query,
+	Req,
 	Request,
 	Res,
 	UseGuards,
 } from '@nestjs/common';
+import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ContractStatus } from '@prisma/client';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { PDFGenerationService } from '../../common/services/pdf-generation.service';
 import { PDFStorageService } from '../../common/services/pdf-storage.service';
 import { transformToPDFContract } from '../../common/utils/contract-data-transformer.util';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ContractsService } from './contracts.service';
+import { ContractsNewService } from './contracts-new.service';
+import { ContractStatusResponseDto } from './dto/contract-status-response.dto';
+import { CreateContractDto } from './dto/create-contract.dto';
+import { SignContractDto } from './dto/sign-contract.dto';
 
 export interface GeneratePDFRequest {
 	contractId: string;
@@ -47,8 +56,9 @@ export interface GeneratePDFResponse {
 
 /**
  * Contracts Controller
- * Handles PDF generation and contract management
+ * Handles contract management, signing, and PDF generation
  */
+@ApiTags('Contracts')
 @Controller('contracts')
 @UseGuards(JwtAuthGuard)
 export class ContractsController {
@@ -56,14 +66,188 @@ export class ContractsController {
 
 	constructor(
 		private readonly prisma: PrismaService,
+		private readonly contractsService: ContractsService,
+		private readonly contractsNewService: ContractsNewService,
 		private readonly pdfGenerationService: PDFGenerationService,
 		private readonly pdfStorageService: PDFStorageService,
 	) {}
 
 	/**
+	 * MVP API 1: Tạo hợp đồng mới (status: draft)
+	 */
+	@Post()
+	@ApiOperation({
+		summary: 'Create a new contract',
+		description: 'Create a new rental contract between landlord and tenant',
+	})
+	@ApiResponse({
+		status: 201,
+		description: 'Contract created successfully',
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Invalid request data',
+	})
+	@ApiResponse({
+		status: 403,
+		description: 'Not authorized to create this contract',
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'Room instance not found',
+	})
+	async createContract(@Body() dto: CreateContractDto, @Req() req: any) {
+		this.logger.log(`Creating contract by user ${req.user.id}`);
+		return this.contractsNewService.createContract(dto, req.user.id);
+	}
+
+	/**
+	 * MVP API 3: Lấy danh sách hợp đồng của user
+	 */
+	@Get()
+	@ApiOperation({
+		summary: 'Get user contracts',
+		description: 'Get all contracts where user is landlord or tenant',
+	})
+	@ApiQuery({
+		name: 'status',
+		required: false,
+		description: 'Filter by contract status',
+		enum: ContractStatus,
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Contracts retrieved successfully',
+	})
+	async getContracts(@Req() req: any, @Query('status') status?: ContractStatus) {
+		this.logger.log(`Getting contracts for user ${req.user.id}`);
+		return this.contractsNewService.getContracts(req.user.id, status);
+	}
+
+	/**
+	 * MVP API 2: Lấy chi tiết hợp đồng
+	 */
+	@Get(':id')
+	@ApiOperation({
+		summary: 'Get contract details',
+		description: 'Get detailed information about a specific contract',
+	})
+	@ApiParam({
+		name: 'id',
+		description: 'Contract ID',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Contract details retrieved successfully',
+	})
+	@ApiResponse({
+		status: 403,
+		description: 'Access denied',
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'Contract not found',
+	})
+	async getContractById(@Param('id') id: string, @Req() req: any) {
+		this.logger.log(`Getting contract ${id} by user ${req.user.id}`);
+		return this.contractsNewService.getContractById(id, req.user.id);
+	}
+
+	/**
+	 * MVP API 4: Ký hợp đồng (cả landlord và tenant dùng chung)
+	 */
+	@Post(':id/sign')
+	@ApiOperation({
+		summary: 'Sign contract',
+		description:
+			'Sign the contract with digital signature. Both landlord and tenant use this endpoint.',
+	})
+	@ApiParam({
+		name: 'id',
+		description: 'Contract ID',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Contract signed successfully',
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Already signed or invalid OTP',
+	})
+	@ApiResponse({
+		status: 403,
+		description: 'Access denied',
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'Contract not found',
+	})
+	async signContract(@Param('id') id: string, @Body() dto: SignContractDto, @Req() req: any) {
+		this.logger.log(`User ${req.user.id} signing contract ${id}`);
+		return this.contractsNewService.signContract(id, req.user.id, dto, req);
+	}
+
+	/**
+	 * MVP API 5: Xem trạng thái hợp đồng và chữ ký
+	 */
+	@Get(':id/status')
+	@ApiOperation({
+		summary: 'Get contract status',
+		description: 'Check contract signing status - who has signed and who has not',
+	})
+	@ApiParam({
+		name: 'id',
+		description: 'Contract ID',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Contract status retrieved successfully',
+		type: ContractStatusResponseDto,
+	})
+	@ApiResponse({
+		status: 403,
+		description: 'Access denied',
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'Contract not found',
+	})
+	async getContractStatus(
+		@Param('id') id: string,
+		@Req() req: any,
+	): Promise<ContractStatusResponseDto> {
+		this.logger.log(`Getting status for contract ${id}`);
+		return this.contractsNewService.getContractStatus(id, req.user.id);
+	}
+
+	/**
 	 * Generate PDF for a contract
 	 */
 	@Post(':contractId/pdf')
+	@ApiOperation({
+		summary: 'Generate contract PDF',
+		description: 'Generate and store PDF document for a contract',
+	})
+	@ApiParam({
+		name: 'contractId',
+		description: 'Contract ID',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'PDF generated successfully',
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Invalid request or access denied',
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'Contract not found',
+	})
+	@ApiResponse({
+		status: 500,
+		description: 'Failed to generate PDF',
+	})
 	async generateContractPDF(
 		@Param('contractId') contractId: string,
 		@Body() request: GeneratePDFRequest,
@@ -169,6 +353,30 @@ export class ContractsController {
 	 * Download PDF by contract ID
 	 */
 	@Get(':contractId/pdf')
+	@ApiOperation({
+		summary: 'Download contract PDF',
+		description: 'Download the generated PDF document for a contract',
+	})
+	@ApiParam({
+		name: 'contractId',
+		description: 'Contract ID',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'PDF downloaded successfully',
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Access denied',
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'Contract or PDF not found',
+	})
+	@ApiResponse({
+		status: 500,
+		description: 'Failed to download PDF or integrity verification failed',
+	})
 	async downloadContractPDF(
 		@Param('contractId') contractId: string,
 		@Request() req: any,
@@ -254,6 +462,30 @@ export class ContractsController {
 	 * Get PDF preview/thumbnail
 	 */
 	@Get(':contractId/pdf/preview')
+	@ApiOperation({
+		summary: 'Get contract preview',
+		description: 'Get a PNG preview/thumbnail of the contract',
+	})
+	@ApiParam({
+		name: 'contractId',
+		description: 'Contract ID',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Preview generated successfully',
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Access denied',
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'Contract not found',
+	})
+	@ApiResponse({
+		status: 500,
+		description: 'Failed to generate preview',
+	})
 	async getContractPreview(
 		@Param('contractId') contractId: string,
 		@Request() req: any,
@@ -294,6 +526,30 @@ export class ContractsController {
 	 * Verify PDF integrity
 	 */
 	@Get(':contractId/pdf/verify')
+	@ApiOperation({
+		summary: 'Verify PDF integrity',
+		description: 'Verify the integrity of stored PDF using hash verification',
+	})
+	@ApiParam({
+		name: 'contractId',
+		description: 'Contract ID',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Verification completed',
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Access denied',
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'Contract or PDF not found',
+	})
+	@ApiResponse({
+		status: 500,
+		description: 'Failed to verify PDF',
+	})
 	async verifyPDFIntegrity(
 		@Param('contractId') contractId: string,
 		@Request() req: any,

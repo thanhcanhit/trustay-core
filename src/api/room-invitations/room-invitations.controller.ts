@@ -157,6 +157,36 @@ export class RoomInvitationsController {
 		);
 	}
 
+	@Post(':id/confirm')
+	@ApiOperation({
+		summary: 'Xác nhận lời mời (Landlord)',
+		description:
+			'Landlord xác nhận lại lời mời qua email/SMS. Chỉ khi confirmed, tenant mới nhận được lời mời.',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Xác nhận lời mời thành công',
+		type: RoomInvitationResponseDto,
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Lời mời đã được xác nhận hoặc đã bị thu hồi',
+	})
+	@ApiResponse({
+		status: 403,
+		description: 'Chỉ landlord có thể xác nhận lời mời của mình',
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'Không tìm thấy lời mời',
+	})
+	async confirmInvitation(
+		@Param('id') invitationId: string,
+		@CurrentUser('id') landlordId: string,
+	): Promise<RoomInvitationResponseDto> {
+		return this.roomInvitationsService.confirmRoomInvitation(invitationId, landlordId);
+	}
+
 	@Patch(':id/withdraw')
 	@ApiOperation({
 		summary: 'Thu hồi lời mời (Landlord)',

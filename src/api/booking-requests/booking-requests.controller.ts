@@ -191,6 +191,49 @@ export class BookingRequestsController {
 		return this.bookingRequestsService.updateBookingRequest(id, userId, updateBookingRequestDto);
 	}
 
+	@Post(':id/confirm')
+	@ApiOperation({
+		summary: 'Xác nhận booking request (Tenant only)',
+		description:
+			'Tenant xác nhận lại booking request qua email/SMS. Chỉ khi confirmed, landlord mới nhận được.',
+	})
+	@ApiParam({ name: 'id', description: 'Booking request ID' })
+	@ApiResponse({
+		status: 200,
+		description: 'Booking request được xác nhận thành công',
+		type: BookingRequestResponseDto,
+	})
+	@ApiResponse({ status: 404, description: 'Booking request không tồn tại' })
+	@ApiResponse({ status: 403, description: 'Chỉ tenant mới có thể xác nhận booking của mình' })
+	@ApiResponse({ status: 400, description: 'Booking request đã được xác nhận hoặc đã bị hủy' })
+	@HttpCode(HttpStatus.OK)
+	async confirmBookingRequest(@Param('id') id: string, @CurrentUser('id') userId: string) {
+		return this.bookingRequestsService.confirmBookingRequest(id, userId);
+	}
+
+	@Post(':id/final-confirm')
+	@ApiOperation({
+		summary: 'Xác nhận cuối cùng sau khi landlord approve (Tenant only)',
+		description:
+			'Sau khi landlord approve booking request, tenant phải xác nhận lại lần cuối để trigger các actions (tạo rental, contract, v.v.)',
+	})
+	@ApiParam({ name: 'id', description: 'Booking request ID' })
+	@ApiResponse({
+		status: 200,
+		description: 'Final confirmation thành công, trigger các actions tiếp theo',
+		type: BookingRequestResponseDto,
+	})
+	@ApiResponse({ status: 404, description: 'Booking request không tồn tại' })
+	@ApiResponse({ status: 403, description: 'Chỉ tenant mới có thể final confirm' })
+	@ApiResponse({
+		status: 400,
+		description: 'Booking chưa được approve hoặc đã final confirmed rồi',
+	})
+	@HttpCode(HttpStatus.OK)
+	async finalConfirmBookingRequest(@Param('id') id: string, @CurrentUser('id') userId: string) {
+		return this.bookingRequestsService.finalConfirmBookingRequest(id, userId);
+	}
+
 	@Patch(':id/cancel')
 	@ApiOperation({ summary: 'Hủy booking request (Tenant only)' })
 	@ApiParam({ name: 'id', description: 'Booking request ID' })
