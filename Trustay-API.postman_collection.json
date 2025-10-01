@@ -1522,6 +1522,304 @@
       "description": "File upload endpoints for images used in rooms, buildings, and user avatars. All uploads are automatically optimized and resized to multiple sizes."
     },
     {
+      "name": "📝 Room Seeking Posts",
+      "item": [
+        {
+          "name": "📝 Create Room Seeking Post",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('roomSeekingPostId', response.id);",
+                  "    pm.collectionVariables.set('roomSeekingPostSlug', response.slug);",
+                  "    console.log('📝 Room seeking post created successfully!');",
+                  "    console.log('🆔 Post ID saved:', response.id);",
+                  "    console.log('🔗 Post Slug saved:', response.slug);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Tìm phòng trọ gần Đại học Bách Khoa\",\n  \"description\": \"Tôi đang tìm phòng trọ gần Đại học Bách Khoa, sạch sẽ, an ninh tốt. Ngân sách khoảng 3-5 triệu/tháng.\",\n  \"preferredProvinceId\": 1,\n  \"preferredDistrictId\": 1,\n  \"minBudget\": 3000000,\n  \"maxBudget\": 5000000,\n  \"currency\": \"VND\",\n  \"preferredRoomType\": \"boarding_house\",\n  \"occupancy\": 1,\n  \"moveInDate\": \"2025-01-15\",\n  \"isPublic\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts"]
+            },
+            "description": "Create a new room seeking post (authenticated users only)"
+          },
+          "response": []
+        },
+        {
+          "name": "📋 Get My Room Seeking Posts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts/me?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts", "me"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Get current user's room seeking posts with pagination"
+          },
+          "response": []
+        },
+        {
+          "name": "📋 Get My Posts (Legacy)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts/my-posts?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts", "my-posts"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "[DEPRECATED] Use /me endpoint instead. Legacy endpoint for backward compatibility."
+          },
+          "response": []
+        },
+        {
+          "name": "🔍 Get Room Seeking Post Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts/{{roomSeekingPostId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts", "{{roomSeekingPostId}}"]
+            },
+            "description": "Get detailed information about a room seeking post (includes SEO and metadata)"
+          },
+          "response": []
+        },
+        {
+          "name": "✏️ Update Room Seeking Post",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated: Tìm phòng trọ gần Đại học Bách Khoa\",\n  \"description\": \"Cập nhật: Tôi đang tìm phòng trọ gần Đại học Bách Khoa, ưu tiên phòng có gác lửng, sạch sẽ, an ninh tốt.\",\n  \"maxBudget\": 4500000,\n  \"moveInDate\": \"2025-02-01\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts/{{roomSeekingPostId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts", "{{roomSeekingPostId}}"]
+            },
+            "description": "Update room seeking post (owner only)"
+          },
+          "response": []
+        },
+        {
+          "name": "🔄 Update Post Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"paused\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts/{{roomSeekingPostId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts", "{{roomSeekingPostId}}", "status"]
+            },
+            "description": "Update room seeking post status (active, paused, closed, expired)"
+          },
+          "response": []
+        },
+        {
+          "name": "🗑️ Delete Room Seeking Post",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/room-seeking-posts/{{roomSeekingPostId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "room-seeking-posts", "{{roomSeekingPostId}}"]
+            },
+            "description": "Delete room seeking post (owner only)"
+          },
+          "response": []
+        }
+      ],
+      "description": "Room seeking post management for tenants looking for rooms to rent. Includes search functionality via listings API."
+    },
+    {
+      "name": "🔍 Enhanced Listings",
+      "item": [
+        {
+          "name": "🏠 Search Room Listings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/listings/rooms?search={{searchKeyword}}&provinceId={{testProvinceId}}&districtId={{testDistrictId}}&roomType=apartment&minPrice=2000000&maxPrice=8000000&page=1&limit=20&sortBy=price&sortOrder=asc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "listings", "rooms"],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "{{searchKeyword}}",
+                  "description": "Search keyword for room/building name"
+                },
+                {
+                  "key": "provinceId",
+                  "value": "{{testProvinceId}}",
+                  "description": "Filter by province ID"
+                },
+                {
+                  "key": "districtId",
+                  "value": "{{testDistrictId}}",
+                  "description": "Filter by district ID"
+                },
+                {
+                  "key": "roomType",
+                  "value": "apartment",
+                  "description": "boarding_house, dormitory, sleepbox, apartment, whole_house"
+                },
+                {
+                  "key": "minPrice",
+                  "value": "2000000",
+                  "description": "Minimum monthly rent (VND)"
+                },
+                {
+                  "key": "maxPrice",
+                  "value": "8000000",
+                  "description": "Maximum monthly rent (VND)"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "price",
+                  "description": "createdAt, price, area, distance"
+                },
+                {
+                  "key": "sortOrder",
+                  "value": "asc",
+                  "description": "asc, desc"
+                }
+              ]
+            },
+            "description": "Search room listings with enhanced preference-based matching for authenticated users"
+          },
+          "response": []
+        },
+        {
+          "name": "👯 Search Room Seeking Posts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/listings/room-seeking-posts?search={{searchKeyword}}&provinceId={{testProvinceId}}&districtId={{testDistrictId}}&minBudget=2000000&maxBudget=6000000&page=1&limit=20&sortBy=createdAt&sortOrder=desc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "listings", "room-seeking-posts"],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "{{searchKeyword}}",
+                  "description": "Search keyword in title/description"
+                },
+                {
+                  "key": "provinceId",
+                  "value": "{{testProvinceId}}",
+                  "description": "Filter by province ID"
+                },
+                {
+                  "key": "districtId",
+                  "value": "{{testDistrictId}}",
+                  "description": "Filter by district ID"
+                },
+                {
+                  "key": "minBudget",
+                  "value": "2000000",
+                  "description": "Minimum budget (VND)"
+                },
+                {
+                  "key": "maxBudget",
+                  "value": "6000000",
+                  "description": "Maximum budget (VND)"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "createdAt",
+                  "description": "createdAt, maxBudget, moveInDate, viewCount"
+                },
+                {
+                  "key": "sortOrder",
+                  "value": "desc",
+                  "description": "asc, desc"
+                }
+              ]
+            },
+            "description": "Search room seeking posts (people looking for rooms to rent)"
+          },
+          "response": []
+        }
+      ],
+      "description": "Enhanced listing search endpoints for room listings and room seeking posts with comprehensive filtering options"
+    },
+    {
       "name": "💌 Room Invitations",
       "item": [
         {

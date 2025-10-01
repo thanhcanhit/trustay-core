@@ -22,7 +22,12 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ApiResponseDto } from '../../common/dto';
 import { BuildingsService } from './buildings.service';
-import { BuildingResponseDto, CreateBuildingDto, UpdateBuildingDto } from './dto';
+import {
+	BuildingQuickItemDto,
+	BuildingResponseDto,
+	CreateBuildingDto,
+	UpdateBuildingDto,
+} from './dto';
 
 @ApiTags('Buildings')
 @Controller('buildings')
@@ -135,6 +140,40 @@ export class BuildingsController {
 		const result = await this.buildingsService.findManyByOwner(userId, pageNum, limitNum);
 
 		return ApiResponseDto.success(result, 'My buildings retrieved successfully');
+	}
+
+	@Get('quick/me')
+	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
+	@ApiOperation({
+		summary: 'Lấy danh sách nhanh buildings của tôi',
+		description: 'Dành cho chủ trọ: trả về danh sách nhẹ gồm id, ảnh đầu, tên, địa điểm, số phòng.',
+	})
+	@ApiResponse({
+		status: HttpStatus.OK,
+		description: 'Lấy danh sách nhanh thành công',
+		schema: {
+			example: {
+				success: true,
+				message: 'My quick buildings retrieved successfully',
+				data: [
+					{
+						id: 'nha-tro-minh-phat-quan-1',
+						name: 'Nhà trọ Minh Phát',
+						coverImage: '/images/xxx.jpg',
+						location: { districtName: 'Quận 1', provinceName: 'TP.HCM' },
+						roomCount: 12,
+					},
+				],
+				timestamp: '2025-01-01T00:00:00.000Z',
+			},
+		},
+	})
+	async findMyQuickBuildings(
+		@CurrentUser('id') userId: string,
+	): Promise<ApiResponseDto<BuildingQuickItemDto[]>> {
+		const data = await this.buildingsService.findQuickListByOwner(userId);
+		return ApiResponseDto.success(data, 'My quick buildings retrieved successfully');
 	}
 
 	@Get(':buildingId')

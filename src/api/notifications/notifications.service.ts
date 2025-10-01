@@ -252,6 +252,21 @@ export class NotificationsService {
 		return this.createNotification(notification);
 	}
 
+	async notifyBookingConfirmed(
+		landlordId: string,
+		data: {
+			roomName: string;
+			tenantName: string;
+			bookingId: string;
+		},
+	) {
+		const notification = this.notificationFactory.createBookingConfirmedNotification(
+			landlordId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
 	// Invitation Related Notifications
 	async notifyRoomInvitation(
 		tenantId: string,
@@ -321,6 +336,20 @@ export class NotificationsService {
 		},
 	) {
 		const notification = this.notificationFactory.createInvitationWithdrawnNotification(
+			tenantId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
+	async notifyInvitationConfirmed(
+		tenantId: string,
+		data: {
+			roomName: string;
+			invitationId: string;
+		},
+	) {
+		const notification = this.notificationFactory.createInvitationConfirmedNotification(
 			tenantId,
 			data,
 		);
@@ -471,6 +500,65 @@ export class NotificationsService {
 		},
 	) {
 		const notification = this.notificationFactory.createReviewRequestNotification(userId, data);
+		return this.createNotification(notification);
+	}
+
+	// Roommate Related Notifications
+	async notifyRoommateApplicationReceived(
+		tenantId: string,
+		data: {
+			applicantName: string;
+			roomName: string;
+			applicationId: string;
+		},
+	) {
+		const notification = this.notificationFactory.createRoommateApplicationReceivedNotification(
+			tenantId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
+	async notifyRoommateApplicationApproved(
+		applicantId: string,
+		data: {
+			roomName: string;
+			applicationId: string;
+		},
+	) {
+		const notification = this.notificationFactory.createRoommateApplicationApprovedNotification(
+			applicantId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
+	async notifyRoommateApplicationRejected(
+		applicantId: string,
+		data: {
+			roomName: string;
+			reason?: string;
+			applicationId: string;
+		},
+	) {
+		const notification = this.notificationFactory.createRoommateApplicationRejectedNotification(
+			applicantId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
+	async notifyRoommateApplicationConfirmed(
+		userId: string,
+		data: {
+			roomName: string;
+			applicationId: string;
+		},
+	) {
+		const notification = this.notificationFactory.createRoommateApplicationConfirmedNotification(
+			userId,
+			data,
+		);
 		return this.createNotification(notification);
 	}
 

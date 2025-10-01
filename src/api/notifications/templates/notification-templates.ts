@@ -53,6 +53,13 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		message: 'Yêu cầu booking phòng {{roomName}} đã được hủy bởi {{cancelledBy}}',
 	},
 
+	[NotificationType.BOOKING_REQUEST_CONFIRMED]: {
+		type: NotificationType.BOOKING_REQUEST_CONFIRMED,
+		title: 'Yêu cầu booking được xác nhận',
+		message:
+			'{{tenantName}} đã xác nhận booking phòng {{roomName}}. Hợp đồng thuê đã được tạo tự động.',
+	},
+
 	// Invitation Related
 	[NotificationType.ROOM_INVITATION_RECEIVED]: {
 		type: NotificationType.ROOM_INVITATION_RECEIVED,
@@ -90,6 +97,13 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		type: NotificationType.ROOM_INVITATION_EXPIRED,
 		title: 'Lời mời hết hạn',
 		message: 'Lời mời thuê phòng {{roomName}} đã hết hạn',
+	},
+
+	[NotificationType.ROOM_INVITATION_CONFIRMED]: {
+		type: NotificationType.ROOM_INVITATION_CONFIRMED,
+		title: 'Lời mời được xác nhận',
+		message:
+			'Chủ nhà đã xác nhận lời mời thuê phòng {{roomName}}. Hợp đồng thuê đã được tạo tự động.',
 	},
 
 	// Rental Related
@@ -166,6 +180,33 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		title: 'Yêu cầu đánh giá',
 		message: 'Vui lòng đánh giá trải nghiệm thuê phòng {{roomName}} của bạn',
 		expiresInDays: 30,
+	},
+
+	// Roommate Related
+	[NotificationType.ROOMMATE_APPLICATION_RECEIVED]: {
+		type: NotificationType.ROOMMATE_APPLICATION_RECEIVED,
+		title: 'Đơn ứng tuyển roommate mới',
+		message: '{{applicantName}} đã ứng tuyển làm roommate cho phòng {{roomName}}',
+		expiresInDays: 7,
+	},
+
+	[NotificationType.ROOMMATE_APPLICATION_APPROVED]: {
+		type: NotificationType.ROOMMATE_APPLICATION_APPROVED,
+		title: 'Đơn ứng tuyển được chấp nhận',
+		message: 'Đơn ứng tuyển roommate của bạn cho phòng {{roomName}} đã được chấp nhận!',
+	},
+
+	[NotificationType.ROOMMATE_APPLICATION_REJECTED]: {
+		type: NotificationType.ROOMMATE_APPLICATION_REJECTED,
+		title: 'Đơn ứng tuyển bị từ chối',
+		message: 'Đơn ứng tuyển roommate của bạn cho phòng {{roomName}} đã bị từ chối. {{reason}}',
+	},
+
+	[NotificationType.ROOMMATE_APPLICATION_CONFIRMED]: {
+		type: NotificationType.ROOMMATE_APPLICATION_CONFIRMED,
+		title: 'Đơn ứng tuyển được xác nhận',
+		message:
+			'Đơn ứng tuyển roommate cho phòng {{roomName}} đã được xác nhận. Hợp đồng thuê đã được tạo tự động.',
 	},
 
 	// Room Seeking Posts

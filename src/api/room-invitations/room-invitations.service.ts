@@ -155,14 +155,6 @@ export class RoomInvitationsService {
 			},
 		});
 
-		// Send notification to tenant
-		await this.notificationsService.notifyRoomInvitation(dto.tenantId, {
-			roomName: room.name,
-			buildingName: room.building.name,
-			landlordName: `${sender.firstName} ${sender.lastName}`,
-			invitationId: roomInvitation.id,
-		});
-
 		return this.transformToResponseDto(roomInvitation);
 	}
 
@@ -186,33 +178,44 @@ export class RoomInvitationsService {
 			};
 		}
 
-		const [invitations, total] = await Promise.all([
-			this.prisma.roomInvitation.findMany({
-				where,
-				skip,
-				take: limit,
-				orderBy: { createdAt: 'desc' },
-				include: {
-					recipient: {
-						select: {
-							id: true,
-							firstName: true,
-							lastName: true,
-							email: true,
-							phone: true,
+		const [invitations, total, pendingCount, acceptedCount, declinedCount, withdrawnCount] =
+			await Promise.all([
+				this.prisma.roomInvitation.findMany({
+					where,
+					skip,
+					take: limit,
+					orderBy: { createdAt: 'desc' },
+					include: {
+						recipient: {
+							select: {
+								id: true,
+								firstName: true,
+								lastName: true,
+								email: true,
+								phone: true,
+							},
 						},
-					},
-					room: {
-						include: {
-							building: {
-								select: { id: true, name: true },
+						room: {
+							include: {
+								building: {
+									select: { id: true, name: true },
+								},
 							},
 						},
 					},
-				},
-			}),
-			this.prisma.roomInvitation.count({ where }),
-		]);
+				}),
+				this.prisma.roomInvitation.count({ where }),
+				this.prisma.roomInvitation.count({ where: { ...where, status: InvitationStatus.pending } }),
+				this.prisma.roomInvitation.count({
+					where: { ...where, status: InvitationStatus.accepted },
+				}),
+				this.prisma.roomInvitation.count({
+					where: { ...where, status: InvitationStatus.declined },
+				}),
+				this.prisma.roomInvitation.count({
+					where: { ...where, status: InvitationStatus.withdrawn },
+				}),
+			]);
 
 		return {
 			data: invitations.map((invitation) => this.transformToResponseDto(invitation)),
@@ -221,6 +224,13 @@ export class RoomInvitationsService {
 				limit,
 				total,
 				totalPages: Math.ceil(total / limit),
+			},
+			counts: {
+				pending: pendingCount,
+				accepted: acceptedCount,
+				declined: declinedCount,
+				withdrawn: withdrawnCount,
+				total,
 			},
 		};
 	}
@@ -234,33 +244,44 @@ export class RoomInvitationsService {
 			...(status && { status }),
 		};
 
-		const [invitations, total] = await Promise.all([
-			this.prisma.roomInvitation.findMany({
-				where,
-				skip,
-				take: limit,
-				orderBy: { createdAt: 'desc' },
-				include: {
-					sender: {
-						select: {
-							id: true,
-							firstName: true,
-							lastName: true,
-							email: true,
-							phone: true,
+		const [invitations, total, pendingCount, acceptedCount, declinedCount, withdrawnCount] =
+			await Promise.all([
+				this.prisma.roomInvitation.findMany({
+					where,
+					skip,
+					take: limit,
+					orderBy: { createdAt: 'desc' },
+					include: {
+						sender: {
+							select: {
+								id: true,
+								firstName: true,
+								lastName: true,
+								email: true,
+								phone: true,
+							},
 						},
-					},
-					room: {
-						include: {
-							building: {
-								select: { id: true, name: true },
+						room: {
+							include: {
+								building: {
+									select: { id: true, name: true },
+								},
 							},
 						},
 					},
-				},
-			}),
-			this.prisma.roomInvitation.count({ where }),
-		]);
+				}),
+				this.prisma.roomInvitation.count({ where }),
+				this.prisma.roomInvitation.count({ where: { ...where, status: InvitationStatus.pending } }),
+				this.prisma.roomInvitation.count({
+					where: { ...where, status: InvitationStatus.accepted },
+				}),
+				this.prisma.roomInvitation.count({
+					where: { ...where, status: InvitationStatus.declined },
+				}),
+				this.prisma.roomInvitation.count({
+					where: { ...where, status: InvitationStatus.withdrawn },
+				}),
+			]);
 
 		return {
 			data: invitations.map((invitation) => this.transformToResponseDto(invitation)),
@@ -269,6 +290,13 @@ export class RoomInvitationsService {
 				limit,
 				total,
 				totalPages: Math.ceil(total / limit),
+			},
+			counts: {
+				pending: pendingCount,
+				accepted: acceptedCount,
+				declined: declinedCount,
+				withdrawn: withdrawnCount,
+				total,
 			},
 		};
 	}
@@ -350,6 +378,144 @@ export class RoomInvitationsService {
 				sender: true,
 				room: { include: { building: { include: { owner: true } } } },
 			},
+		});
+
+		return this.transformToResponseDto(updatedInvitation);
+	}
+
+	async confirmRoomInvitation(invitationId: string, senderId: string) {
+		const invitation = await this.prisma.roomInvitation.findUnique({
+			where: { id: invitationId },
+			include: {
+				recipient: true,
+				sender: true,
+				room: {
+					include: {
+						building: {
+							include: {
+								owner: true,
+							},
+						},
+						roomInstances: {
+							where: { status: 'available' },
+							take: 1,
+						},
+					},
+				},
+			},
+		});
+
+		if (!invitation) {
+			throw new NotFoundException('Room invitation not found');
+		}
+
+		if (invitation.senderId !== senderId) {
+			throw new ForbiddenException('You can only confirm your own invitations');
+		}
+
+		if (invitation.isConfirmedBySender) {
+			throw new BadRequestException('Invitation is already confirmed');
+		}
+
+		if (invitation.status !== InvitationStatus.accepted) {
+			throw new BadRequestException(
+				'Can only confirm invitations that have been accepted by tenant',
+			);
+		}
+
+		// Update invitation to confirmed
+		const updatedInvitation = await this.prisma.roomInvitation.update({
+			where: { id: invitationId },
+			data: {
+				isConfirmedBySender: true,
+				confirmedAt: new Date(),
+			},
+			include: {
+				recipient: true,
+				sender: true,
+				room: {
+					include: {
+						building: true,
+					},
+				},
+			},
+		});
+
+		// ===== TỰ ĐỘNG TẠO RENTAL AFTER FINAL CONFIRMATION =====
+
+		// Check if room instance is still available
+		if (invitation.room.roomInstances.length === 0) {
+			throw new BadRequestException('No available room instance for this invitation');
+		}
+
+		const roomInstance = invitation.room.roomInstances[0];
+
+		// Kiểm tra room instance status phải là available
+		if (roomInstance.status !== 'available') {
+			throw new BadRequestException(
+				`Room instance ${roomInstance.roomNumber} is not available (current status: ${roomInstance.status})`,
+			);
+		}
+
+		// Kiểm tra không có active rental nào cho roomInstance này
+		const existingRental = await this.prisma.rental.findFirst({
+			where: {
+				roomInstanceId: roomInstance.id,
+				status: 'active',
+			},
+		});
+
+		if (existingRental) {
+			throw new BadRequestException(`Room instance ${roomInstance.roomNumber} is already rented`);
+		}
+
+		// Tạo Rental tự động và update RoomInstance status trong transaction
+		const rental = await this.prisma.$transaction(async (tx) => {
+			// Create rental
+			const newRental = await tx.rental.create({
+				data: {
+					invitationId: invitation.id,
+					roomInstanceId: roomInstance.id,
+					tenantId: invitation.recipientId!,
+					ownerId: invitation.room.building.ownerId,
+					contractStartDate: invitation.moveInDate || new Date(),
+					contractEndDate: null,
+					monthlyRent: invitation.monthlyRent,
+					depositPaid: invitation.depositAmount,
+					status: 'active',
+				},
+			});
+
+			// Update room instance status to rented
+			await tx.roomInstance.update({
+				where: { id: roomInstance.id },
+				data: { status: 'rented' as any },
+			});
+
+			return newRental;
+		});
+
+		// Gửi notification cho tenant về việc landlord confirm
+		if (invitation.recipientId) {
+			await this.notificationsService.notifyInvitationConfirmed(invitation.recipientId, {
+				roomName: invitation.room.name,
+				invitationId: invitation.id,
+			});
+		}
+
+		// Gửi notification cho cả 2 bên về rental được tạo
+		if (invitation.recipientId) {
+			await this.notificationsService.notifyRentalCreated(invitation.recipientId, {
+				roomName: invitation.room.name,
+				rentalId: rental.id,
+				startDate: (invitation.moveInDate || new Date()).toISOString(),
+			});
+		}
+
+		await this.notificationsService.notifyRentalCreated(invitation.room.building.ownerId, {
+			roomName: invitation.room.name,
+			rentalId: rental.id,
+			startDate: (invitation.moveInDate || new Date()).toISOString(),
 		});
 
 		return this.transformToResponseDto(updatedInvitation);

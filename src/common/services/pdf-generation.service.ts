@@ -1,0 +1,318 @@
+import { Injectable, Logger } from '@nestjs/common';
+import * as crypto from 'crypto';
+import * as puppeteer from 'puppeteer';
+import { generateContractHTML } from '../templates/contract-template';
+import { ContractData } from '../types/contract-metadata.types';
+
+export interface PDFGenerationOptions {
+	format?: 'A4' | 'A3' | 'Letter';
+	margin?: {
+		top: string;
+		bottom: string;
+		left: string;
+		right: string;
+	};
+	printBackground?: boolean;
+	displayHeaderFooter?: boolean;
+	headerTemplate?: string;
+	footerTemplate?: string;
+}
+
+export interface PDFResult {
+	buffer: Buffer;
+	hash: string;
+	size: number;
+	metadata: {
+		generatedAt: Date;
+		contractNumber: string;
+		pageCount: number;
+	};
+}
+
+/**
+ * PDF Generation Service
+ * Generates PDF contracts using Puppeteer with Vietnamese legal compliance
+ */
+@Injectable()
+export class PDFGenerationService {
+	private readonly logger = new Logger(PDFGenerationService.name);
+
+	/**
+	 * Generate PDF contract from contract data
+	 */
+	async generateContractPDF(
+		contractData: ContractData & {
+			contractNumber: string;
+			createdAt: Date;
+			signedAt?: Date;
+			verificationCode: string;
+			signatures?: {
+				landlord?: string;
+				tenant?: string;
+			};
+		},
+		options: PDFGenerationOptions = {},
+	): Promise<PDFResult> {
+		const browser = await this.launchBrowser();
+
+		try {
+			const page = await browser.newPage();
+
+			// Set viewport for consistent rendering
+			await page.setViewport({
+				width: 1200,
+				height: 800,
+				deviceScaleFactor: 1,
+			});
+
+			// Generate HTML content
+			const html = generateContractHTML(contractData);
+
+			// Set content and wait for all resources to load
+			await page.setContent(html, {
+				waitUntil: 'networkidle0',
+				timeout: 30000,
+			});
+
+			// Wait for fonts and images to load
+			await page.evaluateHandle('document.fonts.ready');
+
+			// Generate PDF with options
+			const pdfBuffer = await page.pdf({
+				format: options.format || 'A4',
+				printBackground: options.printBackground !== false,
+				margin: options.margin || {
+					top: '20mm',
+					bottom: '20mm',
+					left: '20mm',
+					right: '20mm',
+				},
+				displayHeaderFooter: options.displayHeaderFooter || false,
+				headerTemplate: options.headerTemplate || '',
+				footerTemplate: options.footerTemplate || '',
+				preferCSSPageSize: true,
+				timeout: 30000,
+			});
+
+			// Calculate hash for integrity
+			const hash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+
+			// Get page count
+			const pageCount = await this.getPageCount(Buffer.from(pdfBuffer));
+
+			this.logger.log(
+				`Generated PDF for contract ${contractData.contractNumber}: ${pdfBuffer.length} bytes, ${pageCount} pages`,
+			);
+
+			return {
+				buffer: Buffer.from(pdfBuffer),
+				hash,
+				size: pdfBuffer.length,
+				metadata: {
+					generatedAt: new Date(),
+					contractNumber: contractData.contractNumber,
+					pageCount,
+				},
+			};
+		} catch (error) {
+			this.logger.error('Failed to generate PDF:', error);
+			throw new Error(`PDF generation failed: ${error.message}`);
+		} finally {
+			await browser.close();
+		}
+	}
+
+	/**
+	 * Generate PDF with signatures embedded
+	 */
+	async generateSignedContractPDF(
+		contractData: ContractData & {
+			contractNumber: string;
+			createdAt: Date;
+			signedAt: Date;
+			verificationCode: string;
+			signatures: {
+				landlord: string;
+				tenant: string;
+			};
+		},
+		options: PDFGenerationOptions = {},
+	): Promise<PDFResult> {
+		// Add signature data to contract data
+		const signedContractData = {
+			...contractData,
+			signatures: {
+				landlord: contractData.signatures.landlord,
+				tenant: contractData.signatures.tenant,
+			},
+		};
+
+		return this.generateContractPDF(signedContractData, options);
+	}
+
+	/**
+	 * Add signatures to existing PDF
+	 */
+	async addSignaturesToPDF(
+		pdfBuffer: Buffer,
+		signatures: Array<{
+			image: string; // base64
+			position: { x: number; y: number; width: number; height: number };
+			page: number;
+		}>,
+	): Promise<Buffer> {
+		const browser = await this.launchBrowser();
+
+		try {
+			const page = await browser.newPage();
+
+			// Convert PDF to HTML with signatures
+			const pdfBase64 = pdfBuffer.toString('base64');
+			const html = `
+        <html>
+        <head>
+          <style>
+            body { margin: 0; padding: 0; }
+            .pdf-container { position: relative; }
+            .signature-overlay {
+              position: absolute;
+              z-index: 10;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="pdf-container">
+            <embed src="data:application/pdf;base64,${pdfBase64}" 
+                   type="application/pdf" width="100%" height="100%">
+            ${signatures
+							.map(
+								(sig) => `
+              <img src="${sig.image}" 
+                   class="signature-overlay"
+                   style="left: ${sig.position.x}px; 
+                          top: ${sig.position.y}px;
+                          width: ${sig.position.width}px;
+                          height: ${sig.position.height}px;">
+            `,
+							)
+							.join('')}
+          </div>
+        </body>
+        </html>
+      `;
+
+			await page.setContent(html, { waitUntil: 'networkidle0' });
+
+			const signedPdfBuffer = await page.pdf({
+				format: 'A4',
+				printBackground: true,
+				margin: { top: '0mm', bottom: '0mm', left: '0mm', right: '0mm' },
+			});
+
+			return Buffer.from(signedPdfBuffer);
+		} finally {
+			await browser.close();
+		}
+	}
+
+	/**
+	 * Verify PDF integrity using hash
+	 */
+	verifyPDFIntegrity(pdfBuffer: Buffer, expectedHash: string): boolean {
+		const actualHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+		return actualHash === expectedHash;
+	}
+
+	/**
+	 * Get PDF page count
+	 */
+	private async getPageCount(_pdfBuffer: Buffer): Promise<number> {
+		// This is a simplified implementation
+		// In a real scenario, you might use a PDF parsing library
+		return 1; // Default to 1 page
+	}
+
+	/**
+	 * Launch Puppeteer browser with optimized settings
+	 */
+	private async launchBrowser(): Promise<puppeteer.Browser> {
+		return puppeteer.launch({
+			headless: true,
+			args: [
+				'--no-sandbox',
+				'--disable-setuid-sandbox',
+				'--disable-dev-shm-usage',
+				'--disable-accelerated-2d-canvas',
+				'--no-first-run',
+				'--no-zygote',
+				'--disable-gpu',
+				'--disable-background-timer-throttling',
+				'--disable-backgrounding-occluded-windows',
+				'--disable-renderer-backgrounding',
+			],
+			timeout: 30000,
+		});
+	}
+
+	/**
+	 * Generate contract preview (thumbnail)
+	 */
+	async generateContractPreview(
+		contractData: ContractData & {
+			contractNumber: string;
+			createdAt: Date;
+			signedAt?: Date;
+			verificationCode: string;
+		},
+		_width: number = 200,
+		_height: number = 280,
+	): Promise<Buffer> {
+		const browser = await this.launchBrowser();
+
+		try {
+			const page = await browser.newPage();
+
+			// Set smaller viewport for preview
+			await page.setViewport({
+				width: 800,
+				height: 600,
+				deviceScaleFactor: 1,
+			});
+
+			const html = generateContractHTML(contractData);
+			await page.setContent(html, { waitUntil: 'networkidle0' });
+
+			// Take screenshot
+			const screenshot = await page.screenshot({
+				type: 'png',
+				clip: {
+					x: 0,
+					y: 0,
+					width: 800,
+					height: 600,
+				},
+			});
+
+			return Buffer.from(screenshot);
+		} finally {
+			await browser.close();
+		}
+	}
+
+	/**
+	 * Generate multiple contract pages if content is long
+	 */
+	async generateMultiPageContract(
+		contractData: ContractData & {
+			contractNumber: string;
+			createdAt: Date;
+			signedAt?: Date;
+			verificationCode: string;
+		},
+		_options: PDFGenerationOptions = {},
+	): Promise<PDFResult> {
+		// For long contracts, we might need to split content
+		// This is a placeholder for future multi-page support
+		return this.generateContractPDF(contractData, _options);
+	}
+}

@@ -107,6 +107,17 @@ export class NotificationFactory {
 		return this.createFromTemplate(userId, NotificationType.BOOKING_REQUEST_CANCELLED, data);
 	}
 
+	createBookingConfirmedNotification(
+		landlordId: string,
+		data: {
+			roomName: string;
+			tenantName: string;
+			bookingId: string;
+		},
+	) {
+		return this.createFromTemplate(landlordId, NotificationType.BOOKING_REQUEST_CONFIRMED, data);
+	}
+
 	// Invitation Related Notifications
 	createRoomInvitationNotification(
 		tenantId: string,
@@ -163,6 +174,16 @@ export class NotificationFactory {
 		},
 	) {
 		return this.createFromTemplate(tenantId, NotificationType.ROOM_INVITATION_WITHDRAWN, data);
+	}
+
+	createInvitationConfirmedNotification(
+		tenantId: string,
+		data: {
+			roomName: string;
+			invitationId: string;
+		},
+	) {
+		return this.createFromTemplate(tenantId, NotificationType.ROOM_INVITATION_CONFIRMED, data);
 	}
 
 	// Rental Related Notifications
@@ -293,6 +314,57 @@ export class NotificationFactory {
 		},
 	) {
 		return this.createFromTemplate(userId, NotificationType.REVIEW_REQUEST, data);
+	}
+
+	// Roommate Related Notifications
+	createRoommateApplicationReceivedNotification(
+		tenantId: string,
+		data: {
+			applicantName: string;
+			roomName: string;
+			applicationId: string;
+		},
+	) {
+		return this.createFromTemplate(tenantId, NotificationType.ROOMMATE_APPLICATION_RECEIVED, data);
+	}
+
+	createRoommateApplicationApprovedNotification(
+		applicantId: string,
+		data: {
+			roomName: string;
+			applicationId: string;
+		},
+	) {
+		return this.createFromTemplate(
+			applicantId,
+			NotificationType.ROOMMATE_APPLICATION_APPROVED,
+			data,
+		);
+	}
+
+	createRoommateApplicationRejectedNotification(
+		applicantId: string,
+		data: {
+			roomName: string;
+			reason?: string;
+			applicationId: string;
+		},
+	) {
+		return this.createFromTemplate(
+			applicantId,
+			NotificationType.ROOMMATE_APPLICATION_REJECTED,
+			data,
+		);
+	}
+
+	createRoommateApplicationConfirmedNotification(
+		userId: string,
+		data: {
+			roomName: string;
+			applicationId: string;
+		},
+	) {
+		return this.createFromTemplate(userId, NotificationType.ROOMMATE_APPLICATION_CONFIRMED, data);
 	}
 
 	// Room Seeking Posts Notifications

@@ -99,6 +99,7 @@ export class BookingRequestsService {
 				monthlyRent: 0, // Will be set from room pricing
 				depositAmount: 0, // Will be calculated
 				totalAmount: 0, // Will be calculated
+				isConfirmedByTenant: false, // Cần xác nhận trước khi gửi đến landlord
 			},
 			include: {
 				tenant: true,
@@ -108,14 +109,6 @@ export class BookingRequestsService {
 					},
 				},
 			},
-		});
-
-		// Send notification to landlord
-		await this.notificationsService.notifyBookingRequest(room.building.ownerId, {
-			roomName: room.name,
-			tenantName: `${tenant.firstName} ${tenant.lastName}`,
-			bookingId: bookingRequest.id,
-			roomId: room.id,
 		});
 
 		return bookingRequest;
@@ -137,36 +130,61 @@ export class BookingRequestsService {
 			...(status && { status }),
 		};
 
-		const [bookingRequests, total] = await Promise.all([
-			this.prisma.bookingRequest.findMany({
-				where,
-				skip,
-				take: limit,
-				orderBy: { createdAt: 'desc' },
-				include: {
-					tenant: {
-						select: {
-							id: true,
-							firstName: true,
-							lastName: true,
-							email: true,
-							phone: true,
+		const [bookingRequests, total, pendingCount, approvedCount, rejectedCount, cancelledCount] =
+			await Promise.all([
+				this.prisma.bookingRequest.findMany({
+					where,
+					skip,
+					take: limit,
+					orderBy: { createdAt: 'desc' },
+					include: {
+						tenant: {
+							select: {
+								id: true,
+								firstName: true,
+								lastName: true,
+								email: true,
+								phone: true,
+							},
 						},
-					},
-					room: {
-						include: {
-							building: {
-								select: {
-									id: true,
-									name: true,
+						room: {
+							include: {
+								building: {
+									select: {
+										id: true,
+										name: true,
+									},
 								},
 							},
 						},
 					},
-				},
-			}),
-			this.prisma.bookingRequest.count({ where }),
-		]);
+				}),
+				this.prisma.bookingRequest.count({ where }),
+				this.prisma.bookingRequest.count({
+					where: {
+						...where,
+						status: BookingStatus.pending,
+					},
+				}),
+				this.prisma.bookingRequest.count({
+					where: {
+						...where,
+						status: BookingStatus.approved,
+					},
+				}),
+				this.prisma.bookingRequest.count({
+					where: {
+						...where,
+						status: BookingStatus.rejected,
+					},
+				}),
+				this.prisma.bookingRequest.count({
+					where: {
+						...where,
+						status: BookingStatus.cancelled,
+					},
+				}),
+			]);
 
 		return {
 			data: bookingRequests,
@@ -175,6 +193,13 @@ export class BookingRequestsService {
 				limit,
 				total,
 				totalPages: Math.ceil(total / limit),
+			},
+			counts: {
+				pending: pendingCount,
+				approved: approvedCount,
+				rejected: rejectedCount,
+				cancelled: cancelledCount,
+				total,
 			},
 		};
 	}
@@ -323,6 +348,143 @@ export class BookingRequestsService {
 		}
 
 		return updatedBooking;
+	}
+
+	async confirmBookingRequest(bookingRequestId: string, tenantId: string) {
+		const bookingRequest = await this.prisma.bookingRequest.findUnique({
+			where: { id: bookingRequestId },
+			include: {
+				tenant: true,
+				room: {
+					include: {
+						building: {
+							include: {
+								owner: true,
+							},
+						},
+						roomInstances: {
+							where: { status: 'available' },
+							take: 1,
+						},
+					},
+				},
+			},
+		});
+
+		if (!bookingRequest) {
+			throw new NotFoundException('Booking request not found');
+		}
+
+		if (bookingRequest.tenantId !== tenantId) {
+			throw new ForbiddenException('You can only confirm your own booking requests');
+		}
+
+		if (bookingRequest.isConfirmedByTenant) {
+			throw new BadRequestException('Booking request is already confirmed');
+		}
+
+		if (bookingRequest.status !== BookingStatus.approved) {
+			throw new BadRequestException(
+				'Can only confirm booking requests that have been approved by landlord',
+			);
+		}
+
+		// Update booking request to confirmed
+		const updatedBooking = await this.prisma.bookingRequest.update({
+			where: { id: bookingRequestId },
+			data: {
+				isConfirmedByTenant: true,
+				confirmedAt: new Date(),
+			},
+			include: {
+				tenant: true,
+				room: {
+					include: {
+						building: true,
+					},
+				},
+			},
+		});
+
+		// ===== TỰ ĐỘNG TẠO RENTAL AFTER FINAL CONFIRMATION =====
+
+		// Check if room instance is still available
+		if (bookingRequest.room.roomInstances.length === 0) {
+			throw new BadRequestException('No available room instance for this booking');
+		}
+
+		const roomInstance = bookingRequest.room.roomInstances[0];
+
+		// Kiểm tra room instance status phải là available
+		if (roomInstance.status !== 'available') {
+			throw new BadRequestException(
+				`Room instance ${roomInstance.roomNumber} is not available (current status: ${roomInstance.status})`,
+			);
+		}
+
+		// Kiểm tra không có active rental nào cho roomInstance này
+		const existingRental = await this.prisma.rental.findFirst({
+			where: {
+				roomInstanceId: roomInstance.id,
+				status: 'active',
+			},
+		});
+
+		if (existingRental) {
+			throw new BadRequestException(`Room instance ${roomInstance.roomNumber} is already rented`);
+		}
+
+		// Tạo Rental tự động và update RoomInstance status trong transaction
+		const rental = await this.prisma.$transaction(async (tx) => {
+			// Create rental
+			const newRental = await tx.rental.create({
+				data: {
+					bookingRequestId: bookingRequest.id,
+					roomInstanceId: roomInstance.id,
+					tenantId: bookingRequest.tenantId,
+					ownerId: bookingRequest.room.building.ownerId,
+					contractStartDate: bookingRequest.moveInDate,
+					contractEndDate: bookingRequest.moveOutDate,
+					monthlyRent: bookingRequest.monthlyRent,
+					depositPaid: bookingRequest.depositAmount,
+					status: 'active',
+				},
+			});
+
+			// Update room instance status to rented
+			await tx.roomInstance.update({
+				where: { id: roomInstance.id },
+				data: { status: 'rented' as any },
+			});
+
+			return newRental;
+		});
+
+		// Gửi notification cho landlord về việc tenant confirm
+		await this.notificationsService.notifyBookingConfirmed(bookingRequest.room.building.ownerId, {
+			roomName: bookingRequest.room.name,
+			tenantName: `${bookingRequest.tenant.firstName} ${bookingRequest.tenant.lastName}`,
+			bookingId: bookingRequest.id,
+		});
+
+		// Gửi notification cho cả 2 bên về rental được tạo
+		await this.notificationsService.notifyRentalCreated(tenantId, {
+			roomName: bookingRequest.room.name,
+			rentalId: rental.id,
+			startDate: bookingRequest.moveInDate.toISOString(),
+		});
+
+		await this.notificationsService.notifyRentalCreated(bookingRequest.room.building.ownerId, {
+			roomName: bookingRequest.room.name,
+			rentalId: rental.id,
+			startDate: bookingRequest.moveInDate.toISOString(),
+		});
+
+		// Return booking với rental info
+		return {
+			...updatedBooking,
+			rental,
+		};
 	}
 
 	async cancelBookingRequest(

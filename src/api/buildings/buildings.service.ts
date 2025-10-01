@@ -8,7 +8,12 @@ import { UserRole } from '@prisma/client';
 import { plainToClass } from 'class-transformer';
 import { generateBuildingSlug, generateUniqueSlug } from '@/common/utils';
 import { PrismaService } from '@/prisma/prisma.service';
-import { BuildingResponseDto, CreateBuildingDto, UpdateBuildingDto } from './dto';
+import {
+	BuildingQuickItemDto,
+	BuildingResponseDto,
+	CreateBuildingDto,
+	UpdateBuildingDto,
+} from './dto';
 
 @Injectable()
 export class BuildingsService {
@@ -374,6 +379,50 @@ export class BuildingsService {
 			limit,
 			totalPages: Math.ceil(total / limit),
 		};
+	}
+
+	async findQuickListByOwner(userId: string): Promise<BuildingQuickItemDto[]> {
+		const buildings = await this.prisma.building.findMany({
+			where: { ownerId: userId },
+			include: {
+				ward: { select: { name: true } },
+				district: { select: { name: true } },
+				province: { select: { name: true } },
+				rooms: { select: { id: true } },
+			},
+			orderBy: { createdAt: 'desc' },
+		});
+
+		// First image is derived from room images; pick the first primary image if available, else first image
+		// To avoid heavy joins, fetch a single image per building via a second query using rooms' ids
+		const roomIds = buildings.flatMap((b) => b.rooms.map((r) => r.id));
+		const coverByRoomId: Record<string, string | undefined> = {};
+		if (roomIds.length > 0) {
+			const images = await this.prisma.roomImage.findMany({
+				where: { roomId: { in: roomIds } },
+				select: { roomId: true, imageUrl: true, isPrimary: true, sortOrder: true },
+				orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+			});
+			for (const img of images) {
+				if (coverByRoomId[img.roomId] === undefined) {
+					coverByRoomId[img.roomId] = img.imageUrl;
+				}
+			}
+		}
+
+		const result: BuildingQuickItemDto[] = buildings.map((b) => {
+			const firstRoomId = b.rooms[0]?.id;
+			const coverImage = firstRoomId ? coverByRoomId[firstRoomId] : undefined;
+			return {
+				id: b.id,
+				name: b.name,
+				coverImage,
+				location: { districtName: b.district?.name || '', provinceName: b.province?.name || '' },
+				roomCount: b.rooms.length,
+			};
+		});
+
+		return result;
 	}
 
 	private transformBuildingResponse(building: any): BuildingResponseDto {
