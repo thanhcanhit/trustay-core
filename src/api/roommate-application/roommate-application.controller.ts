@@ -157,6 +157,31 @@ export class RoommateApplicationController {
 		return this.roommateApplicationService.respondToApplication(id, respondDto, user.id);
 	}
 
+	@Patch(':id/confirm')
+	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
+	@ApiOperation({
+		summary: 'Xác nhận đơn ứng tuyển',
+		description:
+			'Tenant hoặc landlord xác nhận đơn ứng tuyển. Sau khi cả 2 xác nhận, rental sẽ được tạo tự động.',
+	})
+	@ApiParam({ name: 'id', description: 'ID của đơn ứng tuyển' })
+	@ApiResponse({
+		status: 200,
+		description: 'Xác nhận thành công',
+		type: RoommateApplicationResponseDto,
+	})
+	@ApiResponse({ status: 400, description: 'Không thể xác nhận đơn ứng tuyển' })
+	@ApiResponse({ status: 401, description: 'Chưa xác thực' })
+	@ApiResponse({ status: 403, description: 'Không có quyền xác nhận' })
+	@ApiResponse({ status: 404, description: 'Không tìm thấy đơn ứng tuyển' })
+	async confirmApplication(
+		@Param('id') id: string,
+		@CurrentUser() user: User,
+	): Promise<RoommateApplicationResponseDto> {
+		return this.roommateApplicationService.confirmApplication(id, user.id);
+	}
+
 	@Patch(':id/cancel')
 	@UseGuards(JwtAuthGuard)
 	@ApiBearerAuth()

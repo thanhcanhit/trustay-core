@@ -37,6 +37,12 @@ export enum NotificationType {
 	REVIEW_RECEIVED = 'review_received',
 	REVIEW_REQUEST = 'review_request',
 
+	// Roommate Related
+	ROOMMATE_APPLICATION_RECEIVED = 'roommate_application_received',
+	ROOMMATE_APPLICATION_APPROVED = 'roommate_application_approved',
+	ROOMMATE_APPLICATION_REJECTED = 'roommate_application_rejected',
+	ROOMMATE_APPLICATION_CONFIRMED = 'roommate_application_confirmed',
+
 	// Room Seeking Posts
 	ROOM_SEEKING_POST_CONTACTED = 'room_seeking_post_contacted',
 	ROOM_SEEKING_POST_EXPIRING = 'room_seeking_post_expiring',

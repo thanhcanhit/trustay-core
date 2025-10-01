@@ -182,6 +182,33 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		expiresInDays: 30,
 	},
 
+	// Roommate Related
+	[NotificationType.ROOMMATE_APPLICATION_RECEIVED]: {
+		type: NotificationType.ROOMMATE_APPLICATION_RECEIVED,
+		title: 'Đơn ứng tuyển roommate mới',
+		message: '{{applicantName}} đã ứng tuyển làm roommate cho phòng {{roomName}}',
+		expiresInDays: 7,
+	},
+
+	[NotificationType.ROOMMATE_APPLICATION_APPROVED]: {
+		type: NotificationType.ROOMMATE_APPLICATION_APPROVED,
+		title: 'Đơn ứng tuyển được chấp nhận',
+		message: 'Đơn ứng tuyển roommate của bạn cho phòng {{roomName}} đã được chấp nhận!',
+	},
+
+	[NotificationType.ROOMMATE_APPLICATION_REJECTED]: {
+		type: NotificationType.ROOMMATE_APPLICATION_REJECTED,
+		title: 'Đơn ứng tuyển bị từ chối',
+		message: 'Đơn ứng tuyển roommate của bạn cho phòng {{roomName}} đã bị từ chối. {{reason}}',
+	},
+
+	[NotificationType.ROOMMATE_APPLICATION_CONFIRMED]: {
+		type: NotificationType.ROOMMATE_APPLICATION_CONFIRMED,
+		title: 'Đơn ứng tuyển được xác nhận',
+		message:
+			'Đơn ứng tuyển roommate cho phòng {{roomName}} đã được xác nhận. Hợp đồng thuê đã được tạo tự động.',
+	},
+
 	// Room Seeking Posts
 	[NotificationType.ROOM_SEEKING_POST_CONTACTED]: {
 		type: NotificationType.ROOM_SEEKING_POST_CONTACTED,

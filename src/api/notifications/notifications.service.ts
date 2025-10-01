@@ -503,6 +503,65 @@ export class NotificationsService {
 		return this.createNotification(notification);
 	}
 
+	// Roommate Related Notifications
+	async notifyRoommateApplicationReceived(
+		tenantId: string,
+		data: {
+			applicantName: string;
+			roomName: string;
+			applicationId: string;
+		},
+	) {
+		const notification = this.notificationFactory.createRoommateApplicationReceivedNotification(
+			tenantId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
+	async notifyRoommateApplicationApproved(
+		applicantId: string,
+		data: {
+			roomName: string;
+			applicationId: string;
+		},
+	) {
+		const notification = this.notificationFactory.createRoommateApplicationApprovedNotification(
+			applicantId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
+	async notifyRoommateApplicationRejected(
+		applicantId: string,
+		data: {
+			roomName: string;
+			reason?: string;
+			applicationId: string;
+		},
+	) {
+		const notification = this.notificationFactory.createRoommateApplicationRejectedNotification(
+			applicantId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
+	async notifyRoommateApplicationConfirmed(
+		userId: string,
+		data: {
+			roomName: string;
+			applicationId: string;
+		},
+	) {
+		const notification = this.notificationFactory.createRoommateApplicationConfirmedNotification(
+			userId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
 	// Room Seeking Posts Notifications
 	async notifyRoomSeekingContacted(
 		tenantId: string,
