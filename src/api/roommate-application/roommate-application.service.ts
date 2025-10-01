@@ -143,7 +143,17 @@ export class RoommateApplicationService {
 			];
 		}
 
-		const [applications, total] = await Promise.all([
+		const [
+			applications,
+			total,
+			pendingCount,
+			approvedByTenantCount,
+			rejectedByTenantCount,
+			approvedByLandlordCount,
+			rejectedByLandlordCount,
+			cancelledCount,
+			expiredCount,
+		] = await Promise.all([
 			this.prisma.roommateApplication.findMany({
 				where,
 				include: this.getIncludeOptions(),
@@ -154,14 +164,51 @@ export class RoommateApplicationService {
 			this.prisma.roommateApplication.count({
 				where,
 			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.pending },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.approved_by_tenant },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.rejected_by_tenant },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.approved_by_landlord },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.rejected_by_landlord },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.cancelled },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.expired },
+			}),
 		]);
 
-		return PaginatedResponseDto.create(
-			applications.map((app) => this.mapToResponseDto(app)),
-			page,
-			limit,
-			total,
-		);
+		return {
+			data: applications.map((app) => this.mapToResponseDto(app)),
+			meta: {
+				page,
+				limit,
+				total,
+				totalPages: Math.ceil(total / limit),
+				hasNext: page < Math.ceil(total / limit),
+				hasPrev: page > 1,
+				itemCount: applications.length,
+			},
+			counts: {
+				pending: pendingCount,
+				approvedByTenant: approvedByTenantCount,
+				rejectedByTenant: rejectedByTenantCount,
+				approvedByLandlord: approvedByLandlordCount,
+				rejectedByLandlord: rejectedByLandlordCount,
+				cancelled: cancelledCount,
+				expired: expiredCount,
+				total,
+			},
+		} as unknown as PaginatedResponseDto<RoommateApplicationResponseDto>;
 	}
 
 	async findApplicationsForMyPosts(
@@ -203,7 +250,17 @@ export class RoommateApplicationService {
 			];
 		}
 
-		const [applications, total] = await Promise.all([
+		const [
+			applications,
+			total,
+			pendingCount,
+			approvedByTenantCount,
+			rejectedByTenantCount,
+			approvedByLandlordCount,
+			rejectedByLandlordCount,
+			cancelledCount,
+			expiredCount,
+		] = await Promise.all([
 			this.prisma.roommateApplication.findMany({
 				where,
 				include: this.getIncludeOptions(),
@@ -214,14 +271,51 @@ export class RoommateApplicationService {
 			this.prisma.roommateApplication.count({
 				where,
 			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.pending },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.approved_by_tenant },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.rejected_by_tenant },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.approved_by_landlord },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.rejected_by_landlord },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.cancelled },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.expired },
+			}),
 		]);
 
-		return PaginatedResponseDto.create(
-			applications.map((app) => this.mapToResponseDto(app)),
-			page,
-			limit,
-			total,
-		);
+		return {
+			data: applications.map((app) => this.mapToResponseDto(app)),
+			meta: {
+				page,
+				limit,
+				total,
+				totalPages: Math.ceil(total / limit),
+				hasNext: page < Math.ceil(total / limit),
+				hasPrev: page > 1,
+				itemCount: applications.length,
+			},
+			counts: {
+				pending: pendingCount,
+				approvedByTenant: approvedByTenantCount,
+				rejectedByTenant: rejectedByTenantCount,
+				approvedByLandlord: approvedByLandlordCount,
+				rejectedByLandlord: rejectedByLandlordCount,
+				cancelled: cancelledCount,
+				expired: expiredCount,
+				total,
+			},
+		} as unknown as PaginatedResponseDto<RoommateApplicationResponseDto>;
 	}
 
 	async findOne(id: string, userId?: string): Promise<RoommateApplicationResponseDto> {

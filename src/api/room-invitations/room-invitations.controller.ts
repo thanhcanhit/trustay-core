@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import {
@@ -52,6 +52,26 @@ export class RoomInvitationsController {
 		summary: 'Xem lời mời đã gửi (Landlord)',
 		description: 'Landlord xem danh sách lời mời đã gửi cho tenant',
 	})
+	@ApiQuery({ name: 'page', required: false, type: Number, description: 'Số trang (default: 1)' })
+	@ApiQuery({
+		name: 'limit',
+		required: false,
+		type: Number,
+		description: 'Số lượng mỗi trang (default: 20, max: 100)',
+	})
+	@ApiQuery({
+		name: 'status',
+		required: false,
+		enum: ['pending', 'accepted', 'declined', 'withdrawn'],
+		description: 'Lọc theo trạng thái',
+	})
+	@ApiQuery({
+		name: 'buildingId',
+		required: false,
+		type: String,
+		description: 'Lọc theo building ID',
+	})
+	@ApiQuery({ name: 'roomId', required: false, type: String, description: 'Lọc theo room ID' })
 	@ApiResponse({
 		status: 200,
 		description: 'Lấy danh sách lời mời đã gửi thành công',
@@ -69,6 +89,31 @@ export class RoomInvitationsController {
 		summary: 'Xem lời mời của tôi',
 		description: 'Tự động hiển thị lời mời đã gửi (landlord) hoặc đã nhận (tenant) dựa trên role',
 	})
+	@ApiQuery({ name: 'page', required: false, type: Number, description: 'Số trang (default: 1)' })
+	@ApiQuery({
+		name: 'limit',
+		required: false,
+		type: Number,
+		description: 'Số lượng mỗi trang (default: 20, max: 100)',
+	})
+	@ApiQuery({
+		name: 'status',
+		required: false,
+		enum: ['pending', 'accepted', 'declined', 'withdrawn'],
+		description: 'Lọc theo trạng thái',
+	})
+	@ApiQuery({
+		name: 'buildingId',
+		required: false,
+		type: String,
+		description: 'Lọc theo building ID (áp dụng với landlord)',
+	})
+	@ApiQuery({
+		name: 'roomId',
+		required: false,
+		type: String,
+		description: 'Lọc theo room ID (áp dụng với landlord)',
+	})
 	@ApiResponse({
 		status: 200,
 		description: 'Lấy danh sách lời mời thành công',
@@ -85,6 +130,19 @@ export class RoomInvitationsController {
 	@ApiOperation({
 		summary: 'Xem lời mời đã nhận (Tenant)',
 		description: 'Tenant xem danh sách lời mời đã nhận từ landlord',
+	})
+	@ApiQuery({ name: 'page', required: false, type: Number, description: 'Số trang (default: 1)' })
+	@ApiQuery({
+		name: 'limit',
+		required: false,
+		type: Number,
+		description: 'Số lượng mỗi trang (default: 20, max: 100)',
+	})
+	@ApiQuery({
+		name: 'status',
+		required: false,
+		enum: ['pending', 'accepted', 'declined', 'withdrawn'],
+		description: 'Lọc theo trạng thái',
 	})
 	@ApiResponse({
 		status: 200,

@@ -178,33 +178,44 @@ export class RoomInvitationsService {
 			};
 		}
 
-		const [invitations, total] = await Promise.all([
-			this.prisma.roomInvitation.findMany({
-				where,
-				skip,
-				take: limit,
-				orderBy: { createdAt: 'desc' },
-				include: {
-					recipient: {
-						select: {
-							id: true,
-							firstName: true,
-							lastName: true,
-							email: true,
-							phone: true,
+		const [invitations, total, pendingCount, acceptedCount, declinedCount, withdrawnCount] =
+			await Promise.all([
+				this.prisma.roomInvitation.findMany({
+					where,
+					skip,
+					take: limit,
+					orderBy: { createdAt: 'desc' },
+					include: {
+						recipient: {
+							select: {
+								id: true,
+								firstName: true,
+								lastName: true,
+								email: true,
+								phone: true,
+							},
 						},
-					},
-					room: {
-						include: {
-							building: {
-								select: { id: true, name: true },
+						room: {
+							include: {
+								building: {
+									select: { id: true, name: true },
+								},
 							},
 						},
 					},
-				},
-			}),
-			this.prisma.roomInvitation.count({ where }),
-		]);
+				}),
+				this.prisma.roomInvitation.count({ where }),
+				this.prisma.roomInvitation.count({ where: { ...where, status: InvitationStatus.pending } }),
+				this.prisma.roomInvitation.count({
+					where: { ...where, status: InvitationStatus.accepted },
+				}),
+				this.prisma.roomInvitation.count({
+					where: { ...where, status: InvitationStatus.declined },
+				}),
+				this.prisma.roomInvitation.count({
+					where: { ...where, status: InvitationStatus.withdrawn },
+				}),
+			]);
 
 		return {
 			data: invitations.map((invitation) => this.transformToResponseDto(invitation)),
@@ -213,6 +224,13 @@ export class RoomInvitationsService {
 				limit,
 				total,
 				totalPages: Math.ceil(total / limit),
+			},
+			counts: {
+				pending: pendingCount,
+				accepted: acceptedCount,
+				declined: declinedCount,
+				withdrawn: withdrawnCount,
+				total,
 			},
 		};
 	}
@@ -226,33 +244,44 @@ export class RoomInvitationsService {
 			...(status && { status }),
 		};
 
-		const [invitations, total] = await Promise.all([
-			this.prisma.roomInvitation.findMany({
-				where,
-				skip,
-				take: limit,
-				orderBy: { createdAt: 'desc' },
-				include: {
-					sender: {
-						select: {
-							id: true,
-							firstName: true,
-							lastName: true,
-							email: true,
-							phone: true,
+		const [invitations, total, pendingCount, acceptedCount, declinedCount, withdrawnCount] =
+			await Promise.all([
+				this.prisma.roomInvitation.findMany({
+					where,
+					skip,
+					take: limit,
+					orderBy: { createdAt: 'desc' },
+					include: {
+						sender: {
+							select: {
+								id: true,
+								firstName: true,
+								lastName: true,
+								email: true,
+								phone: true,
+							},
 						},
-					},
-					room: {
-						include: {
-							building: {
-								select: { id: true, name: true },
+						room: {
+							include: {
+								building: {
+									select: { id: true, name: true },
+								},
 							},
 						},
 					},
-				},
-			}),
-			this.prisma.roomInvitation.count({ where }),
-		]);
+				}),
+				this.prisma.roomInvitation.count({ where }),
+				this.prisma.roomInvitation.count({ where: { ...where, status: InvitationStatus.pending } }),
+				this.prisma.roomInvitation.count({
+					where: { ...where, status: InvitationStatus.accepted },
+				}),
+				this.prisma.roomInvitation.count({
+					where: { ...where, status: InvitationStatus.declined },
+				}),
+				this.prisma.roomInvitation.count({
+					where: { ...where, status: InvitationStatus.withdrawn },
+				}),
+			]);
 
 		return {
 			data: invitations.map((invitation) => this.transformToResponseDto(invitation)),
@@ -261,6 +290,13 @@ export class RoomInvitationsService {
 				limit,
 				total,
 				totalPages: Math.ceil(total / limit),
+			},
+			counts: {
+				pending: pendingCount,
+				accepted: acceptedCount,
+				declined: declinedCount,
+				withdrawn: withdrawnCount,
+				total,
 			},
 		};
 	}

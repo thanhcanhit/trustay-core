@@ -10,7 +10,14 @@ import {
 	Query,
 	UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+	ApiBearerAuth,
+	ApiOperation,
+	ApiParam,
+	ApiQuery,
+	ApiResponse,
+	ApiTags,
+} from '@nestjs/swagger';
 import { User } from '@prisma/client';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -59,6 +66,27 @@ export class RoommateApplicationController {
 		summary: 'Lấy danh sách đơn ứng tuyển của tôi',
 		description: 'Lấy danh sách các đơn ứng tuyển do user hiện tại tạo ra',
 	})
+	@ApiQuery({ name: 'page', required: false, type: Number, description: 'Số trang (default: 1)' })
+	@ApiQuery({
+		name: 'limit',
+		required: false,
+		type: Number,
+		description: 'Số items per page (default: 20, max: 100)',
+	})
+	@ApiQuery({
+		name: 'status',
+		required: false,
+		enum: [
+			'pending',
+			'approved_by_tenant',
+			'rejected_by_tenant',
+			'approved_by_landlord',
+			'rejected_by_landlord',
+			'cancelled',
+			'expired',
+		],
+		description: 'Lọc theo trạng thái',
+	})
 	@ApiResponse({
 		status: 200,
 		description: 'Lấy danh sách thành công',
@@ -78,6 +106,27 @@ export class RoommateApplicationController {
 	@ApiOperation({
 		summary: 'Lấy danh sách đơn ứng tuyển cho bài đăng của tôi',
 		description: 'Lấy danh sách các đơn ứng tuyển vào các bài đăng do user hiện tại tạo ra',
+	})
+	@ApiQuery({ name: 'page', required: false, type: Number, description: 'Số trang (default: 1)' })
+	@ApiQuery({
+		name: 'limit',
+		required: false,
+		type: Number,
+		description: 'Số items per page (default: 20, max: 100)',
+	})
+	@ApiQuery({
+		name: 'status',
+		required: false,
+		enum: [
+			'pending',
+			'approved_by_tenant',
+			'rejected_by_tenant',
+			'approved_by_landlord',
+			'rejected_by_landlord',
+			'cancelled',
+			'expired',
+		],
+		description: 'Lọc theo trạng thái',
 	})
 	@ApiResponse({
 		status: 200,

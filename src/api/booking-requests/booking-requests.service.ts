@@ -130,36 +130,61 @@ export class BookingRequestsService {
 			...(status && { status }),
 		};
 
-		const [bookingRequests, total] = await Promise.all([
-			this.prisma.bookingRequest.findMany({
-				where,
-				skip,
-				take: limit,
-				orderBy: { createdAt: 'desc' },
-				include: {
-					tenant: {
-						select: {
-							id: true,
-							firstName: true,
-							lastName: true,
-							email: true,
-							phone: true,
+		const [bookingRequests, total, pendingCount, approvedCount, rejectedCount, cancelledCount] =
+			await Promise.all([
+				this.prisma.bookingRequest.findMany({
+					where,
+					skip,
+					take: limit,
+					orderBy: { createdAt: 'desc' },
+					include: {
+						tenant: {
+							select: {
+								id: true,
+								firstName: true,
+								lastName: true,
+								email: true,
+								phone: true,
+							},
 						},
-					},
-					room: {
-						include: {
-							building: {
-								select: {
-									id: true,
-									name: true,
+						room: {
+							include: {
+								building: {
+									select: {
+										id: true,
+										name: true,
+									},
 								},
 							},
 						},
 					},
-				},
-			}),
-			this.prisma.bookingRequest.count({ where }),
-		]);
+				}),
+				this.prisma.bookingRequest.count({ where }),
+				this.prisma.bookingRequest.count({
+					where: {
+						...where,
+						status: BookingStatus.pending,
+					},
+				}),
+				this.prisma.bookingRequest.count({
+					where: {
+						...where,
+						status: BookingStatus.approved,
+					},
+				}),
+				this.prisma.bookingRequest.count({
+					where: {
+						...where,
+						status: BookingStatus.rejected,
+					},
+				}),
+				this.prisma.bookingRequest.count({
+					where: {
+						...where,
+						status: BookingStatus.cancelled,
+					},
+				}),
+			]);
 
 		return {
 			data: bookingRequests,
@@ -168,6 +193,13 @@ export class BookingRequestsService {
 				limit,
 				total,
 				totalPages: Math.ceil(total / limit),
+			},
+			counts: {
+				pending: pendingCount,
+				approved: approvedCount,
+				rejected: rejectedCount,
+				cancelled: cancelledCount,
+				total,
 			},
 		};
 	}
