@@ -428,7 +428,14 @@ export class BookingRequestsService {
 			return newRental;
 		});
 
-		// Gửi notification cho cả 2 bên
+		// Gửi notification cho landlord về việc tenant confirm
+		await this.notificationsService.notifyBookingConfirmed(bookingRequest.room.building.ownerId, {
+			roomName: bookingRequest.room.name,
+			tenantName: `${bookingRequest.tenant.firstName} ${bookingRequest.tenant.lastName}`,
+			bookingId: bookingRequest.id,
+		});
+
+		// Gửi notification cho cả 2 bên về rental được tạo
 		await this.notificationsService.notifyRentalCreated(tenantId, {
 			roomName: bookingRequest.room.name,
 			rentalId: rental.id,

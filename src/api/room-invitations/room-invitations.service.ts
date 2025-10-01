@@ -459,7 +459,15 @@ export class RoomInvitationsService {
 			return newRental;
 		});
 
-		// Gửi notification cho cả 2 bên
+		// Gửi notification cho tenant về việc landlord confirm
+		if (invitation.recipientId) {
+			await this.notificationsService.notifyInvitationConfirmed(invitation.recipientId, {
+				roomName: invitation.room.name,
+				invitationId: invitation.id,
+			});
+		}
+
+		// Gửi notification cho cả 2 bên về rental được tạo
 		if (invitation.recipientId) {
 			await this.notificationsService.notifyRentalCreated(invitation.recipientId, {
 				roomName: invitation.room.name,

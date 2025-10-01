@@ -252,6 +252,21 @@ export class NotificationsService {
 		return this.createNotification(notification);
 	}
 
+	async notifyBookingConfirmed(
+		landlordId: string,
+		data: {
+			roomName: string;
+			tenantName: string;
+			bookingId: string;
+		},
+	) {
+		const notification = this.notificationFactory.createBookingConfirmedNotification(
+			landlordId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
 	// Invitation Related Notifications
 	async notifyRoomInvitation(
 		tenantId: string,
@@ -321,6 +336,20 @@ export class NotificationsService {
 		},
 	) {
 		const notification = this.notificationFactory.createInvitationWithdrawnNotification(
+			tenantId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
+	async notifyInvitationConfirmed(
+		tenantId: string,
+		data: {
+			roomName: string;
+			invitationId: string;
+		},
+	) {
+		const notification = this.notificationFactory.createInvitationConfirmedNotification(
 			tenantId,
 			data,
 		);

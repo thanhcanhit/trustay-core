@@ -53,6 +53,13 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		message: 'Yêu cầu booking phòng {{roomName}} đã được hủy bởi {{cancelledBy}}',
 	},
 
+	[NotificationType.BOOKING_REQUEST_CONFIRMED]: {
+		type: NotificationType.BOOKING_REQUEST_CONFIRMED,
+		title: 'Yêu cầu booking được xác nhận',
+		message:
+			'{{tenantName}} đã xác nhận booking phòng {{roomName}}. Hợp đồng thuê đã được tạo tự động.',
+	},
+
 	// Invitation Related
 	[NotificationType.ROOM_INVITATION_RECEIVED]: {
 		type: NotificationType.ROOM_INVITATION_RECEIVED,
@@ -90,6 +97,13 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		type: NotificationType.ROOM_INVITATION_EXPIRED,
 		title: 'Lời mời hết hạn',
 		message: 'Lời mời thuê phòng {{roomName}} đã hết hạn',
+	},
+
+	[NotificationType.ROOM_INVITATION_CONFIRMED]: {
+		type: NotificationType.ROOM_INVITATION_CONFIRMED,
+		title: 'Lời mời được xác nhận',
+		message:
+			'Chủ nhà đã xác nhận lời mời thuê phòng {{roomName}}. Hợp đồng thuê đã được tạo tự động.',
 	},
 
 	// Rental Related
