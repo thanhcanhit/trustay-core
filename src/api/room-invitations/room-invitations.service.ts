@@ -329,7 +329,7 @@ export class RoomInvitationsService {
 			throw new BadRequestException('Can only accept/reject pending invitations');
 		}
 
-		// If accepting, check if room is still available
+		// If accepting, just verify room is still available (rental will be created on landlord confirm)
 		if (dto.status === InvitationStatus.accepted) {
 			const availableInstance = await this.prisma.roomInstance.findFirst({
 				where: { roomId: invitation.roomId, status: 'available' },
@@ -337,25 +337,8 @@ export class RoomInvitationsService {
 			});
 
 			if (!availableInstance) {
-				throw new Error('No available room instances to create rental');
+				throw new BadRequestException('No available room instances for this invitation');
 			}
-
-			const rental = await this.rentalsService.createRental(invitation.senderId, {
-				invitationId: invitation.id,
-				roomInstanceId: availableInstance.id,
-				tenantId: invitation.recipientId as string,
-				contractStartDate: invitation.moveInDate!.toISOString(),
-				contractEndDate: invitation.rentalMonths
-					? new Date(
-							invitation.moveInDate!.getTime() + invitation.rentalMonths * 30 * 24 * 60 * 60 * 1000,
-						).toISOString()
-					: undefined,
-				monthlyRent: invitation.monthlyRent.toString(),
-				depositPaid: invitation.depositAmount.toString(),
-			});
-
-			// Auto-create contract from the new rental
-			await this.contractsService.autoCreateContractFromRental(rental.id);
 		} else if (dto.status === InvitationStatus.declined) {
 			await this.notificationsService.notifyInvitationRejected(invitation.senderId, {
 				roomName: invitation.room.name,
@@ -423,24 +406,6 @@ export class RoomInvitationsService {
 			);
 		}
 
-		// Update invitation to confirmed
-		const updatedInvitation = await this.prisma.roomInvitation.update({
-			where: { id: invitationId },
-			data: {
-				isConfirmedBySender: true,
-				confirmedAt: new Date(),
-			},
-			include: {
-				recipient: true,
-				sender: true,
-				room: {
-					include: {
-						building: true,
-					},
-				},
-			},
-		});
-
 		// ===== TỰ ĐỘNG TẠO RENTAL AFTER FINAL CONFIRMATION =====
 
 		// Check if room instance is still available
@@ -469,9 +434,28 @@ export class RoomInvitationsService {
 			throw new BadRequestException(`Room instance ${roomInstance.roomNumber} is already rented`);
 		}
 
-		// Tạo Rental tự động và update RoomInstance status trong transaction
-		const rental = await this.prisma.$transaction(async (tx) => {
-			// Create rental
+		// Tạo Rental tự động và update Invitation + RoomInstance status trong transaction
+		// Nếu có bất kỳ lỗi nào, toàn bộ quá trình confirm sẽ rollback
+		const result = await this.prisma.$transaction(async (tx) => {
+			// Update invitation to confirmed
+			const updatedInvitation = await tx.roomInvitation.update({
+				where: { id: invitationId },
+				data: {
+					isConfirmedBySender: true,
+					confirmedAt: new Date(),
+				},
+				include: {
+					recipient: true,
+					sender: true,
+					room: {
+						include: {
+							building: true,
+						},
+					},
+				},
+			});
+
+			// Create rental - ACCEPT giá trị 0
 			const newRental = await tx.rental.create({
 				data: {
 					invitationId: invitation.id,
@@ -479,20 +463,25 @@ export class RoomInvitationsService {
 					tenantId: invitation.recipientId!,
 					ownerId: invitation.room.building.ownerId,
 					contractStartDate: invitation.moveInDate || new Date(),
-					contractEndDate: null,
+					contractEndDate: invitation.rentalMonths
+						? new Date(
+								(invitation.moveInDate || new Date()).getTime() +
+									invitation.rentalMonths * 30 * 24 * 60 * 60 * 1000,
+							)
+						: null,
 					monthlyRent: invitation.monthlyRent,
 					depositPaid: invitation.depositAmount,
 					status: 'active',
 				},
 			});
 
-			// Update room instance status to rented
+			// Update room instance status to occupied
 			await tx.roomInstance.update({
 				where: { id: roomInstance.id },
-				data: { status: 'rented' as any },
+				data: { status: 'occupied' },
 			});
 
-			return newRental;
+			return { updatedInvitation, rental: newRental };
 		});
 
 		// Gửi notification cho tenant về việc landlord confirm
@@ -507,18 +496,18 @@ export class RoomInvitationsService {
 		if (invitation.recipientId) {
 			await this.notificationsService.notifyRentalCreated(invitation.recipientId, {
 				roomName: invitation.room.name,
-				rentalId: rental.id,
+				rentalId: result.rental.id,
 				startDate: (invitation.moveInDate || new Date()).toISOString(),
 			});
 		}
 
 		await this.notificationsService.notifyRentalCreated(invitation.room.building.ownerId, {
 			roomName: invitation.room.name,
-			rentalId: rental.id,
+			rentalId: result.rental.id,
 			startDate: (invitation.moveInDate || new Date()).toISOString(),
 		});
 
-		return this.transformToResponseDto(updatedInvitation);
+		return this.transformToResponseDto(result.updatedInvitation);
 	}
 
 	async withdrawRoomInvitation(invitationId: string, senderId: string) {
