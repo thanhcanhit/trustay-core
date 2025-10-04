@@ -198,6 +198,33 @@ export class NotificationFactory {
 		return this.createFromTemplate(userId, NotificationType.RENTAL_CREATED, data);
 	}
 
+	createRentalCreationFailedNotification(
+		userId: string,
+		data: {
+			roomName: string;
+			error: string;
+			bookingId?: string;
+			invitationId?: string;
+		},
+	) {
+		return this.createFromTemplate(userId, NotificationType.RENTAL_CREATION_FAILED, data);
+	}
+
+	createRentalCreationFailedInvitationNotification(
+		userId: string,
+		data: {
+			roomName: string;
+			error: string;
+			invitationId?: string;
+		},
+	) {
+		return this.createFromTemplate(
+			userId,
+			NotificationType.RENTAL_CREATION_FAILED_INVITATION,
+			data,
+		);
+	}
+
 	createRentalStatusUpdatedNotification(
 		userId: string,
 		data: {

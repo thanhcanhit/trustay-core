@@ -113,6 +113,20 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		message: 'Hợp đồng thuê phòng {{roomName}} đã được tạo thành công. Bắt đầu từ {{startDate}}',
 	},
 
+	[NotificationType.RENTAL_CREATION_FAILED]: {
+		type: NotificationType.RENTAL_CREATION_FAILED,
+		title: 'Phòng đã được người khác xác nhận',
+		message:
+			'Cảm ơn bạn đã xác nhận yêu cầu thuê phòng {{roomName}}. Tuy nhiên phòng này đã được người khác xác nhận trước. Vui lòng liên hệ chủ nhà để được hỗ trợ phòng khác.',
+	},
+
+	[NotificationType.RENTAL_CREATION_FAILED_INVITATION]: {
+		type: NotificationType.RENTAL_CREATION_FAILED_INVITATION,
+		title: 'Không thể hoàn tất lời mời',
+		message:
+			'Xác nhận lời mời thuê phòng {{roomName}} đã được ghi nhận. Tuy nhiên phòng này hiện không còn trống hoặc đã có người thuê. Vui lòng kiểm tra lại hoặc mời thuê phòng khác.',
+	},
+
 	[NotificationType.RENTAL_STATUS_UPDATED]: {
 		type: NotificationType.RENTAL_STATUS_UPDATED,
 		title: 'Trạng thái hợp đồng cập nhật',

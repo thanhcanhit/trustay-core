@@ -108,11 +108,8 @@ export class RentalsService {
 				throw new BadRequestException('Can only create rental from approved booking request');
 			}
 
-			if (
-				bookingRequest.tenantId !== dto.tenantId ||
-				bookingRequest.roomInstanceId !== dto.roomInstanceId
-			) {
-				throw new BadRequestException('Booking request data does not match rental data');
+			if (bookingRequest.tenantId !== dto.tenantId) {
+				throw new BadRequestException('Booking request tenant does not match rental tenant');
 			}
 		}
 

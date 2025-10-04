@@ -22,6 +22,8 @@ export enum NotificationType {
 
 	// Rental Related
 	RENTAL_CREATED = 'rental_created',
+	RENTAL_CREATION_FAILED = 'rental_creation_failed',
+	RENTAL_CREATION_FAILED_INVITATION = 'rental_creation_failed_invitation',
 	RENTAL_STATUS_UPDATED = 'rental_status_updated',
 	RENTAL_TERMINATED = 'rental_terminated',
 	RENTAL_EXPIRING_SOON = 'rental_expiring_soon',
