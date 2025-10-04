@@ -369,6 +369,37 @@ export class NotificationsService {
 		return this.createNotification(notification);
 	}
 
+	async notifyRentalCreationFailed(
+		userId: string,
+		data: {
+			roomName: string;
+			error: string;
+			bookingId?: string;
+			invitationId?: string;
+		},
+	) {
+		const notification = this.notificationFactory.createRentalCreationFailedNotification(
+			userId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
+	async notifyRentalCreationFailedInvitation(
+		userId: string,
+		data: {
+			roomName: string;
+			error: string;
+			invitationId?: string;
+		},
+	) {
+		const notification = this.notificationFactory.createRentalCreationFailedInvitationNotification(
+			userId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
 	async notifyRentalStatusUpdated(
 		userId: string,
 		data: {
