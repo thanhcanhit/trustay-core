@@ -561,10 +561,11 @@ export class ContractsController {
 
 			// Generate preview with timeout safeguard
 			const generate = this.pdfGenerationService.generateContractPreview(pdfContractData);
+			// Allow more time in containerized/prod environments where Chromium cold-start is slower
 			const previewBuffer = await Promise.race<Buffer>([
 				generate,
 				new Promise<never>((_, reject) =>
-					setTimeout(() => reject(new Error('Preview generation timed out')), 15000),
+					setTimeout(() => reject(new Error('Preview generation timed out')), 50000),
 				),
 			]);
 
