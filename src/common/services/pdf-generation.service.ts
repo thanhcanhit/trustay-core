@@ -236,7 +236,9 @@ export class PDFGenerationService {
 	 * Launch Puppeteer browser with optimized settings
 	 */
 	private async launchBrowser(): Promise<puppeteer.Browser> {
+		const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
 		return puppeteer.launch({
+			executablePath,
 			headless: true,
 			args: [
 				'--no-sandbox',
@@ -246,6 +248,8 @@ export class PDFGenerationService {
 				'--no-first-run',
 				'--no-zygote',
 				'--disable-gpu',
+				'--single-process',
+				'--disable-features=site-per-process,SitePerProcess',
 				'--disable-background-timer-throttling',
 				'--disable-backgrounding-occluded-windows',
 				'--disable-renderer-backgrounding',
@@ -268,18 +272,28 @@ export class PDFGenerationService {
 		_height: number = 280,
 	): Promise<Buffer> {
 		const browser = await this.launchBrowser();
+		const overallTimeoutMs = 15000;
+		const timeoutPromise = new Promise<never>((_, reject) =>
+			setTimeout(() => reject(new Error('Preview generation timed out')), overallTimeoutMs),
+		);
 		try {
-			const page = await browser.newPage();
-			await page.setViewport({ width: 800, height: 600, deviceScaleFactor: 1 });
-			const html = generateContractHTML(contractData);
-			await page.setContent(html, { waitUntil: 'networkidle0' });
-			// Ensure fonts are ready to avoid blank renders (ignore if not supported)
-			await page.evaluateHandle('document.fonts && document.fonts.ready').catch(() => undefined);
-			const screenshot = await page.screenshot({
-				type: 'png',
-				clip: { x: 0, y: 0, width: 800, height: 600 },
-			});
-			return Buffer.from(screenshot);
+			const work = (async () => {
+				const page = await browser.newPage();
+				page.setDefaultNavigationTimeout(12000);
+				page.setDefaultTimeout(12000);
+				page.on('error', (e) => this.logger.error(`Puppeteer page error: ${String(e)}`));
+				page.on('pageerror', (e) => this.logger.error(`Puppeteer pageerror: ${String(e)}`));
+				await page.setViewport({ width: 800, height: 600, deviceScaleFactor: 1 });
+				const html = generateContractHTML(contractData);
+				await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 12000 });
+				await page.evaluateHandle('document.fonts && document.fonts.ready').catch(() => undefined);
+				const screenshot = await page.screenshot({
+					type: 'png',
+					clip: { x: 0, y: 0, width: 800, height: 600 },
+				});
+				return Buffer.from(screenshot);
+			})();
+			return await Promise.race([work, timeoutPromise]);
 		} catch (err) {
 			this.logger.error(`Failed to generate contract preview: ${err?.message ?? 'Unknown error'}`);
 			throw new Error(`Preview generation failed: ${err?.message ?? 'Unknown error'}`);
