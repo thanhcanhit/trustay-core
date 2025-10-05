@@ -1169,6 +1169,7 @@ model ErrorLog {
   userAgent  String?  @map("user_agent")
   ipAddress  String?  @map("ip_address")
   requestId  String?  @map("request_id")
+  requestUserId String? @map("request_user_id")
   metadata   Json? // Additional error details as JSON
   createdAt  DateTime @default(now()) @map("created_at")
 
@@ -1176,6 +1177,7 @@ model ErrorLog {
   @@index([context])
   @@index([statusCode])
   @@index([userId])
+  @@index([requestUserId])
   @@index([createdAt])
   @@map("error_logs")
 }

@@ -13,6 +13,7 @@ interface ErrorLogData {
 	userAgent?: string;
 	ipAddress?: string;
 	requestId?: string;
+	requestUserId?: string;
 	metadata?: Record<string, unknown>;
 }
 
@@ -57,9 +58,6 @@ export class LoggerService implements NestLoggerService {
 	}
 
 	private extractStack(input: unknown, fallback?: string): string | undefined {
-		if (typeof fallback === 'string' && fallback.length > 0) {
-			return fallback;
-		}
 		if (input instanceof Error) {
 			return input.stack;
 		}
@@ -70,6 +68,9 @@ export class LoggerService implements NestLoggerService {
 			typeof (input as Record<string, unknown>).stack === 'string'
 		) {
 			return (input as Record<string, unknown>).stack as string;
+		}
+		if (typeof fallback === 'string' && fallback.length > 0) {
+			return fallback;
 		}
 		return undefined;
 	}
@@ -96,18 +97,21 @@ export class LoggerService implements NestLoggerService {
 								message,
 								context,
 								trace,
+								stack,
 								...meta
 							}: {
 								timestamp: string;
 								level: string;
 								message: string;
 								context: string;
-								trace: string;
+								trace?: string;
+								stack?: string;
 								[key: string]: any;
 							}) => {
 								const contextStr = context ? `[${context}]` : '[App]';
 								const metaStr = Object.keys(meta).length > 0 ? ` ${JSON.stringify(meta)}` : '';
-								const traceStr = trace ? `\n${trace}` : '';
+								const stackOrTrace = stack || trace;
+								const traceStr = stackOrTrace ? `\n${stackOrTrace}` : '';
 
 								return `${timestamp} ${contextStr} ${level}: ${message}${metaStr}${traceStr}`;
 							},
@@ -234,6 +238,7 @@ export class LoggerService implements NestLoggerService {
 					userAgent: errorData.userAgent,
 					ipAddress: errorData.ipAddress,
 					requestId: errorData.requestId,
+					requestUserId: errorData.requestUserId,
 					metadata: errorData.metadata,
 				},
 			});
@@ -255,7 +260,7 @@ export class LoggerService implements NestLoggerService {
 	error(message: unknown, trace?: string, context?: string) {
 		const messageStr: string = this.formatMessage(message);
 		const stackStr: string | undefined = this.extractStack(message, trace);
-		this.logger.error(messageStr, { context, trace: stackStr });
+		this.logger.error(messageStr, { context, stack: stackStr, trace });
 
 		// Only save critical errors to database, skip common/expected errors
 		if (this.shouldSaveToDatabase(messageStr, context)) {
@@ -332,6 +337,7 @@ export class LoggerService implements NestLoggerService {
 			stack: error.stack,
 			level: 'error',
 			context: context || 'Error',
+			requestUserId: (additionalInfo?.requestUserId as string) || undefined,
 			metadata: additionalInfo,
 		});
 	}
@@ -359,7 +365,7 @@ export class LoggerService implements NestLoggerService {
 		details?: Record<string, unknown>,
 	) {
 		const level = duration > 1000 ? 'warn' : 'info';
-		this.logger[level](`Performance: ${operation} took ${duration}ms`, {
+		(this.logger as any)[level](`Performance: ${operation} took ${duration}ms`, {
 			context: context || 'Performance',
 			duration,
 			...details,
@@ -411,6 +417,7 @@ export class LoggerService implements NestLoggerService {
 			userAgent,
 			ipAddress,
 			requestId,
+			requestUserId: (additionalInfo?.requestUserId as string) || undefined,
 			metadata: additionalInfo,
 		});
 	}
@@ -454,6 +461,7 @@ export class LoggerService implements NestLoggerService {
 			userAgent,
 			ipAddress,
 			requestId,
+			requestUserId: (additionalInfo?.requestUserId as string) || undefined,
 			metadata: additionalInfo,
 		});
 	}

@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { BookingStatus, InvitationStatus, RentalStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ContractsService } from '../contracts/contracts.service';
+import { ContractsNewService } from '../contracts/contracts-new.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateRentalDto, QueryRentalDto, TerminateRentalDto, UpdateRentalDto } from './dto';
 
@@ -15,7 +15,7 @@ export class RentalsService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly notificationsService: NotificationsService,
-		private readonly contractsService: ContractsService,
+		private readonly contractsService: ContractsNewService,
 	) {}
 
 	private transformToResponseDto(rental: any): any {
@@ -185,11 +185,10 @@ export class RentalsService {
 			rentalId: rental.id,
 		});
 
-		// Auto-create contract when rental is created
+		// Auto-create contract when rental is created (new contracts flow)
 		try {
-			await this.contractsService.autoCreateContractFromRental(rental.id);
+			await this.contractsService.createContractFromRental(rental.id, ownerId);
 		} catch (error) {
-			// Log error but don't fail the rental creation
 			console.error('Failed to auto-create contract from rental:', error);
 		}
 

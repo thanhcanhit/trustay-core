@@ -23,8 +23,18 @@ RUN pnpm prisma generate && \
 # Production stage  
 FROM node:lts-alpine3.17 AS production
 
-# Install curl for health check
-RUN apk add --no-cache curl
+# Install curl for health check and Chromium + minimal runtime deps for Puppeteer
+RUN apk add --no-cache \
+    curl \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ttf-freefont
+
+# Point Puppeteer to system Chromium and skip bundled download
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    PUPPETEER_SKIP_DOWNLOAD=true
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \

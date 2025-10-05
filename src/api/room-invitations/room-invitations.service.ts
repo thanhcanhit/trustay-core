@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { InvitationStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ContractsService } from '../contracts/contracts.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RentalsService } from '../rentals/rentals.service';
 import { CreateRoomInvitationDto, QueryRoomInvitationDto, UpdateRoomInvitationDto } from './dto';
@@ -16,7 +15,6 @@ export class RoomInvitationsService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly notificationsService: NotificationsService,
-		private readonly contractsService: ContractsService,
 		private readonly rentalsService: RentalsService,
 	) {}
 
