@@ -1,0 +1,34 @@
+// Cache key prefixes
+export const CACHE_KEYS = {
+	// System data
+	SYSTEM_AMENITIES: 'system:amenities',
+	SYSTEM_ROOM_RULES: 'system:room-rules',
+	SYSTEM_COST_TYPES: 'system:cost-types',
+
+	// Location data
+	PROVINCES: 'location:provinces',
+	DISTRICTS: 'location:districts',
+	DISTRICT_BY_PROVINCE: (provinceCode: string) => `location:districts:province:${provinceCode}`,
+	WARDS: 'location:wards',
+	WARD_BY_DISTRICT: (districtCode: string) => `location:wards:district:${districtCode}`,
+
+	// Listings
+	LISTING_DETAIL: (id: string) => `listing:detail:${id}`,
+	LISTING_SEARCH: (hash: string) => `listing:search:${hash}`,
+
+	// Buildings
+	BUILDING_DETAIL: (id: string) => `building:detail:${id}`,
+	BUILDING_RATINGS: (id: string) => `building:ratings:${id}`,
+};
+
+// Cache TTL (in seconds)
+export const CACHE_TTL = {
+	SYSTEM_DATA: 86400, // 24 hours (rarely changes)
+	LOCATION_DATA: 86400, // 24 hours (static data)
+	LISTING_DETAIL: 300, // 5 minutes
+	LISTING_SEARCH: 180, // 3 minutes
+	BUILDING_DATA: 600, // 10 minutes
+	SHORT: 60, // 1 minute
+	MEDIUM: 300, // 5 minutes
+	LONG: 3600, // 1 hour
+};

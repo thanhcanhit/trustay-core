@@ -26,6 +26,7 @@
     "db:import-full": "node scripts/crawl-import.js import"
   },
   "dependencies": {
+    "@nestjs/cache-manager": "^3.0.1",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
@@ -39,9 +40,11 @@
     "@prisma/client": "^6.11.1",
     "@types/multer": "^2.0.0",
     "bcryptjs": "^2.4.3",
+    "cache-manager-ioredis-yet": "^2.1.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "crypt": "^0.0.2",
+    "ioredis": "^5.8.0",
     "joi": "^17.13.3",
     "multer": "^2.0.2",
     "nest-winston": "^1.10.2",

@@ -24,6 +24,7 @@ import { TenantPreferencesModule } from './api/tenant-preferences/tenant-prefere
 import { UsersModule } from './api/users/users.module';
 import { AppController } from './app.controller';
 import { AuthModule } from './auth/auth.module';
+import { CacheConfigModule } from './cache/cache.module';
 import { CommonModule } from './common/common.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -36,6 +37,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 @Module({
 	imports: [
 		ConfigModule,
+		CacheConfigModule,
 		ThrottlerModule.forRootAsync({
 			inject: [AppConfigService],
 			useFactory: (config: AppConfigService) => ({
