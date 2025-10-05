@@ -32,12 +32,14 @@ import { ConfigModule } from './config/config.module';
 import { AppConfigService } from './config/config.service';
 import { LoggerModule } from './logger/logger.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { QueueModule } from './queue/queue.module';
 import { RealtimeModule } from './realtime/realtime.module';
 
 @Module({
 	imports: [
 		ConfigModule,
 		CacheConfigModule,
+		QueueModule,
 		ThrottlerModule.forRootAsync({
 			inject: [AppConfigService],
 			useFactory: (config: AppConfigService) => ({
