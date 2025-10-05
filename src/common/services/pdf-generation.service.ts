@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as puppeteer from 'puppeteer';
@@ -235,10 +236,46 @@ export class PDFGenerationService {
 	/**
 	 * Launch Puppeteer browser with optimized settings
 	 */
+	private resolveBrowserExecutable(): string | undefined {
+		const configuredPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+		if (configuredPath && existsSync(configuredPath)) {
+			return configuredPath;
+		}
+
+		if (configuredPath && !existsSync(configuredPath)) {
+			this.logger.warn(`Configured PUPPETEER_EXECUTABLE_PATH not found: ${configuredPath}`);
+		}
+
+		const commonLinuxPaths = [
+			'/usr/bin/chromium-browser',
+			'/usr/bin/chromium',
+			'/usr/bin/google-chrome',
+		];
+		for (const candidate of commonLinuxPaths) {
+			if (existsSync(candidate)) {
+				return candidate;
+			}
+		}
+
+		if (typeof puppeteer.executablePath === 'function') {
+			try {
+				const fallback = puppeteer.executablePath();
+				if (fallback && existsSync(fallback)) {
+					return fallback;
+				}
+			} catch (error) {
+				this.logger.warn(
+					`Failed to resolve Puppeteer executable path via Puppeteer API: ${String(error)}`,
+				);
+			}
+		}
+
+		return undefined;
+	}
+
 	private async launchBrowser(): Promise<puppeteer.Browser> {
-		const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser';
-		return puppeteer.launch({
-			executablePath,
+		const executablePath = this.resolveBrowserExecutable();
+		const launchOptions: puppeteer.LaunchOptions = {
 			headless: true,
 			args: [
 				'--no-sandbox',
@@ -255,7 +292,15 @@ export class PDFGenerationService {
 				'--disable-renderer-backgrounding',
 			],
 			timeout: 30000,
-		});
+		};
+
+		if (executablePath) {
+			launchOptions.executablePath = executablePath;
+		} else {
+			this.logger.debug('Using bundled Chromium executable provided by Puppeteer');
+		}
+
+		return puppeteer.launch(launchOptions);
 	}
 
 	/**
@@ -283,13 +328,16 @@ export class PDFGenerationService {
 				page.setDefaultTimeout(12000);
 				page.on('error', (e) => this.logger.error(`Puppeteer page error: ${String(e)}`));
 				page.on('pageerror', (e) => this.logger.error(`Puppeteer pageerror: ${String(e)}`));
-				await page.setViewport({ width: 800, height: 600, deviceScaleFactor: 1 });
+				await page.setViewport({ width: 842, height: 595, deviceScaleFactor: 1 });
+
 				const html = generateContractHTML(contractData);
 				await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 12000 });
+				// add Padding to the page
 				await page.evaluateHandle('document.fonts && document.fonts.ready').catch(() => undefined);
 				const screenshot = await page.screenshot({
 					type: 'png',
-					clip: { x: 0, y: 0, width: 800, height: 600 },
+					fullPage: true,
+					optimizeForSpeed: true,
 				});
 				return Buffer.from(screenshot);
 			})();
