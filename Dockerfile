@@ -26,6 +26,7 @@ FROM node:lts-alpine3.17 AS production
 # Install curl for health check and Chromium + minimal runtime deps for Puppeteer
 RUN apk add --no-cache \
     curl \
+    ca-certificates \
     chromium \
     nss \
     freetype \
