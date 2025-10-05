@@ -1,5 +1,5 @@
 # Build stage
-FROM node:lts-alpine3.17 AS build
+FROM node:lts-alpine3.20 AS build
 
 # Install pnpm
 RUN npm install -g pnpm
@@ -21,7 +21,7 @@ RUN pnpm prisma generate && \
     pnpm build
 
 # Production stage  
-FROM node:lts-alpine3.17 AS production
+FROM node:lts-alpine3.20 AS production
 
 # Install curl for health check and Chromium + minimal runtime deps for Puppeteer
 RUN apk add --no-cache --update-cache \
