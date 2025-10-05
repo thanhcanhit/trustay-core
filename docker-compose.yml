@@ -83,6 +83,7 @@ services:
       - NODE_ENV=${NODE_ENV}
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
       - RUN_SEED=false  # Set to true if you want to run seeding
       - FORCE_MIGRATION_BASELINE=false  # Set to true to force baseline resolution
     depends_on:
@@ -92,6 +93,10 @@ services:
         condition: service_healthy
     networks:
       - trustay-network
+    shm_size: '512m'
+    security_opt:
+      - seccomp=unconfined
+    ipc: host
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://0.0.0.0:3000/health || exit 1"]
       interval: 30s

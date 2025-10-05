@@ -317,21 +317,22 @@ export class PDFGenerationService {
 		_height: number = 280,
 	): Promise<Buffer> {
 		const browser = await this.launchBrowser();
-		const overallTimeoutMs = 15000;
+		const overallTimeoutMs = 45000;
 		const timeoutPromise = new Promise<never>((_, reject) =>
 			setTimeout(() => reject(new Error('Preview generation timed out')), overallTimeoutMs),
 		);
 		try {
 			const work = (async () => {
 				const page = await browser.newPage();
-				page.setDefaultNavigationTimeout(12000);
-				page.setDefaultTimeout(12000);
+				page.setDefaultNavigationTimeout(30000);
+				page.setDefaultTimeout(30000);
 				page.on('error', (e) => this.logger.error(`Puppeteer page error: ${String(e)}`));
 				page.on('pageerror', (e) => this.logger.error(`Puppeteer pageerror: ${String(e)}`));
 				await page.setViewport({ width: 842, height: 595, deviceScaleFactor: 1 });
 
 				const html = generateContractHTML(contractData);
-				await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 12000 });
+				await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
+				await page.emulateMediaType('screen');
 				// add Padding to the page
 				await page.evaluateHandle('document.fonts && document.fonts.ready').catch(() => undefined);
 				const screenshot = await page.screenshot({

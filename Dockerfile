@@ -31,7 +31,12 @@ RUN apk add --no-cache \
     nss \
     freetype \
     harfbuzz \
-    ttf-freefont
+    ttf-freefont \
+    libstdc++ \
+    icu-libs \
+    noto-fonts \
+    noto-fonts-cjk \
+    noto-fonts-emoji
 
 # Point Puppeteer to system Chromium and skip bundled download
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
