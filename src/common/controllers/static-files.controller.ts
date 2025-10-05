@@ -1,13 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-	BadRequestException,
-	Controller,
-	Get,
-	NotFoundException,
-	Param,
-	Res,
-} from '@nestjs/common';
+import { Controller, Get, Param, Res } from '@nestjs/common';
 import { Response } from 'express';
 
 /**
@@ -20,7 +13,12 @@ export class StaticFilesController {
 	async serveImage(@Param('path') imagePath: string, @Res() res: Response): Promise<void> {
 		// Validate the image path
 		if (!imagePath || imagePath.includes('..') || imagePath.includes('//')) {
-			throw new BadRequestException('Invalid image path');
+			res.status(400).json({
+				statusCode: 400,
+				message: 'Invalid image path',
+				error: 'Bad Request',
+			});
+			return;
 		}
 
 		// Construct the full path to the image file
@@ -28,7 +26,12 @@ export class StaticFilesController {
 
 		// Check if the file exists
 		if (!existsSync(fullPath)) {
-			throw new NotFoundException('Image not found');
+			res.status(404).json({
+				statusCode: 404,
+				message: 'Image not found',
+				error: 'Not Found',
+			});
+			return;
 		}
 
 		// Send the file
