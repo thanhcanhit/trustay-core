@@ -4,7 +4,10 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { redisStore } from 'cache-manager-ioredis-yet';
 import type { RedisOptions } from 'ioredis';
 import { HttpCacheInterceptor } from './interceptors/http-cache.interceptor';
+import { AuthCacheService } from './services/auth-cache.service';
 import { CacheService } from './services/cache.service';
+import { RateLimitService } from './services/rate-limit.service';
+import { UserStatusService } from './services/user-status.service';
 
 @Global()
 @Module({
@@ -27,7 +30,20 @@ import { CacheService } from './services/cache.service';
 			isGlobal: true,
 		}),
 	],
-	providers: [CacheService, HttpCacheInterceptor],
-	exports: [NestCacheModule, CacheService, HttpCacheInterceptor],
+	providers: [
+		CacheService,
+		AuthCacheService,
+		RateLimitService,
+		UserStatusService,
+		HttpCacheInterceptor,
+	],
+	exports: [
+		NestCacheModule,
+		CacheService,
+		AuthCacheService,
+		RateLimitService,
+		UserStatusService,
+		HttpCacheInterceptor,
+	],
 })
 export class CacheConfigModule {}
