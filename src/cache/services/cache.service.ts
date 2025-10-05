@@ -10,20 +10,21 @@ export class CacheService {
 	async get<T>(key: string): Promise<T | undefined> {
 		const value = await this.cacheManager.get<T>(key);
 		if (value) {
-			this.logger.debug(`Cache HIT: ${key}`);
+			this.logger.debug(`[CacheService] Cache HIT: ${key}`);
 		} else {
-			this.logger.debug(`Cache MISS: ${key}`);
+			this.logger.debug(`[CacheService] Cache MISS: ${key}`);
 		}
 		return value;
 	}
 
 	async set<T>(key: string, value: T, ttl?: number): Promise<void> {
 		await this.cacheManager.set(key, value, ttl ? ttl * 1000 : undefined);
-		this.logger.debug(`Cache SET: ${key} (TTL: ${ttl ? `${ttl}s` : 'default'})`);
+		this.logger.debug(`[CacheService] Cache SET: ${key} (TTL: ${ttl ? `${ttl}s` : 'default'})`);
 	}
 
 	async del(key: string): Promise<void> {
 		await this.cacheManager.del(key);
+		this.logger.debug(`[CacheService] Cache DEL: ${key}`);
 	}
 
 	async delPattern(pattern: string): Promise<void> {
@@ -35,6 +36,11 @@ export class CacheService {
 				const keys = await store.opts.store.keys(pattern);
 				if (keys && keys.length > 0) {
 					await Promise.all(keys.map((key: string) => this.cacheManager.del(key)));
+					this.logger.debug(
+						`[CacheService] Cache DEL PATTERN: ${pattern} (${keys.length} keys deleted)`,
+					);
+				} else {
+					this.logger.debug(`[CacheService] Cache DEL PATTERN: ${pattern} (no keys found)`);
 				}
 			}
 		}
@@ -45,6 +51,7 @@ export class CacheService {
 		const stores = (this.cacheManager as any).stores;
 		if (stores && stores.length > 0) {
 			await Promise.all(stores.map((store: any) => store.clear()));
+			this.logger.debug(`[CacheService] Cache RESET: All cache cleared`);
 		}
 	}
 
@@ -54,7 +61,7 @@ export class CacheService {
 			return cached;
 		}
 
-		this.logger.debug(`Cache WRAP executing function for: ${key}`);
+		this.logger.debug(`[CacheService] Cache WRAP executing function for: ${key}`);
 		const result = await fn();
 		await this.set(key, result, ttl);
 		return result;

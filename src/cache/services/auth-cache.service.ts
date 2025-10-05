@@ -30,7 +30,7 @@ export class AuthCacheService {
 	async setRefreshToken(data: RefreshTokenData): Promise<void> {
 		const key = CACHE_KEYS.REFRESH_TOKEN(data.userId, data.tokenId);
 		await this.cacheService.set(key, data, CACHE_TTL.REFRESH_TOKEN);
-		this.logger.debug(`Refresh token cached for user ${data.userId}`);
+		this.logger.debug(`[AuthCache] Refresh token cached for user ${data.userId}`);
 	}
 
 	/**
@@ -41,9 +41,9 @@ export class AuthCacheService {
 		const data = await this.cacheService.get<RefreshTokenData>(key);
 
 		if (data) {
-			this.logger.debug(`Refresh token found in cache for user ${userId}`);
+			this.logger.debug(`[AuthCache] Refresh token found in cache for user ${userId}`);
 		} else {
-			this.logger.debug(`Refresh token not found in cache for user ${userId}`);
+			this.logger.debug(`[AuthCache] Refresh token not found in cache for user ${userId}`);
 		}
 
 		return data || null;

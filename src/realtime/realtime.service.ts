@@ -31,6 +31,11 @@ export class RealtimeService {
 	}
 
 	public async registerConnection(socket: Socket, payload: RegisterPayload): Promise<void> {
+		if (!socket || !socket.id) {
+			this.logger.warn('Cannot register invalid socket');
+			return;
+		}
+
 		const { userId } = payload;
 		if (!userId) {
 			this.logger.warn(`Reject register for socket ${socket.id} due to missing userId`);
@@ -109,11 +114,18 @@ export class RealtimeService {
 	}
 
 	public async handlePong(socket: Socket): Promise<void> {
+		if (!socket || !socket.id) {
+			this.logger.warn('Received pong from invalid socket');
+			return;
+		}
+
 		this.markAlive(socket.id);
 		const userId = this.socketIdToUserId.get(socket.id);
 		if (!userId) {
+			this.logger.warn(`Received pong from unregistered socket: ${socket.id}`);
 			return;
 		}
+
 		try {
 			await this.prisma.user.update({
 				where: { id: userId },
@@ -181,6 +193,10 @@ export class RealtimeService {
 	}
 
 	private markAlive(socketId: string): void {
+		if (!socketId) {
+			this.logger.warn('Attempted to mark alive with invalid socketId');
+			return;
+		}
 		this.connectionHealth.set(socketId, { lastPongMs: Date.now(), isAlive: true });
 	}
 
