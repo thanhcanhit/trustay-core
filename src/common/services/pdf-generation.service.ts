@@ -268,32 +268,21 @@ export class PDFGenerationService {
 		_height: number = 280,
 	): Promise<Buffer> {
 		const browser = await this.launchBrowser();
-
 		try {
 			const page = await browser.newPage();
-
-			// Set smaller viewport for preview
-			await page.setViewport({
-				width: 800,
-				height: 600,
-				deviceScaleFactor: 1,
-			});
-
+			await page.setViewport({ width: 800, height: 600, deviceScaleFactor: 1 });
 			const html = generateContractHTML(contractData);
 			await page.setContent(html, { waitUntil: 'networkidle0' });
-
-			// Take screenshot
+			// Ensure fonts are ready to avoid blank renders (ignore if not supported)
+			await page.evaluateHandle('document.fonts && document.fonts.ready').catch(() => undefined);
 			const screenshot = await page.screenshot({
 				type: 'png',
-				clip: {
-					x: 0,
-					y: 0,
-					width: 800,
-					height: 600,
-				},
+				clip: { x: 0, y: 0, width: 800, height: 600 },
 			});
-
 			return Buffer.from(screenshot);
+		} catch (err) {
+			this.logger.error(`Failed to generate contract preview: ${err?.message ?? 'Unknown error'}`);
+			throw new Error(`Preview generation failed: ${err?.message ?? 'Unknown error'}`);
 		} finally {
 			await browser.close();
 		}

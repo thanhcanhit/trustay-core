@@ -1,22 +1,16 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../../auth/auth.module';
 import { PDFGenerationService } from '../../common/services/pdf-generation.service';
 import { PDFStorageService } from '../../common/services/pdf-storage.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ContractsController } from './contracts.controller';
-import { ContractsService } from './contracts.service';
 import { ContractsNewService } from './contracts-new.service';
 
 @Module({
-	imports: [NotificationsModule],
+	imports: [NotificationsModule, AuthModule],
 	controllers: [ContractsController],
-	providers: [
-		ContractsService,
-		ContractsNewService,
-		PDFGenerationService,
-		PDFStorageService,
-		PrismaService,
-	],
-	exports: [ContractsService, ContractsNewService, PDFGenerationService, PDFStorageService],
+	providers: [ContractsNewService, PDFGenerationService, PDFStorageService, PrismaService],
+	exports: [ContractsNewService, PDFGenerationService, PDFStorageService],
 })
 export class ContractsModule {}

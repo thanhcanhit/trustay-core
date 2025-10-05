@@ -23,7 +23,6 @@ import { PDFGenerationService } from '../../common/services/pdf-generation.servi
 import { PDFStorageService } from '../../common/services/pdf-storage.service';
 import { transformToPDFContract } from '../../common/utils/contract-data-transformer.util';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ContractsService } from './contracts.service';
 import { ContractsNewService } from './contracts-new.service';
 import { ContractStatusResponseDto } from './dto/contract-status-response.dto';
 import { CreateContractDto } from './dto/create-contract.dto';
@@ -66,7 +65,6 @@ export class ContractsController {
 
 	constructor(
 		private readonly prisma: PrismaService,
-		private readonly contractsService: ContractsService,
 		private readonly contractsNewService: ContractsNewService,
 		private readonly pdfGenerationService: PDFGenerationService,
 		private readonly pdfStorageService: PDFStorageService,
@@ -189,6 +187,24 @@ export class ContractsController {
 	async getContractById(@Param('id') id: string, @Req() req: any) {
 		this.logger.log(`Getting contract ${id} by user ${req.user.id}`);
 		return this.contractsNewService.getContractById(id, req.user.id);
+	}
+
+	/**
+	 * Send OTP for signing
+	 */
+	@Post(':id/send-otp')
+	@ApiOperation({
+		summary: 'Send signing OTP',
+		description: 'Send an OTP to the signer phone for contract signature verification',
+	})
+	@ApiParam({ name: 'id', description: 'Contract ID' })
+	@ApiResponse({ status: 200, description: 'OTP sent successfully' })
+	@ApiResponse({ status: 400, description: 'Missing phone or invalid request' })
+	@ApiResponse({ status: 403, description: 'Access denied' })
+	@ApiResponse({ status: 404, description: 'Contract not found' })
+	async sendSigningOtp(@Param('id') id: string, @Req() req: any) {
+		this.logger.log(`Send signing OTP for contract ${id} by user ${req.user.id}`);
+		return this.contractsNewService.sendSigningOtp(id, req.user.id);
 	}
 
 	/**
@@ -555,7 +571,14 @@ export class ContractsController {
 			// Send preview
 			res.send(previewBuffer);
 		} catch (error) {
-			this.logger.error(`Failed to generate preview for contract ${contractId}:`, error);
+			// Preserve known HTTP exceptions
+			if (error instanceof NotFoundException || error instanceof BadRequestException) {
+				throw error;
+			}
+			this.logger.error(
+				`Failed to generate preview for contract ${contractId}: ${error?.message ?? 'Unknown error'}`,
+				error?.stack ?? error,
+			);
 			throw new InternalServerErrorException('Failed to generate preview');
 		}
 	}

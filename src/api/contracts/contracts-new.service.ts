@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { ContractStatus, SignerRole } from '@prisma/client';
 import * as crypto from 'crypto';
+import { EmailService } from '../../auth/services/email.service';
+import { AuthCacheService } from '../../cache/services/auth-cache.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { SignContractDto } from './dto/sign-contract.dto';
@@ -15,7 +17,11 @@ import { SignContractDto } from './dto/sign-contract.dto';
 export class ContractsNewService {
 	private readonly logger = new Logger(ContractsNewService.name);
 
-	constructor(private readonly prisma: PrismaService) {}
+	constructor(
+		private readonly prisma: PrismaService,
+		private readonly authCacheService: AuthCacheService,
+		private readonly emailService: EmailService,
+	) {}
 
 	/**
 	 * MVP 1: Tạo hợp đồng mới
@@ -307,9 +313,17 @@ export class ContractsNewService {
 			throw new BadRequestException('You have already signed this contract');
 		}
 
-		// TODO: Verify OTP (giả lập MVP - trong production cần verify thật)
-		if (dto.otpCode !== '123456') {
-			throw new BadRequestException('Invalid OTP code');
+		// Verify OTP via cache session
+		const verificationTarget = `${contract.id}:${userId}`;
+		const verification = await this.authCacheService.verifyCode(
+			'contract_signing',
+			verificationTarget,
+			dto.otpCode,
+			5,
+		);
+
+		if (!verification.valid) {
+			throw new BadRequestException('Invalid or expired OTP code');
 		}
 
 		// Create signature hash
@@ -323,7 +337,7 @@ export class ContractsNewService {
 				signerRole,
 				signatureImage: dto.signatureImage,
 				signatureHash,
-				authenticationMethod: 'SMS_OTP',
+				authenticationMethod: 'EMAIL_OTP',
 				authenticationData: {
 					otpVerified: true,
 					otpCode: '******', // Không lưu OTP thật
@@ -389,6 +403,60 @@ export class ContractsNewService {
 		}
 
 		return this.formatContractResponse(updatedContract);
+	}
+
+	/**
+	 * Send signing OTP to the current signer (landlord or tenant)
+	 */
+	async sendSigningOtp(
+		contractId: string,
+		userId: string,
+	): Promise<{
+		message: string;
+		maskedEmail?: string;
+		maskedPhone?: string;
+		expiresInMinutes: number;
+	}> {
+		const contract = await this.prisma.contract.findUnique({
+			where: { id: contractId },
+			include: { landlord: true, tenant: true },
+		});
+
+		if (!contract) {
+			throw new NotFoundException('Contract not found');
+		}
+
+		if (contract.landlordId !== userId && contract.tenantId !== userId) {
+			throw new ForbiddenException('Access denied');
+		}
+
+		const isLandlord = contract.landlordId === userId;
+		const signer = isLandlord ? contract.landlord : contract.tenant;
+		const email: string | null = signer.email;
+		const phone: string | null = signer.phone;
+
+		if (!email && !phone) {
+			throw new BadRequestException('Signer has no email or phone number');
+		}
+
+		const code = this.generateSixDigitCode();
+		const target = `${contract.id}:${userId}`;
+		await this.authCacheService.setVerificationCode('contract_signing', target, code);
+
+		// Email-only OTP (SMS disabled)
+		let maskedEmail: string | undefined;
+		if (email) {
+			await this.emailService.sendVerificationEmail(email, code);
+			maskedEmail = this.maskEmail(email);
+		} else {
+			throw new BadRequestException('Signer has no email address');
+		}
+
+		return {
+			message: 'OTP sent successfully',
+			maskedEmail,
+			expiresInMinutes: 10,
+		};
 	}
 
 	/**
@@ -542,5 +610,25 @@ export class ContractsNewService {
 			createdAt: contract.createdAt,
 			updatedAt: contract.updatedAt,
 		};
+	}
+
+	private generateSixDigitCode(): string {
+		const num = Math.floor(100000 + Math.random() * 900000);
+		return String(num);
+	}
+
+	private maskPhone(phone: string): string {
+		return phone.replace(/(\+?\d{2,3})?\d{3}(\d{3,4})$/, (_m, p1, p2) => {
+			const prefix = p1 || '';
+			return `${prefix}***${p2}`;
+		});
+	}
+
+	private maskEmail(email: string): string {
+		const [local, domain] = email.split('@');
+		if (local.length <= 2) {
+			return `*${local.slice(-1)}@${domain}`;
+		}
+		return `${local[0]}***${local.slice(-1)}@${domain}`;
 	}
 }
