@@ -7,6 +7,8 @@ export const validationSchema = Joi.object({
 		.default('development'),
 	PORT: Joi.number().port().default(3000),
 	LOG_LEVEL: Joi.string().valid('error', 'warn', 'info', 'debug', 'verbose').default('info'),
+	RATE_LIMIT_TTL: Joi.number().positive().default(60000),
+	RATE_LIMIT_LIMIT: Joi.number().positive().default(100),
 
 	// Database
 	DATABASE_URL: Joi.string().required(),

@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { CACHE_KEYS, CACHE_TTL } from '../../cache/constants';
+import { CacheService } from '../../cache/services/cache.service';
 import { BreadcrumbDto, SeoDto } from '../../common/dto';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { maskEmail, maskFullName, maskPhone } from '../../common/utils/mask.utils';
@@ -12,7 +14,10 @@ import { RoommateSeekingWithMetaResponseDto } from './dto/roommate-seeking-with-
 
 @Injectable()
 export class ListingService {
-	constructor(private readonly prisma: PrismaService) {}
+	constructor(
+		private readonly prisma: PrismaService,
+		private readonly cacheService: CacheService,
+	) {}
 
 	/**
 	 * Generate SEO data for room listings
@@ -409,11 +414,33 @@ export class ListingService {
 		return { items };
 	}
 
+	/**
+	 * Generate cache key for listing search
+	 */
+	private generateListingCacheKey(query: ListingQueryDto, userId?: string): string {
+		const queryHash = JSON.stringify({
+			...query,
+			userId: userId || 'anonymous',
+		});
+		return `${CACHE_KEYS.LISTING_SEARCH(queryHash)}`;
+	}
+
 	async findAllListings(
 		query: ListingQueryDto,
 		context: { isAuthenticated: boolean; userId?: string } = { isAuthenticated: false },
 	): Promise<ListingWithMetaResponseDto> {
 		const { isAuthenticated, userId } = context;
+
+		// Cache for anonymous users with simple queries (no user preferences)
+		const shouldCache = !userId && query.page === 1 && query.limit === 20;
+
+		if (shouldCache) {
+			const cacheKey = this.generateListingCacheKey(query);
+			const cached = await this.cacheService.get<ListingWithMetaResponseDto>(cacheKey);
+			if (cached) {
+				return cached;
+			}
+		}
 		const {
 			page = 1,
 			limit = 20,
@@ -778,11 +805,19 @@ export class ListingService {
 		const seo = await this.generateRoomListingSeo(query);
 		const breadcrumb = await this.generateRoomListingBreadcrumb(query);
 
-		return {
+		const result = {
 			...paginatedResponse,
 			seo,
 			breadcrumb,
 		};
+
+		// Cache the result for anonymous users
+		if (shouldCache) {
+			const cacheKey = this.generateListingCacheKey(query);
+			await this.cacheService.set(cacheKey, result, CACHE_TTL.LISTING_SEARCH);
+		}
+
+		return result;
 	}
 
 	async findAllRoomRequests(

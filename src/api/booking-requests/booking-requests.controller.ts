@@ -20,6 +20,7 @@ import {
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { DailyBookingLimitGuard } from '../../cache/guards/daily-booking-limit.guard';
 import { BookingRequestsService } from './booking-requests.service';
 import {
 	BookingRequestResponseDto,
@@ -38,7 +39,8 @@ export class BookingRequestsController {
 	constructor(private readonly bookingRequestsService: BookingRequestsService) {}
 
 	@Post()
-	@ApiOperation({ summary: 'Tạo yêu cầu booking mới (Tenant only)' })
+	@UseGuards(DailyBookingLimitGuard) // Rate limit: 10 requests per day
+	@ApiOperation({ summary: 'Tạo yêu cầu booking mới (Tenant only) - Giới hạn 10 requests/ngày' })
 	@ApiResponse({
 		status: HttpStatus.CREATED,
 		description: 'Booking request được tạo thành công',
@@ -47,6 +49,10 @@ export class BookingRequestsController {
 	@ApiResponse({ status: 400, description: 'Dữ liệu không hợp lệ' })
 	@ApiResponse({ status: 403, description: 'Chỉ tenant mới có thể tạo booking request' })
 	@ApiResponse({ status: 404, description: 'Room không tồn tại' })
+	@ApiResponse({
+		status: 429,
+		description: 'Vượt quá giới hạn 10 yêu cầu đặt phòng mỗi ngày',
+	})
 	async createBookingRequest(
 		@Body() createBookingRequestDto: CreateBookingRequestDto,
 		@CurrentUser('id') userId: string,

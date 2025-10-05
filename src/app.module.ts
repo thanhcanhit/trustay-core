@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { BookingRequestsModule } from './api/booking-requests/booking-requests.module';
 import { BuildingModule } from './api/buildings/building.module';
 import { ChatModule } from './api/chat/chat.module';
@@ -23,17 +24,34 @@ import { TenantPreferencesModule } from './api/tenant-preferences/tenant-prefere
 import { UsersModule } from './api/users/users.module';
 import { AppController } from './app.controller';
 import { AuthModule } from './auth/auth.module';
+import { CacheConfigModule } from './cache/cache.module';
 import { CommonModule } from './common/common.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ConfigModule } from './config/config.module';
+import { AppConfigService } from './config/config.service';
 import { LoggerModule } from './logger/logger.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { QueueModule } from './queue/queue.module';
 import { RealtimeModule } from './realtime/realtime.module';
 
 @Module({
 	imports: [
 		ConfigModule,
+		CacheConfigModule,
+		QueueModule,
+		ThrottlerModule.forRootAsync({
+			inject: [AppConfigService],
+			useFactory: (config: AppConfigService) => ({
+				throttlers: [
+					{
+						ttl: config.rateLimitConfig.ttl,
+						limit: config.rateLimitConfig.limit,
+					},
+				],
+				errorMessage: 'Too many requests. Please try again later.',
+			}),
+		}),
 		LoggerModule,
 		PrismaModule,
 		CommonModule,
@@ -63,6 +81,10 @@ import { RealtimeModule } from './realtime/realtime.module';
 	],
 	controllers: [AppController],
 	providers: [
+		{
+			provide: APP_GUARD,
+			useClass: ThrottlerGuard,
+		},
 		{
 			provide: APP_INTERCEPTOR,
 			useClass: LoggingInterceptor,

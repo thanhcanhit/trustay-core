@@ -22,6 +22,8 @@ import {
 	VerificationType,
 	Visibility,
 } from '@prisma/client';
+import { CACHE_KEYS, CACHE_TTL } from '../../cache/constants';
+import { CacheService } from '../../cache/services/cache.service';
 import { calculatePagination, PaginatedResponseDto, PaginationQueryDto } from '../../common/dto';
 import { uppercaseArray } from '../../common/utils/enum.utils';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -39,7 +41,10 @@ import {
 
 @Injectable()
 export class ReferenceService {
-	constructor(private readonly prisma: PrismaService) {}
+	constructor(
+		private readonly prisma: PrismaService,
+		private readonly cacheService: CacheService,
+	) {}
 
 	async getSystemAmenities(
 		query?: PaginationQueryDto,
@@ -76,18 +81,28 @@ export class ReferenceService {
 	}
 
 	async getSystemAmenitiesByCategory(category?: AmenityCategory): Promise<SystemAmenityDto[]> {
-		const where: any = {
-			isActive: true,
-		};
+		const cacheKey = category
+			? `${CACHE_KEYS.SYSTEM_AMENITIES}:${category}`
+			: CACHE_KEYS.SYSTEM_AMENITIES;
 
-		if (category) {
-			where.category = category;
-		}
+		return this.cacheService.wrap(
+			cacheKey,
+			async () => {
+				const where: any = {
+					isActive: true,
+				};
 
-		return this.prisma.systemAmenity.findMany({
-			where,
-			orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
-		});
+				if (category) {
+					where.category = category;
+				}
+
+				return this.prisma.systemAmenity.findMany({
+					where,
+					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+				});
+			},
+			CACHE_TTL.SYSTEM_DATA,
+		);
 	}
 
 	async getSystemCostTypes(
@@ -125,18 +140,28 @@ export class ReferenceService {
 	}
 
 	async getSystemCostTypesByCategory(category?: CostCategory): Promise<SystemCostTypeDto[]> {
-		const where: any = {
-			isActive: true,
-		};
+		const cacheKey = category
+			? `${CACHE_KEYS.SYSTEM_COST_TYPES}:${category}`
+			: CACHE_KEYS.SYSTEM_COST_TYPES;
 
-		if (category) {
-			where.category = category;
-		}
+		return this.cacheService.wrap(
+			cacheKey,
+			async () => {
+				const where: any = {
+					isActive: true,
+				};
 
-		return this.prisma.systemCostType.findMany({
-			where,
-			orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
-		});
+				if (category) {
+					where.category = category;
+				}
+
+				return this.prisma.systemCostType.findMany({
+					where,
+					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+				});
+			},
+			CACHE_TTL.SYSTEM_DATA,
+		);
 	}
 
 	async getSystemRoomRules(
@@ -174,18 +199,28 @@ export class ReferenceService {
 	}
 
 	async getSystemRoomRulesByCategory(category?: RuleCategory): Promise<SystemRoomRuleDto[]> {
-		const where: any = {
-			isActive: true,
-		};
+		const cacheKey = category
+			? `${CACHE_KEYS.SYSTEM_ROOM_RULES}:${category}`
+			: CACHE_KEYS.SYSTEM_ROOM_RULES;
 
-		if (category) {
-			where.category = category;
-		}
+		return this.cacheService.wrap(
+			cacheKey,
+			async () => {
+				const where: any = {
+					isActive: true,
+				};
 
-		return this.prisma.systemRoomRule.findMany({
-			where,
-			orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
-		});
+				if (category) {
+					where.category = category;
+				}
+
+				return this.prisma.systemRoomRule.findMany({
+					where,
+					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+				});
+			},
+			CACHE_TTL.SYSTEM_DATA,
+		);
 	}
 
 	getAllEnums(): AllEnumsResponseDto {
@@ -348,58 +383,88 @@ export class ReferenceService {
 	}
 
 	async getAmenities(category?: string): Promise<SimpleAmenityDto[]> {
-		const where: any = { isActive: true };
-		if (category) {
-			where.category = category;
-		}
+		const cacheKey = category
+			? `${CACHE_KEYS.SYSTEM_AMENITIES}:simple:${category}`
+			: `${CACHE_KEYS.SYSTEM_AMENITIES}:simple`;
 
-		return this.prisma.systemAmenity.findMany({
-			where,
-			orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
-			select: {
-				id: true,
-				name: true,
-				category: true,
-				description: true,
+		return this.cacheService.wrap(
+			cacheKey,
+			async () => {
+				const where: any = { isActive: true };
+				if (category) {
+					where.category = category;
+				}
+
+				return this.prisma.systemAmenity.findMany({
+					where,
+					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+					select: {
+						id: true,
+						name: true,
+						category: true,
+						description: true,
+					},
+				});
 			},
-		});
+			CACHE_TTL.SYSTEM_DATA,
+		);
 	}
 
 	async getCostTypes(category?: string): Promise<SimpleCostTypeDto[]> {
-		const where: any = { isActive: true };
-		if (category) {
-			where.category = category;
-		}
+		const cacheKey = category
+			? `${CACHE_KEYS.SYSTEM_COST_TYPES}:simple:${category}`
+			: `${CACHE_KEYS.SYSTEM_COST_TYPES}:simple`;
 
-		return this.prisma.systemCostType.findMany({
-			where,
-			orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
-			select: {
-				id: true,
-				name: true,
-				category: true,
-				defaultUnit: true,
+		return this.cacheService.wrap(
+			cacheKey,
+			async () => {
+				const where: any = { isActive: true };
+				if (category) {
+					where.category = category;
+				}
+
+				return this.prisma.systemCostType.findMany({
+					where,
+					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+					select: {
+						id: true,
+						name: true,
+						category: true,
+						defaultUnit: true,
+					},
+				});
 			},
-		});
+			CACHE_TTL.SYSTEM_DATA,
+		);
 	}
 
 	async getRules(category?: string): Promise<SimpleRuleDto[]> {
-		const where: any = { isActive: true };
-		if (category) {
-			where.category = category;
-		}
+		const cacheKey = category
+			? `${CACHE_KEYS.SYSTEM_ROOM_RULES}:simple:${category}`
+			: `${CACHE_KEYS.SYSTEM_ROOM_RULES}:simple`;
 
-		return this.prisma.systemRoomRule.findMany({
-			where,
-			orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
-			select: {
-				id: true,
-				name: true,
-				category: true,
-				ruleType: true,
-				description: true,
+		return this.cacheService.wrap(
+			cacheKey,
+			async () => {
+				const where: any = { isActive: true };
+				if (category) {
+					where.category = category;
+				}
+
+				return this.prisma.systemRoomRule.findMany({
+					where,
+					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+					select: {
+						id: true,
+						name: true,
+						category: true,
+						ruleType: true,
+						description: true,
+					},
+				});
 			},
-		});
+			CACHE_TTL.SYSTEM_DATA,
+		);
 	}
 
 	private mapEnumToDto(enumObject: any, labels: Record<string, string>): EnumValueDto[] {
