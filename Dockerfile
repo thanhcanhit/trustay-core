@@ -24,7 +24,9 @@ RUN pnpm prisma generate && \
 FROM node:lts-alpine3.17 AS production
 
 # Install curl for health check and Chromium + minimal runtime deps for Puppeteer
-RUN apk add --no-cache \
+RUN apk add --no-cache --update-cache \
+    --repository=http://dl-cdn.alpinelinux.org/alpine/v3.17/main \
+    --repository=http://dl-cdn.alpinelinux.org/alpine/v3.17/community \
     curl \
     ca-certificates \
     chromium \
@@ -32,11 +34,10 @@ RUN apk add --no-cache \
     freetype \
     harfbuzz \
     ttf-freefont \
+    ttf-dejavu \
     libstdc++ \
     icu-libs \
-    noto-fonts \
-    noto-fonts-cjk \
-    noto-fonts-emoji
+    fontconfig
 
 # Point Puppeteer to system Chromium and skip bundled download
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
