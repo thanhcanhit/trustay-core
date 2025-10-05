@@ -9,6 +9,7 @@ export enum NotificationType {
 	BOOKING_REQUEST_APPROVED = 'booking_request_approved',
 	BOOKING_REQUEST_REJECTED = 'booking_request_rejected',
 	BOOKING_REQUEST_CANCELLED = 'booking_request_cancelled',
+	BOOKING_REQUEST_CONFIRMED = 'booking_request_confirmed',
 
 	// Invitation Related
 	ROOM_INVITATION_RECEIVED = 'room_invitation_received',
@@ -17,9 +18,12 @@ export enum NotificationType {
 	ROOM_INVITATION_REJECTED = 'room_invitation_rejected',
 	ROOM_INVITATION_WITHDRAWN = 'room_invitation_withdrawn',
 	ROOM_INVITATION_EXPIRED = 'room_invitation_expired',
+	ROOM_INVITATION_CONFIRMED = 'room_invitation_confirmed',
 
 	// Rental Related
 	RENTAL_CREATED = 'rental_created',
+	RENTAL_CREATION_FAILED = 'rental_creation_failed',
+	RENTAL_CREATION_FAILED_INVITATION = 'rental_creation_failed_invitation',
 	RENTAL_STATUS_UPDATED = 'rental_status_updated',
 	RENTAL_TERMINATED = 'rental_terminated',
 	RENTAL_EXPIRING_SOON = 'rental_expiring_soon',
@@ -34,6 +38,12 @@ export enum NotificationType {
 	// Review Related
 	REVIEW_RECEIVED = 'review_received',
 	REVIEW_REQUEST = 'review_request',
+
+	// Roommate Related
+	ROOMMATE_APPLICATION_RECEIVED = 'roommate_application_received',
+	ROOMMATE_APPLICATION_APPROVED = 'roommate_application_approved',
+	ROOMMATE_APPLICATION_REJECTED = 'roommate_application_rejected',
+	ROOMMATE_APPLICATION_CONFIRMED = 'roommate_application_confirmed',
 
 	// Room Seeking Posts
 	ROOM_SEEKING_POST_CONTACTED = 'room_seeking_post_contacted',

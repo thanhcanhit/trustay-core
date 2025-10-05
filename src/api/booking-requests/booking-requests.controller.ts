@@ -197,6 +197,28 @@ export class BookingRequestsController {
 		return this.bookingRequestsService.updateBookingRequest(id, userId, updateBookingRequestDto);
 	}
 
+	@Post(':id/confirm')
+	@ApiOperation({
+		summary: 'Xác nhận booking request sau khi landlord approve (Tenant only)',
+		description: 'Sau khi landlord approve, tenant confirm để tự động tạo rental',
+	})
+	@ApiParam({ name: 'id', description: 'Booking request ID' })
+	@ApiResponse({
+		status: 200,
+		description: 'Xác nhận thành công, tự động tạo rental',
+		type: BookingRequestResponseDto,
+	})
+	@ApiResponse({ status: 404, description: 'Booking request không tồn tại' })
+	@ApiResponse({ status: 403, description: 'Chỉ tenant mới có thể confirm' })
+	@ApiResponse({
+		status: 400,
+		description: 'Booking chưa được approve hoặc đã confirmed rồi',
+	})
+	@HttpCode(HttpStatus.OK)
+	async confirmBookingRequest(@Param('id') id: string, @CurrentUser('id') userId: string) {
+		return this.bookingRequestsService.confirmBookingRequest(id, userId);
+	}
+
 	@Patch(':id/cancel')
 	@ApiOperation({ summary: 'Hủy booking request (Tenant only)' })
 	@ApiParam({ name: 'id', description: 'Booking request ID' })

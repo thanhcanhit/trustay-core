@@ -10,7 +10,14 @@ import {
 	Query,
 	UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+	ApiBearerAuth,
+	ApiOperation,
+	ApiParam,
+	ApiQuery,
+	ApiResponse,
+	ApiTags,
+} from '@nestjs/swagger';
 import { User } from '@prisma/client';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -59,6 +66,27 @@ export class RoommateApplicationController {
 		summary: 'Lấy danh sách đơn ứng tuyển của tôi',
 		description: 'Lấy danh sách các đơn ứng tuyển do user hiện tại tạo ra',
 	})
+	@ApiQuery({ name: 'page', required: false, type: Number, description: 'Số trang (default: 1)' })
+	@ApiQuery({
+		name: 'limit',
+		required: false,
+		type: Number,
+		description: 'Số items per page (default: 20, max: 100)',
+	})
+	@ApiQuery({
+		name: 'status',
+		required: false,
+		enum: [
+			'pending',
+			'approved_by_tenant',
+			'rejected_by_tenant',
+			'approved_by_landlord',
+			'rejected_by_landlord',
+			'cancelled',
+			'expired',
+		],
+		description: 'Lọc theo trạng thái',
+	})
 	@ApiResponse({
 		status: 200,
 		description: 'Lấy danh sách thành công',
@@ -78,6 +106,27 @@ export class RoommateApplicationController {
 	@ApiOperation({
 		summary: 'Lấy danh sách đơn ứng tuyển cho bài đăng của tôi',
 		description: 'Lấy danh sách các đơn ứng tuyển vào các bài đăng do user hiện tại tạo ra',
+	})
+	@ApiQuery({ name: 'page', required: false, type: Number, description: 'Số trang (default: 1)' })
+	@ApiQuery({
+		name: 'limit',
+		required: false,
+		type: Number,
+		description: 'Số items per page (default: 20, max: 100)',
+	})
+	@ApiQuery({
+		name: 'status',
+		required: false,
+		enum: [
+			'pending',
+			'approved_by_tenant',
+			'rejected_by_tenant',
+			'approved_by_landlord',
+			'rejected_by_landlord',
+			'cancelled',
+			'expired',
+		],
+		description: 'Lọc theo trạng thái',
 	})
 	@ApiResponse({
 		status: 200,
@@ -155,6 +204,31 @@ export class RoommateApplicationController {
 		@CurrentUser() user: User,
 	): Promise<RoommateApplicationResponseDto> {
 		return this.roommateApplicationService.respondToApplication(id, respondDto, user.id);
+	}
+
+	@Patch(':id/confirm')
+	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
+	@ApiOperation({
+		summary: 'Xác nhận đơn ứng tuyển',
+		description:
+			'Tenant hoặc landlord xác nhận đơn ứng tuyển. Sau khi cả 2 xác nhận, rental sẽ được tạo tự động.',
+	})
+	@ApiParam({ name: 'id', description: 'ID của đơn ứng tuyển' })
+	@ApiResponse({
+		status: 200,
+		description: 'Xác nhận thành công',
+		type: RoommateApplicationResponseDto,
+	})
+	@ApiResponse({ status: 400, description: 'Không thể xác nhận đơn ứng tuyển' })
+	@ApiResponse({ status: 401, description: 'Chưa xác thực' })
+	@ApiResponse({ status: 403, description: 'Không có quyền xác nhận' })
+	@ApiResponse({ status: 404, description: 'Không tìm thấy đơn ứng tuyển' })
+	async confirmApplication(
+		@Param('id') id: string,
+		@CurrentUser() user: User,
+	): Promise<RoommateApplicationResponseDto> {
+		return this.roommateApplicationService.confirmApplication(id, user.id);
 	}
 
 	@Patch(':id/cancel')

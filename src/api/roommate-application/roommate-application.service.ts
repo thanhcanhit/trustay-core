@@ -8,6 +8,8 @@ import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { RoommateApplicationStatus } from '../../common/enums/roommate-application-status.enum';
 import { RoommatePostStatus } from '../../common/enums/roommate-post-status.enum';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { RentalsService } from '../rentals/rentals.service';
 import {
 	ApplicationStatisticsDto,
 	BulkRespondApplicationsDto,
@@ -21,7 +23,11 @@ import {
 
 @Injectable()
 export class RoommateApplicationService {
-	constructor(private readonly prisma: PrismaService) {}
+	constructor(
+		private readonly prisma: PrismaService,
+		private readonly notificationsService: NotificationsService,
+		private readonly rentalsService: RentalsService,
+	) {}
 
 	async create(
 		createDto: CreateRoommateApplicationDto,
@@ -32,6 +38,15 @@ export class RoommateApplicationService {
 			where: { id: createDto.roommateSeekingPostId },
 			include: {
 				tenant: true,
+				roomInstance: {
+					include: {
+						room: {
+							select: {
+								name: true,
+							},
+						},
+					},
+				},
 			},
 		});
 
@@ -82,6 +97,14 @@ export class RoommateApplicationService {
 			data: { contactCount: { increment: 1 } },
 		});
 
+		// Notify tenant about new application
+		const roomName = post.roomInstance?.room?.name || 'phòng';
+		await this.notificationsService.notifyRoommateApplicationReceived(post.tenantId, {
+			applicantName: createDto.fullName,
+			roomName,
+			applicationId: application.id,
+		});
+
 		return this.mapToResponseDto(application);
 	}
 
@@ -120,7 +143,17 @@ export class RoommateApplicationService {
 			];
 		}
 
-		const [applications, total] = await Promise.all([
+		const [
+			applications,
+			total,
+			pendingCount,
+			approvedByTenantCount,
+			rejectedByTenantCount,
+			approvedByLandlordCount,
+			rejectedByLandlordCount,
+			cancelledCount,
+			expiredCount,
+		] = await Promise.all([
 			this.prisma.roommateApplication.findMany({
 				where,
 				include: this.getIncludeOptions(),
@@ -131,14 +164,51 @@ export class RoommateApplicationService {
 			this.prisma.roommateApplication.count({
 				where,
 			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.pending },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.approved_by_tenant },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.rejected_by_tenant },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.approved_by_landlord },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.rejected_by_landlord },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.cancelled },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.expired },
+			}),
 		]);
 
-		return PaginatedResponseDto.create(
-			applications.map((app) => this.mapToResponseDto(app)),
-			page,
-			limit,
-			total,
-		);
+		return {
+			data: applications.map((app) => this.mapToResponseDto(app)),
+			meta: {
+				page,
+				limit,
+				total,
+				totalPages: Math.ceil(total / limit),
+				hasNext: page < Math.ceil(total / limit),
+				hasPrev: page > 1,
+				itemCount: applications.length,
+			},
+			counts: {
+				pending: pendingCount,
+				approvedByTenant: approvedByTenantCount,
+				rejectedByTenant: rejectedByTenantCount,
+				approvedByLandlord: approvedByLandlordCount,
+				rejectedByLandlord: rejectedByLandlordCount,
+				cancelled: cancelledCount,
+				expired: expiredCount,
+				total,
+			},
+		} as unknown as PaginatedResponseDto<RoommateApplicationResponseDto>;
 	}
 
 	async findApplicationsForMyPosts(
@@ -180,7 +250,17 @@ export class RoommateApplicationService {
 			];
 		}
 
-		const [applications, total] = await Promise.all([
+		const [
+			applications,
+			total,
+			pendingCount,
+			approvedByTenantCount,
+			rejectedByTenantCount,
+			approvedByLandlordCount,
+			rejectedByLandlordCount,
+			cancelledCount,
+			expiredCount,
+		] = await Promise.all([
 			this.prisma.roommateApplication.findMany({
 				where,
 				include: this.getIncludeOptions(),
@@ -191,14 +271,51 @@ export class RoommateApplicationService {
 			this.prisma.roommateApplication.count({
 				where,
 			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.pending },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.approved_by_tenant },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.rejected_by_tenant },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.approved_by_landlord },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.rejected_by_landlord },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.cancelled },
+			}),
+			this.prisma.roommateApplication.count({
+				where: { ...where, status: RoommateApplicationStatus.expired },
+			}),
 		]);
 
-		return PaginatedResponseDto.create(
-			applications.map((app) => this.mapToResponseDto(app)),
-			page,
-			limit,
-			total,
-		);
+		return {
+			data: applications.map((app) => this.mapToResponseDto(app)),
+			meta: {
+				page,
+				limit,
+				total,
+				totalPages: Math.ceil(total / limit),
+				hasNext: page < Math.ceil(total / limit),
+				hasPrev: page > 1,
+				itemCount: applications.length,
+			},
+			counts: {
+				pending: pendingCount,
+				approvedByTenant: approvedByTenantCount,
+				rejectedByTenant: rejectedByTenantCount,
+				approvedByLandlord: approvedByLandlordCount,
+				rejectedByLandlord: rejectedByLandlordCount,
+				cancelled: cancelledCount,
+				expired: expiredCount,
+				total,
+			},
+		} as unknown as PaginatedResponseDto<RoommateApplicationResponseDto>;
 	}
 
 	async findOne(id: string, userId?: string): Promise<RoommateApplicationResponseDto> {
@@ -268,6 +385,11 @@ export class RoommateApplicationService {
 					include: {
 						roomInstance: {
 							include: {
+								room: {
+									select: {
+										name: true,
+									},
+								},
 								rentals: {
 									where: {
 										status: 'active',
@@ -318,12 +440,66 @@ export class RoommateApplicationService {
 			include: this.getIncludeOptions(),
 		});
 
-		// Handle approved application
-		if (
-			respondDto.status === RoommateApplicationStatus.approved_by_tenant ||
-			respondDto.status === RoommateApplicationStatus.approved_by_landlord
-		) {
+		// Get room name for notifications
+		const post = application.roommateSeekingPost;
+		const roomName = post.roomInstance?.room?.name || 'phòng';
+
+		// Send notifications based on status
+		if (respondDto.status === RoommateApplicationStatus.approved_by_tenant) {
+			// Tenant approved - notify applicant
+			await this.notificationsService.notifyRoommateApplicationApproved(application.applicantId, {
+				roomName,
+				applicationId: application.id,
+			});
+
+			// Handle approved application (update post counts)
 			await this.handleApprovedApplication(application.roommateSeekingPostId);
+
+			// If platform room, also notify landlord
+			if (post.roomInstance) {
+				const landlordId = post.roomInstance.rentals?.[0]?.owner?.id;
+				if (landlordId) {
+					await this.notificationsService.notifyRoommateApplicationReceived(landlordId, {
+						applicantName: application.fullName,
+						roomName,
+						applicationId: application.id,
+					});
+				}
+			}
+		} else if (respondDto.status === RoommateApplicationStatus.rejected_by_tenant) {
+			// Tenant rejected - notify applicant
+			await this.notificationsService.notifyRoommateApplicationRejected(application.applicantId, {
+				roomName,
+				reason: respondDto.response,
+				applicationId: application.id,
+			});
+		} else if (respondDto.status === RoommateApplicationStatus.approved_by_landlord) {
+			// Landlord approved - notify applicant and tenant
+			await this.notificationsService.notifyRoommateApplicationApproved(application.applicantId, {
+				roomName,
+				applicationId: application.id,
+			});
+
+			await this.notificationsService.notifyRoommateApplicationApproved(post.tenantId, {
+				roomName,
+				applicationId: application.id,
+			});
+
+			// Handle approved application (update post counts)
+			await this.handleApprovedApplication(application.roommateSeekingPostId);
+		} else if (respondDto.status === RoommateApplicationStatus.rejected_by_landlord) {
+			// Landlord rejected - notify applicant and tenant
+			await this.notificationsService.notifyRoommateApplicationRejected(application.applicantId, {
+				roomName,
+				reason: respondDto.response,
+				applicationId: application.id,
+			});
+
+			await this.notificationsService.notifyRoommateApplicationRejected(post.tenantId, {
+				roomName,
+				reason: respondDto.response,
+				applicationId: application.id,
+			});
 		}
 
 		return this.mapToResponseDto(updatedApplication);
@@ -350,6 +526,116 @@ export class RoommateApplicationService {
 			where: { id },
 			data: { status: RoommateApplicationStatus.cancelled },
 		});
+	}
+
+	async confirmApplication(id: string, userId: string): Promise<RoommateApplicationResponseDto> {
+		const application = await this.prisma.roommateApplication.findUnique({
+			where: { id },
+			include: {
+				applicant: true,
+				roommateSeekingPost: {
+					include: {
+						tenant: true,
+						roomInstance: {
+							include: {
+								room: {
+									include: {
+										building: {
+											include: {
+												owner: true,
+											},
+										},
+									},
+								},
+								rentals: {
+									where: {
+										status: 'active',
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		});
+
+		if (!application) {
+			throw new NotFoundException('Không tìm thấy đơn ứng tuyển');
+		}
+
+		const post = application.roommateSeekingPost;
+		const isTenant = post.tenantId === userId;
+		const isLandlord = post.roomInstance?.room?.building?.ownerId === userId;
+
+		// Validate quyền confirm
+		if (!isTenant && !isLandlord) {
+			throw new ForbiddenException('Không có quyền xác nhận đơn ứng tuyển này');
+		}
+
+		// Tenant confirm
+		if (isTenant) {
+			if (application.isConfirmedByTenant) {
+				throw new BadRequestException('Đơn ứng tuyển đã được tenant xác nhận');
+			}
+
+			if (application.status !== RoommateApplicationStatus.approved_by_tenant) {
+				throw new BadRequestException('Chỉ có thể xác nhận đơn ứng tuyển đã được tenant phê duyệt');
+			}
+
+			// Nếu là platform room, cần landlord confirm nữa
+			if (post.roomInstanceId) {
+				await this.prisma.roommateApplication.update({
+					where: { id },
+					data: {
+						isConfirmedByTenant: true,
+					},
+				});
+
+				// Notify landlord
+				if (isLandlord) {
+					await this.notificationsService.notifyRoommateApplicationReceived(
+						post.roomInstance!.room.building.ownerId,
+						{
+							applicantName: application.fullName,
+							roomName: post.roomInstance!.room.name,
+							applicationId: application.id,
+						},
+					);
+				}
+
+				return this.mapToResponseDto(
+					await this.prisma.roommateApplication.findUnique({
+						where: { id },
+						include: this.getIncludeOptions(),
+					}),
+				);
+			} else {
+				// External room - chỉ cần tenant confirm -> tạo rental luôn
+				return this.createRentalForRoommate(application, post, true, false);
+			}
+		}
+
+		// Landlord confirm (for platform rooms only)
+		if (isLandlord) {
+			if (!application.isConfirmedByTenant) {
+				throw new BadRequestException('Tenant chưa xác nhận đơn ứng tuyển');
+			}
+
+			if (application.isConfirmedByLandlord) {
+				throw new BadRequestException('Đơn ứng tuyển đã được landlord xác nhận');
+			}
+
+			if (application.status !== RoommateApplicationStatus.approved_by_landlord) {
+				throw new BadRequestException(
+					'Chỉ có thể xác nhận đơn ứng tuyển đã được landlord phê duyệt',
+				);
+			}
+
+			// Create rental for roommate
+			return this.createRentalForRoommate(application, post, false, true);
+		}
+
+		throw new ForbiddenException('Không có quyền xác nhận đơn ứng tuyển này');
 	}
 
 	async bulkRespondToApplications(
@@ -546,6 +832,117 @@ export class RoommateApplicationService {
 				data: { status: RoommatePostStatus.closed },
 			});
 		}
+	}
+
+	private async createRentalForRoommate(
+		application: any,
+		post: any,
+		isTenantConfirm: boolean,
+		isLandlordConfirm: boolean,
+	): Promise<RoommateApplicationResponseDto> {
+		// Validate roomInstance nếu là platform room
+		if (!post.roomInstanceId) {
+			throw new BadRequestException('Không thể tạo rental cho phòng ngoài platform');
+		}
+
+		const roomInstance = await this.prisma.roomInstance.findUnique({
+			where: { id: post.roomInstanceId },
+			include: {
+				room: {
+					include: {
+						building: true,
+					},
+				},
+				rentals: {
+					where: {
+						tenantId: application.applicantId,
+						status: 'active',
+					},
+				},
+			},
+		});
+
+		if (!roomInstance) {
+			throw new NotFoundException('Không tìm thấy room instance');
+		}
+
+		// Kiểm tra applicant chưa có rental active cho phòng này
+		if (roomInstance.rentals.length > 0) {
+			throw new BadRequestException('Applicant đã có rental active cho phòng này');
+		}
+
+		// Tạo rental và update application trong transaction
+		const rental = await this.prisma.$transaction(async (tx) => {
+			// Update application confirmed status
+			await tx.roommateApplication.update({
+				where: { id: application.id },
+				data: {
+					...(isTenantConfirm && { isConfirmedByTenant: true }),
+					...(isLandlordConfirm && { isConfirmedByLandlord: true }),
+					confirmedAt: new Date(),
+				},
+			});
+
+			// Create rental for roommate
+			const newRental = await tx.rental.create({
+				data: {
+					roomInstanceId: post.roomInstanceId,
+					tenantId: application.applicantId,
+					ownerId: roomInstance.room.building.ownerId,
+					contractStartDate: application.moveInDate,
+					contractEndDate: application.intendedStayMonths
+						? new Date(
+								application.moveInDate.getTime() +
+									application.intendedStayMonths * 30 * 24 * 60 * 60 * 1000,
+							)
+						: null,
+					monthlyRent: post.monthlyRent,
+					depositPaid: post.depositAmount || 0,
+					status: 'active',
+				},
+			});
+
+			return newRental;
+		});
+
+		// Gửi notifications
+		const roomName = roomInstance.room.name;
+
+		// Notify applicant về confirm và rental created
+		await this.notificationsService.notifyRoommateApplicationConfirmed(application.applicantId, {
+			roomName,
+			applicationId: application.id,
+		});
+
+		await this.notificationsService.notifyRentalCreated(application.applicantId, {
+			roomName,
+			rentalId: rental.id,
+			startDate: application.moveInDate.toISOString(),
+		});
+
+		// Notify tenant
+		await this.notificationsService.notifyRentalCreated(post.tenantId, {
+			roomName,
+			rentalId: rental.id,
+			startDate: application.moveInDate.toISOString(),
+		});
+
+		// Notify landlord if platform room
+		if (isLandlordConfirm) {
+			await this.notificationsService.notifyRentalCreated(roomInstance.room.building.ownerId, {
+				roomName,
+				rentalId: rental.id,
+				startDate: application.moveInDate.toISOString(),
+			});
+		}
+
+		// Return updated application
+		return this.mapToResponseDto(
+			await this.prisma.roommateApplication.findUnique({
+				where: { id: application.id },
+				include: this.getIncludeOptions(),
+			}),
+		);
 	}
 
 	private getIncludeOptions() {

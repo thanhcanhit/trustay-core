@@ -347,7 +347,7 @@ export class UsersService {
 			},
 		});
 
-		await this.notificationsService.notifyProfileUpdated(userId);
+		await this.notificationsService.notifyAccountVerification(userId);
 
 		return updatedUser;
 	}
@@ -549,7 +549,7 @@ export class UsersService {
 			},
 		});
 
-		await this.notificationsService.notifyProfileUpdated(userId);
+		await this.notificationsService.notifyAccountVerification(userId);
 
 		return {
 			message: 'Phone number verified successfully',
