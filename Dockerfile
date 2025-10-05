@@ -35,12 +35,15 @@ RUN apk add --no-cache --update-cache \
     harfbuzz \
     ttf-freefont \
     ttf-dejavu \
+    noto-fonts \
+    noto-fonts-cjk \
+    noto-fonts-emoji \
     libstdc++ \
     icu-libs \
     fontconfig
 
 # Point Puppeteer to system Chromium and skip bundled download
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     PUPPETEER_SKIP_DOWNLOAD=true
 
 # Create non-root user
