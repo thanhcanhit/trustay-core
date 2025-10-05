@@ -16,8 +16,8 @@ import { Response } from 'express';
  */
 @Controller('images')
 export class StaticFilesController {
-	@Get('*')
-	async serveImage(@Param('0') imagePath: string, @Res() res: Response): Promise<void> {
+	@Get('*path')
+	async serveImage(@Param('path') imagePath: string, @Res() res: Response): Promise<void> {
 		// Validate the image path
 		if (!imagePath || imagePath.includes('..') || imagePath.includes('//')) {
 			throw new BadRequestException('Invalid image path');
