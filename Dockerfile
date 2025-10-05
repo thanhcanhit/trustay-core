@@ -33,9 +33,6 @@ RUN apk add --no-cache --update-cache \
     harfbuzz \
     ttf-freefont \
     ttf-dejavu \
-    noto-fonts \
-    noto-fonts-cjk \
-    noto-fonts-emoji \
     libstdc++ \
     icu-libs \
     fontconfig
