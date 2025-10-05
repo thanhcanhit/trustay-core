@@ -5,6 +5,7 @@ import {
 	HttpException,
 	HttpStatus,
 } from '@nestjs/common';
+import { ThrottlerException } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { LoggerService } from '@/logger/logger.service';
 
@@ -17,11 +18,24 @@ export class AllExceptionsFilter implements ExceptionFilter {
 		const response = ctx.getResponse<Response>();
 		const request = ctx.getRequest<Request>();
 
-		const status =
-			exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
+		let status: number;
+		let message: string | object;
 
-		const message =
-			exception instanceof HttpException ? exception.getResponse() : 'Internal server error';
+		// Handle ThrottlerException with cleaner message
+		if (exception instanceof ThrottlerException) {
+			status = HttpStatus.TOO_MANY_REQUESTS;
+			message = {
+				message: 'Bạn đang gửi quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.',
+				error: 'Too Many Requests',
+				statusCode: 429,
+			};
+		} else if (exception instanceof HttpException) {
+			status = exception.getStatus();
+			message = exception.getResponse();
+		} else {
+			status = HttpStatus.INTERNAL_SERVER_ERROR;
+			message = 'Internal server error';
+		}
 
 		const errorResponse = {
 			statusCode: status,
@@ -41,21 +55,29 @@ export class AllExceptionsFilter implements ExceptionFilter {
 		const requestId =
 			request.get('X-Request-ID') || request.get('x-correlation-id') || `req_${Date.now()}`;
 
-		this.logger.logHttpError(
-			error,
-			request.method,
-			request.url,
-			status,
-			userId,
-			request.get('User-Agent'),
-			request.ip,
-			requestId,
-			{
-				body: request.method !== 'GET' ? request.body : undefined,
-				query: request.query,
-				params: request.params,
-			},
-		);
+		// For throttler exceptions, use a simpler log message
+		if (exception instanceof ThrottlerException) {
+			this.logger.warn(
+				`Rate limit exceeded for ${request.ip} on ${request.method} ${request.url} - User: ${userId || 'anonymous'}`,
+				'ThrottlerGuard',
+			);
+		} else {
+			this.logger.logHttpError(
+				error,
+				request.method,
+				request.url,
+				status,
+				userId,
+				request.get('User-Agent'),
+				request.ip,
+				requestId,
+				{
+					body: request.method !== 'GET' ? request.body : undefined,
+					query: request.query,
+					params: request.params,
+				},
+			);
+		}
 
 		response.status(status).json(errorResponse);
 	}

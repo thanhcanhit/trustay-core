@@ -49,7 +49,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 						limit: config.rateLimitConfig.limit,
 					},
 				],
-				errorMessage: 'Too many requests. Please try again later.',
+				errorMessage: 'Bạn đang gửi quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.',
 			}),
 		}),
 		LoggerModule,

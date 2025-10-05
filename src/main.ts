@@ -1,4 +1,3 @@
-import { join } from 'node:path';
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
@@ -23,11 +22,6 @@ async function bootstrap() {
 
 	// Use custom logger
 	app.useLogger(loggerService);
-
-	// Serve static files for uploaded images
-	app.useStaticAssets(join(__dirname, '..', 'uploads', 'images'), {
-		prefix: '/images/',
-	});
 
 	// Enable CORS
 	app.enableCors({

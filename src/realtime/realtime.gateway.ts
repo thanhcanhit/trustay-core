@@ -30,6 +30,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 	}
 
 	public handleConnection(client: Socket): void {
+		if (!client || !client.id) {
+			this.logger.warn('Invalid client connection received');
+			return;
+		}
+
 		this.logger.log(`Socket connected: ${client.id}`);
 
 		// Debug: Listen for ALL events
@@ -49,6 +54,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 	}
 
 	public async handleDisconnect(client: Socket): Promise<void> {
+		if (!client || !client.id) {
+			this.logger.warn('Invalid client disconnect received');
+			return;
+		}
+
 		this.logger.log(`Socket disconnected: ${client.id}`);
 		await this.realtimeService.unregisterConnection(client.id);
 	}
@@ -58,6 +68,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 		@MessageBody() payload: RegisterPayload,
 		client: Socket,
 	): Promise<void> {
+		if (!client || !client.id) {
+			this.logger.warn('Received register from invalid client');
+			return;
+		}
+
 		this.logger.log(`Register event from ${client.id} with payload: ${JSON.stringify(payload)}`);
 
 		// Debug: Check if payload is properly received
@@ -76,6 +91,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
 	@SubscribeMessage(REALTIME_EVENT.HEARTBEAT_PONG)
 	public async handlePong(@MessageBody() _payload: unknown, client: Socket): Promise<void> {
+		if (!client || !client.id) {
+			this.logger.warn('Received pong from invalid client');
+			return;
+		}
+
 		this.logger.log(`PONG received from ${client.id}`);
 		await this.realtimeService.handlePong(client);
 	}
