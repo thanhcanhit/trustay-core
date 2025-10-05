@@ -66,8 +66,13 @@ export class RealtimeService {
 	public async unregisterConnection(socketId: string): Promise<void> {
 		const userId = this.socketIdToUserId.get(socketId);
 		if (!userId) {
+			this.logger.debug(`Unregistering unregistered socket: ${socketId}`);
+			// Still clean up connection health
+			this.connectionHealth.delete(socketId);
 			return;
 		}
+
+		this.logger.debug(`Unregistering socket ${socketId} for user ${userId}`);
 		this.socketIdToUserId.delete(socketId);
 		const sockets = this.userIdToSockets.get(userId);
 		if (sockets) {
@@ -144,9 +149,16 @@ export class RealtimeService {
 		}
 		const sockets = this.userIdToSockets.get(userId);
 		if (!sockets || sockets.size === 0) {
-			this.logger.warn(
-				`Cannot emit to user ${userId}: no sockets found (registered users: ${Array.from(this.userIdToSockets.keys()).join(', ')})`,
-			);
+			// Only log as debug for normal cases, warn for unexpected cases
+			if (event === REALTIME_EVENT.DISCONNECTED) {
+				this.logger.debug(
+					`User ${userId} not found for disconnect event (user may have already disconnected)`,
+				);
+			} else {
+				this.logger.warn(
+					`Cannot emit to user ${userId}: no sockets found (registered users: ${Array.from(this.userIdToSockets.keys()).join(', ')})`,
+				);
+			}
 			return;
 		}
 		this.logger.log(

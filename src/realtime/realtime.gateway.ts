@@ -37,10 +37,22 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
 		this.logger.log(`Socket connected: ${client.id}`);
 
-		// Debug: Listen for ALL events
-		client.onAny((eventName, ...args) => {
-			this.logger.log(`Raw event received: ${eventName} with args: ${JSON.stringify(args)}`);
+		// Add error handler for the client
+		client.on('error', (error) => {
+			this.logger.error(`Socket error for ${client.id}: ${error.message}`);
 		});
+
+		// Add disconnect handler
+		client.on('disconnect', (reason) => {
+			this.logger.log(`Socket ${client.id} disconnected: ${reason}`);
+		});
+
+		// Debug: Listen for ALL events (only in development)
+		if (process.env.NODE_ENV !== 'production') {
+			client.onAny((eventName, ...args) => {
+				this.logger.log(`Raw event received: ${eventName} with args: ${JSON.stringify(args)}`);
+			});
+		}
 
 		// Manual register handler as backup
 		client.on('realtime/register', async (payload) => {

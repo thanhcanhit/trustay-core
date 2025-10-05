@@ -136,6 +136,84 @@ export class LoggerService implements NestLoggerService {
 		this.prismaService = prismaService;
 	}
 
+	// Determine if error should be saved to database
+	private shouldSaveToDatabase(
+		message: string,
+		context?: string,
+		level: 'error' | 'warn' = 'error',
+	): boolean {
+		// Skip common/expected errors that don't need database storage
+		const skipPatterns = [
+			// WebSocket related (expected)
+			'Received pong from invalid client',
+			'Received register from invalid client',
+			'Received pong from unregistered socket',
+			'User not found for disconnect event',
+			'Cannot emit to user.*no sockets found',
+			'Socket error for',
+			'Socket.*disconnected',
+
+			// Cache related (expected)
+			'Cache MISS:',
+			'Cache HIT:',
+			'Cache SET:',
+			'Cache DEL:',
+			'Cache WRAP executing function',
+
+			// Rate limiting (expected)
+			'Rate limit exceeded',
+			'Too many requests',
+
+			// 404 errors (expected)
+			'Resource not found',
+			'Image not found',
+			'Cannot GET',
+
+			// Validation errors (expected)
+			'Invalid image path',
+			'Invalid payload received',
+			'Missing userId in payload',
+		];
+
+		// Check if message matches any skip pattern
+		for (const pattern of skipPatterns) {
+			if (message.match(new RegExp(pattern, 'i'))) {
+				return false;
+			}
+		}
+
+		// Skip certain contexts
+		const skipContexts = [
+			'ThrottlerGuard',
+			'NotFound',
+			'CacheService',
+			'AuthCache',
+			'RealtimeGateway',
+			'RealtimeService',
+		];
+
+		if (context && skipContexts.includes(context)) {
+			return false;
+		}
+
+		// Only save critical errors and warnings
+		if (level === 'warn') {
+			// For warnings, only save critical ones
+			const criticalWarnPatterns = [
+				'Database connection',
+				'Authentication failed',
+				'Security violation',
+				'Payment error',
+				'Data corruption',
+			];
+
+			return criticalWarnPatterns.some((pattern) => message.match(new RegExp(pattern, 'i')));
+		}
+
+		// For errors, save all except the filtered ones above
+		return true;
+	}
+
 	// Save error to database
 	private async saveErrorToDatabase(errorData: ErrorLogData): Promise<void> {
 		if (!this.prismaService) {
@@ -179,23 +257,29 @@ export class LoggerService implements NestLoggerService {
 		const stackStr: string | undefined = this.extractStack(message, trace);
 		this.logger.error(messageStr, { context, trace: stackStr });
 
-		this.saveErrorToDatabase({
-			message: messageStr,
-			stack: stackStr,
-			level: 'error',
-			context,
-		});
+		// Only save critical errors to database, skip common/expected errors
+		if (this.shouldSaveToDatabase(messageStr, context)) {
+			this.saveErrorToDatabase({
+				message: messageStr,
+				stack: stackStr,
+				level: 'error',
+				context,
+			});
+		}
 	}
 
 	warn(message: unknown, context?: string) {
 		const messageStr: string = this.formatMessage(message);
 		this.logger.warn(messageStr, { context });
 
-		this.saveErrorToDatabase({
-			message: messageStr,
-			level: 'warn',
-			context,
-		});
+		// Only save critical warnings to database, skip common/expected warnings
+		if (this.shouldSaveToDatabase(messageStr, context, 'warn')) {
+			this.saveErrorToDatabase({
+				message: messageStr,
+				level: 'warn',
+				context,
+			});
+		}
 	}
 
 	debug(message: unknown, context?: string) {

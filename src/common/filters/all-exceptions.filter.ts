@@ -61,6 +61,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
 				`Rate limit exceeded for ${request.ip} on ${request.method} ${request.url} - User: ${userId || 'anonymous'}`,
 				'ThrottlerGuard',
 			);
+		} else if (exception instanceof HttpException && status === HttpStatus.NOT_FOUND) {
+			// For 404 errors, use a simpler log message
+			this.logger.warn(
+				`Resource not found: ${request.method} ${request.url} - User: ${userId || 'anonymous'}`,
+				'NotFound',
+			);
 		} else {
 			this.logger.logHttpError(
 				error,
