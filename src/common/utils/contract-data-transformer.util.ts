@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import { ContractData } from '../types/contract-metadata.types';
 
 export interface DatabaseContract {
@@ -439,7 +440,6 @@ function getTenantResponsibilities(): string[] {
  * Generate verification code
  */
 function generateVerificationCode(contractId: string): string {
-	const crypto = require('crypto');
 	const hash = crypto.createHash('sha256').update(contractId).digest('hex');
 	return hash.substring(0, 8).toUpperCase();
 }

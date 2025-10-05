@@ -3,6 +3,7 @@ import {
 	Body,
 	Controller,
 	Get,
+	HttpException,
 	HttpStatus,
 	InternalServerErrorException,
 	Logger,
@@ -558,9 +559,14 @@ export class ContractsController {
 			// Transform to PDF format
 			const pdfContractData = transformToPDFContract(dbContract);
 
-			// Generate preview
-			const previewBuffer =
-				await this.pdfGenerationService.generateContractPreview(pdfContractData);
+			// Generate preview with timeout safeguard
+			const generate = this.pdfGenerationService.generateContractPreview(pdfContractData);
+			const previewBuffer = await Promise.race<Buffer>([
+				generate,
+				new Promise<never>((_, reject) =>
+					setTimeout(() => reject(new Error('Preview generation timed out')), 15000),
+				),
+			]);
 
 			// Set response headers
 			res.setHeader('Content-Type', 'image/png');
@@ -574,6 +580,9 @@ export class ContractsController {
 			// Preserve known HTTP exceptions
 			if (error instanceof NotFoundException || error instanceof BadRequestException) {
 				throw error;
+			}
+			if (error?.message === 'Preview generation timed out') {
+				throw new HttpException('Preview generation timed out', HttpStatus.GATEWAY_TIMEOUT);
 			}
 			this.logger.error(
 				`Failed to generate preview for contract ${contractId}: ${error?.message ?? 'Unknown error'}`,
