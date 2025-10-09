@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { plainToInstance } from 'class-transformer';
 import { CACHE_KEYS, CACHE_TTL } from '../../cache/constants';
 import { CacheService } from '../../cache/services/cache.service';
 import { BreadcrumbDto, SeoDto } from '../../common/dto';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
-import { maskEmail, maskFullName, maskPhone } from '../../common/utils/mask.utils';
+import { PersonPublicView } from '../../common/serialization/person.view';
 import { formatRoomListItem, getOwnerStats } from '../../common/utils/room-formatter.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingQueryDto, RoomRequestSearchDto } from './dto/listing-query.dto';
@@ -822,9 +823,9 @@ export class ListingService {
 
 	async findAllRoomRequests(
 		query: RoomRequestSearchDto,
-		context: { isAuthenticated: boolean; userId?: string } = { isAuthenticated: false },
+		_context: { isAuthenticated: boolean; userId?: string } = { isAuthenticated: false },
 	): Promise<RoomSeekingWithMetaResponseDto> {
-		const { isAuthenticated } = context;
+		// authentication is handled by serialization groups
 		const {
 			page = 1,
 			limit = 20,
@@ -969,12 +970,6 @@ export class ListingService {
 		]);
 
 		const formattedData = data.map((item) => {
-			const requesterFullName =
-				`${item.requester.firstName || ''} ${item.requester.lastName || ''}`.trim();
-			const maskedRequesterName = maskFullName(requesterFullName);
-			const maskedEmail = item.requester.email ? maskEmail(item.requester.email) : '';
-			const maskedPhone = item.requester.phone ? maskPhone(item.requester.phone) : '';
-
 			return {
 				id: item.id,
 				title: item.title,
@@ -997,15 +992,7 @@ export class ListingService {
 				contactCount: item.contactCount,
 				createdAt: item.createdAt,
 				updatedAt: item.updatedAt,
-				requester: {
-					...item.requester,
-					firstName: isAuthenticated ? item.requester.firstName : undefined,
-					lastName: isAuthenticated ? item.requester.lastName : undefined,
-					email: isAuthenticated ? item.requester.email : maskedEmail,
-					phone: isAuthenticated ? item.requester.phone : maskedPhone,
-					// add masked display name for convenience
-					name: isAuthenticated ? requesterFullName : maskedRequesterName,
-				},
+				requester: plainToInstance(PersonPublicView, item.requester),
 				amenities: item.amenities,
 				preferredProvince: item.preferredProvince,
 				preferredDistrict: item.preferredDistrict,
@@ -1028,9 +1015,9 @@ export class ListingService {
 
 	async findAllRoommateSeekings(
 		query: ListingQueryDto,
-		context: { isAuthenticated: boolean; userId?: string } = { isAuthenticated: false },
+		_context: { isAuthenticated: boolean; userId?: string } = { isAuthenticated: false },
 	): Promise<RoommateSeekingWithMetaResponseDto> {
-		const { isAuthenticated } = context;
+		// isAuthenticated is not needed directly anymore due to class-transformer groups
 		const {
 			page = 1,
 			limit = 20,
@@ -1085,10 +1072,6 @@ export class ListingService {
 		]);
 
 		const formatted = posts.map((post) => {
-			const fullName = `${post.tenant.firstName || ''} ${post.tenant.lastName || ''}`.trim();
-			const maskedName = maskFullName(fullName);
-			const maskedEmail = post.tenant.email ? maskEmail(post.tenant.email) : '';
-			const maskedPhone = post.tenant.phone ? maskPhone(post.tenant.phone) : '';
 			return {
 				id: post.id,
 				title: post.title,
@@ -1102,13 +1085,14 @@ export class ListingService {
 				viewCount: post.viewCount,
 				contactCount: post.contactCount,
 				createdAt: post.createdAt,
-				requester: {
+				requester: plainToInstance(PersonPublicView, {
 					id: post.tenant.id,
-					name: isAuthenticated ? fullName : maskedName,
-					email: isAuthenticated ? post.tenant.email : maskedEmail,
-					phone: isAuthenticated ? post.tenant.phone : maskedPhone,
+					firstName: post.tenant.firstName,
+					lastName: post.tenant.lastName,
+					email: post.tenant.email,
+					phone: post.tenant.phone,
 					avatarUrl: post.tenant.avatarUrl,
-				},
+				}),
 			};
 		});
 
