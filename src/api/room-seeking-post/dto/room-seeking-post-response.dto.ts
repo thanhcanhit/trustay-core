@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AmenityCategory, RoomType, SearchPostStatus } from '@prisma/client';
+import { PersonPublicView } from '../../../common/serialization/person.view';
 
 export class RoomRoomSeekingPostDto {
 	@ApiProperty({ description: 'ID của bài đăng' })
@@ -65,16 +66,8 @@ export class RoomRoomSeekingPostDto {
 	@ApiProperty({ description: 'Thời gian cập nhật' })
 	updatedAt: Date;
 
-	@ApiProperty({ description: 'Thông tin người đăng' })
-	requester: {
-		id: string;
-		firstName?: string;
-		lastName?: string;
-		name?: string; // Masked full name when not authenticated
-		email: string;
-		phone?: string;
-		avatarUrl?: string;
-	};
+	@ApiProperty({ description: 'Thông tin người đăng', type: PersonPublicView })
+	requester: PersonPublicView;
 
 	@ApiProperty({ description: 'Danh sách tiện ích mong muốn (SystemAmenity)' })
 	amenities: Array<{

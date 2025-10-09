@@ -606,40 +606,67 @@ async function findOrCreateLocation(addressData, province, district) {
 			districtName = parts[0] || 'Quận 1';
 		}
 	} else {
-		// Use provided province/district or default to Ho Chi Minh
-		cityName = province || addressData?.city || 'Thành phố Hồ Chí Minh';
-		districtName = district || addressData?.district;
+		// Use provided province/district if any. Do NOT default to a specific city.
+		cityName = province || addressData?.city || null;
+		districtName = district || addressData?.district || null;
 
-		// Normalize city name if provided
-		if (
-			cityName.includes('Hồ Chí Minh') ||
-			cityName.includes('HCM') ||
-			cityName.includes('TP.HCM')
-		) {
-			cityName = 'Thành phố Hồ Chí Minh';
-		} else if (cityName.includes('Hà Nội') || cityName.includes('Hanoi')) {
-			cityName = 'Thành phố Hà Nội';
+		// Normalize known aliases only when present
+		if (cityName) {
+			if (
+				cityName.includes('Hồ Chí Minh') ||
+				cityName.includes('HCM') ||
+				cityName.includes('TP.HCM')
+			) {
+				cityName = 'Thành phố Hồ Chí Minh';
+			} else if (cityName.includes('Hà Nội') || cityName.includes('Hanoi')) {
+				cityName = 'Thành phố Hà Nội';
+			}
 		}
 	}
 
 	const { ward } = addressData || {};
 
-	// Find province (city) - search exactly in database
-	let provinceRecord = await prisma.province.findFirst({
-		where: {
-			name: { equals: cityName, mode: 'insensitive' },
-		},
-	});
+	// Helper: get HCM province (prefer id=50; fallback to code '79' or name contains)
+	async function getHoChiMinhProvince() {
+		let hcm = null;
+		try {
+			hcm = await prisma.province.findUnique({ where: { id: 50 } });
+		} catch {}
+		if (!hcm) {
+			hcm = await prisma.province.findFirst({ where: { code: '79' } });
+		}
+		if (!hcm) {
+			hcm = await prisma.province.findFirst({
+				where: {
+					OR: [
+						{ name: { contains: 'Hồ Chí Minh', mode: 'insensitive' } },
+						{ name: { contains: 'Ho Chi Minh', mode: 'insensitive' } },
+					],
+				},
+			});
+		}
+		return hcm;
+	}
 
-	// If not found, try different variations based on the detected city
-	if (!provinceRecord) {
+	// Find province (city) - search exactly in database
+	let provinceRecord = null;
+	if (cityName) {
+		provinceRecord = await prisma.province.findFirst({
+			where: {
+				name: { equals: cityName, mode: 'insensitive' },
+			},
+		});
+	}
+
+	// If not found, try different variations based on the detected city (read-only, no creation)
+	if (!provinceRecord && cityName) {
 		if (cityName.includes('Hồ Chí Minh') || cityName.includes('HCM')) {
 			provinceRecord = await prisma.province.findFirst({
 				where: {
 					OR: [
 						{ name: { contains: 'Hồ Chí Minh', mode: 'insensitive' } },
 						{ name: { contains: 'Ho Chi Minh', mode: 'insensitive' } },
-						{ code: '79' }, // HCM province code
+						{ code: '79' },
 					],
 				},
 			});
@@ -649,40 +676,19 @@ async function findOrCreateLocation(addressData, province, district) {
 					OR: [
 						{ name: { contains: 'Hà Nội', mode: 'insensitive' } },
 						{ name: { contains: 'Hanoi', mode: 'insensitive' } },
-						{ code: '01' }, // Hanoi province code
+						{ code: '01' },
 					],
 				},
 			});
 		}
 	}
 
-	// If still not found, default to Ho Chi Minh City
+	// If still not found, assign to Hồ Chí Minh (id 50 preferred)
 	if (!provinceRecord) {
-		console.log(`⚠️ Province not found for: ${cityName}, using default: Thành phố Hồ Chí Minh`);
-		cityName = 'Thành phố Hồ Chí Minh';
-
-		// Try to find Ho Chi Minh again
-		provinceRecord = await prisma.province.findFirst({
-			where: {
-				OR: [
-					{ name: { contains: 'Hồ Chí Minh', mode: 'insensitive' } },
-					{ name: { contains: 'Ho Chi Minh', mode: 'insensitive' } },
-					{ code: '79' }, // HCM province code
-				],
-			},
-		});
-
-		// If still not found, create Ho Chi Minh province
-		if (!provinceRecord) {
-			provinceRecord = await prisma.province.create({
-				data: {
-					code: '79', // Official HCM code
-					name: 'Thành phố Hồ Chí Minh',
-					nameEn: 'Ho Chi Minh City',
-				},
-			});
-			console.log(`✅ Created Ho Chi Minh City province`);
-		}
+		provinceRecord = await getHoChiMinhProvince();
+		console.warn(
+			`⚠️ Province not found for: ${cityName || '(unknown)'}. Assigning to ${provinceRecord?.name || 'Hồ Chí Minh'}.`,
+		);
 	}
 
 	// Find district with better matching - ONLY use existing districts from administrative data
@@ -721,28 +727,48 @@ async function findOrCreateLocation(addressData, province, district) {
 		}
 	}
 
-	// If no district found, use Quận 1 as default (don't create random districts)
+	// If still not found, re-scope to HCM and try within HCM, else pick first district under HCM
 	if (!districtRecord) {
-		districtRecord = await prisma.district.findFirst({
-			where: {
-				AND: [
-					{ name: { contains: 'Quận 1', mode: 'insensitive' } },
-					{ provinceId: provinceRecord.id },
-				],
-			},
-		});
-
-		// If Quận 1 doesn't exist, create it with official code
-		if (!districtRecord) {
-			districtRecord = await prisma.district.create({
-				data: {
-					code: '76001', // Official Quận 1 code
-					name: 'Quận 1',
-					provinceId: provinceRecord.id,
-				},
-			});
-			console.log(`✅ Created default district: Quận 1`);
+		const hcmProvince = await getHoChiMinhProvince();
+		if (hcmProvince) {
+			// Try match by name within HCM
+			if (districtName) {
+				districtRecord = await prisma.district.findFirst({
+					where: {
+						AND: [
+							{ name: { equals: districtName, mode: 'insensitive' } },
+							{ provinceId: hcmProvince.id },
+						],
+					},
+				});
+				if (!districtRecord) {
+					districtRecord = await prisma.district.findFirst({
+						where: {
+							AND: [
+								{
+									name: {
+										contains: districtName.replace('Quận ', '').replace('Huyện ', ''),
+										mode: 'insensitive',
+									},
+								},
+								{ provinceId: hcmProvince.id },
+							],
+						},
+					});
+				}
+			}
+			// If still not found, pick first district in HCM
+			if (!districtRecord) {
+				districtRecord = await prisma.district.findFirst({
+					where: { provinceId: hcmProvince.id },
+					orderBy: { id: 'asc' },
+				});
+			}
+			provinceRecord = hcmProvince;
 		}
+		console.warn(
+			`⚠️ District not found: ${districtName || '(unknown)'}; assigned to province ${provinceRecord?.name} and district ${districtRecord?.name || '(first in province)'}.`,
+		);
 	}
 
 	// Find ward if provided - ONLY use existing wards from administrative data
@@ -760,30 +786,7 @@ async function findOrCreateLocation(addressData, province, district) {
 		}
 	}
 
-	// If no ward found, use Phường 1 as default (don't create random wards)
-	if (!wardRecord) {
-		wardRecord = await prisma.ward.findFirst({
-			where: {
-				AND: [
-					{ name: { contains: 'Phường 1', mode: 'insensitive' } },
-					{ districtId: districtRecord.id },
-				],
-			},
-		});
-
-		// If Phường 1 doesn't exist, create it with official code
-		if (!wardRecord) {
-			wardRecord = await prisma.ward.create({
-				data: {
-					code: '7600101', // Official Phường 1 code
-					name: 'Phường 1',
-					level: 'Phường',
-					districtId: districtRecord.id,
-				},
-			});
-			console.log(`✅ Created default ward: Phường 1`);
-		}
-	}
+	// If no ward found, leave it null (read-only on admin data)
 
 	return {
 		province: provinceRecord,
@@ -871,6 +874,15 @@ async function importCrawledData(filePath, limitRecords = null) {
 						null,
 						null,
 					);
+
+					// Strict read-only admin data: skip if province or district not resolvable
+					if (!locationData.province || !locationData.district) {
+						console.log(
+							`⏭️ Skipping item ${item.id} due to unresolved location (province: ${locationData.province?.name || 'n/a'}, district: ${locationData.district?.name || 'n/a'})`,
+						);
+						processedCount++;
+						continue;
+					}
 
 					// Get random landlord for this building
 					const randomLandlord =

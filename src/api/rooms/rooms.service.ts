@@ -211,7 +211,11 @@ export class RoomsService {
 	/**
 	 * Get similar rooms in the same district and province
 	 */
-	private async getSimilarRooms(room: any, limit: number = 8): Promise<RoomListItemOutputDto[]> {
+	private async getSimilarRooms(
+		room: any,
+		limit: number = 8,
+		isAuthenticated: boolean = false,
+	): Promise<RoomListItemOutputDto[]> {
 		const { building } = room;
 
 		// Get rooms in the same district and province, excluding current room
@@ -274,7 +278,7 @@ export class RoomsService {
 		// Format similar rooms using the same utility as listing
 		return similarRooms.map((similarRoom) => {
 			const ownerStats = { totalBuildings: 0, totalRoomInstances: 0 }; // Simplified for similar rooms
-			return formatRoomListItem(similarRoom, false, { ownerStats });
+			return formatRoomListItem(similarRoom, isAuthenticated, { ownerStats });
 		});
 	}
 
@@ -833,7 +837,7 @@ export class RoomsService {
 		const breadcrumb = await this.generateRoomDetailBreadcrumb(room);
 
 		// Get similar rooms
-		const similarRooms = await this.getSimilarRooms(room, 8);
+		const similarRooms = await this.getSimilarRooms(room, 8, isAuthenticated);
 
 		return {
 			...roomDetail,

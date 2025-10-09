@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { BreadcrumbDto, SeoDto } from '../../../common/dto';
 import { PaginatedResponseDto } from '../../../common/dto/pagination.dto';
+import { PersonPublicView } from '../../../common/serialization/person.view';
 
 export class RoommateSeekingListItemDto {
 	@ApiProperty()
@@ -41,14 +42,9 @@ export class RoommateSeekingListItemDto {
 
 	@ApiProperty({
 		description: 'Requester information. Sensitive fields are masked when unauthenticated.',
+		type: PersonPublicView,
 	})
-	requester: {
-		id: string;
-		name: string;
-		email?: string;
-		phone?: string;
-		avatarUrl?: string | null;
-	};
+	requester: PersonPublicView;
 }
 
 export class RoommateSeekingWithMetaResponseDto extends PaginatedResponseDto<RoommateSeekingListItemDto> {

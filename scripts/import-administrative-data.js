@@ -94,6 +94,8 @@ async function importVietnameseAdministrativeData() {
 						where: { code: district.code },
 						update: {
 							name: district.name,
+							// Ensure district is under the correct province on updates
+							provinceId: province.id,
 						},
 						create: {
 							code: district.code,
@@ -138,6 +140,8 @@ async function importVietnameseAdministrativeData() {
 								update: {
 									name: row['Phường Xã'],
 									level: row['Cấp'] || 'Xã',
+									// Ensure ward is under the correct district on updates
+									districtId: district.id,
 								},
 								create: {
 									code: row['Mã PX'],

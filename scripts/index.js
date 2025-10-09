@@ -96,6 +96,32 @@ async function cleanupCrawlImports() {
 		);
 
 		// Delete in correct order due to foreign key constraints
+		logWarning('   Deleting contract artifacts...');
+		const deletedContractAuditLogs = await prisma.contractAuditLog.deleteMany({});
+		const deletedContractSignatures = await prisma.contractSignature.deleteMany({});
+		const deletedContracts = await prisma.contract.deleteMany({});
+
+		logWarning('   Deleting monthly billing...');
+		const deletedBillItems = await prisma.billItem.deleteMany({});
+		// Payments may reference monthly bills and rentals; delete them early
+		const deletedPayments = await prisma.payment.deleteMany({});
+		const deletedMonthlyBills = await prisma.monthlyBill.deleteMany({});
+
+		logWarning('   Deleting reviews and ratings...');
+		const deletedReviews = await prisma.review.deleteMany({});
+		const deletedRatings = await prisma.rating.deleteMany({});
+
+		logWarning('   Deleting roommate and invitation artifacts...');
+		const deletedRoommateApplications = await prisma.roommateApplication.deleteMany({});
+		const deletedRoommateSeekingPosts = await prisma.roommateSeekingPost.deleteMany({});
+		const deletedRoomInvitations = await prisma.roomInvitation.deleteMany({});
+
+		logWarning('   Deleting booking requests...');
+		const deletedBookingRequests = await prisma.bookingRequest.deleteMany({});
+
+		logWarning('   Deleting rentals...');
+		const deletedRentals = await prisma.rental.deleteMany({});
+
 		logWarning('   Deleting room rules...');
 		const deletedRoomRules = await prisma.roomRule.deleteMany({});
 
@@ -111,14 +137,42 @@ async function cleanupCrawlImports() {
 		logWarning('   Deleting room pricing...');
 		const deletedRoomPricing = await prisma.roomPricing.deleteMany({});
 
+		logWarning('   Deleting room instances...');
+		const deletedRoomInstances = await prisma.roomInstance.deleteMany({});
+
 		logWarning('   Deleting rooms...');
 		const deletedRooms = await prisma.room.deleteMany({});
 
 		logWarning('   Deleting buildings...');
 		const deletedBuildings = await prisma.building.deleteMany({});
 
+		// Finally delete administrative data if requested: wards -> districts -> provinces
+		logWarning('   Deleting wards...');
+		const deletedWards = await prisma.ward.deleteMany({});
+
+		logWarning('   Deleting districts...');
+		const deletedDistricts = await prisma.district.deleteMany({});
+
+		logWarning('   Deleting provinces...');
+		const deletedProvinces = await prisma.province.deleteMany({});
+
 		logSuccess(`Crawl data cleanup completed:`);
 		logSuccess(`   • ${deletedRooms.count} rooms, ${deletedBuildings.count} buildings`);
+		logSuccess(
+			`   • Contracts: ${deletedContracts.count}, Signatures: ${deletedContractSignatures.count}, Logs: ${deletedContractAuditLogs.count}`,
+		);
+		logSuccess(
+			`   • Bills: ${deletedMonthlyBills.count}, BillItems: ${deletedBillItems.count}, Payments: ${deletedPayments.count}`,
+		);
+		logSuccess(
+			`   • Rentals: ${deletedRentals.count}, Bookings: ${deletedBookingRequests.count}, Invitations: ${deletedRoomInvitations.count}`,
+		);
+		logSuccess(
+			`   • Reviews: ${deletedReviews.count}, Ratings: ${deletedRatings.count}, RoomInstances: ${deletedRoomInstances.count}`,
+		);
+		logSuccess(
+			`   • Wards: ${deletedWards.count}, Districts: ${deletedDistricts.count}, Provinces: ${deletedProvinces.count}`,
+		);
 		logSuccess(
 			`   • ${deletedRoomRules.count} rules, ${deletedRoomAmenities.count} amenities, ${deletedRoomCosts.count} costs`,
 		);

@@ -5,8 +5,9 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import { plainToInstance } from 'class-transformer';
+import { PersonPublicView } from '../../common/serialization/person.view';
 import { UploadService } from '../../common/services/upload.service';
-import { maskEmail, maskFullName, maskPhone } from '../../common/utils/mask.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateAddressDto } from './dto/create-address.dto';
@@ -713,7 +714,7 @@ export class UsersService {
 	 */
 	async getPublicUser(
 		userId: string,
-		isAuthenticated: boolean = false,
+		_isAuthenticated: boolean = false,
 	): Promise<PublicUserResponseDto> {
 		const user = await this.prisma.user.findUnique({
 			where: { id: userId },
@@ -742,18 +743,14 @@ export class UsersService {
 			throw new NotFoundException('User not found');
 		}
 
-		const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
-		const maskedFullName = maskFullName(fullName);
-		const maskedEmail = user.email ? maskEmail(user.email) : '';
-		const maskedPhone = user.phone ? maskPhone(user.phone) : '';
-
+		const person = plainToInstance(PersonPublicView, user);
 		return {
 			id: user.id,
-			firstName: isAuthenticated ? user.firstName : undefined,
-			lastName: isAuthenticated ? user.lastName : undefined,
-			name: isAuthenticated ? fullName : maskedFullName,
-			email: isAuthenticated ? user.email : maskedEmail,
-			phone: isAuthenticated ? user.phone : maskedPhone,
+			firstName: person.firstName,
+			lastName: person.lastName,
+			name: person.name,
+			email: person.email,
+			phone: person.phone,
 			avatarUrl: user.avatarUrl,
 			gender: user.gender,
 			role: user.role,

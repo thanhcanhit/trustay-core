@@ -28,6 +28,7 @@ import { CacheConfigModule } from './cache/cache.module';
 import { CommonModule } from './common/common.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { AuthSerializationGroupsInterceptor } from './common/serialization/auth-groups.interceptor';
 import { ConfigModule } from './config/config.module';
 import { AppConfigService } from './config/config.service';
 import { LoggerModule } from './logger/logger.module';
@@ -88,6 +89,10 @@ import { RealtimeModule } from './realtime/realtime.module';
 		{
 			provide: APP_INTERCEPTOR,
 			useClass: LoggingInterceptor,
+		},
+		{
+			provide: APP_INTERCEPTOR,
+			useClass: AuthSerializationGroupsInterceptor,
 		},
 		{
 			provide: APP_FILTER,

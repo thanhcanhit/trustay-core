@@ -5,10 +5,11 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import { SearchPostStatus } from '@prisma/client';
+import { plainToInstance } from 'class-transformer';
 import { BreadcrumbDto, SeoDto } from '../../common/dto';
 import { PaginatedResponseDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { PersonPublicView } from '../../common/serialization/person.view';
 import { generateSlug, generateUniqueSlug } from '../../common/utils';
-import { maskEmail, maskFullName, maskPhone } from '../../common/utils/mask.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateRoomSeekingPostDto, RoomRoomSeekingPostDto, UpdateRoomSeekingPostDto } from './dto';
 import { RoomSeekingDetailWithMetaResponseDto } from './dto/room-seeking-detail-with-meta.dto';
@@ -448,9 +449,9 @@ export class RoomSeekingPostService {
 	async findOne(
 		id: string,
 		clientIp?: string,
-		context: { isAuthenticated: boolean } = { isAuthenticated: false },
+		_context: { isAuthenticated: boolean } = { isAuthenticated: false },
 	): Promise<RoomSeekingDetailWithMetaResponseDto> {
-		const { isAuthenticated } = context;
+		// authentication handled by global serialization groups
 		const roomRequest = await this.prisma.roomSeekingPost.findUnique({
 			where: { id },
 			include: {
@@ -520,31 +521,13 @@ export class RoomSeekingPostService {
 		const seo = await this.generateRoomSeekingDetailSeo(roomRequest);
 		const breadcrumb = await this.generateRoomSeekingDetailBreadcrumb(roomRequest);
 
-		let responseDto: RoomSeekingDetailWithMetaResponseDto;
-		if (!isAuthenticated) {
-			const fullName = `${dto.requester.firstName ?? ''} ${dto.requester.lastName ?? ''}`.trim();
-			responseDto = {
-				...dto,
-				requester: {
-					...dto.requester,
-					firstName: undefined,
-					lastName: undefined,
-					email: dto.requester.email ? maskEmail(dto.requester.email) : '',
-					phone: dto.requester.phone ? maskPhone(dto.requester.phone) : '',
-					name: fullName ? maskFullName(fullName) : undefined,
-				},
-				seo,
-				breadcrumb,
-			};
-		} else {
-			responseDto = {
-				...dto,
-				seo,
-				breadcrumb,
-			};
-		}
-
-		return responseDto;
+		return {
+			...dto,
+			// Let global serialization groups handle masking for requester
+			requester: plainToInstance(PersonPublicView, dto.requester),
+			seo,
+			breadcrumb,
+		};
 	}
 
 	async update(
