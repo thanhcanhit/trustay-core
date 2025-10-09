@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { RatingResponseDto, RatingStatsDto } from '../../rating/dto';
 
 export class PublicUserResponseDto {
 	@ApiProperty({ description: 'User ID' })
@@ -54,4 +55,25 @@ export class PublicUserResponseDto {
 
 	@ApiProperty({ description: 'User last update date' })
 	updatedAt: Date;
+
+	@ApiProperty({
+		description: 'Aggregated rating stats for this user',
+		required: false,
+		type: RatingStatsDto,
+	})
+	ratingStats?: RatingStatsDto;
+
+	@ApiProperty({
+		description: 'Recent ratings for this user',
+		required: false,
+		type: [RatingResponseDto],
+	})
+	recentRatings?: RatingResponseDto[];
+
+	@ApiProperty({
+		description: 'Recent ratings this user sent to others',
+		required: false,
+		type: [RatingResponseDto],
+	})
+	recentGivenRatings?: RatingResponseDto[];
 }
