@@ -5,6 +5,7 @@ import { BookingRequestsModule } from './api/booking-requests/booking-requests.m
 import { BuildingModule } from './api/buildings/building.module';
 import { ChatModule } from './api/chat/chat.module';
 import { ContractsModule } from './api/contracts/contracts.module';
+import { LandlordModule } from './api/landlord/landlord.module';
 import { ListingModule } from './api/listing/listing.module';
 import { NotificationsModule } from './api/notifications/notifications.module';
 import { PaymentsModule } from './api/payments/payments.module';
@@ -79,6 +80,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 		TenantPreferencesModule,
 		RealtimeModule,
 		ChatModule,
+		LandlordModule,
 	],
 	controllers: [AppController],
 	providers: [

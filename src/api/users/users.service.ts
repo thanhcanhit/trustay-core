@@ -4,12 +4,14 @@ import {
 	Injectable,
 	NotFoundException,
 } from '@nestjs/common';
+import { RatingTargetType } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { plainToInstance } from 'class-transformer';
 import { PersonPublicView } from '../../common/serialization/person.view';
 import { UploadService } from '../../common/services/upload.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RatingService } from '../rating/rating.service';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PaginatedUsersResponseDto } from './dto/paginated-users-response.dto';
@@ -27,6 +29,7 @@ export class UsersService {
 		private readonly prisma: PrismaService,
 		private readonly uploadService: UploadService,
 		private readonly notificationsService: NotificationsService,
+		private readonly ratingService: RatingService,
 	) {}
 
 	private transformUserResponse(user: any): any {
@@ -714,7 +717,8 @@ export class UsersService {
 	 */
 	async getPublicUser(
 		userId: string,
-		_isAuthenticated: boolean = false,
+		isAuthenticated: boolean = false,
+		currentUserId?: string,
 	): Promise<PublicUserResponseDto> {
 		const user = await this.prisma.user.findUnique({
 			where: { id: userId },
@@ -743,7 +747,40 @@ export class UsersService {
 			throw new NotFoundException('User not found');
 		}
 
-		const person = plainToInstance(PersonPublicView, user);
+		const person = plainToInstance(PersonPublicView, user, {
+			excludeExtraneousValues: true,
+			groups: isAuthenticated ? ['auth'] : undefined,
+		});
+
+		// Determine rating target type based on user role
+		const targetType: RatingTargetType =
+			user.role === 'landlord' ? RatingTargetType.landlord : RatingTargetType.tenant;
+
+		// Fetch recent ratings and stats via rating service
+		const { data: recent, stats } = await this.ratingService.findAll(
+			{
+				targetType,
+				targetId: userId,
+				page: 1,
+				limit: 5,
+				sortBy: 'createdAt',
+				sortOrder: 'desc',
+			},
+			{ isAuthenticated, currentUserId },
+		);
+
+		// Fetch recent ratings the user gave to others
+		const { data: recentGiven } = await this.ratingService.findAll(
+			{
+				reviewerId: userId,
+				page: 1,
+				limit: 5,
+				sortBy: 'createdAt',
+				sortOrder: 'desc',
+			},
+			{ isAuthenticated, currentUserId },
+		);
+
 		return {
 			id: user.id,
 			firstName: person.firstName,
@@ -763,6 +800,9 @@ export class UsersService {
 			totalRatings: user.totalRatings,
 			createdAt: user.createdAt,
 			updatedAt: user.updatedAt,
+			ratingStats: stats,
+			recentRatings: recent,
+			recentGivenRatings: recentGiven,
 		};
 	}
 }

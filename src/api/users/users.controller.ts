@@ -48,7 +48,8 @@ export class UsersController {
 	})
 	async getPublicUser(@Param('id') userId: string, @CurrentUser() user?: any) {
 		const isAuthenticated = Boolean(user);
-		return this.usersService.getPublicUser(userId, isAuthenticated);
+		const currentUserId = user?.id;
+		return this.usersService.getPublicUser(userId, isAuthenticated, currentUserId);
 	}
 
 	@Get('profile')
