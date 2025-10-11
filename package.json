@@ -29,11 +29,13 @@
     "db:import-full": "node scripts/crawl-import.js import"
   },
   "dependencies": {
+    "@elastic/elasticsearch": "^9.1.1",
     "@nestjs/bull": "^11.0.3",
     "@nestjs/cache-manager": "^3.0.1",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
+    "@nestjs/elasticsearch": "^11.1.0",
     "@nestjs/jwt": "^11.0.0",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
@@ -51,8 +53,8 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "crypt": "^0.0.2",
-    "ioredis": "^5.8.0",
     "crypto-js": "^4.2.0",
+    "ioredis": "^5.8.0",
     "joi": "^17.13.3",
     "multer": "^2.0.2",
     "nest-winston": "^1.10.2",

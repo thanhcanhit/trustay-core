@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
 import { CACHE_KEYS, CACHE_TTL } from '../../cache/constants';
@@ -7,6 +7,7 @@ import { BreadcrumbDto, SeoDto } from '../../common/dto';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { PersonPublicView } from '../../common/serialization/person.view';
 import { formatRoomListItem, getOwnerStats } from '../../common/utils/room-formatter.utils';
+import { ElasticsearchSearchService } from '../../elasticsearch/services/elasticsearch-search.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingQueryDto, RoomRequestSearchDto } from './dto/listing-query.dto';
 import { ListingWithMetaResponseDto } from './dto/listing-with-meta.dto';
@@ -15,9 +16,12 @@ import { RoommateSeekingWithMetaResponseDto } from './dto/roommate-seeking-with-
 
 @Injectable()
 export class ListingService {
+	private readonly logger = new Logger(ListingService.name);
+
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly cacheService: CacheService,
+		private readonly elasticsearchSearchService: ElasticsearchSearchService,
 	) {}
 
 	/**
