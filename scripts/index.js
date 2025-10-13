@@ -40,20 +40,25 @@ const IMPORT_SCRIPTS = {
 		args: 'import-sample scripts/data/crawled_rooms.json',
 		description: 'Import first 100 crawled room listings for testing',
 	},
+	elasticsearch: {
+		name: 'Elasticsearch Sync',
+		script: 'seed-elasticsearch.js',
+		description: 'Sync all data to Elasticsearch for fast searching',
+	},
 };
 
 // Import sequences
 const SEQUENCES = {
-	// Main unified sequence - runs everything in correct order
-	all: ['admin', 'reference', 'users', 'rules', 'crawl'],
+	// Main unified sequence - runs everything in correct order (with Elasticsearch)
+	all: ['admin', 'reference', 'users', 'rules', 'crawl', 'elasticsearch'],
 
-	// Sample/testing sequences
-	sample: ['admin', 'reference', 'users', 'rules', 'crawl-sample'],
+	// Sample/testing sequences (with Elasticsearch)
+	sample: ['admin', 'reference', 'users', 'rules', 'crawl-sample', 'elasticsearch'],
 
 	// Legacy sequences (kept for compatibility)
-	full: ['admin', 'reference', 'users', 'rules', 'crawl'],
+	full: ['admin', 'reference', 'users', 'rules', 'crawl', 'elasticsearch'],
 	basic: ['admin', 'reference', 'users', 'rules'],
-	data: ['reference', 'crawl'],
+	data: ['reference', 'crawl', 'elasticsearch'],
 	setup: ['admin', 'reference', 'users', 'rules'],
 };
 
@@ -198,7 +203,18 @@ function runScript(scriptKey) {
 	logStep(config.name, config.description);
 
 	const scriptPath = path.join(__dirname, config.script);
-	const command = config.args ? `node "${scriptPath}" ${config.args}` : `node "${scriptPath}"`;
+
+	// Handle TypeScript scripts differently
+	let command;
+	if (config.isTypeScript) {
+		// Use ts-node for TypeScript files
+		const tsNodeArgs = '-r tsconfig-paths/register';
+		command = config.args
+			? `npx ts-node ${tsNodeArgs} "${scriptPath}" ${config.args}`
+			: `npx ts-node ${tsNodeArgs} "${scriptPath}"`;
+	} else {
+		command = config.args ? `node "${scriptPath}" ${config.args}` : `node "${scriptPath}"`;
+	}
 
 	try {
 		execSync(command, {

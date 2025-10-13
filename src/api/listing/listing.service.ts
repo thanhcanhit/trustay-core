@@ -7,21 +7,22 @@ import { BreadcrumbDto, SeoDto } from '../../common/dto';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { PersonPublicView } from '../../common/serialization/person.view';
 import { formatRoomListItem, getOwnerStats } from '../../common/utils/room-formatter.utils';
-import { ElasticsearchSearchService } from '../../elasticsearch/services/elasticsearch-search.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingQueryDto, RoomRequestSearchDto } from './dto/listing-query.dto';
 import { ListingWithMetaResponseDto } from './dto/listing-with-meta.dto';
 import { RoomSeekingWithMetaResponseDto } from './dto/room-seeking-with-meta.dto';
 import { RoommateSeekingWithMetaResponseDto } from './dto/roommate-seeking-with-meta.dto';
+import { ListingElasticsearchHelper } from './listing-elasticsearch.helper';
 
 @Injectable()
 export class ListingService {
 	private readonly logger = new Logger(ListingService.name);
+	private useElasticsearch = true; // Feature flag
 
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly cacheService: CacheService,
-		private readonly elasticsearchSearchService: ElasticsearchSearchService,
+		private readonly elasticsearchHelper: ListingElasticsearchHelper,
 	) {}
 
 	/**
@@ -446,6 +447,30 @@ export class ListingService {
 				return cached;
 			}
 		}
+
+		// Generate SEO and breadcrumb first
+		const seo = await this.generateRoomListingSeo(query);
+		const breadcrumb = await this.generateRoomListingBreadcrumb(query);
+
+		// Try Elasticsearch first with fallback to Prisma
+		if (this.useElasticsearch) {
+			try {
+				const result = await this.elasticsearchHelper.searchRooms(query, context, seo, breadcrumb);
+
+				// Cache the result
+				if (shouldCache) {
+					const cacheKey = this.generateListingCacheKey(query);
+					await this.cacheService.set(cacheKey, result, CACHE_TTL.LISTING_SEARCH);
+				}
+
+				return result;
+			} catch (error) {
+				this.logger.warn('Elasticsearch search failed, falling back to Prisma:', error);
+				// Fall through to Prisma implementation below
+			}
+		}
+
+		// Original Prisma implementation (fallback)
 		const {
 			page = 1,
 			limit = 20,
@@ -806,10 +831,6 @@ export class ListingService {
 
 		const paginatedResponse = PaginatedResponseDto.create(formattedRooms, page, limit, total);
 
-		// Generate SEO and breadcrumb
-		const seo = await this.generateRoomListingSeo(query);
-		const breadcrumb = await this.generateRoomListingBreadcrumb(query);
-
 		const result = {
 			...paginatedResponse,
 			seo,
@@ -829,6 +850,23 @@ export class ListingService {
 		query: RoomRequestSearchDto,
 		_context: { isAuthenticated: boolean; userId?: string } = { isAuthenticated: false },
 	): Promise<RoomSeekingWithMetaResponseDto> {
+		// Generate SEO and breadcrumb
+		const seo = await this.generateRoomSeekingSeo(query);
+		const breadcrumb = await this.generateRoomSeekingBreadcrumb(query);
+
+		// Try Elasticsearch first
+		if (this.useElasticsearch) {
+			try {
+				return await this.elasticsearchHelper.searchRoomSeekingPosts(query, seo, breadcrumb);
+			} catch (error) {
+				this.logger.warn(
+					'Elasticsearch search failed for room seeking, falling back to Prisma:',
+					error,
+				);
+			}
+		}
+
+		// Original Prisma implementation (fallback)
 		// authentication is handled by serialization groups
 		const {
 			page = 1,
@@ -1006,10 +1044,6 @@ export class ListingService {
 
 		const paginatedResponse = PaginatedResponseDto.create(formattedData, page, limit, total);
 
-		// Generate SEO and breadcrumb
-		const seo = await this.generateRoomSeekingSeo(query);
-		const breadcrumb = await this.generateRoomSeekingBreadcrumb(query);
-
 		return {
 			...paginatedResponse,
 			seo,
@@ -1021,6 +1055,23 @@ export class ListingService {
 		query: ListingQueryDto,
 		_context: { isAuthenticated: boolean; userId?: string } = { isAuthenticated: false },
 	): Promise<RoommateSeekingWithMetaResponseDto> {
+		// Generate SEO and breadcrumb
+		const seo = await this.generateRoommateSeekingSeo(query);
+		const breadcrumb = await this.generateRoommateSeekingBreadcrumb(query);
+
+		// Try Elasticsearch first
+		if (this.useElasticsearch) {
+			try {
+				return await this.elasticsearchHelper.searchRoommateSeekingPosts(query, seo, breadcrumb);
+			} catch (error) {
+				this.logger.warn(
+					'Elasticsearch search failed for roommate seeking, falling back to Prisma:',
+					error,
+				);
+			}
+		}
+
+		// Original Prisma implementation (fallback)
 		// isAuthenticated is not needed directly anymore due to class-transformer groups
 		const {
 			page = 1,
@@ -1101,8 +1152,6 @@ export class ListingService {
 		});
 
 		const paginated = PaginatedResponseDto.create(formatted, page, limit, total);
-		const seo = await this.generateRoommateSeekingSeo(query);
-		const breadcrumb = await this.generateRoommateSeekingBreadcrumb(query);
 		return { ...paginated, seo, breadcrumb };
 	}
 }

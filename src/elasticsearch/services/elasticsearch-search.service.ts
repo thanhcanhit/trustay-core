@@ -233,15 +233,13 @@ export class ElasticsearchSearchService {
 		try {
 			const response = await this.elasticsearchService.search({
 				index: ROOM_INDEX,
-				body: {
-					query: {
-						function_score: functionScore,
-					},
-					sort,
-					from: (page - 1) * limit,
-					size: limit,
-					track_total_hits: true,
+				query: {
+					function_score: functionScore,
 				},
+				sort,
+				from: (page - 1) * limit,
+				size: limit,
+				track_total_hits: true,
 			});
 
 			const hits = response.hits.hits.map((hit: any) => ({
@@ -338,15 +336,13 @@ export class ElasticsearchSearchService {
 		try {
 			const response = await this.elasticsearchService.search({
 				index: ROOM_SEEKING_INDEX,
-				body: {
-					query: {
-						bool: { must, filter },
-					},
-					sort: [{ [sortBy]: { order: sortOrder } }],
-					from: (page - 1) * limit,
-					size: limit,
-					track_total_hits: true,
+				query: {
+					bool: { must, filter },
 				},
+				sort: [{ [sortBy]: { order: sortOrder } }],
+				from: (page - 1) * limit,
+				size: limit,
+				track_total_hits: true,
 			});
 
 			const hits = response.hits.hits.map((hit: any) => hit._source);
@@ -412,15 +408,13 @@ export class ElasticsearchSearchService {
 		try {
 			const response = await this.elasticsearchService.search({
 				index: ROOMMATE_SEEKING_INDEX,
-				body: {
-					query: {
-						bool: { must, filter },
-					},
-					sort: [{ [sortBy]: { order: sortOrder } }],
-					from: (page - 1) * limit,
-					size: limit,
-					track_total_hits: true,
+				query: {
+					bool: { must, filter },
 				},
+				sort: [{ [sortBy]: { order: sortOrder } }],
+				from: (page - 1) * limit,
+				size: limit,
+				track_total_hits: true,
 			});
 
 			const hits = response.hits.hits.map((hit: any) => hit._source);
@@ -441,21 +435,20 @@ export class ElasticsearchSearchService {
 		try {
 			const response = await this.elasticsearchService.search({
 				index,
-				body: {
-					suggest: {
-						autocomplete: {
-							prefix: query,
-							completion: {
-								field: 'name.suggest',
-								size: limit,
-								skip_duplicates: true,
-							},
+				suggest: {
+					autocomplete: {
+						prefix: query,
+						completion: {
+							field: 'name.suggest',
+							size: limit,
+							skip_duplicates: true,
 						},
 					},
 				},
 			});
 
-			return response.suggest?.autocomplete?.[0]?.options || [];
+			const options = response.suggest?.autocomplete?.[0]?.options;
+			return Array.isArray(options) ? options : [];
 		} catch (error) {
 			this.logger.error('Failed to get autocomplete suggestions:', error);
 			return [];

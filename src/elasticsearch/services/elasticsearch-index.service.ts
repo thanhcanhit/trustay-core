@@ -122,10 +122,8 @@ export class ElasticsearchIndexService {
 	async reindex(sourceIndex: string, destIndex: string): Promise<void> {
 		try {
 			await this.elasticsearchService.reindex({
-				body: {
-					source: { index: sourceIndex },
-					dest: { index: destIndex },
-				},
+				source: { index: sourceIndex },
+				dest: { index: destIndex },
 			});
 			this.logger.log(`Reindexed from ${sourceIndex} to ${destIndex}`);
 		} catch (error) {

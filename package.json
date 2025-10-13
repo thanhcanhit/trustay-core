@@ -26,7 +26,10 @@
     "db:setup-sample": "node scripts/index.js sequence sample",
     "db:import-sample": "node scripts/index.js script crawl-sample",
     "db:validate-data": "node scripts/crawl-import.js validate",
-    "db:import-full": "node scripts/crawl-import.js import"
+    "db:import-full": "node scripts/crawl-import.js import",
+    "es:seed": "node scripts/seed-elasticsearch.js",
+    "es:seed:rooms": "node scripts/seed-elasticsearch.js --index=rooms",
+    "es:seed:reindex": "node scripts/seed-elasticsearch.js --reindex"
   },
   "dependencies": {
     "@elastic/elasticsearch": "^9.1.1",
