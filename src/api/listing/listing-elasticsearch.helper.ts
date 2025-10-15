@@ -37,27 +37,33 @@ export class ListingElasticsearchHelper {
 		// Apply user preferences if needed (expand query)
 		const expandedQuery = await this.applyUserPreferences(query, context.userId);
 
+		// Normalize query param types to ensure ES term/range filters match
+		const toNum = (v: unknown): number | undefined =>
+			v === undefined || v === null || v === '' ? undefined : Number(v);
+		const toBool = (v: unknown): boolean | undefined =>
+			v === undefined || v === null || v === '' ? undefined : v === true || v === 'true';
+
 		// Search with Elasticsearch
 		const esResult = await this.elasticsearchSearchService.searchRooms({
 			search: expandedQuery.search,
-			provinceId: expandedQuery.provinceId,
-			districtId: expandedQuery.districtId,
-			wardId: expandedQuery.wardId,
+			provinceId: toNum(expandedQuery.provinceId as any),
+			districtId: toNum(expandedQuery.districtId as any),
+			wardId: toNum(expandedQuery.wardId as any),
 			roomType: expandedQuery.roomType,
-			minPrice: expandedQuery.minPrice,
-			maxPrice: expandedQuery.maxPrice,
-			minArea: expandedQuery.minArea,
-			maxArea: expandedQuery.maxArea,
+			minPrice: toNum(expandedQuery.minPrice as any),
+			maxPrice: toNum(expandedQuery.maxPrice as any),
+			minArea: toNum(expandedQuery.minArea as any),
+			maxArea: toNum(expandedQuery.maxArea as any),
 			amenities: expandedQuery.amenities,
-			maxOccupancy: expandedQuery.maxOccupancy,
-			isVerified: expandedQuery.isVerified,
-			latitude: expandedQuery.latitude,
-			longitude: expandedQuery.longitude,
-			radius: expandedQuery.radius,
+			maxOccupancy: toNum(expandedQuery.maxOccupancy as any),
+			isVerified: toBool(expandedQuery.isVerified as any),
+			latitude: toNum(expandedQuery.latitude as any),
+			longitude: toNum(expandedQuery.longitude as any),
+			radius: toNum(expandedQuery.radius as any),
 			sortBy: expandedQuery.sortBy || 'createdAt',
 			sortOrder: (expandedQuery.sortOrder as 'asc' | 'desc') || 'desc',
-			page: expandedQuery.page || 1,
-			limit: expandedQuery.limit || 20,
+			page: toNum(expandedQuery.page as any) || 1,
+			limit: toNum(expandedQuery.limit as any) || 20,
 		});
 
 		if (esResult.hits.length === 0) {

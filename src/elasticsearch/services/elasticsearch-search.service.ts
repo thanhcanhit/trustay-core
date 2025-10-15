@@ -125,14 +125,16 @@ export class ElasticsearchSearchService {
 			filter.push({ term: { isVerified } });
 		}
 
-		// Amenities filter (all must match)
+		// Amenities filter (all must match). Use terms query for set inclusion if multiple provided
 		if (amenities) {
 			const amenityIds = amenities
 				.split(',')
 				.map((id) => id.trim())
 				.filter(Boolean);
-			for (const amenityId of amenityIds) {
-				filter.push({ term: { amenityIds: amenityId } });
+			if (amenityIds.length === 1) {
+				filter.push({ term: { amenityIds: amenityIds[0] } });
+			} else if (amenityIds.length > 1) {
+				filter.push({ terms: { amenityIds } });
 			}
 		}
 
@@ -222,7 +224,11 @@ export class ElasticsearchSearchService {
 		} else if (sortBy === 'relevance') {
 			sort.push({ _score: { order: 'desc' } });
 		} else {
-			sort.push({ [sortBy]: { order: sortOrder } });
+			// default to createdAt if unknown sort field to avoid ES errors
+			const safeSortField = ['createdAt', 'updatedAt', 'viewCount', 'areaSqm'].includes(sortBy)
+				? sortBy
+				: 'createdAt';
+			sort.push({ [safeSortField]: { order: sortOrder } });
 		}
 
 		// Add secondary sort by score
