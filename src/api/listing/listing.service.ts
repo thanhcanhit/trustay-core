@@ -457,13 +457,14 @@ export class ListingService {
 			try {
 				const result = await this.elasticsearchHelper.searchRooms(query, context, seo, breadcrumb);
 
-				// Cache the result
-				if (shouldCache) {
-					const cacheKey = this.generateListingCacheKey(query);
-					await this.cacheService.set(cacheKey, result, CACHE_TTL.LISTING_SEARCH);
+				// If ES returns data, use it; otherwise fall back to Prisma implementation below
+				if (result?.meta?.total && result.meta.total > 0) {
+					if (shouldCache) {
+						const cacheKey = this.generateListingCacheKey(query);
+						await this.cacheService.set(cacheKey, result, CACHE_TTL.LISTING_SEARCH);
+					}
+					return result;
 				}
-
-				return result;
 			} catch (error) {
 				this.logger.warn('Elasticsearch search failed, falling back to Prisma:', error);
 				// Fall through to Prisma implementation below
@@ -857,7 +858,14 @@ export class ListingService {
 		// Try Elasticsearch first
 		if (this.useElasticsearch) {
 			try {
-				return await this.elasticsearchHelper.searchRoomSeekingPosts(query, seo, breadcrumb);
+				const esResult = await this.elasticsearchHelper.searchRoomSeekingPosts(
+					query,
+					seo,
+					breadcrumb,
+				);
+				if (esResult?.meta?.total && esResult.meta.total > 0) {
+					return esResult;
+				}
 			} catch (error) {
 				this.logger.warn(
 					'Elasticsearch search failed for room seeking, falling back to Prisma:',
@@ -1062,7 +1070,14 @@ export class ListingService {
 		// Try Elasticsearch first
 		if (this.useElasticsearch) {
 			try {
-				return await this.elasticsearchHelper.searchRoommateSeekingPosts(query, seo, breadcrumb);
+				const esResult = await this.elasticsearchHelper.searchRoommateSeekingPosts(
+					query,
+					seo,
+					breadcrumb,
+				);
+				if (esResult?.meta?.total && esResult.meta.total > 0) {
+					return esResult;
+				}
 			} catch (error) {
 				this.logger.warn(
 					'Elasticsearch search failed for roommate seeking, falling back to Prisma:',
