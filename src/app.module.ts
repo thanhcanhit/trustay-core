@@ -32,6 +32,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { AuthSerializationGroupsInterceptor } from './common/serialization/auth-groups.interceptor';
 import { ConfigModule } from './config/config.module';
 import { AppConfigService } from './config/config.service';
+import { ElasticsearchCustomModule } from './elasticsearch/elasticsearch.module';
 import { LoggerModule } from './logger/logger.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { QueueModule } from './queue/queue.module';
@@ -41,6 +42,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 	imports: [
 		ConfigModule,
 		CacheConfigModule,
+		ElasticsearchCustomModule,
 		QueueModule,
 		ThrottlerModule.forRootAsync({
 			inject: [AppConfigService],

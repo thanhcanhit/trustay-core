@@ -15,6 +15,7 @@ import {
 	getOwnerStats,
 } from '../../common/utils/room-formatter.utils';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ElasticsearchQueueService } from '../../queue/services/elasticsearch-queue.service';
 import {
 	BulkUpdateRoomInstanceStatusDto,
 	CreateRoomDto,
@@ -33,6 +34,7 @@ export class RoomsService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly uploadService: UploadService,
+		private readonly elasticsearchQueueService: ElasticsearchQueueService,
 	) {
 		// Dọn dẹp cache định kỳ
 		setInterval(() => {
@@ -437,6 +439,9 @@ export class RoomsService {
 
 			return room.id;
 		});
+
+		// Queue Elasticsearch indexing (async, best-effort)
+		void this.elasticsearchQueueService.queueIndexRoom(result);
 
 		// Return created room with full details
 		return this.findOne(result);
@@ -1091,6 +1096,9 @@ export class RoomsService {
 				}
 			}
 		});
+
+		// Queue Elasticsearch re-indexing (async, best-effort)
+		void this.elasticsearchQueueService.queueIndexRoom(roomId);
 
 		// Return updated room with full details
 		return this.findOne(roomId);

@@ -8,6 +8,7 @@ import { PaginatedResponseDto, PaginationQueryDto } from '../../common/dto/pagin
 import { RoommatePostStatus } from '../../common/enums/roommate-post-status.enum';
 import { generateSlug, generateUniqueSlug } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ElasticsearchQueueService } from '../../queue/services/elasticsearch-queue.service';
 import {
 	CreateRoommateSeekingPostDto,
 	RoommateSeekingDetailWithMetaResponseDto,
@@ -20,7 +21,10 @@ export class RoommateSeekingPostService {
 	private viewCache = new Map<string, { timestamp: number; ips: Set<string> }>();
 	private readonly VIEW_COOLDOWN_MS = 1 * 60 * 1000; // 1 phút
 
-	constructor(private readonly prisma: PrismaService) {
+	constructor(
+		private readonly prisma: PrismaService,
+		private readonly elasticsearchQueueService: ElasticsearchQueueService,
+	) {
 		// Dọn dẹp cache định kỳ
 		setInterval(
 			() => {
@@ -106,6 +110,9 @@ export class RoommateSeekingPostService {
 			},
 			include: this.getIncludeOptions(),
 		});
+
+		// Queue Elasticsearch indexing (async, best-effort)
+		void this.elasticsearchQueueService.queueIndexRoommateSeeking(post.id);
 
 		return this.mapToResponseDto(post);
 	}
@@ -222,6 +229,9 @@ export class RoommateSeekingPostService {
 			include: this.getIncludeOptions(),
 		});
 
+		// Queue Elasticsearch re-indexing (async, best-effort)
+		void this.elasticsearchQueueService.queueIndexRoommateSeeking(updatedPost.id);
+
 		return this.mapToResponseDto(updatedPost);
 	}
 
@@ -265,6 +275,9 @@ export class RoommateSeekingPostService {
 			data: { status },
 			include: this.getIncludeOptions(),
 		});
+
+		// Queue Elasticsearch re-indexing (async, best-effort)
+		void this.elasticsearchQueueService.queueIndexRoommateSeeking(updatedPost.id);
 
 		return this.mapToResponseDto(updatedPost);
 	}

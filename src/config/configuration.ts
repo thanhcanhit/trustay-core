@@ -37,6 +37,13 @@ export interface AppConfig {
 	resend: {
 		apiKey: string;
 	};
+	elasticsearch: {
+		node: string;
+		username: string;
+		password: string;
+		maxRetries: number;
+		requestTimeout: number;
+	};
 }
 
 /**
@@ -77,6 +84,13 @@ const getConfig = (): AppConfig => ({
 	},
 	resend: {
 		apiKey: process.env.RESEND_API_KEY ?? '',
+	},
+	elasticsearch: {
+		node: process.env.ELASTICSEARCH_NODE ?? 'http://localhost:9200',
+		username: process.env.ELASTICSEARCH_USERNAME ?? '',
+		password: process.env.ELASTICSEARCH_PASSWORD ?? '',
+		maxRetries: parseInt(process.env.ELASTICSEARCH_MAX_RETRIES ?? '3', 10),
+		requestTimeout: parseInt(process.env.ELASTICSEARCH_REQUEST_TIMEOUT ?? '30000', 10),
 	},
 });
 

@@ -11,6 +11,7 @@ import { PaginatedResponseDto, PaginationQueryDto } from '../../common/dto/pagin
 import { PersonPublicView } from '../../common/serialization/person.view';
 import { generateSlug, generateUniqueSlug } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ElasticsearchQueueService } from '../../queue/services/elasticsearch-queue.service';
 import { CreateRoomSeekingPostDto, RoomRoomSeekingPostDto, UpdateRoomSeekingPostDto } from './dto';
 import { RoomSeekingDetailWithMetaResponseDto } from './dto/room-seeking-detail-with-meta.dto';
 
@@ -20,7 +21,10 @@ export class RoomSeekingPostService {
 	private readonly VIEW_COOLDOWN_MS = 1 * 60 * 1000; // 1 phút
 	private readonly CACHE_CLEANUP_INTERVAL = 30 * 60 * 1000; // 30 phút
 
-	constructor(private readonly prisma: PrismaService) {
+	constructor(
+		private readonly prisma: PrismaService,
+		private readonly elasticsearchQueueService: ElasticsearchQueueService,
+	) {
 		// Dọn dẹp cache định kỳ
 		setInterval(() => {
 			this.cleanupViewCache();
@@ -443,6 +447,9 @@ export class RoomSeekingPostService {
 			throw error;
 		}
 
+		// Queue Elasticsearch indexing (async, best-effort)
+		void this.elasticsearchQueueService.queueIndexRoomSeeking(roomRequest.id);
+
 		return this.mapToResponseDto(roomRequest);
 	}
 
@@ -652,6 +659,9 @@ export class RoomSeekingPostService {
 			// Re-throw other errors
 			throw error;
 		}
+
+		// Queue Elasticsearch re-indexing (async, best-effort)
+		void this.elasticsearchQueueService.queueIndexRoomSeeking(updatedRequest.id);
 
 		return this.mapToResponseDto(updatedRequest);
 	}

@@ -52,6 +52,68 @@ services:
     networks:
       - trustay-network
 
+  trustay-elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    restart: unless-stopped
+    container_name: trustay-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - cluster.name=trustay-cluster
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - trustay-network
+
+  trustay-kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    restart: unless-stopped
+    container_name: trustay-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://trustay-elasticsearch:9200
+      - SERVER_NAME=trustay-kibana
+      - SERVER_HOST=0.0.0.0
+    ports:
+      - "5601:5601"
+    depends_on:
+      trustay-elasticsearch:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory:  1G
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    networks:
+      - trustay-network
+
 
   trustay-pgweb:
     image: sosedoff/pgweb
@@ -83,6 +145,7 @@ services:
       - NODE_ENV=${NODE_ENV}
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
+      - ELASTICSEARCH_NODE=${ELASTICSEARCH_NODE:-http://trustay-elasticsearch:9200}
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
       - RUN_SEED=false  # Set to true if you want to run seeding
       - FORCE_MIGRATION_BASELINE=false  # Set to true to force baseline resolution
@@ -90,6 +153,8 @@ services:
       trustay-postgres:
         condition: service_healthy
       trustay-redis:
+        condition: service_healthy
+      trustay-elasticsearch:
         condition: service_healthy
     networks:
       - trustay-network
@@ -108,6 +173,8 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  elasticsearch_data:
     driver: local
 
 networks:
