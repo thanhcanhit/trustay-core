@@ -32,7 +32,7 @@
     "es:seed:reindex": "node scripts/seed-elasticsearch.js --reindex"
   },
   "dependencies": {
-    "@elastic/elasticsearch": "^9.1.1",
+    "@elastic/elasticsearch": "^8.19.1",
     "@nestjs/bull": "^11.0.3",
     "@nestjs/cache-manager": "^3.0.1",
     "@nestjs/common": "^11.0.1",
