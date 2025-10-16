@@ -51,6 +51,7 @@
     "@types/multer": "^2.0.0",
     "@types/puppeteer": "^7.0.4",
     "bcryptjs": "^2.4.3",
+    "bull": "^4.16.5",
     "bullmq": "^5.60.0",
     "cache-manager-ioredis-yet": "^2.1.2",
     "class-transformer": "^0.5.1",
