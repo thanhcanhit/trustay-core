@@ -175,20 +175,6 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		expiresInDays: 15,
 	},
 
-	// Review Related
-	[NotificationType.REVIEW_RECEIVED]: {
-		type: NotificationType.REVIEW_RECEIVED,
-		title: 'Đánh giá mới',
-		message: 'Bạn nhận được đánh giá mới {{stars}} sao từ {{reviewerName}} cho {{subject}}',
-	},
-
-	[NotificationType.REVIEW_REQUEST]: {
-		type: NotificationType.REVIEW_REQUEST,
-		title: 'Yêu cầu đánh giá',
-		message: 'Vui lòng đánh giá trải nghiệm thuê phòng {{roomName}} của bạn',
-		expiresInDays: 30,
-	},
-
 	// Roommate Related
 	[NotificationType.ROOMMATE_APPLICATION_RECEIVED]: {
 		type: NotificationType.ROOMMATE_APPLICATION_RECEIVED,

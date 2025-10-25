@@ -4,14 +4,6 @@ import { IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class UpdateBookingRequestDto {
 	@ApiPropertyOptional({
-		description: 'Ghi chú từ chủ nhà',
-		example: 'Phòng đã sẵn sàng, vui lòng liên hệ để xem phòng.',
-	})
-	@IsOptional()
-	@IsString()
-	ownerNotes?: string;
-
-	@ApiPropertyOptional({
 		description: 'Cập nhật trạng thái (chỉ landlord)',
 		enum: RequestStatus,
 		example: 'accepted',

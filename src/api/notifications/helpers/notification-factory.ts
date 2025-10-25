@@ -308,29 +308,6 @@ export class NotificationFactory {
 		return this.createFromTemplate(tenantId, NotificationType.PAYMENT_REMINDER, data);
 	}
 
-	// Review Related Notifications
-	createReviewReceivedNotification(
-		userId: string,
-		data: {
-			stars: number;
-			reviewerName: string;
-			subject: string; // "phòng ABC" hoặc "dịch vụ cho thuê"
-			reviewId: string;
-		},
-	) {
-		return this.createFromTemplate(userId, NotificationType.REVIEW_RECEIVED, data);
-	}
-
-	createReviewRequestNotification(
-		userId: string,
-		data: {
-			roomName: string;
-			rentalId: string;
-		},
-	) {
-		return this.createFromTemplate(userId, NotificationType.REVIEW_REQUEST, data);
-	}
-
 	// Roommate Related Notifications
 	createRoommateApplicationReceivedNotification(
 		tenantId: string,

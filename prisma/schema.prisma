@@ -82,10 +82,6 @@ enum PaymentStatus {
   refunded
 }
 
-enum ReviewerType {
-  tenant
-  owner
-}
 
 enum RatingTargetType {
   tenant
@@ -264,8 +260,6 @@ model User {
   payments             Payment[]
   sentInvitations      RoomInvitation[]           @relation("InvitationSender")
   receivedInvitations  RoomInvitation[]           @relation("InvitationReceiver")
-  reviewsGiven         Review[]                   @relation("ReviewGiver")
-  reviewsReceived      Review[]                   @relation("ReviewReceiver")
   ratingsGiven         Rating[]                   @relation("RatingGiver")
   notifications        Notification[]
   verificationCodes    VerificationCode[]
@@ -713,9 +707,9 @@ model RoomBooking {
   moveInDate     DateTime          @map("move_in_date") @db.Date
   moveOutDate    DateTime?         @map("move_out_date") @db.Date
   rentalMonths   Int?             @map("rental_months")
-  monthlyRent    Decimal           @map("monthly_rent") @db.Decimal(15, 2)
-  depositAmount  Decimal           @map("deposit_amount") @db.Decimal(15, 2)
-  totalAmount    Decimal           @map("total_amount") @db.Decimal(15, 2)
+  monthlyRent    Decimal?         @map("monthly_rent") @db.Decimal(15, 2)
+  depositAmount  Decimal?         @map("deposit_amount") @db.Decimal(15, 2)
+  totalAmount    Decimal?         @map("total_amount") @db.Decimal(15, 2)
   status         RequestStatus @default(pending)
   messageToOwner String?           @map("message_to_owner")
   ownerNotes     String?           @map("owner_notes")
@@ -763,7 +757,6 @@ model Rental {
   tenant               User                  @relation("RentalTenant", fields: [tenantId], references: [id], onDelete: Cascade)
   owner                User                  @relation("RentalOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   payments             Payment[]
-  reviews              Review[]
   ratings              Rating[]
   monthlyBills         MonthlyBill[]
   contract             Contract?
@@ -876,31 +869,6 @@ model Payment {
 // REVIEWS
 // ========================================
 
-model Review {
-  id                  String       @id @default(uuid())
-  rentalId            String       @map("rental_id")
-  reviewerId          String       @map("reviewer_id")
-  revieweeId          String       @map("reviewee_id")
-  reviewerType        ReviewerType @map("reviewer_type")
-  propertyRating      Int?         @map("property_rating")
-  communicationRating Int?         @map("communication_rating")
-  cleanlinessRating   Int?         @map("cleanliness_rating")
-  overallRating       Int?         @map("overall_rating")
-  reviewText          String?      @map("review_text")
-  isPublic            Boolean      @default(true) @map("is_public")
-  responseText        String?      @map("response_text")
-  responseDate        DateTime?    @map("response_date")
-  createdAt           DateTime     @default(now()) @map("created_at")
-
-  // Relations
-  rental   Rental @relation(fields: [rentalId], references: [id], onDelete: Cascade)
-  reviewer User   @relation("ReviewGiver", fields: [reviewerId], references: [id], onDelete: Cascade)
-  reviewee User   @relation("ReviewReceiver", fields: [revieweeId], references: [id], onDelete: Cascade)
-
-  @@index([rentalId])
-  @@index([revieweeId])
-  @@map("reviews")
-}
 
 // ========================================
 // RATING SYSTEM (ENHANCED)

@@ -34,10 +34,6 @@ export enum NotificationType {
 	PAYMENT_OVERDUE = 'payment_overdue',
 	PAYMENT_REMINDER = 'payment_reminder',
 
-	// Review Related
-	REVIEW_RECEIVED = 'review_received',
-	REVIEW_REQUEST = 'review_request',
-
 	// Roommate Related
 	ROOMMATE_APPLICATION_RECEIVED = 'roommate_application_received',
 	ROOMMATE_APPLICATION_APPROVED = 'roommate_application_approved',

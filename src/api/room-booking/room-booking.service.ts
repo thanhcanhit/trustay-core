@@ -96,9 +96,9 @@ export class BookingRequestsService {
 				moveOutDate: dto.moveOutDate ? new Date(dto.moveOutDate) : null,
 				messageToOwner: dto.messageToOwner,
 				status: RequestStatus.pending,
-				monthlyRent: 0, // Will be set from room pricing
-				depositAmount: 0, // Will be calculated
-				totalAmount: 0, // Will be calculated
+				monthlyRent: null,
+				depositAmount: null,
+				totalAmount: null,
 			},
 			include: {
 				tenant: true,
@@ -283,7 +283,6 @@ export class BookingRequestsService {
 		const updatedBooking = await this.prisma.roomBooking.update({
 			where: { id: roomBookingId },
 			data: {
-				ownerNotes: dto.ownerNotes,
 				status: dto.status,
 			},
 			include: {
@@ -310,7 +309,7 @@ export class BookingRequestsService {
 		} else if (dto.status === RequestStatus.rejected) {
 			await this.notificationsService.notifyBookingRejected(roomBooking.tenantId, {
 				roomName: updatedBooking.room.name,
-				reason: dto.ownerNotes,
+				reason: 'Booking request was rejected',
 				bookingId: roomBooking.id,
 			});
 		}
@@ -429,18 +428,9 @@ export class BookingRequestsService {
 				);
 			}
 
-			// Determine pricing with fallback chain: roomBooking → room pricing → 0
-			let monthlyRent = roomBooking.monthlyRent;
-			let depositAmount = roomBooking.depositAmount;
-
-			// If booking request has 0 values, try to get from room pricing
-			if (roomBooking.monthlyRent.toNumber() === 0 && roomBooking.room.pricing) {
-				monthlyRent = roomBooking.room.pricing.basePriceMonthly;
-			}
-
-			if (roomBooking.depositAmount.toNumber() === 0 && roomBooking.room.pricing) {
-				depositAmount = roomBooking.room.pricing.depositAmount;
-			}
+			// Get pricing from room pricing
+			const monthlyRent = roomBooking.room.pricing?.basePriceMonthly || 0;
+			const depositAmount = roomBooking.room.pricing?.depositAmount || 0;
 
 			// Tạo Rental và update RoomInstance status trong transaction
 			rental = await this.prisma.$transaction(async (tx) => {
@@ -529,7 +519,7 @@ export class BookingRequestsService {
 	async cancelBookingRequest(
 		roomBookingId: string,
 		tenantId: string,
-		dto: CancelBookingRequestDto,
+		_dto: CancelBookingRequestDto,
 	) {
 		const roomBooking = await this.prisma.roomBooking.findUnique({
 			where: { id: roomBookingId },
@@ -558,9 +548,6 @@ export class BookingRequestsService {
 			where: { id: roomBookingId },
 			data: {
 				status: RequestStatus.cancelled,
-				ownerNotes: dto.cancellationReason
-					? `Cancelled by tenant: ${dto.cancellationReason}`
-					: 'Cancelled by tenant',
 			},
 		});
 

@@ -11,7 +11,6 @@ import {
 	PaymentType,
 	RentalStatus,
 	RequestStatus,
-	ReviewerType,
 	RoomType,
 	RuleCategory,
 	RuleType,
@@ -288,10 +287,6 @@ export class ReferenceService {
 				failed: 'Thất bại',
 				refunded: 'Đã hoàn tiền',
 			}),
-			reviewerTypes: this.mapEnumToDto(ReviewerType, {
-				tenant: 'Người thuê',
-				owner: 'Chủ nhà',
-			}),
 			amenityCategories: this.mapEnumToDto(AmenityCategory, {
 				basic: 'Tiện ích cơ bản',
 				kitchen: 'Nhà bếp',
@@ -371,7 +366,6 @@ export class ReferenceService {
 			paymentType: uppercaseArray(PaymentType),
 			paymentMethod: uppercaseArray(PaymentMethod),
 			paymentStatus: uppercaseArray(PaymentStatus),
-			reviewerType: uppercaseArray(ReviewerType),
 			amenityCategory: uppercaseArray(AmenityCategory),
 			costCategory: uppercaseArray(CostCategory),
 			ruleCategory: uppercaseArray(RuleCategory),

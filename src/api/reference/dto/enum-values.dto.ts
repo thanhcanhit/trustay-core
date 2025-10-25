@@ -83,12 +83,6 @@ export class AllEnumsResponseDto {
 	paymentStatuses: EnumValueDto[];
 
 	@ApiProperty({
-		description: 'Reviewer types',
-		type: [EnumValueDto],
-	})
-	reviewerTypes: EnumValueDto[];
-
-	@ApiProperty({
 		description: 'Amenity categories',
 		type: [EnumValueDto],
 	})

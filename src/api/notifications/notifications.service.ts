@@ -493,31 +493,6 @@ export class NotificationsService {
 		return this.createNotification(notification);
 	}
 
-	// Review Related Notifications
-	async notifyReviewReceived(
-		userId: string,
-		data: {
-			stars: number;
-			reviewerName: string;
-			subject: string;
-			reviewId: string;
-		},
-	) {
-		const notification = this.notificationFactory.createReviewReceivedNotification(userId, data);
-		return this.createNotification(notification);
-	}
-
-	async notifyReviewRequest(
-		userId: string,
-		data: {
-			roomName: string;
-			rentalId: string;
-		},
-	) {
-		const notification = this.notificationFactory.createReviewRequestNotification(userId, data);
-		return this.createNotification(notification);
-	}
-
 	// Roommate Related Notifications
 	async notifyRoommateApplicationReceived(
 		tenantId: string,
