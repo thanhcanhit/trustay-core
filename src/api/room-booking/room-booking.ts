@@ -21,7 +21,6 @@ import {
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { DailyBookingLimitGuard } from '../../cache/guards/daily-booking-limit.guard';
-import { BookingRequestsService } from './booking-requests.service';
 import {
 	BookingRequestResponseDto,
 	CancelBookingRequestDto,
@@ -30,6 +29,7 @@ import {
 	QueryBookingRequestsDto,
 	UpdateBookingRequestDto,
 } from './dto';
+import { BookingRequestsService } from './room-booking.service';
 
 @ApiTags('Booking Requests')
 @ApiBearerAuth()
