@@ -424,7 +424,7 @@ export class NotificationsService {
 	}
 
 	// Payment & Billing Notifications
-	async notifyMonthlyBill(
+	async notifyBill(
 		tenantId: string,
 		data: {
 			month: number;
@@ -434,7 +434,7 @@ export class NotificationsService {
 			billId: string;
 		},
 	) {
-		const notification = this.notificationFactory.createMonthlyBillNotification(tenantId, data);
+		const notification = this.notificationFactory.createBillNotification(tenantId, data);
 		return this.createNotification(notification);
 	}
 

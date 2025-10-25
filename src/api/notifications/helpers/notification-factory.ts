@@ -247,7 +247,7 @@ export class NotificationFactory {
 	}
 
 	// Payment & Billing Notifications
-	createMonthlyBillNotification(
+	createBillNotification(
 		tenantId: string,
 		data: {
 			month: number;

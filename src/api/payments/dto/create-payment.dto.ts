@@ -9,10 +9,10 @@ export class CreatePaymentDto {
 	@IsUUID()
 	rentalId: string;
 
-	@ApiProperty({ description: 'ID của monthly bill (optional)', required: false })
+	@ApiProperty({ description: 'ID của bill (optional)', required: false })
 	@IsOptional()
 	@IsUUID()
-	monthlyBillId?: string;
+	billId?: string;
 
 	@ApiProperty({ enum: PaymentType, description: 'Loại thanh toán' })
 	@IsEnum(PaymentType)

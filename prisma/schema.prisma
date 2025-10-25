@@ -40,7 +40,7 @@ enum RequestStatus {
   rejected
   expired
   cancelled
-  awaiting_confirmation // Chờ xác nhận
+  awaiting_confirmation 
 }
 
 enum RentalStatus {
@@ -448,7 +448,7 @@ model RoomInstance {
   // Relations
   room                 Room                  @relation(fields: [roomId], references: [id], onDelete: Cascade)
   rentals              Rental[]
-  monthlyBills         MonthlyBill[]
+  bills         Bill[]
   contracts            Contract[]
   roommateSeekingPosts RoommateSeekingPost[]
 
@@ -758,7 +758,7 @@ model Rental {
   owner                User                  @relation("RentalOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   payments             Payment[]
   ratings              Rating[]
-  monthlyBills         MonthlyBill[]
+  bills         Bill[]
   contract             Contract?
   roommateSeekingPosts RoommateSeekingPost[]
 
@@ -772,7 +772,7 @@ model Rental {
 // MONTHLY BILLING SYSTEM
 // ========================================
 
-model MonthlyBill {
+model Bill {
   id             String   @id @default(uuid())
   rentalId       String   @map("rental_id")
   roomInstanceId String   @map("room_instance_id")
@@ -811,12 +811,12 @@ model MonthlyBill {
   @@index([status])
   @@index([dueDate])
   @@index([billingYear, billingMonth])
-  @@map("monthly_bills")
+  @@map("bills")
 }
 
 model BillItem {
   id            String   @id @default(uuid())
-  monthlyBillId String   @map("monthly_bill_id")
+  billId String   @map("bill_id")
   itemType      String   @map("item_type") // "rent", "utility", "service", "other"
   itemName      String   @map("item_name")
   description   String?
@@ -828,9 +828,9 @@ model BillItem {
   createdAt     DateTime @default(now()) @map("created_at")
 
   // Relations  
-  monthlyBill MonthlyBill @relation(fields: [monthlyBillId], references: [id], onDelete: Cascade)
+  bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
 
-  @@index([monthlyBillId])
+  @@index([billId])
   @@index([itemType])
   @@map("bill_items")
 }
@@ -838,7 +838,7 @@ model BillItem {
 model Payment {
   id                   String         @id @default(uuid())
   rentalId             String         @map("rental_id")
-  monthlyBillId        String?        @map("monthly_bill_id")
+  billId        String?        @map("bill_id")
   payerId              String         @map("payer_id")
   paymentType          PaymentType    @map("payment_type")
   amount               Decimal        @db.Decimal(15, 2)
@@ -854,11 +854,11 @@ model Payment {
 
   // Relations
   rental      Rental       @relation(fields: [rentalId], references: [id], onDelete: Cascade)
-  monthlyBill MonthlyBill? @relation(fields: [monthlyBillId], references: [id], onDelete: SetNull)
+  bill Bill? @relation(fields: [billId], references: [id], onDelete: SetNull)
   payer       User         @relation(fields: [payerId], references: [id], onDelete: Cascade)
 
   @@index([rentalId])
-  @@index([monthlyBillId])
+  @@index([billId])
   @@index([payerId])
   @@index([paymentStatus])
   @@index([paymentDate])
