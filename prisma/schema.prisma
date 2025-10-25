@@ -34,11 +34,13 @@ enum RoomType {
   whole_house // Nhà nguyên căn
 }
 
-enum BookingStatus {
+enum RequestStatus {
   pending
-  approved
+  accepted
   rejected
+  expired
   cancelled
+  awaiting_confirmation // Chờ xác nhận
 }
 
 enum RentalStatus {
@@ -48,13 +50,7 @@ enum RentalStatus {
   pending_renewal
 }
 
-enum InvitationStatus {
-  pending
-  accepted
-  declined
-  withdrawn
-  expired
-}
+// InvitationStatus removed - using RequestStatus instead
 
 enum BillStatus {
   draft
@@ -193,15 +189,7 @@ enum RoommatePostStatus {
   expired
 }
 
-enum RoommateApplicationStatus {
-  pending
-  approved_by_tenant
-  rejected_by_tenant
-  approved_by_landlord // Chỉ áp dụng cho platform rooms
-  rejected_by_landlord // Chỉ áp dụng cho platform rooms
-  cancelled
-  expired
-}
+// RoommateApplicationStatus removed - using RequestStatus instead
 
 enum RoomStatus {
   available // Phòng trống, sẵn sàng cho thuê
@@ -270,7 +258,7 @@ model User {
   // Relations
   addresses            UserAddress[]
   ownedBuildings       Building[]                 @relation("BuildingOwner")
-  bookingRequests      BookingRequest[]
+  roomBookings         RoomBooking[]
   rentalsAsTenant      Rental[]                   @relation("RentalTenant")
   rentalsAsOwner       Rental[]                   @relation("RentalOwner")
   payments             Payment[]
@@ -443,7 +431,7 @@ model Room {
   images          RoomImage[]
   rules           RoomRule[]
   pricing         RoomPricing?
-  bookingRequests BookingRequest[]
+  roomBookings    RoomBooking[]
   invitations     RoomInvitation[]
 
   @@index([buildingId])
@@ -686,7 +674,7 @@ model RoomInvitation {
   depositAmount     Decimal          @map("deposit_amount") @db.Decimal(15, 2)
   moveInDate        DateTime?        @map("move_in_date") @db.Date
   rentalMonths      Int?             @map("rental_months")
-  status            InvitationStatus @default(pending)
+  status            RequestStatus @default(pending)
 
   // Landlord confirm sau khi tenant accept để tự động tạo rental
   isConfirmedBySender Boolean  @default(false) @map("is_confirmed_by_sender")
@@ -718,19 +706,19 @@ model RoomInvitation {
 // BOOKING & RENTAL MANAGEMENT
 // ========================================
 
-model BookingRequest {
-  id             String        @id @default(uuid())
-  roomId         String        @map("room_id")
-  tenantId       String        @map("tenant_id")
-  moveInDate     DateTime      @map("move_in_date") @db.Date
-  moveOutDate    DateTime?     @map("move_out_date") @db.Date
-  rentalMonths   Int?          @map("rental_months")
-  monthlyRent    Decimal       @map("monthly_rent") @db.Decimal(15, 2)
-  depositAmount  Decimal       @map("deposit_amount") @db.Decimal(15, 2)
-  totalAmount    Decimal       @map("total_amount") @db.Decimal(15, 2)
-  status         BookingStatus @default(pending)
-  messageToOwner String?       @map("message_to_owner")
-  ownerNotes     String?       @map("owner_notes")
+model RoomBooking {
+  id             String            @id @default(uuid())
+  roomId         String            @map("room_id")
+  tenantId       String            @map("tenant_id")
+  moveInDate     DateTime          @map("move_in_date") @db.Date
+  moveOutDate    DateTime?         @map("move_out_date") @db.Date
+  rentalMonths   Int?             @map("rental_months")
+  monthlyRent    Decimal           @map("monthly_rent") @db.Decimal(15, 2)
+  depositAmount  Decimal           @map("deposit_amount") @db.Decimal(15, 2)
+  totalAmount    Decimal           @map("total_amount") @db.Decimal(15, 2)
+  status         RequestStatus @default(pending)
+  messageToOwner String?           @map("message_to_owner")
+  ownerNotes     String?           @map("owner_notes")
 
   // Tenant confirm sau khi landlord approve để tự động tạo rental
   isConfirmedByTenant Boolean  @default(false) @map("is_confirmed_by_tenant")
@@ -747,12 +735,12 @@ model BookingRequest {
   @@index([roomId])
   @@index([tenantId])
   @@index([status])
-  @@map("booking_requests")
+  @@map("room_bookings")
 }
 
 model Rental {
   id                    String       @id @default(uuid())
-  bookingRequestId      String?      @unique @map("booking_request_id")
+  roomBookingId         String?      @unique @map("room_booking_id")
   invitationId          String?      @unique @map("invitation_id")
   roomInstanceId        String       @map("room_instance_id")
   tenantId              String       @map("tenant_id")
@@ -769,7 +757,7 @@ model Rental {
   updatedAt             DateTime     @updatedAt @map("updated_at")
 
   // Relations
-  bookingRequest       BookingRequest?       @relation(fields: [bookingRequestId], references: [id])
+  roomBooking          RoomBooking?          @relation(fields: [roomBookingId], references: [id])
   invitation           RoomInvitation?       @relation(fields: [invitationId], references: [id])
   roomInstance         RoomInstance          @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
   tenant               User                  @relation("RentalTenant", fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1119,7 +1107,7 @@ model RoommateApplication {
   applicationMessage String? @map("application_message")
 
   // Trạng thái
-  status RoommateApplicationStatus @default(pending)
+  status RequestStatus @default(pending)
 
   // Phản hồi từ tenant
   tenantResponse    String?   @map("tenant_response")
