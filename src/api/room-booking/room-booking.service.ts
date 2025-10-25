@@ -99,7 +99,6 @@ export class BookingRequestsService {
 				monthlyRent: 0, // Will be set from room pricing
 				depositAmount: 0, // Will be calculated
 				totalAmount: 0, // Will be calculated
-				isConfirmedByTenant: false, // Cần xác nhận trước khi gửi đến landlord
 			},
 			include: {
 				tenant: true,
@@ -303,7 +302,7 @@ export class BookingRequestsService {
 
 		// Send notifications based on status change
 		if (dto.status === RequestStatus.accepted) {
-			await this.notificationsService.notifyBookingApproved(roomBooking.tenantId, {
+			await this.notificationsService.notifyBookingAccepted(roomBooking.tenantId, {
 				roomName: updatedBooking.room.name,
 				landlordName: `${updatedBooking.room.building.owner?.firstName} ${updatedBooking.room.building.owner?.lastName}`,
 				bookingId: roomBooking.id,
@@ -349,13 +348,13 @@ export class BookingRequestsService {
 			throw new ForbiddenException('You can only confirm your own booking requests');
 		}
 
-		if (roomBooking.isConfirmedByTenant) {
-			throw new BadRequestException('Booking request is already confirmed');
+		if (roomBooking.status === RequestStatus.awaiting_confirmation) {
+			throw new BadRequestException('Room booking is already confirmed');
 		}
 
 		if (roomBooking.status !== RequestStatus.accepted) {
 			throw new BadRequestException(
-				'Can only confirm booking requests that have been approved by landlord',
+				'Can only confirm room bookings that have been approved by landlord',
 			);
 		}
 
@@ -363,7 +362,7 @@ export class BookingRequestsService {
 		const updatedBooking = await this.prisma.roomBooking.update({
 			where: { id: roomBookingId },
 			data: {
-				isConfirmedByTenant: true,
+				status: RequestStatus.accepted, // Keep as accepted since rental will be created
 				confirmedAt: new Date(),
 			},
 			include: {

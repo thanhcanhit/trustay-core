@@ -553,7 +553,7 @@ export class RoommateApplicationService {
 
 		// Tenant confirm
 		if (isTenant) {
-			if (application.isConfirmedByTenant) {
+			if (application.status === RequestStatus.awaiting_confirmation) {
 				throw new BadRequestException('Đơn ứng tuyển đã được tenant xác nhận');
 			}
 
@@ -566,7 +566,7 @@ export class RoommateApplicationService {
 				await this.prisma.roommateApplication.update({
 					where: { id },
 					data: {
-						isConfirmedByTenant: true,
+						status: RequestStatus.awaiting_confirmation,
 					},
 				});
 
@@ -596,18 +596,8 @@ export class RoommateApplicationService {
 
 		// Landlord confirm (for platform rooms only)
 		if (isLandlord) {
-			if (!application.isConfirmedByTenant) {
-				throw new BadRequestException('Tenant chưa xác nhận đơn ứng tuyển');
-			}
-
-			if (application.isConfirmedByLandlord) {
-				throw new BadRequestException('Đơn ứng tuyển đã được landlord xác nhận');
-			}
-
 			if (application.status !== RequestStatus.awaiting_confirmation) {
-				throw new BadRequestException(
-					'Chỉ có thể xác nhận đơn ứng tuyển đã được landlord phê duyệt',
-				);
+				throw new BadRequestException('Tenant chưa xác nhận đơn ứng tuyển');
 			}
 
 			// Create rental for roommate
@@ -811,8 +801,8 @@ export class RoommateApplicationService {
 	private async createRentalForRoommate(
 		application: any,
 		post: any,
-		isTenantConfirm: boolean,
-		isLandlordConfirm: boolean,
+		_isTenantConfirm: boolean,
+		_isLandlordConfirm: boolean,
 	): Promise<RoommateApplicationResponseDto> {
 		// Validate roomInstance nếu là platform room
 		if (!post.roomInstanceId) {
@@ -847,12 +837,11 @@ export class RoommateApplicationService {
 
 		// Tạo rental và update application trong transaction
 		const rental = await this.prisma.$transaction(async (tx) => {
-			// Update application confirmed status
+			// Update application status to completed
 			await tx.roommateApplication.update({
 				where: { id: application.id },
 				data: {
-					...(isTenantConfirm && { isConfirmedByTenant: true }),
-					...(isLandlordConfirm && { isConfirmedByLandlord: true }),
+					status: RequestStatus.accepted, // Final status when rental is created
 					confirmedAt: new Date(),
 				},
 			});
@@ -902,7 +891,7 @@ export class RoommateApplicationService {
 		});
 
 		// Notify landlord if platform room
-		if (isLandlordConfirm) {
+		if (_isLandlordConfirm) {
 			await this.notificationsService.notifyRentalCreated(roomInstance.room.building.ownerId, {
 				roomName,
 				rentalId: rental.id,

@@ -222,9 +222,9 @@ async sendOTP(email: string) {
 // In booking-requests.service.ts
 async approveBooking(bookingId: string, landlordId: string) {
   // Update booking status
-  const booking = await this.prisma.bookingRequest.update({
+  const booking = await this.prisma.roomBooking.update({
     where: { id: bookingId },
-    data: { status: 'approved' },
+    data: { status: 'accepted' },
     include: { tenant: true, room: true },
   });
 

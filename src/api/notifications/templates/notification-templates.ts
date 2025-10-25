@@ -35,8 +35,8 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		expiresInDays: 7,
 	},
 
-	[NotificationType.BOOKING_REQUEST_APPROVED]: {
-		type: NotificationType.BOOKING_REQUEST_APPROVED,
+	[NotificationType.BOOKING_REQUEST_ACCEPTED]: {
+		type: NotificationType.BOOKING_REQUEST_ACCEPTED,
 		title: 'Yêu cầu booking được chấp nhận',
 		message: 'Yêu cầu booking phòng {{roomName}} của bạn đã được chấp nhận!',
 	},
@@ -74,17 +74,10 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		message: 'Lời mời thuê phòng {{roomName}} của bạn đã được {{tenantName}} chấp nhận',
 	},
 
-	[NotificationType.ROOM_INVITATION_DECLINED]: {
-		type: NotificationType.ROOM_INVITATION_DECLINED,
-		title: 'Lời mời bị từ chối',
-		message: 'Lời mời thuê phòng {{roomName}} của bạn đã bị {{tenantName}} từ chối',
-	},
-
 	[NotificationType.ROOM_INVITATION_REJECTED]: {
 		type: NotificationType.ROOM_INVITATION_REJECTED,
 		title: 'Lời mời bị từ chối',
-		message:
-			'Lời mời thuê phòng {{roomName}} của bạn đã bị {{tenantName}} từ chối{{#reason}} với lý do: {{reason}}{{/reason}}',
+		message: 'Lời mời thuê phòng {{roomName}} của bạn đã bị {{tenantName}} từ chối',
 	},
 
 	[NotificationType.ROOM_INVITATION_WITHDRAWN]: {

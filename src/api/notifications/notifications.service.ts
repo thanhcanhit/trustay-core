@@ -216,7 +216,7 @@ export class NotificationsService {
 		return this.createNotification(notification);
 	}
 
-	async notifyBookingApproved(
+	async notifyBookingAccepted(
 		tenantId: string,
 		data: {
 			roomName: string;
@@ -224,7 +224,7 @@ export class NotificationsService {
 			bookingId: string;
 		},
 	) {
-		const notification = this.notificationFactory.createBookingApprovedNotification(tenantId, data);
+		const notification = this.notificationFactory.createBookingAcceptedNotification(tenantId, data);
 		return this.createNotification(notification);
 	}
 
@@ -296,27 +296,11 @@ export class NotificationsService {
 		return this.createNotification(notification);
 	}
 
-	async notifyInvitationDeclined(
-		landlordId: string,
-		data: {
-			roomName: string;
-			tenantName: string;
-			invitationId: string;
-		},
-	) {
-		const notification = this.notificationFactory.createInvitationDeclinedNotification(
-			landlordId,
-			data,
-		);
-		return this.createNotification(notification);
-	}
-
 	async notifyInvitationRejected(
 		landlordId: string,
 		data: {
 			roomName: string;
 			tenantName: string;
-			reason?: string;
 			invitationId: string;
 		},
 	) {

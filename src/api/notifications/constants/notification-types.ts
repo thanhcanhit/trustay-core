@@ -6,7 +6,7 @@ export enum NotificationType {
 
 	// Booking Related
 	BOOKING_REQUEST_CREATED = 'booking_request_created',
-	BOOKING_REQUEST_APPROVED = 'booking_request_approved',
+	BOOKING_REQUEST_ACCEPTED = 'booking_request_accepted',
 	BOOKING_REQUEST_REJECTED = 'booking_request_rejected',
 	BOOKING_REQUEST_CANCELLED = 'booking_request_cancelled',
 	BOOKING_REQUEST_CONFIRMED = 'booking_request_confirmed',
@@ -14,7 +14,6 @@ export enum NotificationType {
 	// Invitation Related
 	ROOM_INVITATION_RECEIVED = 'room_invitation_received',
 	ROOM_INVITATION_ACCEPTED = 'room_invitation_accepted',
-	ROOM_INVITATION_DECLINED = 'room_invitation_declined',
 	ROOM_INVITATION_REJECTED = 'room_invitation_rejected',
 	ROOM_INVITATION_WITHDRAWN = 'room_invitation_withdrawn',
 	ROOM_INVITATION_EXPIRED = 'room_invitation_expired',

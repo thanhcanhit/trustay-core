@@ -74,7 +74,7 @@ export class NotificationFactory {
 		return this.createFromTemplate(landlordId, NotificationType.BOOKING_REQUEST_CREATED, data);
 	}
 
-	createBookingApprovedNotification(
+	createBookingAcceptedNotification(
 		tenantId: string,
 		data: {
 			roomName: string;
@@ -82,7 +82,7 @@ export class NotificationFactory {
 			bookingId: string;
 		},
 	) {
-		return this.createFromTemplate(tenantId, NotificationType.BOOKING_REQUEST_APPROVED, data);
+		return this.createFromTemplate(tenantId, NotificationType.BOOKING_REQUEST_ACCEPTED, data);
 	}
 
 	createBookingRejectedNotification(
@@ -142,23 +142,11 @@ export class NotificationFactory {
 		return this.createFromTemplate(landlordId, NotificationType.ROOM_INVITATION_ACCEPTED, data);
 	}
 
-	createInvitationDeclinedNotification(
-		landlordId: string,
-		data: {
-			roomName: string;
-			tenantName: string;
-			invitationId: string;
-		},
-	) {
-		return this.createFromTemplate(landlordId, NotificationType.ROOM_INVITATION_DECLINED, data);
-	}
-
 	createInvitationRejectedNotification(
 		landlordId: string,
 		data: {
 			roomName: string;
 			tenantName: string;
-			reason?: string;
 			invitationId: string;
 		},
 	) {

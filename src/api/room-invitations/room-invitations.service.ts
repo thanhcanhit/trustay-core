@@ -341,7 +341,6 @@ export class RoomInvitationsService {
 			await this.notificationsService.notifyInvitationRejected(invitation.senderId, {
 				roomName: invitation.room.name,
 				tenantName: `${invitation.recipient?.firstName} ${invitation.recipient?.lastName}`,
-				reason: dto.tenantNotes,
 				invitationId: invitation.id,
 			});
 		}
@@ -394,7 +393,7 @@ export class RoomInvitationsService {
 			throw new ForbiddenException('You can only confirm your own invitations');
 		}
 
-		if (invitation.isConfirmedBySender) {
+		if (invitation.status === RequestStatus.awaiting_confirmation) {
 			throw new BadRequestException('Invitation is already confirmed');
 		}
 
@@ -408,7 +407,7 @@ export class RoomInvitationsService {
 		const updatedInvitation = await this.prisma.roomInvitation.update({
 			where: { id: invitationId },
 			data: {
-				isConfirmedBySender: true,
+				status: RequestStatus.accepted, // Keep as accepted since rental will be created
 				confirmedAt: new Date(),
 			},
 			include: {
