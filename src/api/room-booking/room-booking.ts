@@ -31,11 +31,11 @@ import {
 } from './dto';
 import { BookingRequestsService } from './room-booking.service';
 
-@ApiTags('Booking Requests')
+@ApiTags('Room Bookings')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
-@Controller('booking-requests')
-export class BookingRequestsController {
+@Controller('room-bookings')
+export class RoomBookingsController {
 	constructor(private readonly bookingRequestsService: BookingRequestsService) {}
 
 	@Post()
@@ -43,17 +43,17 @@ export class BookingRequestsController {
 	@ApiOperation({ summary: 'Tạo yêu cầu booking mới (Tenant only) - Giới hạn 10 requests/ngày' })
 	@ApiResponse({
 		status: HttpStatus.CREATED,
-		description: 'Booking request được tạo thành công',
+		description: 'Room booking được tạo thành công',
 		type: BookingRequestResponseDto,
 	})
 	@ApiResponse({ status: 400, description: 'Dữ liệu không hợp lệ' })
-	@ApiResponse({ status: 403, description: 'Chỉ tenant mới có thể tạo booking request' })
+	@ApiResponse({ status: 403, description: 'Chỉ tenant mới có thể tạo room booking' })
 	@ApiResponse({ status: 404, description: 'Room không tồn tại' })
 	@ApiResponse({
 		status: 429,
 		description: 'Vượt quá giới hạn 10 yêu cầu đặt phòng mỗi ngày',
 	})
-	async createBookingRequest(
+	async createRoomBooking(
 		@Body() createBookingRequestDto: CreateBookingRequestDto,
 		@CurrentUser('id') userId: string,
 	) {
@@ -61,10 +61,10 @@ export class BookingRequestsController {
 	}
 
 	@Get('received')
-	@ApiOperation({ summary: 'Lấy booking requests đã nhận (Landlord only)' })
+	@ApiOperation({ summary: 'Lấy room bookings đã nhận (Landlord only)' })
 	@ApiResponse({
 		status: 200,
-		description: 'Danh sách booking requests cho landlord',
+		description: 'Danh sách room bookings cho landlord',
 		type: PaginatedBookingRequestResponseDto,
 	})
 	@ApiQuery({ name: 'page', required: false, type: Number, description: 'Số trang (default: 1)' })
@@ -87,7 +87,7 @@ export class BookingRequestsController {
 		description: 'Lọc theo building ID',
 	})
 	@ApiQuery({ name: 'roomId', required: false, type: String, description: 'Lọc theo room ID' })
-	async getReceivedBookingRequests(
+	async getReceivedRoomBookings(
 		@Query() query: QueryBookingRequestsDto,
 		@CurrentUser('id') userId: string,
 	) {

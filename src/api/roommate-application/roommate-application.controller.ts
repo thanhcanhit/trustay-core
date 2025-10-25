@@ -76,15 +76,7 @@ export class RoommateApplicationController {
 	@ApiQuery({
 		name: 'status',
 		required: false,
-		enum: [
-			'pending',
-			'approved_by_tenant',
-			'rejected_by_tenant',
-			'approved_by_landlord',
-			'rejected_by_landlord',
-			'cancelled',
-			'expired',
-		],
+		enum: ['pending', 'accepted', 'rejected', 'expired', 'cancelled', 'awaiting_confirmation'],
 		description: 'Lọc theo trạng thái',
 	})
 	@ApiResponse({
@@ -117,15 +109,7 @@ export class RoommateApplicationController {
 	@ApiQuery({
 		name: 'status',
 		required: false,
-		enum: [
-			'pending',
-			'approved_by_tenant',
-			'rejected_by_tenant',
-			'approved_by_landlord',
-			'rejected_by_landlord',
-			'cancelled',
-			'expired',
-		],
+		enum: ['pending', 'accepted', 'rejected', 'expired', 'cancelled', 'awaiting_confirmation'],
 		description: 'Lọc theo trạng thái',
 	})
 	@ApiResponse({

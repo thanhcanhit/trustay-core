@@ -4,7 +4,7 @@ import {
 	Injectable,
 	NotFoundException,
 } from '@nestjs/common';
-import { InvitationStatus, UserRole } from '@prisma/client';
+import { RequestStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RentalsService } from '../rentals/rentals.service';
@@ -72,7 +72,7 @@ export class RoomInvitationsService {
 				senderId,
 				recipientId: dto.tenantId,
 				roomId: dto.roomId,
-				status: { in: ['pending', 'accepted'] },
+				status: { in: [RequestStatus.pending, RequestStatus.accepted] },
 			},
 		});
 
@@ -83,11 +83,11 @@ export class RoomInvitationsService {
 		}
 
 		// Check for existing booking request from same tenant for same room
-		const existingBooking = await this.prisma.bookingRequest.findFirst({
+		const existingBooking = await this.prisma.roomBooking.findFirst({
 			where: {
 				tenantId: dto.tenantId,
 				roomId: dto.roomId,
-				status: { in: ['pending', 'approved'] },
+				status: { in: [RequestStatus.pending, RequestStatus.accepted] },
 			},
 		});
 
@@ -144,7 +144,7 @@ export class RoomInvitationsService {
 				depositAmount: 0, // Will be calculated based on monthly rent
 				rentalMonths,
 				...(dto.roomSeekingPostId && { roomSeekingPostId: dto.roomSeekingPostId }),
-				status: InvitationStatus.pending,
+				status: RequestStatus.pending,
 			},
 			include: {
 				recipient: true,
@@ -203,15 +203,15 @@ export class RoomInvitationsService {
 					},
 				}),
 				this.prisma.roomInvitation.count({ where }),
-				this.prisma.roomInvitation.count({ where: { ...where, status: InvitationStatus.pending } }),
+				this.prisma.roomInvitation.count({ where: { ...where, status: RequestStatus.pending } }),
 				this.prisma.roomInvitation.count({
-					where: { ...where, status: InvitationStatus.accepted },
+					where: { ...where, status: RequestStatus.accepted },
 				}),
 				this.prisma.roomInvitation.count({
-					where: { ...where, status: InvitationStatus.declined },
+					where: { ...where, status: RequestStatus.rejected },
 				}),
 				this.prisma.roomInvitation.count({
-					where: { ...where, status: InvitationStatus.withdrawn },
+					where: { ...where, status: RequestStatus.cancelled },
 				}),
 			]);
 
@@ -226,8 +226,8 @@ export class RoomInvitationsService {
 			counts: {
 				pending: pendingCount,
 				accepted: acceptedCount,
-				declined: declinedCount,
-				withdrawn: withdrawnCount,
+				rejected: declinedCount,
+				cancelled: withdrawnCount,
 				total,
 			},
 		};
@@ -269,15 +269,15 @@ export class RoomInvitationsService {
 					},
 				}),
 				this.prisma.roomInvitation.count({ where }),
-				this.prisma.roomInvitation.count({ where: { ...where, status: InvitationStatus.pending } }),
+				this.prisma.roomInvitation.count({ where: { ...where, status: RequestStatus.pending } }),
 				this.prisma.roomInvitation.count({
-					where: { ...where, status: InvitationStatus.accepted },
+					where: { ...where, status: RequestStatus.accepted },
 				}),
 				this.prisma.roomInvitation.count({
-					where: { ...where, status: InvitationStatus.declined },
+					where: { ...where, status: RequestStatus.rejected },
 				}),
 				this.prisma.roomInvitation.count({
-					where: { ...where, status: InvitationStatus.withdrawn },
+					where: { ...where, status: RequestStatus.cancelled },
 				}),
 			]);
 
@@ -292,8 +292,8 @@ export class RoomInvitationsService {
 			counts: {
 				pending: pendingCount,
 				accepted: acceptedCount,
-				declined: declinedCount,
-				withdrawn: withdrawnCount,
+				rejected: declinedCount,
+				cancelled: withdrawnCount,
 				total,
 			},
 		};
@@ -323,12 +323,12 @@ export class RoomInvitationsService {
 		}
 
 		// Status transition validation
-		if (dto.status && invitation.status !== InvitationStatus.pending) {
+		if (dto.status && invitation.status !== RequestStatus.pending) {
 			throw new BadRequestException('Can only accept/reject pending invitations');
 		}
 
 		// If accepting, just verify room is still available (rental will be created on landlord confirm)
-		if (dto.status === InvitationStatus.accepted) {
+		if (dto.status === RequestStatus.accepted) {
 			const availableInstance = await this.prisma.roomInstance.findFirst({
 				where: { roomId: invitation.roomId, status: 'available' },
 				orderBy: { createdAt: 'asc' },
@@ -337,7 +337,7 @@ export class RoomInvitationsService {
 			if (!availableInstance) {
 				throw new BadRequestException('No available room instances for this invitation');
 			}
-		} else if (dto.status === InvitationStatus.declined) {
+		} else if (dto.status === RequestStatus.rejected) {
 			await this.notificationsService.notifyInvitationRejected(invitation.senderId, {
 				roomName: invitation.room.name,
 				tenantName: `${invitation.recipient?.firstName} ${invitation.recipient?.lastName}`,
@@ -398,7 +398,7 @@ export class RoomInvitationsService {
 			throw new BadRequestException('Invitation is already confirmed');
 		}
 
-		if (invitation.status !== InvitationStatus.accepted) {
+		if (invitation.status !== RequestStatus.accepted) {
 			throw new BadRequestException(
 				'Can only confirm invitations that have been accepted by tenant',
 			);
@@ -589,18 +589,18 @@ export class RoomInvitationsService {
 			throw new ForbiddenException('You can only withdraw your own invitations');
 		}
 
-		if (invitation.status === InvitationStatus.withdrawn) {
+		if (invitation.status === RequestStatus.cancelled) {
 			throw new BadRequestException('Invitation is already withdrawn');
 		}
 
-		if (invitation.status === InvitationStatus.accepted) {
+		if (invitation.status === RequestStatus.accepted) {
 			throw new BadRequestException('Cannot withdraw accepted invitation');
 		}
 
 		const updatedInvitation = await this.prisma.roomInvitation.update({
 			where: { id: invitationId },
 			data: {
-				status: InvitationStatus.withdrawn,
+				status: RequestStatus.cancelled,
 			},
 			include: {
 				recipient: true,
@@ -610,7 +610,7 @@ export class RoomInvitationsService {
 		});
 
 		// Notify recipient if invitation was pending
-		if (invitation.status === InvitationStatus.pending && invitation.recipientId) {
+		if (invitation.status === RequestStatus.pending && invitation.recipientId) {
 			await this.notificationsService.notifyInvitationWithdrawn(invitation.recipientId, {
 				roomName: invitation.room.name,
 				landlordName: `${invitation.sender?.firstName} ${invitation.sender?.lastName}`,

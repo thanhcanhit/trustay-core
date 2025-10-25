@@ -15,7 +15,7 @@ import { WardModule } from './api/provinces/ward/ward.module';
 import { RatingModule } from './api/rating/rating.module';
 import { ReferenceModule } from './api/reference/reference.module';
 import { RentalsModule } from './api/rentals/rentals.module';
-import { BookingRequestsModule } from './api/room-booking/room-booking.module';
+import { RoomBookingsModule } from './api/room-booking/room-booking.module';
 import { RoomInvitationsModule } from './api/room-invitations/room-invitations.module';
 import { RoomSeekingPostModule } from './api/room-seeking-post/room-seeking-post.module';
 import { RoommateApplicationModule } from './api/roommate-application/roommate-application.module';
@@ -65,7 +65,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 		AddressModule,
 		UsersModule,
 		AuthModule,
-		BookingRequestsModule,
+		RoomBookingsModule,
 		BuildingModule,
 		ContractsModule,
 		ListingModule,

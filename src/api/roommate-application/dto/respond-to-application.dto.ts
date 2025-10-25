@@ -1,24 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RequestStatus } from '@prisma/client';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
-import { RoommateApplicationStatus } from '../../../common/enums/roommate-application-status.enum';
 
 export class RespondToApplicationDto {
 	@ApiProperty({
 		description: 'Quyết định phê duyệt',
-		enum: [
-			RoommateApplicationStatus.approved_by_tenant,
-			RoommateApplicationStatus.rejected_by_tenant,
-			RoommateApplicationStatus.approved_by_landlord,
-			RoommateApplicationStatus.rejected_by_landlord,
-		],
+		enum: RequestStatus,
+		example: 'accepted',
 	})
-	@IsEnum([
-		RoommateApplicationStatus.approved_by_tenant,
-		RoommateApplicationStatus.rejected_by_tenant,
-		RoommateApplicationStatus.approved_by_landlord,
-		RoommateApplicationStatus.rejected_by_landlord,
-	])
-	status: RoommateApplicationStatus;
+	@IsEnum(RequestStatus)
+	status: RequestStatus;
 
 	@ApiPropertyOptional({ description: 'Lời nhắn phản hồi' })
 	@IsOptional()

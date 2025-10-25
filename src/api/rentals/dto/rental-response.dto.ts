@@ -9,7 +9,7 @@ export class RentalResponseDto {
 	id: string;
 
 	@ApiPropertyOptional({
-		description: 'ID của booking request',
+		description: 'ID của room booking',
 		example: '550e8400-e29b-41d4-a716-446655440000',
 	})
 	bookingRequestId?: string;
@@ -129,7 +129,7 @@ export class RentalResponseDto {
 		};
 	};
 
-	bookingRequest?: {
+	roomBooking?: {
 		id: string;
 		moveInDate: Date;
 		moveOutDate?: Date;

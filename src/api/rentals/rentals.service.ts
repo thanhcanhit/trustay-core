@@ -4,7 +4,7 @@ import {
 	Injectable,
 	NotFoundException,
 } from '@nestjs/common';
-import { BookingStatus, InvitationStatus, RentalStatus, UserRole } from '@prisma/client';
+import { RentalStatus, RequestStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ContractsNewService } from '../contracts/contracts-new.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -96,20 +96,20 @@ export class RentalsService {
 		let invitation = null;
 
 		if (dto.bookingRequestId) {
-			bookingRequest = await this.prisma.bookingRequest.findUnique({
+			bookingRequest = await this.prisma.roomBooking.findUnique({
 				where: { id: dto.bookingRequestId },
 			});
 
 			if (!bookingRequest) {
-				throw new NotFoundException('Booking request not found');
+				throw new NotFoundException('Room booking not found');
 			}
 
-			if (bookingRequest.status !== BookingStatus.approved) {
-				throw new BadRequestException('Can only create rental from approved booking request');
+			if (bookingRequest.status !== RequestStatus.accepted) {
+				throw new BadRequestException('Can only create rental from accepted room booking');
 			}
 
 			if (bookingRequest.tenantId !== dto.tenantId) {
-				throw new BadRequestException('Booking request tenant does not match rental tenant');
+				throw new BadRequestException('Room booking tenant does not match rental tenant');
 			}
 		}
 
@@ -122,7 +122,7 @@ export class RentalsService {
 				throw new NotFoundException('Room invitation not found');
 			}
 
-			if (invitation.status !== InvitationStatus.accepted) {
+			if (invitation.status !== RequestStatus.accepted) {
 				throw new BadRequestException('Can only create rental from accepted invitation');
 			}
 
@@ -137,7 +137,7 @@ export class RentalsService {
 		// Create rental
 		const rental = await this.prisma.rental.create({
 			data: {
-				bookingRequestId: dto.bookingRequestId,
+				roomBookingId: dto.bookingRequestId,
 				invitationId: dto.invitationId,
 				roomInstanceId: dto.roomInstanceId,
 				tenantId: dto.tenantId,
@@ -161,7 +161,7 @@ export class RentalsService {
 						},
 					},
 				},
-				bookingRequest: true,
+				roomBooking: true,
 				invitation: true,
 			},
 		});
@@ -188,8 +188,9 @@ export class RentalsService {
 		// Auto-create contract when rental is created (new contracts flow)
 		try {
 			await this.contractsService.createContractFromRental(rental.id, ownerId);
-		} catch (error) {
-			console.error('Failed to auto-create contract from rental:', error);
+		} catch {
+			// Log error but don't fail the rental creation
+			// TODO: Add proper logging service
 		}
 
 		return this.transformToResponseDto(rental);
@@ -248,7 +249,7 @@ export class RentalsService {
 							},
 						},
 					},
-					bookingRequest: {
+					roomBooking: {
 						select: {
 							id: true,
 							moveInDate: true,
@@ -317,7 +318,7 @@ export class RentalsService {
 							},
 						},
 					},
-					bookingRequest: {
+					roomBooking: {
 						select: {
 							id: true,
 							moveInDate: true,
@@ -384,7 +385,7 @@ export class RentalsService {
 						},
 					},
 				},
-				bookingRequest: {
+				roomBooking: {
 					select: {
 						id: true,
 						moveInDate: true,
@@ -469,7 +470,7 @@ export class RentalsService {
 						},
 					},
 				},
-				bookingRequest: true,
+				roomBooking: true,
 				invitation: true,
 			},
 		});
@@ -534,7 +535,7 @@ export class RentalsService {
 						},
 					},
 				},
-				bookingRequest: true,
+				roomBooking: true,
 				invitation: true,
 			},
 		});
@@ -613,7 +614,7 @@ export class RentalsService {
 						},
 					},
 				},
-				bookingRequest: true,
+				roomBooking: true,
 				invitation: true,
 			},
 		});
