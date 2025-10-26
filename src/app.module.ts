@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AiModule } from './ai/ai.module';
 import { BillsModule } from './api/bills/bills.module';
 import { BuildingModule } from './api/buildings/building.module';
 import { ChatModule } from './api/chat/chat.module';
@@ -85,6 +86,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 		RealtimeModule,
 		ChatModule,
 		LandlordModule,
+		AiModule,
 	],
 	controllers: [AppController],
 	providers: [
