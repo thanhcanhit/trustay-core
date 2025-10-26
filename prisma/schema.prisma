@@ -34,11 +34,13 @@ enum RoomType {
   whole_house // Nhà nguyên căn
 }
 
-enum BookingStatus {
+enum RequestStatus {
   pending
-  approved
+  accepted
   rejected
+  expired
   cancelled
+  awaiting_confirmation 
 }
 
 enum RentalStatus {
@@ -48,13 +50,7 @@ enum RentalStatus {
   pending_renewal
 }
 
-enum InvitationStatus {
-  pending
-  accepted
-  declined
-  withdrawn
-  expired
-}
+// InvitationStatus removed - using RequestStatus instead
 
 enum BillStatus {
   draft
@@ -86,10 +82,6 @@ enum PaymentStatus {
   refunded
 }
 
-enum ReviewerType {
-  tenant
-  owner
-}
 
 enum RatingTargetType {
   tenant
@@ -133,11 +125,9 @@ enum RuleType {
 }
 
 enum CostType {
-  fixed // Giá cố định hàng tháng
-  per_unit // Theo đơn vị (kWh, m³)
-  metered // Theo đồng hồ
-  percentage // Theo phần trăm
-  tiered // Bậc thang (khác nhau theo mức sử dụng)
+  fixed // Cố định - giá cố định hàng tháng
+  per_person // Theo người - chia đều cho số người ở
+  metered // Thang đo - theo đồng hồ (điện, nước)
 }
 
 enum BillingCycle {
@@ -193,15 +183,7 @@ enum RoommatePostStatus {
   expired
 }
 
-enum RoommateApplicationStatus {
-  pending
-  approved_by_tenant
-  rejected_by_tenant
-  approved_by_landlord // Chỉ áp dụng cho platform rooms
-  rejected_by_landlord // Chỉ áp dụng cho platform rooms
-  cancelled
-  expired
-}
+// RoommateApplicationStatus removed - using RequestStatus instead
 
 enum RoomStatus {
   available // Phòng trống, sẵn sàng cho thuê
@@ -270,14 +252,12 @@ model User {
   // Relations
   addresses            UserAddress[]
   ownedBuildings       Building[]                 @relation("BuildingOwner")
-  bookingRequests      BookingRequest[]
+  roomBookings         RoomBooking[]
   rentalsAsTenant      Rental[]                   @relation("RentalTenant")
   rentalsAsOwner       Rental[]                   @relation("RentalOwner")
   payments             Payment[]
   sentInvitations      RoomInvitation[]           @relation("InvitationSender")
   receivedInvitations  RoomInvitation[]           @relation("InvitationReceiver")
-  reviewsGiven         Review[]                   @relation("ReviewGiver")
-  reviewsReceived      Review[]                   @relation("ReviewReceiver")
   ratingsGiven         Rating[]                   @relation("RatingGiver")
   notifications        Notification[]
   verificationCodes    VerificationCode[]
@@ -443,7 +423,7 @@ model Room {
   images          RoomImage[]
   rules           RoomRule[]
   pricing         RoomPricing?
-  bookingRequests BookingRequest[]
+  roomBookings    RoomBooking[]
   invitations     RoomInvitation[]
 
   @@index([buildingId])
@@ -466,7 +446,7 @@ model RoomInstance {
   // Relations
   room                 Room                  @relation(fields: [roomId], references: [id], onDelete: Cascade)
   rentals              Rental[]
-  monthlyBills         MonthlyBill[]
+  bills         Bill[]
   contracts            Contract[]
   roommateSeekingPosts RoommateSeekingPost[]
 
@@ -497,7 +477,7 @@ model RoomImage {
 // SIMPLIFIED ROOM RULES SYSTEM
 // ========================================
 
-model SystemRoomRule {
+model RoomRuleTemplate {
   id          String       @id @default(uuid())
   name        String
   nameEn      String       @unique @map("name_en")
@@ -514,13 +494,13 @@ model SystemRoomRule {
 
   @@index([category])
   @@index([isActive])
-  @@map("system_room_rules")
+  @@map("room_rule_templates")
 }
 
 model RoomRule {
   id           String   @id @default(uuid())
   roomId       String   @map("room_id")
-  systemRuleId String   @map("system_rule_id")
+  ruleTemplateId String   @map("rule_template_id")
   customValue  String?  @map("custom_value")
   isEnforced   Boolean  @default(true) @map("is_enforced")
   notes        String?
@@ -528,11 +508,11 @@ model RoomRule {
 
   // Relations
   room       Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  systemRule SystemRoomRule @relation(fields: [systemRuleId], references: [id], onDelete: Cascade)
+  ruleTemplate RoomRuleTemplate @relation(fields: [ruleTemplateId], references: [id], onDelete: Cascade)
 
-  @@unique([roomId, systemRuleId])
+  @@unique([roomId, ruleTemplateId])
   @@index([roomId])
-  @@index([systemRuleId])
+  @@index([ruleTemplateId])
   @@map("room_rules")
 }
 
@@ -540,7 +520,7 @@ model RoomRule {
 // SIMPLIFIED AMENITIES SYSTEM
 // ========================================
 
-model SystemAmenity {
+model Amenity {
   id          String          @id @default(uuid())
   name        String
   nameEn      String          @unique @map("name_en")
@@ -557,24 +537,24 @@ model SystemAmenity {
 
   @@index([category])
   @@index([isActive])
-  @@map("system_amenities")
+  @@map("amenities")
 }
 
 model RoomAmenity {
   id              String   @id @default(uuid())
   roomId          String   @map("room_id")
-  systemAmenityId String   @map("system_amenity_id")
+  amenityId String   @map("amenity_id")
   customValue     String?  @map("custom_value")
   notes           String?
   createdAt       DateTime @default(now()) @map("created_at")
 
   // Relations
   room          Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  systemAmenity SystemAmenity @relation(fields: [systemAmenityId], references: [id], onDelete: Cascade)
+  amenity Amenity @relation(fields: [amenityId], references: [id], onDelete: Cascade)
 
-  @@unique([roomId, systemAmenityId])
+  @@unique([roomId, amenityId])
   @@index([roomId])
-  @@index([systemAmenityId])
+  @@index([amenityId])
   @@map("room_amenities")
 }
 
@@ -582,7 +562,7 @@ model RoomAmenity {
 // SIMPLIFIED COST TYPES SYSTEM
 // ========================================
 
-model SystemCostType {
+model CostTypeTemplate {
   id          String       @id @default(uuid())
   name        String
   nameEn      String       @unique @map("name_en")
@@ -599,30 +579,29 @@ model SystemCostType {
 
   @@index([category])
   @@index([isActive])
-  @@map("system_cost_types")
+  @@map("cost_type_templates")
 }
 
 model RoomCost {
   id               String @id @default(uuid())
   roomId           String @map("room_id")
-  systemCostTypeId String @map("system_cost_type_id")
+  costTypeTemplateId String @map("cost_type_template_id")
 
-  // Flexible pricing fields
+  // Cost type and pricing
   costType    CostType @default(fixed) @map("cost_type")
-  baseRate    Decimal? @map("base_rate") @db.Decimal(15, 2)
-  unitPrice   Decimal? @map("unit_price") @db.Decimal(15, 2)
+  currency    String   @default("VND")
+  
+  // Fixed cost - giá cố định hàng tháng
   fixedAmount Decimal? @map("fixed_amount") @db.Decimal(15, 2)
-
-  // Additional pricing info
-  currency      String   @default("VND")
-  unit          String? // Override default unit from SystemCostType
-  minimumCharge Decimal? @map("minimum_charge") @db.Decimal(15, 2)
-  maximumCharge Decimal? @map("maximum_charge") @db.Decimal(15, 2)
-
-  // Usage tracking (for metered costs)
-  isMetered        Boolean  @default(false) @map("is_metered")
-  meterReading     Decimal? @map("meter_reading") @db.Decimal(15, 2)
-  lastMeterReading Decimal? @map("last_meter_reading") @db.Decimal(15, 2)
+  
+  // Per person cost - chia đều cho số người ở
+  perPersonAmount Decimal? @map("per_person_amount") @db.Decimal(15, 2)
+  
+  // Metered cost - theo đồng hồ
+  unitPrice   Decimal? @map("unit_price") @db.Decimal(15, 2) // Giá per unit (kWh, m³)
+  unit        String? // Đơn vị đo (kWh, m³, etc.)
+  meterReading     Decimal? @map("meter_reading") @db.Decimal(15, 2) // Số đồng hồ hiện tại
+  lastMeterReading Decimal? @map("last_meter_reading") @db.Decimal(15, 2) // Số đồng hồ tháng trước
 
   // Billing configuration
   billingCycle   BillingCycle @default(monthly) @map("billing_cycle")
@@ -636,9 +615,9 @@ model RoomCost {
 
   // Relations
   room           Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  systemCostType SystemCostType @relation(fields: [systemCostTypeId], references: [id], onDelete: Cascade)
+  costTypeTemplate CostTypeTemplate @relation(fields: [costTypeTemplateId], references: [id], onDelete: Cascade)
 
-  @@unique([roomId, systemCostTypeId])
+  @@unique([roomId, costTypeTemplateId])
   @@index([roomId])
   @@index([isActive])
   @@map("room_costs")
@@ -686,7 +665,7 @@ model RoomInvitation {
   depositAmount     Decimal          @map("deposit_amount") @db.Decimal(15, 2)
   moveInDate        DateTime?        @map("move_in_date") @db.Date
   rentalMonths      Int?             @map("rental_months")
-  status            InvitationStatus @default(pending)
+  status            RequestStatus @default(pending)
 
   // Landlord confirm sau khi tenant accept để tự động tạo rental
   isConfirmedBySender Boolean  @default(false) @map("is_confirmed_by_sender")
@@ -718,19 +697,19 @@ model RoomInvitation {
 // BOOKING & RENTAL MANAGEMENT
 // ========================================
 
-model BookingRequest {
-  id             String        @id @default(uuid())
-  roomId         String        @map("room_id")
-  tenantId       String        @map("tenant_id")
-  moveInDate     DateTime      @map("move_in_date") @db.Date
-  moveOutDate    DateTime?     @map("move_out_date") @db.Date
-  rentalMonths   Int?          @map("rental_months")
-  monthlyRent    Decimal       @map("monthly_rent") @db.Decimal(15, 2)
-  depositAmount  Decimal       @map("deposit_amount") @db.Decimal(15, 2)
-  totalAmount    Decimal       @map("total_amount") @db.Decimal(15, 2)
-  status         BookingStatus @default(pending)
-  messageToOwner String?       @map("message_to_owner")
-  ownerNotes     String?       @map("owner_notes")
+model RoomBooking {
+  id             String            @id @default(uuid())
+  roomId         String            @map("room_id")
+  tenantId       String            @map("tenant_id")
+  moveInDate     DateTime          @map("move_in_date") @db.Date
+  moveOutDate    DateTime?         @map("move_out_date") @db.Date
+  rentalMonths   Int?             @map("rental_months")
+  monthlyRent    Decimal?         @map("monthly_rent") @db.Decimal(15, 2)
+  depositAmount  Decimal?         @map("deposit_amount") @db.Decimal(15, 2)
+  totalAmount    Decimal?         @map("total_amount") @db.Decimal(15, 2)
+  status         RequestStatus @default(pending)
+  messageToOwner String?           @map("message_to_owner")
+  ownerNotes     String?           @map("owner_notes")
 
   // Tenant confirm sau khi landlord approve để tự động tạo rental
   isConfirmedByTenant Boolean  @default(false) @map("is_confirmed_by_tenant")
@@ -747,12 +726,12 @@ model BookingRequest {
   @@index([roomId])
   @@index([tenantId])
   @@index([status])
-  @@map("booking_requests")
+  @@map("room_bookings")
 }
 
 model Rental {
   id                    String       @id @default(uuid())
-  bookingRequestId      String?      @unique @map("booking_request_id")
+  roomBookingId         String?      @unique @map("room_booking_id")
   invitationId          String?      @unique @map("invitation_id")
   roomInstanceId        String       @map("room_instance_id")
   tenantId              String       @map("tenant_id")
@@ -769,15 +748,14 @@ model Rental {
   updatedAt             DateTime     @updatedAt @map("updated_at")
 
   // Relations
-  bookingRequest       BookingRequest?       @relation(fields: [bookingRequestId], references: [id])
+  roomBooking          RoomBooking?          @relation(fields: [roomBookingId], references: [id])
   invitation           RoomInvitation?       @relation(fields: [invitationId], references: [id])
   roomInstance         RoomInstance          @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
   tenant               User                  @relation("RentalTenant", fields: [tenantId], references: [id], onDelete: Cascade)
   owner                User                  @relation("RentalOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   payments             Payment[]
-  reviews              Review[]
   ratings              Rating[]
-  monthlyBills         MonthlyBill[]
+  bills         Bill[]
   contract             Contract?
   roommateSeekingPosts RoommateSeekingPost[]
 
@@ -791,7 +769,7 @@ model Rental {
 // MONTHLY BILLING SYSTEM
 // ========================================
 
-model MonthlyBill {
+model Bill {
   id             String   @id @default(uuid())
   rentalId       String   @map("rental_id")
   roomInstanceId String   @map("room_instance_id")
@@ -800,6 +778,11 @@ model MonthlyBill {
   billingYear    Int      @map("billing_year")
   periodStart    DateTime @map("period_start") @db.Date
   periodEnd      DateTime @map("period_end") @db.Date
+
+  // Rental period info for prorated calculation
+  rentalStartDate DateTime? @map("rental_start_date") @db.Date // Ngày bắt đầu rental trong kỳ
+  rentalEndDate   DateTime? @map("rental_end_date") @db.Date   // Ngày kết thúc rental trong kỳ
+  occupancyCount  Int?      @map("occupancy_count")            // Số người ở trong kỳ
 
   // Totals
   subtotal        Decimal @db.Decimal(15, 2)
@@ -814,6 +797,10 @@ model MonthlyBill {
   dueDate  DateTime   @map("due_date") @db.Date
   paidDate DateTime?  @map("paid_date")
   notes    String?
+
+  // Auto-generation flags
+  isAutoGenerated Boolean @default(false) @map("is_auto_generated")
+  requiresMeterData Boolean @default(false) @map("requires_meter_data") // Cần nhập dữ liệu đồng hồ
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -830,12 +817,12 @@ model MonthlyBill {
   @@index([status])
   @@index([dueDate])
   @@index([billingYear, billingMonth])
-  @@map("monthly_bills")
+  @@map("bills")
 }
 
 model BillItem {
   id            String   @id @default(uuid())
-  monthlyBillId String   @map("monthly_bill_id")
+  billId String   @map("bill_id")
   itemType      String   @map("item_type") // "rent", "utility", "service", "other"
   itemName      String   @map("item_name")
   description   String?
@@ -847,9 +834,9 @@ model BillItem {
   createdAt     DateTime @default(now()) @map("created_at")
 
   // Relations  
-  monthlyBill MonthlyBill @relation(fields: [monthlyBillId], references: [id], onDelete: Cascade)
+  bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
 
-  @@index([monthlyBillId])
+  @@index([billId])
   @@index([itemType])
   @@map("bill_items")
 }
@@ -857,7 +844,7 @@ model BillItem {
 model Payment {
   id                   String         @id @default(uuid())
   rentalId             String         @map("rental_id")
-  monthlyBillId        String?        @map("monthly_bill_id")
+  billId        String?        @map("bill_id")
   payerId              String         @map("payer_id")
   paymentType          PaymentType    @map("payment_type")
   amount               Decimal        @db.Decimal(15, 2)
@@ -873,11 +860,11 @@ model Payment {
 
   // Relations
   rental      Rental       @relation(fields: [rentalId], references: [id], onDelete: Cascade)
-  monthlyBill MonthlyBill? @relation(fields: [monthlyBillId], references: [id], onDelete: SetNull)
+  bill Bill? @relation(fields: [billId], references: [id], onDelete: SetNull)
   payer       User         @relation(fields: [payerId], references: [id], onDelete: Cascade)
 
   @@index([rentalId])
-  @@index([monthlyBillId])
+  @@index([billId])
   @@index([payerId])
   @@index([paymentStatus])
   @@index([paymentDate])
@@ -888,31 +875,6 @@ model Payment {
 // REVIEWS
 // ========================================
 
-model Review {
-  id                  String       @id @default(uuid())
-  rentalId            String       @map("rental_id")
-  reviewerId          String       @map("reviewer_id")
-  revieweeId          String       @map("reviewee_id")
-  reviewerType        ReviewerType @map("reviewer_type")
-  propertyRating      Int?         @map("property_rating")
-  communicationRating Int?         @map("communication_rating")
-  cleanlinessRating   Int?         @map("cleanliness_rating")
-  overallRating       Int?         @map("overall_rating")
-  reviewText          String?      @map("review_text")
-  isPublic            Boolean      @default(true) @map("is_public")
-  responseText        String?      @map("response_text")
-  responseDate        DateTime?    @map("response_date")
-  createdAt           DateTime     @default(now()) @map("created_at")
-
-  // Relations
-  rental   Rental @relation(fields: [rentalId], references: [id], onDelete: Cascade)
-  reviewer User   @relation("ReviewGiver", fields: [reviewerId], references: [id], onDelete: Cascade)
-  reviewee User   @relation("ReviewReceiver", fields: [revieweeId], references: [id], onDelete: Cascade)
-
-  @@index([rentalId])
-  @@index([revieweeId])
-  @@map("reviews")
-}
 
 // ========================================
 // RATING SYSTEM (ENHANCED)
@@ -991,7 +953,7 @@ model RoomSeekingPost {
 
   // Relations
   requester User            @relation(fields: [requesterId], references: [id], onDelete: Cascade)
-  amenities SystemAmenity[]
+  amenities Amenity[]
 
   // Relations
   preferredProvince Province?        @relation(fields: [preferredProvinceId], references: [id], onDelete: SetNull)
@@ -1119,7 +1081,7 @@ model RoommateApplication {
   applicationMessage String? @map("application_message")
 
   // Trạng thái
-  status RoommateApplicationStatus @default(pending)
+  status RequestStatus @default(pending)
 
   // Phản hồi từ tenant
   tenantResponse    String?   @map("tenant_response")
@@ -1206,7 +1168,7 @@ model TenantRoomPreferences {
   // Số người ở (giống RoomSeekingPost)
   maxOccupancy Int? @map("max_occupancy") // Tối đa bao nhiêu người ở chung
 
-  // Tiện ích quan trọng (subset của SystemAmenity)
+  // Tiện ích quan trọng (subset của Amenity)
   requiresAmenityIds String[] @map("requires_amenity_ids") // Must-have amenities
 
   // Thời gian thuê

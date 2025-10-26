@@ -47,25 +47,25 @@ export class PaymentsService {
 			throw new ForbiddenException('Not authorized to create payment for this rental');
 		}
 
-		// If monthlyBillId is provided, verify it exists
-		if (dto.monthlyBillId) {
-			const bill = await this.prisma.monthlyBill.findUnique({
-				where: { id: dto.monthlyBillId },
+		// If billId is provided, verify it exists
+		if (dto.billId) {
+			const bill = await this.prisma.bill.findUnique({
+				where: { id: dto.billId },
 			});
 
 			if (!bill) {
-				throw new NotFoundException('Monthly bill not found');
+				throw new NotFoundException('Bill not found');
 			}
 
 			if (bill.rentalId !== dto.rentalId) {
-				throw new BadRequestException('Monthly bill does not belong to this rental');
+				throw new BadRequestException('Bill does not belong to this rental');
 			}
 		}
 
 		const payment = await this.prisma.payment.create({
 			data: {
 				rentalId: dto.rentalId,
-				monthlyBillId: dto.monthlyBillId,
+				billId: dto.billId,
 				payerId,
 				paymentType: dto.paymentType,
 				amount: dto.amount,
@@ -330,7 +330,7 @@ export class PaymentsService {
 		return {
 			id: payment.id,
 			rentalId: payment.rentalId,
-			monthlyBillId: payment.monthlyBillId,
+			billId: payment.billId,
 			payerId: payment.payerId,
 			paymentType: payment.paymentType,
 			amount: payment.amount,

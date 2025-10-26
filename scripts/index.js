@@ -55,6 +55,10 @@ const SEQUENCES = {
 	// Sample/testing sequences (with Elasticsearch)
 	sample: ['admin', 'reference', 'users', 'rules', 'crawl-sample', 'elasticsearch'],
 
+	// Fast sequences (skip admin data to save time)
+	'fast-all': ['reference', 'users', 'rules', 'crawl', 'elasticsearch'],
+	'fast-sample': ['reference', 'users', 'rules', 'crawl-sample', 'elasticsearch'],
+
 	// Legacy sequences (kept for compatibility)
 	full: ['admin', 'reference', 'users', 'rules', 'crawl', 'elasticsearch'],
 	basic: ['admin', 'reference', 'users', 'rules'],
@@ -106,14 +110,13 @@ async function cleanupCrawlImports() {
 		const deletedContractSignatures = await prisma.contractSignature.deleteMany({});
 		const deletedContracts = await prisma.contract.deleteMany({});
 
-		logWarning('   Deleting monthly billing...');
+		logWarning('   Deleting billing...');
 		const deletedBillItems = await prisma.billItem.deleteMany({});
-		// Payments may reference monthly bills and rentals; delete them early
+		// Payments may reference bills and rentals; delete them early
 		const deletedPayments = await prisma.payment.deleteMany({});
-		const deletedMonthlyBills = await prisma.monthlyBill.deleteMany({});
+		const deletedBills = await prisma.bill.deleteMany({});
 
-		logWarning('   Deleting reviews and ratings...');
-		const deletedReviews = await prisma.review.deleteMany({});
+		logWarning('   Deleting ratings...');
 		const deletedRatings = await prisma.rating.deleteMany({});
 
 		logWarning('   Deleting roommate and invitation artifacts...');
@@ -121,8 +124,8 @@ async function cleanupCrawlImports() {
 		const deletedRoommateSeekingPosts = await prisma.roommateSeekingPost.deleteMany({});
 		const deletedRoomInvitations = await prisma.roomInvitation.deleteMany({});
 
-		logWarning('   Deleting booking requests...');
-		const deletedBookingRequests = await prisma.bookingRequest.deleteMany({});
+		logWarning('   Deleting room bookings...');
+		const deletedRoomBookings = await prisma.roomBooking.deleteMany({});
 
 		logWarning('   Deleting rentals...');
 		const deletedRentals = await prisma.rental.deleteMany({});
@@ -167,13 +170,13 @@ async function cleanupCrawlImports() {
 			`   • Contracts: ${deletedContracts.count}, Signatures: ${deletedContractSignatures.count}, Logs: ${deletedContractAuditLogs.count}`,
 		);
 		logSuccess(
-			`   • Bills: ${deletedMonthlyBills.count}, BillItems: ${deletedBillItems.count}, Payments: ${deletedPayments.count}`,
+			`   • Bills: ${deletedBills.count}, BillItems: ${deletedBillItems.count}, Payments: ${deletedPayments.count}`,
 		);
 		logSuccess(
-			`   • Rentals: ${deletedRentals.count}, Bookings: ${deletedBookingRequests.count}, Invitations: ${deletedRoomInvitations.count}`,
+			`   • Rentals: ${deletedRentals.count}, Room Bookings: ${deletedRoomBookings.count}, Invitations: ${deletedRoomInvitations.count}`,
 		);
 		logSuccess(
-			`   • Reviews: ${deletedReviews.count}, Ratings: ${deletedRatings.count}, RoomInstances: ${deletedRoomInstances.count}`,
+			`   • Ratings: ${deletedRatings.count}, RoomInstances: ${deletedRoomInstances.count}`,
 		);
 		logSuccess(
 			`   • Wards: ${deletedWards.count}, Districts: ${deletedDistricts.count}, Provinces: ${deletedProvinces.count}`,
@@ -279,8 +282,10 @@ function showHelp() {
 	console.log(`🗂️  Trustay Import Scripts Manager
 
 🎯 RECOMMENDED COMMANDS:
-  node scripts/index.js sequence sample    Sample setup (100 rooms for testing)
-  node scripts/index.js sequence all       Complete database setup (all crawled data)
+  node scripts/index.js sequence fast-sample  Sample setup (skip admin data, fastest)
+  node scripts/index.js sequence fast-all     Complete setup (skip admin data, faster)
+  node scripts/index.js sequence sample       Sample setup (100 rooms for testing)
+  node scripts/index.js sequence all          Complete database setup (all crawled data)
 
 Usage:
   node scripts/index.js <command> [options]
@@ -307,11 +312,13 @@ Commands:
 	});
 
 	console.log(`\nExamples:
-  node scripts/index.js sequence sample   # Sample setup (100 rooms, fast)
-  node scripts/index.js sequence all      # Complete setup (all 2000 rooms)
-  node scripts/index.js sequence basic    # Setup without room data
-  node scripts/index.js script crawl-sample # Just 100 sample rooms
-  node scripts/index.js list              # Show all options`);
+  node scripts/index.js sequence sample        # Sample setup (100 rooms, fast)
+  node scripts/index.js sequence fast-sample  # Sample setup (skip admin data, faster)
+  node scripts/index.js sequence all           # Complete setup (all 2000 rooms)
+  node scripts/index.js sequence fast-all      # Complete setup (skip admin data, faster)
+  node scripts/index.js sequence basic         # Setup without room data
+  node scripts/index.js script crawl-sample   # Just 100 sample rooms
+  node scripts/index.js list                   # Show all options`);
 }
 
 function listAll() {

@@ -6,8 +6,8 @@ const prisma = new PrismaClient();
 // Default password for all users
 const DEFAULT_PASSWORD = 'trustay123';
 
-// Rental market segments for balanced user distribution
-const MARKET_SEGMENTS = {
+// Rental market segments for balanced user distribution (unused but kept for reference)
+const _MARKET_SEGMENTS = {
 	BUDGET_STUDENT: { priceRange: '1-2M VND', target: 'Sinh viên, người mới đi làm' },
 	BUDGET_WORKER: { priceRange: '1.5-2.5M VND', target: 'Công nhân, nhân viên' },
 	ECONOMY_YOUNG: { priceRange: '2-4M VND', target: 'Nhân viên văn phòng trẻ' },
@@ -429,6 +429,280 @@ async function importDefaultUsers() {
 	console.log(
 		`\n✨ Tenants import completed: ${tenantCreatedCount} created, ${tenantSkippedCount} skipped`,
 	);
+
+	// Create sample rooms and rentals for billing demo
+	console.log('\n🏠 Creating sample rooms and rentals for billing demo...');
+	await createSampleRoomsAndRentals();
+}
+
+async function createSampleRoomsAndRentals() {
+	console.log('🏠 Creating sample rooms and rentals for billing demo...');
+
+	// Get first landlord user
+	const landlord = await prisma.user.findFirst({
+		where: { role: 'landlord' },
+	});
+
+	if (!landlord) {
+		console.log('   ⚠️  No landlord found, skipping sample data creation');
+		return;
+	}
+
+	// Get tenant users
+	const tenants = await prisma.user.findMany({
+		where: { role: 'tenant' },
+		take: 3,
+	});
+
+	if (tenants.length === 0) {
+		console.log('   ⚠️  No tenants found, skipping sample data creation');
+		return;
+	}
+
+	// Get amenities and cost types
+	const amenities = await prisma.amenity.findMany({ where: { isActive: true } });
+	const costTypes = await prisma.costTypeTemplate.findMany({ where: { isActive: true } });
+
+	if (amenities.length === 0 || costTypes.length === 0) {
+		console.log('   ⚠️  Missing amenities or cost types, skipping sample data creation');
+		return;
+	}
+
+	// Get or create default location data (since we're skipping admin import)
+	let defaultProvince, defaultDistrict;
+
+	try {
+		// Try to get existing Ho Chi Minh City data
+		defaultProvince = await prisma.province.findFirst({
+			where: { name: { contains: 'Hồ Chí Minh' } },
+		});
+		defaultDistrict = await prisma.district.findFirst({
+			where: { name: { contains: 'Quận 1' } },
+		});
+	} catch (error) {
+		console.log('   ⚠️  No admin data found, creating default location...');
+		// Create minimal location data
+		defaultProvince = await prisma.province.create({
+			data: {
+				id: 79,
+				name: 'Thành phố Hồ Chí Minh',
+				nameEn: 'Ho Chi Minh City',
+				code: 'SG',
+				isActive: true,
+			},
+		});
+		defaultDistrict = await prisma.district.create({
+			data: {
+				id: 760,
+				name: 'Quận 1',
+				nameEn: 'District 1',
+				code: '001',
+				provinceId: defaultProvince.id,
+				isActive: true,
+			},
+		});
+	}
+
+	// Create building
+	const buildingId = `demo-building-${Date.now()}`;
+	const building = await prisma.building.create({
+		data: {
+			id: buildingId,
+			slug: buildingId,
+			name: 'Chung cư Demo Billing',
+			addressLine1: '123 Đường Demo',
+			addressLine2: 'Quận 1, TP.HCM',
+			description: 'Building demo cho billing system',
+			ownerId: landlord.id,
+			districtId: defaultDistrict.id,
+			provinceId: defaultProvince.id,
+			latitude: 10.7769,
+			longitude: 106.7009,
+			isActive: true,
+		},
+	});
+
+	console.log(`   ✅ Created building: ${building.name}`);
+
+	// Sample rooms data
+	const sampleRooms = [
+		{
+			name: 'Phòng 101 - Có Meter',
+			description: 'Phòng có điện nước theo đồng hồ',
+			areaSqm: 25,
+			maxOccupancy: 2,
+			totalRooms: 1,
+			floorNumber: 1,
+			isActive: true,
+			hasMeteredCosts: true,
+		},
+		{
+			name: 'Phòng 102 - Fixed Cost',
+			description: 'Phòng chỉ có chi phí cố định',
+			areaSqm: 30,
+			maxOccupancy: 2,
+			totalRooms: 1,
+			floorNumber: 1,
+			isActive: true,
+			hasMeteredCosts: false,
+		},
+		{
+			name: 'Phòng 201 - Mixed Costs',
+			description: 'Phòng có cả fixed và metered costs',
+			areaSqm: 35,
+			maxOccupancy: 3,
+			totalRooms: 1,
+			floorNumber: 2,
+			isActive: true,
+			hasMeteredCosts: true,
+		},
+	];
+
+	let roomCount = 0;
+	let rentalCount = 0;
+
+	for (let i = 0; i < sampleRooms.length; i++) {
+		const roomData = sampleRooms[i];
+		const tenant = tenants[i % tenants.length];
+		const hasMeteredCosts = roomData.hasMeteredCosts;
+
+		// Create room (remove hasMeteredCosts field)
+		const { hasMeteredCosts: _, ...roomCreateData } = roomData;
+		const roomSlug = `${buildingId}-room-${i + 1}`;
+		const room = await prisma.room.create({
+			data: {
+				...roomCreateData,
+				slug: roomSlug,
+				roomType: 'apartment', // Use valid RoomType
+				buildingId: building.id,
+			},
+		});
+
+		// Create pricing
+		const basePrice = 3000000 + i * 500000; // 3M, 3.5M, 4M
+		await prisma.roomPricing.create({
+			data: {
+				roomId: room.id,
+				basePriceMonthly: basePrice,
+				depositAmount: basePrice * 2,
+				currency: 'VND',
+			},
+		});
+
+		// Create room costs
+		const roomCosts = [];
+
+		// Fixed costs (Internet, Management fee)
+		const internetCost = costTypes.find((ct) => ct.nameEn.toLowerCase().includes('internet'));
+		const managementCost = costTypes.find((ct) => ct.nameEn.toLowerCase().includes('management'));
+
+		if (internetCost) {
+			roomCosts.push({
+				roomId: room.id,
+				costTypeTemplateId: internetCost.id,
+				costType: 'fixed',
+				fixedAmount: 200000,
+				currency: 'VND',
+				isActive: true,
+				notes: 'Phí Internet hàng tháng',
+			});
+		}
+
+		if (managementCost) {
+			roomCosts.push({
+				roomId: room.id,
+				costTypeTemplateId: managementCost.id,
+				costType: 'fixed',
+				fixedAmount: 100000,
+				currency: 'VND',
+				isActive: true,
+				notes: 'Phí quản lý tòa nhà',
+			});
+		}
+
+		// Metered costs (Electricity, Water) - only for rooms with hasMeteredCosts
+		if (hasMeteredCosts) {
+			const electricityCost = costTypes.find((ct) =>
+				ct.nameEn.toLowerCase().includes('electricity'),
+			);
+			const waterCost = costTypes.find((ct) => ct.nameEn.toLowerCase().includes('water'));
+
+			if (electricityCost) {
+				roomCosts.push({
+					roomId: room.id,
+					costTypeTemplateId: electricityCost.id,
+					costType: 'metered',
+					unitPrice: 3000,
+					unit: 'kWh',
+					meterReading: 1200 + i * 100, // Different starting readings
+					lastMeterReading: 1000 + i * 100,
+					currency: 'VND',
+					isActive: true,
+					notes: 'Điện theo đồng hồ',
+				});
+			}
+
+			if (waterCost) {
+				roomCosts.push({
+					roomId: room.id,
+					costTypeTemplateId: waterCost.id,
+					costType: 'metered',
+					unitPrice: 3000,
+					unit: 'm³',
+					meterReading: 40 + i * 5, // Different starting readings
+					lastMeterReading: 35 + i * 5,
+					currency: 'VND',
+					isActive: true,
+					notes: 'Nước theo đồng hồ',
+				});
+			}
+		}
+
+		// Create room costs
+		for (const costData of roomCosts) {
+			await prisma.roomCost.create({ data: costData });
+		}
+
+		// Create room instance
+		const roomInstance = await prisma.roomInstance.create({
+			data: {
+				roomId: room.id,
+				roomNumber: `${i + 1}01`, // 101, 201, 301
+				isActive: true,
+			},
+		});
+
+		// Create rental (started mid-month for demo)
+		const currentDate = new Date();
+		const contractStartDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 15); // 15th of current month
+		const contractEndDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 11, 14); // 11 months later
+
+		await prisma.rental.create({
+			data: {
+				roomInstanceId: roomInstance.id,
+				tenantId: tenant.id,
+				ownerId: landlord.id,
+				contractStartDate,
+				contractEndDate,
+				status: 'active',
+				monthlyRent: basePrice,
+				depositPaid: basePrice * 2, // Deposit paid upfront
+			},
+		});
+
+		roomCount++;
+		rentalCount++;
+
+		console.log(
+			`   ✅ Created room ${roomData.name} with ${roomCosts.length} costs and rental for ${tenant.firstName} ${tenant.lastName}`,
+		);
+	}
+
+	console.log(`🎯 Sample data creation completed:`);
+	console.log(`   • Building: 1`);
+	console.log(`   • Rooms: ${roomCount}`);
+	console.log(`   • Rentals: ${rentalCount}`);
+	console.log(`   • Room Costs: ${roomCount * 2} (fixed + metered)`);
 	console.log('');
 }
 
@@ -518,6 +792,7 @@ if (require.main === module) {
 module.exports = {
 	importDefaultUsers,
 	clearDefaultUsers,
+	createSampleRoomsAndRentals,
 	defaultUsers,
 	defaultTenants,
 	DEFAULT_PASSWORD,

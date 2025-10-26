@@ -4,8 +4,8 @@ import {
 	Injectable,
 	NotFoundException,
 } from '@nestjs/common';
+import { RequestStatus } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
-import { RoommateApplicationStatus } from '../../common/enums/roommate-application-status.enum';
 import { RoommatePostStatus } from '../../common/enums/roommate-post-status.enum';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -72,7 +72,7 @@ export class RoommateApplicationService {
 				roommateSeekingPostId: createDto.roommateSeekingPostId,
 				applicantId,
 				status: {
-					not: RoommateApplicationStatus.cancelled,
+					not: RequestStatus.cancelled,
 				},
 			},
 		});
@@ -149,8 +149,7 @@ export class RoommateApplicationService {
 			pendingCount,
 			approvedByTenantCount,
 			rejectedByTenantCount,
-			approvedByLandlordCount,
-			rejectedByLandlordCount,
+			awaitingConfirmationCount,
 			cancelledCount,
 			expiredCount,
 		] = await Promise.all([
@@ -165,25 +164,22 @@ export class RoommateApplicationService {
 				where,
 			}),
 			this.prisma.roommateApplication.count({
-				where: { ...where, status: RoommateApplicationStatus.pending },
+				where: { ...where, status: RequestStatus.pending },
 			}),
 			this.prisma.roommateApplication.count({
-				where: { ...where, status: RoommateApplicationStatus.approved_by_tenant },
+				where: { ...where, status: RequestStatus.accepted },
 			}),
 			this.prisma.roommateApplication.count({
-				where: { ...where, status: RoommateApplicationStatus.rejected_by_tenant },
+				where: { ...where, status: RequestStatus.rejected },
 			}),
 			this.prisma.roommateApplication.count({
-				where: { ...where, status: RoommateApplicationStatus.approved_by_landlord },
+				where: { ...where, status: RequestStatus.awaiting_confirmation },
 			}),
 			this.prisma.roommateApplication.count({
-				where: { ...where, status: RoommateApplicationStatus.rejected_by_landlord },
+				where: { ...where, status: RequestStatus.cancelled },
 			}),
 			this.prisma.roommateApplication.count({
-				where: { ...where, status: RoommateApplicationStatus.cancelled },
-			}),
-			this.prisma.roommateApplication.count({
-				where: { ...where, status: RoommateApplicationStatus.expired },
+				where: { ...where, status: RequestStatus.expired },
 			}),
 		]);
 
@@ -202,8 +198,8 @@ export class RoommateApplicationService {
 				pending: pendingCount,
 				approvedByTenant: approvedByTenantCount,
 				rejectedByTenant: rejectedByTenantCount,
-				approvedByLandlord: approvedByLandlordCount,
-				rejectedByLandlord: rejectedByLandlordCount,
+				approvedByLandlord: awaitingConfirmationCount,
+				rejectedByLandlord: 0,
 				cancelled: cancelledCount,
 				expired: expiredCount,
 				total,
@@ -256,8 +252,7 @@ export class RoommateApplicationService {
 			pendingCount,
 			approvedByTenantCount,
 			rejectedByTenantCount,
-			approvedByLandlordCount,
-			rejectedByLandlordCount,
+			awaitingConfirmationCount,
 			cancelledCount,
 			expiredCount,
 		] = await Promise.all([
@@ -272,25 +267,22 @@ export class RoommateApplicationService {
 				where,
 			}),
 			this.prisma.roommateApplication.count({
-				where: { ...where, status: RoommateApplicationStatus.pending },
+				where: { ...where, status: RequestStatus.pending },
 			}),
 			this.prisma.roommateApplication.count({
-				where: { ...where, status: RoommateApplicationStatus.approved_by_tenant },
+				where: { ...where, status: RequestStatus.accepted },
 			}),
 			this.prisma.roommateApplication.count({
-				where: { ...where, status: RoommateApplicationStatus.rejected_by_tenant },
+				where: { ...where, status: RequestStatus.rejected },
 			}),
 			this.prisma.roommateApplication.count({
-				where: { ...where, status: RoommateApplicationStatus.approved_by_landlord },
+				where: { ...where, status: RequestStatus.awaiting_confirmation },
 			}),
 			this.prisma.roommateApplication.count({
-				where: { ...where, status: RoommateApplicationStatus.rejected_by_landlord },
+				where: { ...where, status: RequestStatus.cancelled },
 			}),
 			this.prisma.roommateApplication.count({
-				where: { ...where, status: RoommateApplicationStatus.cancelled },
-			}),
-			this.prisma.roommateApplication.count({
-				where: { ...where, status: RoommateApplicationStatus.expired },
+				where: { ...where, status: RequestStatus.expired },
 			}),
 		]);
 
@@ -309,8 +301,8 @@ export class RoommateApplicationService {
 				pending: pendingCount,
 				approvedByTenant: approvedByTenantCount,
 				rejectedByTenant: rejectedByTenantCount,
-				approvedByLandlord: approvedByLandlordCount,
-				rejectedByLandlord: rejectedByLandlordCount,
+				approvedByLandlord: awaitingConfirmationCount,
+				rejectedByLandlord: 0,
 				cancelled: cancelledCount,
 				expired: expiredCount,
 				total,
@@ -357,7 +349,7 @@ export class RoommateApplicationService {
 			throw new ForbiddenException('Không có quyền chỉnh sửa đơn ứng tuyển này');
 		}
 
-		if (application.status !== RoommateApplicationStatus.pending) {
+		if (application.status !== RequestStatus.pending) {
 			throw new BadRequestException('Chỉ có thể chỉnh sửa đơn ứng tuyển đang chờ xử lý');
 		}
 
@@ -445,7 +437,7 @@ export class RoommateApplicationService {
 		const roomName = post.roomInstance?.room?.name || 'phòng';
 
 		// Send notifications based on status
-		if (respondDto.status === RoommateApplicationStatus.approved_by_tenant) {
+		if (respondDto.status === RequestStatus.accepted) {
 			// Tenant approved - notify applicant
 			await this.notificationsService.notifyRoommateApplicationApproved(application.applicantId, {
 				roomName,
@@ -466,14 +458,14 @@ export class RoommateApplicationService {
 					});
 				}
 			}
-		} else if (respondDto.status === RoommateApplicationStatus.rejected_by_tenant) {
-			// Tenant rejected - notify applicant
+		} else if (respondDto.status === RequestStatus.rejected) {
+			// Tenant or Landlord rejected - notify applicant
 			await this.notificationsService.notifyRoommateApplicationRejected(application.applicantId, {
 				roomName,
 				reason: respondDto.response,
 				applicationId: application.id,
 			});
-		} else if (respondDto.status === RoommateApplicationStatus.approved_by_landlord) {
+		} else if (respondDto.status === RequestStatus.awaiting_confirmation) {
 			// Landlord approved - notify applicant and tenant
 			await this.notificationsService.notifyRoommateApplicationApproved(application.applicantId, {
 				roomName,
@@ -487,19 +479,6 @@ export class RoommateApplicationService {
 
 			// Handle approved application (update post counts)
 			await this.handleApprovedApplication(application.roommateSeekingPostId);
-		} else if (respondDto.status === RoommateApplicationStatus.rejected_by_landlord) {
-			// Landlord rejected - notify applicant and tenant
-			await this.notificationsService.notifyRoommateApplicationRejected(application.applicantId, {
-				roomName,
-				reason: respondDto.response,
-				applicationId: application.id,
-			});
-
-			await this.notificationsService.notifyRoommateApplicationRejected(post.tenantId, {
-				roomName,
-				reason: respondDto.response,
-				applicationId: application.id,
-			});
 		}
 
 		return this.mapToResponseDto(updatedApplication);
@@ -518,13 +497,13 @@ export class RoommateApplicationService {
 			throw new ForbiddenException('Không có quyền hủy đơn ứng tuyển này');
 		}
 
-		if (application.status !== RoommateApplicationStatus.pending) {
+		if (application.status !== RequestStatus.pending) {
 			throw new BadRequestException('Chỉ có thể hủy đơn ứng tuyển đang chờ xử lý');
 		}
 
 		await this.prisma.roommateApplication.update({
 			where: { id },
-			data: { status: RoommateApplicationStatus.cancelled },
+			data: { status: RequestStatus.cancelled },
 		});
 	}
 
@@ -574,11 +553,11 @@ export class RoommateApplicationService {
 
 		// Tenant confirm
 		if (isTenant) {
-			if (application.isConfirmedByTenant) {
+			if (application.status === RequestStatus.awaiting_confirmation) {
 				throw new BadRequestException('Đơn ứng tuyển đã được tenant xác nhận');
 			}
 
-			if (application.status !== RoommateApplicationStatus.approved_by_tenant) {
+			if (application.status !== RequestStatus.accepted) {
 				throw new BadRequestException('Chỉ có thể xác nhận đơn ứng tuyển đã được tenant phê duyệt');
 			}
 
@@ -587,7 +566,7 @@ export class RoommateApplicationService {
 				await this.prisma.roommateApplication.update({
 					where: { id },
 					data: {
-						isConfirmedByTenant: true,
+						status: RequestStatus.awaiting_confirmation,
 					},
 				});
 
@@ -617,18 +596,8 @@ export class RoommateApplicationService {
 
 		// Landlord confirm (for platform rooms only)
 		if (isLandlord) {
-			if (!application.isConfirmedByTenant) {
+			if (application.status !== RequestStatus.awaiting_confirmation) {
 				throw new BadRequestException('Tenant chưa xác nhận đơn ứng tuyển');
-			}
-
-			if (application.isConfirmedByLandlord) {
-				throw new BadRequestException('Đơn ứng tuyển đã được landlord xác nhận');
-			}
-
-			if (application.status !== RoommateApplicationStatus.approved_by_landlord) {
-				throw new BadRequestException(
-					'Chỉ có thể xác nhận đơn ứng tuyển đã được landlord phê duyệt',
-				);
 			}
 
 			// Create rental for roommate
@@ -718,7 +687,7 @@ export class RoommateApplicationService {
 			urgent: urgentCount,
 			dailyStats: this.processDailyStats(dailyStats),
 			statusBreakdown: statusCounts.map((item) => ({
-				status: item.status as RoommateApplicationStatus,
+				status: item.status as RequestStatus,
 				count: item._count,
 				percentage: total > 0 ? Math.round((item._count / total) * 100) : 0,
 			})),
@@ -727,25 +696,22 @@ export class RoommateApplicationService {
 		// Map status counts
 		statusCounts.forEach((item) => {
 			switch (item.status) {
-				case RoommateApplicationStatus.pending:
+				case RequestStatus.pending:
 					stats.pending = item._count;
 					break;
-				case RoommateApplicationStatus.approved_by_tenant:
+				case RequestStatus.accepted:
 					stats.approvedByTenant = item._count;
 					break;
-				case RoommateApplicationStatus.rejected_by_tenant:
+				case RequestStatus.rejected:
 					stats.rejectedByTenant = item._count;
 					break;
-				case RoommateApplicationStatus.approved_by_landlord:
+				case RequestStatus.awaiting_confirmation:
 					stats.approvedByLandlord = item._count;
 					break;
-				case RoommateApplicationStatus.rejected_by_landlord:
-					stats.rejectedByLandlord = item._count;
-					break;
-				case RoommateApplicationStatus.cancelled:
+				case RequestStatus.cancelled:
 					stats.cancelled = item._count;
 					break;
-				case RoommateApplicationStatus.expired:
+				case RequestStatus.expired:
 					stats.expired = item._count;
 					break;
 			}
@@ -778,7 +744,7 @@ export class RoommateApplicationService {
 
 	private async validateStatusTransition(
 		application: any,
-		newStatus: RoommateApplicationStatus,
+		newStatus: RequestStatus,
 		isTenant: boolean,
 		isLandlord: boolean,
 	): Promise<void> {
@@ -787,10 +753,9 @@ export class RoommateApplicationService {
 		// Only tenant can approve/reject first
 		if (
 			isTenant &&
-			(newStatus === RoommateApplicationStatus.approved_by_tenant ||
-				newStatus === RoommateApplicationStatus.rejected_by_tenant)
+			(newStatus === RequestStatus.accepted || newStatus === RequestStatus.rejected)
 		) {
-			if (currentStatus !== RoommateApplicationStatus.pending) {
+			if (currentStatus !== RequestStatus.pending) {
 				throw new BadRequestException('Đơn ứng tuyển không ở trạng thái chờ xử lý');
 			}
 			return;
@@ -799,10 +764,9 @@ export class RoommateApplicationService {
 		// Landlord can only respond after tenant approval for platform rooms
 		if (
 			isLandlord &&
-			(newStatus === RoommateApplicationStatus.approved_by_landlord ||
-				newStatus === RoommateApplicationStatus.rejected_by_landlord)
+			(newStatus === RequestStatus.awaiting_confirmation || newStatus === RequestStatus.rejected)
 		) {
-			if (currentStatus !== RoommateApplicationStatus.approved_by_tenant) {
+			if (currentStatus !== RequestStatus.accepted) {
 				throw new BadRequestException('Chỉ có thể phản hồi sau khi tenant đã phê duyệt');
 			}
 			return;
@@ -837,8 +801,8 @@ export class RoommateApplicationService {
 	private async createRentalForRoommate(
 		application: any,
 		post: any,
-		isTenantConfirm: boolean,
-		isLandlordConfirm: boolean,
+		_isTenantConfirm: boolean,
+		_isLandlordConfirm: boolean,
 	): Promise<RoommateApplicationResponseDto> {
 		// Validate roomInstance nếu là platform room
 		if (!post.roomInstanceId) {
@@ -873,12 +837,11 @@ export class RoommateApplicationService {
 
 		// Tạo rental và update application trong transaction
 		const rental = await this.prisma.$transaction(async (tx) => {
-			// Update application confirmed status
+			// Update application status to completed
 			await tx.roommateApplication.update({
 				where: { id: application.id },
 				data: {
-					...(isTenantConfirm && { isConfirmedByTenant: true }),
-					...(isLandlordConfirm && { isConfirmedByLandlord: true }),
+					status: RequestStatus.accepted, // Final status when rental is created
 					confirmedAt: new Date(),
 				},
 			});
@@ -928,7 +891,7 @@ export class RoommateApplicationService {
 		});
 
 		// Notify landlord if platform room
-		if (isLandlordConfirm) {
+		if (_isLandlordConfirm) {
 			await this.notificationsService.notifyRentalCreated(roomInstance.room.building.ownerId, {
 				roomName,
 				rentalId: rental.id,

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { RoommateApplicationStatus } from '../../../common/enums/roommate-application-status.enum';
+import { RequestStatus } from '@prisma/client';
 
 export class ApplicationStatisticsDto {
 	@ApiProperty({ description: 'Tổng số đơn ứng tuyển' })
@@ -37,7 +37,7 @@ export class ApplicationStatisticsDto {
 
 	@ApiProperty({ description: 'Thống kê theo trạng thái' })
 	statusBreakdown: {
-		status: RoommateApplicationStatus;
+		status: RequestStatus;
 		count: number;
 		percentage: number;
 	}[];

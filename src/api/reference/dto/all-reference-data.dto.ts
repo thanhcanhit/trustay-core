@@ -55,9 +55,6 @@ export class EnumValuesDto {
 	})
 	paymentStatus: string[];
 
-	@ApiProperty({ description: 'Reviewer types', example: ['TENANT', 'OWNER'] })
-	reviewerType: string[];
-
 	@ApiProperty({
 		description: 'Amenity categories',
 		example: [

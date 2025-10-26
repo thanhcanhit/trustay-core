@@ -2,13 +2,13 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { RentalsModule } from '../rentals/rentals.module';
-import { BookingRequestsController } from './booking-requests.controller';
-import { BookingRequestsService } from './booking-requests.service';
+import { RoomBookingsController } from './room-booking';
+import { BookingRequestsService } from './room-booking.service';
 
 @Module({
 	imports: [PrismaModule, NotificationsModule, RentalsModule],
-	controllers: [BookingRequestsController],
+	controllers: [RoomBookingsController],
 	providers: [BookingRequestsService],
 	exports: [BookingRequestsService],
 })
-export class BookingRequestsModule {}
+export class RoomBookingsModule {}

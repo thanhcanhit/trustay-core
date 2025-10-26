@@ -51,14 +51,14 @@ export interface DatabaseContract {
 			roomType: string;
 			areaSqm?: any; // Prisma Decimal type
 			amenities: Array<{
-				systemAmenity: {
+				amenity: {
 					name: string;
 					nameEn: string;
 				};
 				customValue?: string;
 			}>;
 			costs: Array<{
-				systemCostType: {
+				costTypeTemplate: {
 					name: string;
 					nameEn: string;
 				};

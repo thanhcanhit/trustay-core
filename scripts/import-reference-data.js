@@ -8,9 +8,9 @@ async function importSystemAmenities() {
 	console.log('🏠 Importing system amenities...');
 
 	// Check if amenities data already exists
-	const existingCount = await prisma.systemAmenity.count();
+	const existingCount = await prisma.amenity.count();
 	if (existingCount > 0) {
-		console.log(`⏭️ System amenities already exist (${existingCount} amenities). Skipping import.`);
+		console.log(`⏭️ Amenities already exist (${existingCount} amenities). Skipping import.`);
 		console.log('✨ Amenities import completed: 0 created, 0 skipped (data exists)\n');
 		return;
 	}
@@ -21,7 +21,7 @@ async function importSystemAmenities() {
 	for (const amenity of defaultAmenities) {
 		try {
 			// Check if amenity already exists
-			const existing = await prisma.systemAmenity.findUnique({
+			const existing = await prisma.amenity.findUnique({
 				where: { nameEn: amenity.nameEn },
 			});
 
@@ -31,7 +31,7 @@ async function importSystemAmenities() {
 				continue;
 			}
 
-			await prisma.systemAmenity.create({
+			await prisma.amenity.create({
 				data: {
 					...amenity,
 					isActive: true,
@@ -52,10 +52,10 @@ async function importSystemCostTypes() {
 	console.log('💰 Importing system cost types...');
 
 	// Check if cost types data already exists
-	const existingCount = await prisma.systemCostType.count();
+	const existingCount = await prisma.costTypeTemplate.count();
 	if (existingCount > 0) {
 		console.log(
-			`⏭️ System cost types already exist (${existingCount} cost types). Skipping import.`,
+			`⏭️ Cost type templates already exist (${existingCount} cost types). Skipping import.`,
 		);
 		console.log('✨ Cost types import completed: 0 created, 0 skipped (data exists)\n');
 		return;
@@ -67,7 +67,7 @@ async function importSystemCostTypes() {
 	for (const costType of defaultCostTypes) {
 		try {
 			// Check if cost type already exists
-			const existing = await prisma.systemCostType.findUnique({
+			const existing = await prisma.costTypeTemplate.findUnique({
 				where: { nameEn: costType.nameEn },
 			});
 
@@ -77,7 +77,7 @@ async function importSystemCostTypes() {
 				continue;
 			}
 
-			await prisma.systemCostType.create({
+			await prisma.costTypeTemplate.create({
 				data: {
 					...costType,
 					isActive: true,
@@ -104,12 +104,12 @@ async function main() {
 		console.log('🎉 All reference data imported successfully!');
 
 		// Display summary
-		const amenitiesCount = await prisma.systemAmenity.count({ where: { isActive: true } });
-		const costTypesCount = await prisma.systemCostType.count({ where: { isActive: true } });
+		const amenitiesCount = await prisma.amenity.count({ where: { isActive: true } });
+		const costTypesCount = await prisma.costTypeTemplate.count({ where: { isActive: true } });
 
 		console.log('\n📊 Summary:');
-		console.log(`   • System Amenities: ${amenitiesCount}`);
-		console.log(`   • System Cost Types: ${costTypesCount}`);
+		console.log(`   • Amenities: ${amenitiesCount}`);
+		console.log(`   • Cost Type Templates: ${costTypesCount}`);
 	} catch (error) {
 		console.error('❌ Error during import:', error);
 		process.exit(1);

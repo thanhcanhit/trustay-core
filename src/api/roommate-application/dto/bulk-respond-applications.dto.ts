@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RequestStatus } from '@prisma/client';
 import { IsArray, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
-import { RoommateApplicationStatus } from '../../../common/enums/roommate-application-status.enum';
 
 export class BulkRespondApplicationsDto {
 	@ApiProperty({
@@ -13,20 +13,11 @@ export class BulkRespondApplicationsDto {
 
 	@ApiProperty({
 		description: 'Quyết định áp dụng cho tất cả',
-		enum: [
-			RoommateApplicationStatus.approved_by_tenant,
-			RoommateApplicationStatus.rejected_by_tenant,
-			RoommateApplicationStatus.approved_by_landlord,
-			RoommateApplicationStatus.rejected_by_landlord,
-		],
+		enum: RequestStatus,
+		example: 'accepted',
 	})
-	@IsEnum([
-		RoommateApplicationStatus.approved_by_tenant,
-		RoommateApplicationStatus.rejected_by_tenant,
-		RoommateApplicationStatus.approved_by_landlord,
-		RoommateApplicationStatus.rejected_by_landlord,
-	])
-	status: RoommateApplicationStatus;
+	@IsEnum(RequestStatus)
+	status: RequestStatus;
 
 	@ApiPropertyOptional({ description: 'Lời nhắn phản hồi chung' })
 	@IsOptional()

@@ -201,7 +201,7 @@ describe('ListingService', () => {
 							id: 'amenity-1',
 							customValue: null,
 							notes: null,
-							systemAmenity: {
+							amenity: {
 								id: 'sys-amenity-1',
 								name: 'WiFi',
 								nameEn: 'WiFi',
@@ -215,7 +215,7 @@ describe('ListingService', () => {
 							baseRate: '2000000',
 							currency: 'VND',
 							notes: null,
-							systemCostType: {
+							costTypeTemplate: {
 								id: 'sys-cost-1',
 								name: 'Monthly Rent',
 								nameEn: 'Monthly Rent',
@@ -242,7 +242,7 @@ describe('ListingService', () => {
 							customValue: null,
 							isEnforced: true,
 							notes: null,
-							systemRule: {
+							ruleTemplate: {
 								id: 'sys-rule-1',
 								ruleType: 'general',
 								name: 'No Smoking',
@@ -414,7 +414,7 @@ describe('ListingService', () => {
 					where: expect.objectContaining({
 						amenities: {
 							some: {
-								systemAmenityId: { in: ['amenity-1', 'amenity-2'] },
+								amenityId: { in: ['amenity-1', 'amenity-2'] },
 							},
 						},
 					}),

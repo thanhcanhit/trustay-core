@@ -111,9 +111,9 @@ export function formatRoomAmenities(
 	includeDetails: boolean = false,
 ): RoomAmenityOutputDto[] {
 	return amenities.map((amenity) => ({
-		id: amenity.systemAmenity.id,
-		name: amenity.systemAmenity.name,
-		category: amenity.systemAmenity.category,
+		id: amenity.amenity.id,
+		name: amenity.amenity.name,
+		category: amenity.amenity.category,
 		...(includeDetails && {
 			customValue: amenity.customValue,
 			notes: amenity.notes,
@@ -129,10 +129,10 @@ export function formatRoomCosts(
 	includeDetails: boolean = false,
 ): RoomCostOutputDto[] {
 	return costs.map((cost) => ({
-		id: cost.systemCostType.id,
-		name: cost.systemCostType.name,
+		id: cost.costTypeTemplate.id,
+		name: cost.costTypeTemplate.name,
 		value: cost.baseRate?.toString() || '0',
-		category: cost.systemCostType.category,
+		category: cost.costTypeTemplate.category,
 		...(includeDetails && {
 			notes: cost.notes,
 		}),
@@ -163,9 +163,9 @@ export function formatRoomRules(
 	includeDetails: boolean = false,
 ): RoomRuleOutputDto[] {
 	return rules.map((rule) => ({
-		id: rule.systemRule.id,
-		name: rule.customValue || rule.systemRule.name,
-		type: rule.systemRule.ruleType,
+		id: rule.ruleTemplate.id,
+		name: rule.customValue || rule.ruleTemplate.name,
+		type: rule.ruleTemplate.ruleType,
 		...(includeDetails && {
 			customValue: rule.customValue,
 			notes: rule.notes,

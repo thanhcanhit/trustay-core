@@ -2,9 +2,10 @@ import {
 	BadRequestException,
 	ForbiddenException,
 	Injectable,
+	Logger,
 	NotFoundException,
 } from '@nestjs/common';
-import { BookingStatus, InvitationStatus, RentalStatus, UserRole } from '@prisma/client';
+import { RentalStatus, RequestStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ContractsNewService } from '../contracts/contracts-new.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -12,6 +13,8 @@ import { CreateRentalDto, QueryRentalDto, TerminateRentalDto, UpdateRentalDto } 
 
 @Injectable()
 export class RentalsService {
+	private readonly logger = new Logger(RentalsService.name);
+
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly notificationsService: NotificationsService,
@@ -96,20 +99,20 @@ export class RentalsService {
 		let invitation = null;
 
 		if (dto.bookingRequestId) {
-			bookingRequest = await this.prisma.bookingRequest.findUnique({
+			bookingRequest = await this.prisma.roomBooking.findUnique({
 				where: { id: dto.bookingRequestId },
 			});
 
 			if (!bookingRequest) {
-				throw new NotFoundException('Booking request not found');
+				throw new NotFoundException('Room booking not found');
 			}
 
-			if (bookingRequest.status !== BookingStatus.approved) {
-				throw new BadRequestException('Can only create rental from approved booking request');
+			if (bookingRequest.status !== RequestStatus.accepted) {
+				throw new BadRequestException('Can only create rental from accepted room booking');
 			}
 
 			if (bookingRequest.tenantId !== dto.tenantId) {
-				throw new BadRequestException('Booking request tenant does not match rental tenant');
+				throw new BadRequestException('Room booking tenant does not match rental tenant');
 			}
 		}
 
@@ -122,7 +125,7 @@ export class RentalsService {
 				throw new NotFoundException('Room invitation not found');
 			}
 
-			if (invitation.status !== InvitationStatus.accepted) {
+			if (invitation.status !== RequestStatus.accepted) {
 				throw new BadRequestException('Can only create rental from accepted invitation');
 			}
 
@@ -137,7 +140,7 @@ export class RentalsService {
 		// Create rental
 		const rental = await this.prisma.rental.create({
 			data: {
-				bookingRequestId: dto.bookingRequestId,
+				roomBookingId: dto.bookingRequestId,
 				invitationId: dto.invitationId,
 				roomInstanceId: dto.roomInstanceId,
 				tenantId: dto.tenantId,
@@ -161,7 +164,7 @@ export class RentalsService {
 						},
 					},
 				},
-				bookingRequest: true,
+				roomBooking: true,
 				invitation: true,
 			},
 		});
@@ -187,9 +190,14 @@ export class RentalsService {
 
 		// Auto-create contract when rental is created (new contracts flow)
 		try {
-			await this.contractsService.createContractFromRental(rental.id, ownerId);
+			const contract = await this.contractsService.createContractFromRental(rental.id, ownerId);
+			this.logger.log(
+				`Contract ${contract.contractCode} created successfully for rental ${rental.id}`,
+			);
 		} catch (error) {
-			console.error('Failed to auto-create contract from rental:', error);
+			// Log error but don't fail the rental creation
+			this.logger.error(`Failed to create contract for rental ${rental.id}:`, error.message);
+			// TODO: Consider adding to a retry queue or notification system
 		}
 
 		return this.transformToResponseDto(rental);
@@ -248,7 +256,7 @@ export class RentalsService {
 							},
 						},
 					},
-					bookingRequest: {
+					roomBooking: {
 						select: {
 							id: true,
 							moveInDate: true,
@@ -317,7 +325,7 @@ export class RentalsService {
 							},
 						},
 					},
-					bookingRequest: {
+					roomBooking: {
 						select: {
 							id: true,
 							moveInDate: true,
@@ -384,7 +392,7 @@ export class RentalsService {
 						},
 					},
 				},
-				bookingRequest: {
+				roomBooking: {
 					select: {
 						id: true,
 						moveInDate: true,
@@ -469,7 +477,7 @@ export class RentalsService {
 						},
 					},
 				},
-				bookingRequest: true,
+				roomBooking: true,
 				invitation: true,
 			},
 		});
@@ -534,7 +542,7 @@ export class RentalsService {
 						},
 					},
 				},
-				bookingRequest: true,
+				roomBooking: true,
 				invitation: true,
 			},
 		});
@@ -613,7 +621,7 @@ export class RentalsService {
 						},
 					},
 				},
-				bookingRequest: true,
+				roomBooking: true,
 				invitation: true,
 			},
 		});
@@ -626,5 +634,42 @@ export class RentalsService {
 		});
 
 		return this.transformToResponseDto(updatedRental);
+	}
+
+	/**
+	 * Tạo contract cho rental nếu chưa có
+	 * Hữu ích cho việc migrate hoặc xử lý rental cũ
+	 */
+	async createContractForRental(rentalId: string, userId: string) {
+		const rental = await this.prisma.rental.findUnique({
+			where: { id: rentalId },
+			include: { contract: true },
+		});
+
+		if (!rental) {
+			throw new NotFoundException('Rental not found');
+		}
+
+		// Check quyền (phải là landlord hoặc tenant)
+		if (rental.ownerId !== userId && rental.tenantId !== userId) {
+			throw new ForbiddenException('You are not authorized to create contract for this rental');
+		}
+
+		// Nếu đã có contract, return error
+		if (rental.contract) {
+			throw new BadRequestException(
+				`Rental already has a contract (${rental.contract.contractCode})`,
+			);
+		}
+
+		// Check rental phải active
+		if (rental.status !== 'active') {
+			throw new BadRequestException(
+				`Cannot create contract for rental with status: ${rental.status}`,
+			);
+		}
+
+		// Tạo contract
+		return this.contractsService.createContractFromRental(rentalId, userId);
 	}
 }

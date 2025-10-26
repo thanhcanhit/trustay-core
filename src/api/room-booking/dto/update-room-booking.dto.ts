@@ -1,26 +1,18 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { BookingStatus } from '@prisma/client';
+import { RequestStatus } from '@prisma/client';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class UpdateBookingRequestDto {
 	@ApiPropertyOptional({
-		description: 'Ghi chú từ chủ nhà',
-		example: 'Phòng đã sẵn sàng, vui lòng liên hệ để xem phòng.',
-	})
-	@IsOptional()
-	@IsString()
-	ownerNotes?: string;
-
-	@ApiPropertyOptional({
 		description: 'Cập nhật trạng thái (chỉ landlord)',
-		enum: BookingStatus,
-		example: 'approved',
+		enum: RequestStatus,
+		example: 'accepted',
 	})
 	@IsOptional()
-	@IsEnum(BookingStatus, {
-		message: `status must be one of: ${Object.values(BookingStatus).join(', ')}`,
+	@IsEnum(RequestStatus, {
+		message: `status must be one of: ${Object.values(RequestStatus).join(', ')}`,
 	})
-	status?: BookingStatus;
+	status?: RequestStatus;
 }
 
 export class CancelBookingRequestDto {

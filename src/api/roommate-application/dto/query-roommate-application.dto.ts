@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { RequestStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
-import { RoommateApplicationStatus } from '../../../common/enums/roommate-application-status.enum';
 
 export class QueryRoommateApplicationDto {
 	@ApiPropertyOptional({
@@ -30,12 +30,12 @@ export class QueryRoommateApplicationDto {
 
 	@ApiPropertyOptional({
 		description: 'Lọc theo trạng thái',
-		enum: RoommateApplicationStatus,
+		enum: RequestStatus,
 		example: 'pending',
 	})
 	@IsOptional()
-	@IsEnum(RoommateApplicationStatus)
-	status?: RoommateApplicationStatus;
+	@IsEnum(RequestStatus)
+	status?: RequestStatus;
 
 	@ApiPropertyOptional({
 		description: 'Tìm kiếm theo tên ứng viên',

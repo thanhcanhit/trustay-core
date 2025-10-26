@@ -60,7 +60,7 @@ export class ElasticsearchSyncProcessor {
 					},
 					amenities: {
 						include: {
-							systemAmenity: {
+							amenity: {
 								select: { id: true, name: true },
 							},
 						},
@@ -241,7 +241,7 @@ export class ElasticsearchSyncProcessor {
 					images: { orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }] },
 					amenities: {
 						include: {
-							systemAmenity: {
+							amenity: {
 								select: { id: true, name: true },
 							},
 						},

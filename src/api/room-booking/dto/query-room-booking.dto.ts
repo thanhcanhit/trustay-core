@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { BookingStatus } from '@prisma/client';
+import { RequestStatus } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import { IsEnum, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 
@@ -30,12 +30,12 @@ export class QueryBookingRequestsDto {
 
 	@ApiPropertyOptional({
 		description: 'Lọc theo trạng thái booking',
-		enum: BookingStatus,
+		enum: RequestStatus,
 		example: 'pending',
 	})
 	@IsOptional()
-	@IsEnum(BookingStatus)
-	status?: BookingStatus;
+	@IsEnum(RequestStatus)
+	status?: RequestStatus;
 
 	@ApiPropertyOptional({
 		description: 'Lọc theo building ID (for landlords)',

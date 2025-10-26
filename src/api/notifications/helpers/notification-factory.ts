@@ -74,7 +74,7 @@ export class NotificationFactory {
 		return this.createFromTemplate(landlordId, NotificationType.BOOKING_REQUEST_CREATED, data);
 	}
 
-	createBookingApprovedNotification(
+	createBookingAcceptedNotification(
 		tenantId: string,
 		data: {
 			roomName: string;
@@ -82,7 +82,7 @@ export class NotificationFactory {
 			bookingId: string;
 		},
 	) {
-		return this.createFromTemplate(tenantId, NotificationType.BOOKING_REQUEST_APPROVED, data);
+		return this.createFromTemplate(tenantId, NotificationType.BOOKING_REQUEST_ACCEPTED, data);
 	}
 
 	createBookingRejectedNotification(
@@ -142,23 +142,11 @@ export class NotificationFactory {
 		return this.createFromTemplate(landlordId, NotificationType.ROOM_INVITATION_ACCEPTED, data);
 	}
 
-	createInvitationDeclinedNotification(
-		landlordId: string,
-		data: {
-			roomName: string;
-			tenantName: string;
-			invitationId: string;
-		},
-	) {
-		return this.createFromTemplate(landlordId, NotificationType.ROOM_INVITATION_DECLINED, data);
-	}
-
 	createInvitationRejectedNotification(
 		landlordId: string,
 		data: {
 			roomName: string;
 			tenantName: string;
-			reason?: string;
 			invitationId: string;
 		},
 	) {
@@ -259,7 +247,7 @@ export class NotificationFactory {
 	}
 
 	// Payment & Billing Notifications
-	createMonthlyBillNotification(
+	createBillNotification(
 		tenantId: string,
 		data: {
 			month: number;
@@ -267,6 +255,8 @@ export class NotificationFactory {
 			roomName: string;
 			amount: number;
 			billId: string;
+			dueDate: Date;
+			landlordName: string;
 		},
 	) {
 		return this.createFromTemplate(tenantId, NotificationType.MONTHLY_BILL_CREATED, data);
@@ -318,29 +308,6 @@ export class NotificationFactory {
 		},
 	) {
 		return this.createFromTemplate(tenantId, NotificationType.PAYMENT_REMINDER, data);
-	}
-
-	// Review Related Notifications
-	createReviewReceivedNotification(
-		userId: string,
-		data: {
-			stars: number;
-			reviewerName: string;
-			subject: string; // "phòng ABC" hoặc "dịch vụ cho thuê"
-			reviewId: string;
-		},
-	) {
-		return this.createFromTemplate(userId, NotificationType.REVIEW_RECEIVED, data);
-	}
-
-	createReviewRequestNotification(
-		userId: string,
-		data: {
-			roomName: string;
-			rentalId: string;
-		},
-	) {
-		return this.createFromTemplate(userId, NotificationType.REVIEW_REQUEST, data);
 	}
 
 	// Roommate Related Notifications

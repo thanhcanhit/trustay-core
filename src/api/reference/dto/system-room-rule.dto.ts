@@ -44,7 +44,7 @@ export class RoomRuleDto {
 	id: string;
 
 	@ApiProperty({ description: 'Associated system room rule', type: SystemRoomRuleDto })
-	systemRule: SystemRoomRuleDto;
+	ruleTemplate: SystemRoomRuleDto;
 
 	@ApiPropertyOptional({
 		description: 'Custom value or condition for this rule',
@@ -67,7 +67,7 @@ export class RoomRuleDto {
 
 export class CreateRoomRuleDto {
 	@ApiProperty({ description: 'System room rule ID' })
-	systemRuleId: string;
+	ruleTemplateId: string;
 
 	@ApiPropertyOptional({ description: 'Custom value or condition for this rule' })
 	customValue?: string;

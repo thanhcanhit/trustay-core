@@ -125,9 +125,9 @@ export class ElasticsearchSyncService {
 			: 0;
 
 		// Extract amenities
-		const amenityIds = room.amenities ? room.amenities.map((a: any) => a.systemAmenityId) : [];
+		const amenityIds = room.amenities ? room.amenities.map((a: any) => a.amenityId) : [];
 		const amenityNames = room.amenities
-			? room.amenities.map((a: any) => a.systemAmenity?.name).filter(Boolean)
+			? room.amenities.map((a: any) => a.amenity?.name).filter(Boolean)
 			: [];
 
 		// Extract primary image

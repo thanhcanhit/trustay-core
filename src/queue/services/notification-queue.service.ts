@@ -1,7 +1,7 @@
 import { InjectQueue } from '@nestjs/bull';
 import { Injectable, Logger } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { QUEUE_NAMES } from '../queue.module';
+// import { QUEUE_NAMES } from '../queue.module';
 
 export interface NotificationJobData {
 	userId: string;
@@ -34,13 +34,13 @@ export class NotificationQueueService {
 	 */
 	async sendBookingNotification(
 		userId: string,
-		action: 'created' | 'approved' | 'rejected' | 'cancelled',
+		action: 'created' | 'accepted' | 'rejected' | 'cancelled',
 		bookingId: string,
 		roomName: string,
 	): Promise<void> {
 		const messages = {
 			created: `Yêu cầu đặt phòng "${roomName}" đã được gửi`,
-			approved: `Yêu cầu đặt phòng "${roomName}" đã được chấp nhận`,
+			accepted: `Yêu cầu đặt phòng "${roomName}" đã được chấp nhận`,
 			rejected: `Yêu cầu đặt phòng "${roomName}" đã bị từ chối`,
 			cancelled: `Yêu cầu đặt phòng "${roomName}" đã bị hủy`,
 		};

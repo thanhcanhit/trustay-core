@@ -3,16 +3,14 @@ import {
 	AmenityCategory,
 	BillingCycle,
 	BillStatus,
-	BookingStatus,
 	CostCategory,
 	CostType,
 	Gender,
-	InvitationStatus,
 	PaymentMethod,
 	PaymentStatus,
 	PaymentType,
 	RentalStatus,
-	ReviewerType,
+	RequestStatus,
 	RoomType,
 	RuleCategory,
 	RuleType,
@@ -68,13 +66,13 @@ export class ReferenceService {
 		orderBy[sortBy] = sortOrder;
 
 		const [amenities, total] = await Promise.all([
-			this.prisma.systemAmenity.findMany({
+			this.prisma.amenity.findMany({
 				where,
 				skip,
 				take,
 				orderBy,
 			}),
-			this.prisma.systemAmenity.count({ where }),
+			this.prisma.amenity.count({ where }),
 		]);
 
 		return PaginatedResponseDto.create(amenities, page, limit, total);
@@ -96,7 +94,7 @@ export class ReferenceService {
 					where.category = category;
 				}
 
-				return this.prisma.systemAmenity.findMany({
+				return this.prisma.amenity.findMany({
 					where,
 					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
 				});
@@ -127,13 +125,13 @@ export class ReferenceService {
 		orderBy[sortBy] = sortOrder;
 
 		const [costTypes, total] = await Promise.all([
-			this.prisma.systemCostType.findMany({
+			this.prisma.costTypeTemplate.findMany({
 				where,
 				skip,
 				take,
 				orderBy,
 			}),
-			this.prisma.systemCostType.count({ where }),
+			this.prisma.costTypeTemplate.count({ where }),
 		]);
 
 		return PaginatedResponseDto.create(costTypes, page, limit, total);
@@ -155,7 +153,7 @@ export class ReferenceService {
 					where.category = category;
 				}
 
-				return this.prisma.systemCostType.findMany({
+				return this.prisma.costTypeTemplate.findMany({
 					where,
 					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
 				});
@@ -186,13 +184,13 @@ export class ReferenceService {
 		orderBy[sortBy] = sortOrder;
 
 		const [roomRules, total] = await Promise.all([
-			this.prisma.systemRoomRule.findMany({
+			this.prisma.roomRuleTemplate.findMany({
 				where,
 				skip,
 				take,
 				orderBy,
 			}),
-			this.prisma.systemRoomRule.count({ where }),
+			this.prisma.roomRuleTemplate.count({ where }),
 		]);
 
 		return PaginatedResponseDto.create(roomRules, page, limit, total);
@@ -214,7 +212,7 @@ export class ReferenceService {
 					where.category = category;
 				}
 
-				return this.prisma.systemRoomRule.findMany({
+				return this.prisma.roomRuleTemplate.findMany({
 					where,
 					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
 				});
@@ -241,11 +239,13 @@ export class ReferenceService {
 				tenant: 'Người thuê',
 				landlord: 'Chủ nhà',
 			}),
-			bookingStatuses: this.mapEnumToDto(BookingStatus, {
+			bookingStatuses: this.mapEnumToDto(RequestStatus, {
 				pending: 'Chờ xử lý',
-				approved: 'Đã chấp nhận',
+				accepted: 'Đã chấp nhận',
 				rejected: 'Bị từ chối',
+				expired: 'Đã hết hạn',
 				cancelled: 'Đã hủy',
+				awaiting_confirmation: 'Chờ xác nhận',
 			}),
 			rentalStatuses: this.mapEnumToDto(RentalStatus, {
 				active: 'Đang hoạt động',
@@ -253,11 +253,13 @@ export class ReferenceService {
 				expired: 'Đã hết hạn',
 				pending_renewal: 'Chờ gia hạn',
 			}),
-			invitationStatuses: this.mapEnumToDto(InvitationStatus, {
+			invitationStatuses: this.mapEnumToDto(RequestStatus, {
 				pending: 'Chờ phản hồi',
 				accepted: 'Đã chấp nhận',
-				declined: 'Đã từ chối',
+				rejected: 'Đã từ chối',
 				expired: 'Đã hết hạn',
+				cancelled: 'Đã hủy',
+				awaiting_confirmation: 'Chờ xác nhận',
 			}),
 			billStatuses: this.mapEnumToDto(BillStatus, {
 				draft: 'Bản nháp',
@@ -284,10 +286,6 @@ export class ReferenceService {
 				completed: 'Hoàn thành',
 				failed: 'Thất bại',
 				refunded: 'Đã hoàn tiền',
-			}),
-			reviewerTypes: this.mapEnumToDto(ReviewerType, {
-				tenant: 'Người thuê',
-				owner: 'Chủ nhà',
 			}),
 			amenityCategories: this.mapEnumToDto(AmenityCategory, {
 				basic: 'Tiện ích cơ bản',
@@ -361,14 +359,13 @@ export class ReferenceService {
 			gender: uppercaseArray(Gender),
 			userRole: uppercaseArray(UserRole),
 			roomType: uppercaseArray(RoomType),
-			bookingStatus: uppercaseArray(BookingStatus),
+			bookingStatus: uppercaseArray(RequestStatus),
 			rentalStatus: uppercaseArray(RentalStatus),
-			invitationStatus: uppercaseArray(InvitationStatus),
+			invitationStatus: uppercaseArray(RequestStatus),
 			billStatus: uppercaseArray(BillStatus),
 			paymentType: uppercaseArray(PaymentType),
 			paymentMethod: uppercaseArray(PaymentMethod),
 			paymentStatus: uppercaseArray(PaymentStatus),
-			reviewerType: uppercaseArray(ReviewerType),
 			amenityCategory: uppercaseArray(AmenityCategory),
 			costCategory: uppercaseArray(CostCategory),
 			ruleCategory: uppercaseArray(RuleCategory),
@@ -395,7 +392,7 @@ export class ReferenceService {
 					where.category = category;
 				}
 
-				return this.prisma.systemAmenity.findMany({
+				return this.prisma.amenity.findMany({
 					where,
 					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
 					select: {
@@ -423,7 +420,7 @@ export class ReferenceService {
 					where.category = category;
 				}
 
-				return this.prisma.systemCostType.findMany({
+				return this.prisma.costTypeTemplate.findMany({
 					where,
 					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
 					select: {
@@ -451,7 +448,7 @@ export class ReferenceService {
 					where.category = category;
 				}
 
-				return this.prisma.systemRoomRule.findMany({
+				return this.prisma.roomRuleTemplate.findMany({
 					where,
 					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
 					select: {

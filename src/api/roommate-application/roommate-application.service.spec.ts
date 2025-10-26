@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { RoommateApplicationStatus } from '../../common/enums/roommate-application-status.enum';
+import { RequestStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthTestUtils } from '../../test-utils';
 import { RoommateApplicationService } from './roommate-application.service';
@@ -67,7 +67,7 @@ describe('RoommateApplicationService', () => {
 				moveInDate: createDto.moveInDate,
 				intendedStayMonths: createDto.intendedStayMonths,
 				applicationMessage: createDto.applicationMessage,
-				status: RoommateApplicationStatus.pending,
+				status: RequestStatus.pending,
 				isUrgent: createDto.isUrgent,
 			});
 
@@ -191,7 +191,7 @@ describe('RoommateApplicationService', () => {
 					fullName: 'John Doe',
 					phoneNumber: '+84901234567',
 					moveInDate: new Date('2024-01-01'),
-					status: RoommateApplicationStatus.pending,
+					status: RequestStatus.pending,
 				},
 			});
 
@@ -233,7 +233,7 @@ describe('RoommateApplicationService', () => {
 					moveInDate: new Date('2024-01-01'),
 					intendedStayMonths: 6,
 					applicationMessage: 'I am interested',
-					status: RoommateApplicationStatus.pending,
+					status: RequestStatus.pending,
 					isUrgent: false,
 				},
 			});
@@ -288,7 +288,7 @@ describe('RoommateApplicationService', () => {
 					moveInDate: new Date('2024-01-01'),
 					intendedStayMonths: 6,
 					applicationMessage: 'I am interested',
-					status: RoommateApplicationStatus.pending,
+					status: RequestStatus.pending,
 					isUrgent: false,
 				},
 			});
@@ -329,7 +329,7 @@ describe('RoommateApplicationService', () => {
 					moveInDate: new Date('2024-01-01'),
 					intendedStayMonths: 6,
 					applicationMessage: 'I am interested',
-					status: RoommateApplicationStatus.pending,
+					status: RequestStatus.pending,
 					isUrgent: false,
 				},
 			});
@@ -380,7 +380,7 @@ describe('RoommateApplicationService', () => {
 					fullName: 'John Doe',
 					phoneNumber: '+84901234567',
 					moveInDate: new Date('2024-01-01'),
-					status: RoommateApplicationStatus.pending,
+					status: RequestStatus.pending,
 				},
 			});
 
@@ -415,7 +415,7 @@ describe('RoommateApplicationService', () => {
 					moveInDate: new Date('2024-01-01'),
 					intendedStayMonths: 6,
 					applicationMessage: 'I am interested',
-					status: RoommateApplicationStatus.pending,
+					status: RequestStatus.pending,
 					isUrgent: false,
 				},
 			});
@@ -470,7 +470,7 @@ describe('RoommateApplicationService', () => {
 					fullName: 'John Doe',
 					phoneNumber: '+84901234567',
 					moveInDate: new Date('2024-01-01'),
-					status: RoommateApplicationStatus.pending,
+					status: RequestStatus.pending,
 				},
 			});
 
@@ -499,7 +499,7 @@ describe('RoommateApplicationService', () => {
 					fullName: 'John Doe',
 					phoneNumber: '+84901234567',
 					moveInDate: new Date('2024-01-01'),
-					status: RoommateApplicationStatus.approved_by_tenant,
+					status: RequestStatus.accepted,
 				},
 			});
 
@@ -536,13 +536,13 @@ describe('RoommateApplicationService', () => {
 					moveInDate: new Date('2024-01-01'),
 					intendedStayMonths: 6,
 					applicationMessage: 'I am interested',
-					status: RoommateApplicationStatus.pending,
+					status: RequestStatus.pending,
 					isUrgent: false,
 				},
 			});
 
 			const respondDto = {
-				status: RoommateApplicationStatus.approved_by_tenant,
+				status: RequestStatus.accepted,
 				response: 'Welcome to the room!',
 			};
 
@@ -564,7 +564,7 @@ describe('RoommateApplicationService', () => {
 			// Arrange
 			const applicationId = 'non-existent';
 			const tenant = await authUtils.createDefaultTenant();
-			const respondDto = { status: RoommateApplicationStatus.approved_by_tenant };
+			const respondDto = { status: RequestStatus.accepted };
 
 			// Act & Assert
 			await expect(
@@ -590,11 +590,11 @@ describe('RoommateApplicationService', () => {
 					fullName: 'John Doe',
 					phoneNumber: '+84901234567',
 					moveInDate: new Date('2024-01-01'),
-					status: RoommateApplicationStatus.pending,
+					status: RequestStatus.pending,
 				},
 			});
 
-			const respondDto = { status: RoommateApplicationStatus.approved_by_tenant };
+			const respondDto = { status: RequestStatus.accepted };
 
 			// Act & Assert
 			await expect(
@@ -621,7 +621,7 @@ describe('RoommateApplicationService', () => {
 					fullName: 'John Doe',
 					phoneNumber: '+84901234567',
 					moveInDate: new Date('2024-01-01'),
-					status: RoommateApplicationStatus.pending,
+					status: RequestStatus.pending,
 				},
 			});
 
@@ -632,7 +632,7 @@ describe('RoommateApplicationService', () => {
 			const cancelledApplication = await prismaService.roommateApplication.findUnique({
 				where: { id: application.id },
 			});
-			expect(cancelledApplication?.status).toBe(RoommateApplicationStatus.cancelled);
+			expect(cancelledApplication?.status).toBe(RequestStatus.cancelled);
 		});
 
 		it('should throw NotFoundException when application not found', async () => {
@@ -662,7 +662,7 @@ describe('RoommateApplicationService', () => {
 					fullName: 'John Doe',
 					phoneNumber: '+84901234567',
 					moveInDate: new Date('2024-01-01'),
-					status: RoommateApplicationStatus.pending,
+					status: RequestStatus.pending,
 				},
 			});
 
@@ -689,7 +689,7 @@ describe('RoommateApplicationService', () => {
 					fullName: 'John Doe',
 					phoneNumber: '+84901234567',
 					moveInDate: new Date('2024-01-01'),
-					status: RoommateApplicationStatus.approved_by_tenant,
+					status: RequestStatus.accepted,
 				},
 			});
 
@@ -722,7 +722,7 @@ describe('RoommateApplicationService', () => {
 					fullName: 'John Doe',
 					phoneNumber: '+84901234567',
 					moveInDate: new Date('2024-01-01'),
-					status: RoommateApplicationStatus.pending,
+					status: RequestStatus.pending,
 				},
 			});
 
@@ -733,13 +733,13 @@ describe('RoommateApplicationService', () => {
 					fullName: 'Jane Doe',
 					phoneNumber: '+84901234568',
 					moveInDate: new Date('2024-01-01'),
-					status: RoommateApplicationStatus.pending,
+					status: RequestStatus.pending,
 				},
 			});
 
 			const bulkDto = {
 				applicationIds: [application1.id, application2.id],
-				status: RoommateApplicationStatus.approved_by_tenant,
+				status: RequestStatus.accepted,
 				response: 'All approved!',
 			};
 
@@ -762,8 +762,8 @@ describe('RoommateApplicationService', () => {
 				where: { id: application2.id },
 			});
 
-			expect(updatedApp1?.status).toBe(RoommateApplicationStatus.approved_by_tenant);
-			expect(updatedApp2?.status).toBe(RoommateApplicationStatus.approved_by_tenant);
+			expect(updatedApp1?.status).toBe(RequestStatus.accepted);
+			expect(updatedApp2?.status).toBe(RequestStatus.accepted);
 		});
 
 		it('should handle partial failures in bulk response', async () => {
@@ -783,13 +783,13 @@ describe('RoommateApplicationService', () => {
 					fullName: 'John Doe',
 					phoneNumber: '+84901234567',
 					moveInDate: new Date('2024-01-01'),
-					status: RoommateApplicationStatus.pending,
+					status: RequestStatus.pending,
 				},
 			});
 
 			const bulkDto = {
 				applicationIds: [application.id, 'non-existent-id'],
-				status: RoommateApplicationStatus.approved_by_tenant,
+				status: RequestStatus.accepted,
 				response: 'All approved!',
 			};
 
@@ -825,7 +825,7 @@ describe('RoommateApplicationService', () => {
 						fullName: 'John Doe 1',
 						phoneNumber: '+84901234567',
 						moveInDate: new Date('2024-01-01'),
-						status: RoommateApplicationStatus.pending,
+						status: RequestStatus.pending,
 					},
 					{
 						roommateSeekingPostId: roommatePost.id,
@@ -833,7 +833,7 @@ describe('RoommateApplicationService', () => {
 						fullName: 'John Doe 2',
 						phoneNumber: '+84901234568',
 						moveInDate: new Date('2024-01-01'),
-						status: RoommateApplicationStatus.approved_by_tenant,
+						status: RequestStatus.accepted,
 					},
 					{
 						roommateSeekingPostId: roommatePost.id,
@@ -841,7 +841,7 @@ describe('RoommateApplicationService', () => {
 						fullName: 'John Doe 3',
 						phoneNumber: '+84901234569',
 						moveInDate: new Date('2024-01-01'),
-						status: RoommateApplicationStatus.rejected_by_tenant,
+						status: RequestStatus.rejected,
 					},
 				],
 			});
@@ -876,7 +876,7 @@ describe('RoommateApplicationService', () => {
 						fullName: 'John Doe 1',
 						phoneNumber: '+84901234567',
 						moveInDate: new Date('2024-01-01'),
-						status: RoommateApplicationStatus.pending,
+						status: RequestStatus.pending,
 					},
 					{
 						roommateSeekingPostId: roommatePost.id,
@@ -884,7 +884,7 @@ describe('RoommateApplicationService', () => {
 						fullName: 'John Doe 2',
 						phoneNumber: '+84901234568',
 						moveInDate: new Date('2024-01-01'),
-						status: RoommateApplicationStatus.approved_by_tenant,
+						status: RequestStatus.accepted,
 					},
 				],
 			});

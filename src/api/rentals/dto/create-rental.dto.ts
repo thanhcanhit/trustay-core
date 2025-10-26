@@ -3,7 +3,7 @@ import { IsDateString, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-va
 
 export class CreateRentalDto {
 	@ApiPropertyOptional({
-		description: 'ID của booking request (nếu rental tạo từ booking request)',
+		description: 'ID của room booking (nếu rental tạo từ room booking)',
 		example: '550e8400-e29b-41d4-a716-446655440000',
 	})
 	@IsOptional()

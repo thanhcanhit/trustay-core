@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RoommateApplicationStatus } from '../../../common/enums/roommate-application-status.enum';
+import { RequestStatus } from '@prisma/client';
 
 export class RoommateApplicationResponseDto {
 	@ApiProperty()
@@ -29,8 +29,8 @@ export class RoommateApplicationResponseDto {
 	@ApiPropertyOptional()
 	applicationMessage?: string;
 
-	@ApiProperty({ enum: RoommateApplicationStatus })
-	status: RoommateApplicationStatus;
+	@ApiProperty({ enum: RequestStatus })
+	status: RequestStatus;
 
 	@ApiPropertyOptional()
 	tenantResponse?: string;

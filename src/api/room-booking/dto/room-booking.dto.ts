@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { BookingStatus } from '@prisma/client';
+import { RequestStatus } from '@prisma/client';
 
 export class BookingRequestResponseDto {
 	@ApiProperty({
@@ -70,10 +70,10 @@ export class BookingRequestResponseDto {
 
 	@ApiProperty({
 		description: 'Trạng thái booking',
-		enum: BookingStatus,
+		enum: RequestStatus,
 		example: 'pending',
 	})
-	status: BookingStatus;
+	status: RequestStatus;
 
 	@ApiProperty({
 		description: 'Thời gian tạo',

@@ -35,8 +35,8 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		expiresInDays: 7,
 	},
 
-	[NotificationType.BOOKING_REQUEST_APPROVED]: {
-		type: NotificationType.BOOKING_REQUEST_APPROVED,
+	[NotificationType.BOOKING_REQUEST_ACCEPTED]: {
+		type: NotificationType.BOOKING_REQUEST_ACCEPTED,
 		title: 'Yêu cầu booking được chấp nhận',
 		message: 'Yêu cầu booking phòng {{roomName}} của bạn đã được chấp nhận!',
 	},
@@ -74,17 +74,10 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		message: 'Lời mời thuê phòng {{roomName}} của bạn đã được {{tenantName}} chấp nhận',
 	},
 
-	[NotificationType.ROOM_INVITATION_DECLINED]: {
-		type: NotificationType.ROOM_INVITATION_DECLINED,
-		title: 'Lời mời bị từ chối',
-		message: 'Lời mời thuê phòng {{roomName}} của bạn đã bị {{tenantName}} từ chối',
-	},
-
 	[NotificationType.ROOM_INVITATION_REJECTED]: {
 		type: NotificationType.ROOM_INVITATION_REJECTED,
 		title: 'Lời mời bị từ chối',
-		message:
-			'Lời mời thuê phòng {{roomName}} của bạn đã bị {{tenantName}} từ chối{{#reason}} với lý do: {{reason}}{{/reason}}',
+		message: 'Lời mời thuê phòng {{roomName}} của bạn đã bị {{tenantName}} từ chối',
 	},
 
 	[NotificationType.ROOM_INVITATION_WITHDRAWN]: {
@@ -180,20 +173,6 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		title: 'Nhắc nhở thanh toán',
 		message: 'Hóa đơn {{billId}} sẽ đến hạn vào {{dueDate}}. Tổng: {{amount}}đ',
 		expiresInDays: 15,
-	},
-
-	// Review Related
-	[NotificationType.REVIEW_RECEIVED]: {
-		type: NotificationType.REVIEW_RECEIVED,
-		title: 'Đánh giá mới',
-		message: 'Bạn nhận được đánh giá mới {{stars}} sao từ {{reviewerName}} cho {{subject}}',
-	},
-
-	[NotificationType.REVIEW_REQUEST]: {
-		type: NotificationType.REVIEW_REQUEST,
-		title: 'Yêu cầu đánh giá',
-		message: 'Vui lòng đánh giá trải nghiệm thuê phòng {{roomName}} của bạn',
-		expiresInDays: 30,
 	},
 
 	// Roommate Related

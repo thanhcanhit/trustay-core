@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import { BookingRequestsModule } from './api/booking-requests/booking-requests.module';
+import { BillsModule } from './api/bills/bills.module';
 import { BuildingModule } from './api/buildings/building.module';
 import { ChatModule } from './api/chat/chat.module';
 import { ContractsModule } from './api/contracts/contracts.module';
@@ -16,6 +16,7 @@ import { WardModule } from './api/provinces/ward/ward.module';
 import { RatingModule } from './api/rating/rating.module';
 import { ReferenceModule } from './api/reference/reference.module';
 import { RentalsModule } from './api/rentals/rentals.module';
+import { RoomBookingsModule } from './api/room-booking/room-booking.module';
 import { RoomInvitationsModule } from './api/room-invitations/room-invitations.module';
 import { RoomSeekingPostModule } from './api/room-seeking-post/room-seeking-post.module';
 import { RoommateApplicationModule } from './api/roommate-application/roommate-application.module';
@@ -65,7 +66,8 @@ import { RealtimeModule } from './realtime/realtime.module';
 		AddressModule,
 		UsersModule,
 		AuthModule,
-		BookingRequestsModule,
+		RoomBookingsModule,
+		BillsModule,
 		BuildingModule,
 		ContractsModule,
 		ListingModule,

@@ -9,8 +9,8 @@ export class PaymentResponseDto {
 	@ApiProperty({ description: 'ID của rental' })
 	rentalId: string;
 
-	@ApiProperty({ description: 'ID của monthly bill', required: false })
-	monthlyBillId?: string;
+	@ApiProperty({ description: 'ID của bill', required: false })
+	billId?: string;
 
 	@ApiProperty({ description: 'ID người thanh toán' })
 	payerId: string;

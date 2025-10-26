@@ -163,7 +163,7 @@ export class UpdateRoomCostDto {
 	@ApiPropertyOptional({
 		description: 'Loại tính phí',
 		enum: CostType,
-		example: CostType.per_unit,
+		example: CostType.per_person,
 		default: CostType.fixed,
 	})
 	@IsOptional()

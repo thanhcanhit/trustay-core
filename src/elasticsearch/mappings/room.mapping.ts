@@ -124,12 +124,39 @@ export const roomIndexMapping = {
 		},
 	},
 	settings: {
-		number_of_shards: 1,
+		number_of_shards: 2, // Increased from 1 for better parallelization
 		number_of_replicas: 1,
+		refresh_interval: '30s', // Reduce refresh frequency for better indexing performance
 		analysis: {
 			analyzer: {
 				standard: {
 					type: 'standard',
+				},
+			},
+		},
+		// Add index optimization settings
+		index: {
+			// Enable field data caching for frequently accessed fields
+			fielddata: {
+				'building.provinceId': true,
+				'building.districtId': true,
+				'building.wardId': true,
+				roomType: true,
+				isVerified: true,
+			},
+			// Optimize for search performance
+			search: {
+				slowlog: {
+					threshold: {
+						query: {
+							warn: '2s',
+							info: '1s',
+						},
+						fetch: {
+							warn: '1s',
+							info: '500ms',
+						},
+					},
 				},
 			},
 		},

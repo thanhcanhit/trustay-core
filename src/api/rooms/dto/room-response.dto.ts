@@ -56,17 +56,17 @@ export class RoomAmenityResponseDto {
 
 	@ApiProperty({ example: 'Điều hòa' })
 	@Expose()
-	@Transform(({ obj }) => obj.systemAmenity?.name)
+	@Transform(({ obj }) => obj.amenity?.name)
 	name: string;
 
 	@ApiProperty({ example: 'Air conditioning' })
 	@Expose()
-	@Transform(({ obj }) => obj.systemAmenity?.nameEn)
+	@Transform(({ obj }) => obj.amenity?.nameEn)
 	nameEn: string;
 
 	@ApiProperty({ example: 'basic' })
 	@Expose()
-	@Transform(({ obj }) => obj.systemAmenity?.category)
+	@Transform(({ obj }) => obj.amenity?.category)
 	category: string;
 
 	@ApiPropertyOptional({ example: '2 chiếc' })
@@ -85,17 +85,17 @@ export class RoomCostResponseDto {
 
 	@ApiProperty({ example: 'Internet' })
 	@Expose()
-	@Transform(({ obj }) => obj.systemCostType?.name)
+	@Transform(({ obj }) => obj.costTypeTemplate?.name)
 	name: string;
 
 	@ApiProperty({ example: 'internet' })
 	@Expose()
-	@Transform(({ obj }) => obj.systemCostType?.nameEn)
+	@Transform(({ obj }) => obj.costTypeTemplate?.nameEn)
 	nameEn: string;
 
 	@ApiProperty({ example: 'service' })
 	@Expose()
-	@Transform(({ obj }) => obj.systemCostType?.category)
+	@Transform(({ obj }) => obj.costTypeTemplate?.category)
 	category: string;
 
 	@ApiProperty({ example: 'fixed' })
@@ -159,22 +159,22 @@ export class RoomRuleResponseDto {
 
 	@ApiProperty({ example: 'Không hút thuốc' })
 	@Expose()
-	@Transform(({ obj }) => obj.systemRule?.name)
+	@Transform(({ obj }) => obj.ruleTemplate?.name)
 	name: string;
 
 	@ApiProperty({ example: 'No smoking' })
 	@Expose()
-	@Transform(({ obj }) => obj.systemRule?.nameEn)
+	@Transform(({ obj }) => obj.ruleTemplate?.nameEn)
 	nameEn: string;
 
 	@ApiProperty({ example: 'smoking' })
 	@Expose()
-	@Transform(({ obj }) => obj.systemRule?.category)
+	@Transform(({ obj }) => obj.ruleTemplate?.category)
 	category: string;
 
 	@ApiProperty({ example: 'forbidden' })
 	@Expose()
-	@Transform(({ obj }) => obj.systemRule?.ruleType)
+	@Transform(({ obj }) => obj.ruleTemplate?.ruleType)
 	ruleType: string;
 
 	@ApiPropertyOptional({ example: 'Sau 22h00' })

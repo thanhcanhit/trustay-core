@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { InvitationStatus } from '@prisma/client';
+import { RequestStatus } from '@prisma/client';
 
 export class RoomInvitationResponseDto {
 	@ApiProperty({
@@ -58,10 +58,10 @@ export class RoomInvitationResponseDto {
 
 	@ApiProperty({
 		description: 'Trạng thái lời mời',
-		enum: InvitationStatus,
+		enum: RequestStatus,
 		example: 'pending',
 	})
-	status: InvitationStatus;
+	status: RequestStatus;
 
 	@ApiProperty({
 		description: 'Thời gian tạo',

@@ -216,7 +216,7 @@ export class NotificationsService {
 		return this.createNotification(notification);
 	}
 
-	async notifyBookingApproved(
+	async notifyBookingAccepted(
 		tenantId: string,
 		data: {
 			roomName: string;
@@ -224,7 +224,7 @@ export class NotificationsService {
 			bookingId: string;
 		},
 	) {
-		const notification = this.notificationFactory.createBookingApprovedNotification(tenantId, data);
+		const notification = this.notificationFactory.createBookingAcceptedNotification(tenantId, data);
 		return this.createNotification(notification);
 	}
 
@@ -296,27 +296,11 @@ export class NotificationsService {
 		return this.createNotification(notification);
 	}
 
-	async notifyInvitationDeclined(
-		landlordId: string,
-		data: {
-			roomName: string;
-			tenantName: string;
-			invitationId: string;
-		},
-	) {
-		const notification = this.notificationFactory.createInvitationDeclinedNotification(
-			landlordId,
-			data,
-		);
-		return this.createNotification(notification);
-	}
-
 	async notifyInvitationRejected(
 		landlordId: string,
 		data: {
 			roomName: string;
 			tenantName: string;
-			reason?: string;
 			invitationId: string;
 		},
 	) {
@@ -440,7 +424,7 @@ export class NotificationsService {
 	}
 
 	// Payment & Billing Notifications
-	async notifyMonthlyBill(
+	async notifyBill(
 		tenantId: string,
 		data: {
 			month: number;
@@ -448,9 +432,11 @@ export class NotificationsService {
 			roomName: string;
 			amount: number;
 			billId: string;
+			dueDate: Date;
+			landlordName: string;
 		},
 	) {
-		const notification = this.notificationFactory.createMonthlyBillNotification(tenantId, data);
+		const notification = this.notificationFactory.createBillNotification(tenantId, data);
 		return this.createNotification(notification);
 	}
 
@@ -506,31 +492,6 @@ export class NotificationsService {
 		},
 	) {
 		const notification = this.notificationFactory.createPaymentReminderNotification(tenantId, data);
-		return this.createNotification(notification);
-	}
-
-	// Review Related Notifications
-	async notifyReviewReceived(
-		userId: string,
-		data: {
-			stars: number;
-			reviewerName: string;
-			subject: string;
-			reviewId: string;
-		},
-	) {
-		const notification = this.notificationFactory.createReviewReceivedNotification(userId, data);
-		return this.createNotification(notification);
-	}
-
-	async notifyReviewRequest(
-		userId: string,
-		data: {
-			roomName: string;
-			rentalId: string;
-		},
-	) {
-		const notification = this.notificationFactory.createReviewRequestNotification(userId, data);
 		return this.createNotification(notification);
 	}
 

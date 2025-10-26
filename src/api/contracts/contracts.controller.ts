@@ -701,12 +701,12 @@ export class ContractsController {
 							include: {
 								amenities: {
 									include: {
-										systemAmenity: true,
+										amenity: true,
 									},
 								},
 								costs: {
 									include: {
-										systemCostType: true,
+										costTypeTemplate: true,
 									},
 								},
 								building: {

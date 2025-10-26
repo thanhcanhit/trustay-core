@@ -62,7 +62,7 @@ export class RoomInvitationsController {
 	@ApiQuery({
 		name: 'status',
 		required: false,
-		enum: ['pending', 'accepted', 'declined', 'withdrawn'],
+		enum: ['pending', 'accepted', 'rejected', 'expired', 'cancelled', 'awaiting_confirmation'],
 		description: 'Lọc theo trạng thái',
 	})
 	@ApiQuery({
@@ -99,7 +99,7 @@ export class RoomInvitationsController {
 	@ApiQuery({
 		name: 'status',
 		required: false,
-		enum: ['pending', 'accepted', 'declined', 'withdrawn'],
+		enum: ['pending', 'accepted', 'rejected', 'expired', 'cancelled', 'awaiting_confirmation'],
 		description: 'Lọc theo trạng thái',
 	})
 	@ApiQuery({
@@ -141,7 +141,7 @@ export class RoomInvitationsController {
 	@ApiQuery({
 		name: 'status',
 		required: false,
-		enum: ['pending', 'accepted', 'declined', 'withdrawn'],
+		enum: ['pending', 'accepted', 'rejected', 'expired', 'cancelled', 'awaiting_confirmation'],
 		description: 'Lọc theo trạng thái',
 	})
 	@ApiResponse({
