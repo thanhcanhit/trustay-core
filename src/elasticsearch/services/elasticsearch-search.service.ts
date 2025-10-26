@@ -102,16 +102,24 @@ export class ElasticsearchSearchService {
 		// Price range filter
 		if (minPrice !== undefined || maxPrice !== undefined) {
 			const priceRange: any = {};
-			if (minPrice !== undefined) priceRange.gte = minPrice;
-			if (maxPrice !== undefined) priceRange.lte = maxPrice;
+			if (minPrice !== undefined) {
+				priceRange.gte = minPrice;
+			}
+			if (maxPrice !== undefined) {
+				priceRange.lte = maxPrice;
+			}
 			filter.push({ range: { 'pricing.basePriceMonthly': priceRange } });
 		}
 
 		// Area range filter
 		if (minArea !== undefined || maxArea !== undefined) {
 			const areaRange: any = {};
-			if (minArea !== undefined) areaRange.gte = minArea;
-			if (maxArea !== undefined) areaRange.lte = maxArea;
+			if (minArea !== undefined) {
+				areaRange.gte = minArea;
+			}
+			if (maxArea !== undefined) {
+				areaRange.lte = maxArea;
+			}
 			filter.push({ range: { areaSqm: areaRange } });
 		}
 
@@ -151,57 +159,68 @@ export class ElasticsearchSearchService {
 			});
 		}
 
-		// Build function_score for relevance boosting
-		const functionScore: any = {
-			query: {
-				bool: {
-					must,
-					filter,
-				},
+		// Build base query
+		const baseQuery = {
+			bool: {
+				must,
+				filter,
 			},
-			functions: [
+		};
+
+		// Only use function_score when we have search text or need relevance scoring
+		let finalQuery = baseQuery;
+		if (search || sortBy === 'relevance') {
+			const functionScore: any = {
+				query: baseQuery,
+				functions: [],
+				score_mode: 'sum',
+				boost_mode: 'multiply',
+			};
+
+			// Only add boosting functions when we have search text
+			if (search) {
 				// Boost verified rooms
-				{
+				functionScore.functions.push({
 					filter: { term: { isVerified: true } },
 					weight: 1.5,
-				},
+				});
 				// Boost by owner rating
-				{
+				functionScore.functions.push({
 					field_value_factor: {
 						field: 'building.ownerRating',
 						factor: 0.2,
 						modifier: 'log1p',
 						missing: 0,
 					},
-				},
+				});
 				// Boost by view count (popularity)
-				{
+				functionScore.functions.push({
 					field_value_factor: {
 						field: 'viewCount',
 						factor: 0.1,
 						modifier: 'log1p',
 						missing: 0,
 					},
-				},
-			],
-			score_mode: 'sum',
-			boost_mode: 'multiply',
-		};
+				});
 
-		// Add geo decay if location provided
-		if (latitude && longitude) {
-			functionScore.functions.push({
-				gauss: {
-					'building.location': {
-						origin: {
-							lat: latitude,
-							lon: longitude,
+				// Add geo decay if location provided
+				if (latitude && longitude) {
+					functionScore.functions.push({
+						gauss: {
+							'building.location': {
+								origin: {
+									lat: latitude,
+									lon: longitude,
+								},
+								scale: '5km',
+								decay: 0.5,
+							},
 						},
-						scale: '5km',
-						decay: 0.5,
-					},
-				},
-			});
+					});
+				}
+			}
+
+			finalQuery = functionScore;
 		}
 
 		// Build sort
@@ -231,17 +250,15 @@ export class ElasticsearchSearchService {
 			sort.push({ [safeSortField]: { order: sortOrder } });
 		}
 
-		// Add secondary sort by score
-		if (sortBy !== 'relevance') {
+		// Add secondary sort by score only when using function_score
+		if (sortBy !== 'relevance' && (search || sortBy === 'relevance')) {
 			sort.push({ _score: { order: 'desc' } });
 		}
 
 		try {
 			const response = await this.elasticsearchService.search({
 				index: ROOM_INDEX,
-				query: {
-					function_score: functionScore,
-				},
+				query: finalQuery,
 				sort,
 				from: (page - 1) * limit,
 				size: limit,
@@ -403,8 +420,12 @@ export class ElasticsearchSearchService {
 		// Price range
 		if (minPrice !== undefined || maxPrice !== undefined) {
 			const priceRange: any = {};
-			if (minPrice !== undefined) priceRange.gte = minPrice;
-			if (maxPrice !== undefined) priceRange.lte = maxPrice;
+			if (minPrice !== undefined) {
+				priceRange.gte = minPrice;
+			}
+			if (maxPrice !== undefined) {
+				priceRange.lte = maxPrice;
+			}
 			filter.push({ range: { monthlyRent: priceRange } });
 		}
 
