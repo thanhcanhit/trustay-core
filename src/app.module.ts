@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AiModule } from './ai/ai.module';
 import { BillsModule } from './api/bills/bills.module';
 import { BuildingModule } from './api/buildings/building.module';
 import { ChatModule } from './api/chat/chat.module';
@@ -22,6 +23,7 @@ import { RoomSeekingPostModule } from './api/room-seeking-post/room-seeking-post
 import { RoommateApplicationModule } from './api/roommate-application/roommate-application.module';
 import { RoommateSeekingPostModule } from './api/roommate-seeking-post/roommate-seeking-post.module';
 import { RoomsModule } from './api/rooms/rooms.module';
+import { SearchModule } from './api/search/search.module';
 import { TenantPreferencesModule } from './api/tenant-preferences/tenant-preferences.module';
 import { UsersModule } from './api/users/users.module';
 import { AppController } from './app.controller';
@@ -81,10 +83,12 @@ import { RealtimeModule } from './realtime/realtime.module';
 		RoomSeekingPostModule,
 		RoommateSeekingPostModule,
 		RoommateApplicationModule,
+		SearchModule,
 		TenantPreferencesModule,
 		RealtimeModule,
 		ChatModule,
 		LandlordModule,
+		AiModule,
 	],
 	controllers: [AppController],
 	providers: [

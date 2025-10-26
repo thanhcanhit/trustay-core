@@ -44,6 +44,13 @@ export interface AppConfig {
 		maxRetries: number;
 		requestTimeout: number;
 	};
+	ai: {
+		googleApiKey: string;
+		temperature: number;
+		maxTokens: number;
+		limit: number;
+		model: string;
+	};
 }
 
 /**
@@ -91,6 +98,13 @@ const getConfig = (): AppConfig => ({
 		password: process.env.ELASTICSEARCH_PASSWORD ?? '',
 		maxRetries: parseInt(process.env.ELASTICSEARCH_MAX_RETRIES ?? '3', 10),
 		requestTimeout: parseInt(process.env.ELASTICSEARCH_REQUEST_TIMEOUT ?? '30000', 10),
+	},
+	ai: {
+		googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? '',
+		temperature: parseFloat(process.env.AI_TEMPERATURE ?? '0.1'),
+		maxTokens: parseInt(process.env.AI_MAX_TOKENS ?? '500', 10),
+		limit: parseInt(process.env.AI_LIMIT ?? '100', 10),
+		model: process.env.AI_MODEL ?? 'gemini-1.5-flash-latest',
 	},
 });
 

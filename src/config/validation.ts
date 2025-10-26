@@ -34,4 +34,11 @@ export const validationSchema = Joi.object({
 
 	// Resend
 	RESEND_API_KEY: Joi.string().required(),
+
+	// AI Services
+	GOOGLE_GENERATIVE_AI_API_KEY: Joi.string().optional(),
+	AI_TEMPERATURE: Joi.number().min(0).max(1).default(0.1),
+	AI_MAX_TOKENS: Joi.number().positive().default(500),
+	AI_LIMIT: Joi.number().positive().default(100),
+	AI_MODEL: Joi.string().default('gemini-1.5-flash-latest'),
 });

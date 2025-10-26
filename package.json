@@ -32,9 +32,11 @@
     "es:seed": "node scripts/seed-elasticsearch.js",
     "es:seed:rooms": "node scripts/seed-elasticsearch.js --index=rooms",
     "es:seed:reindex": "node scripts/seed-elasticsearch.js --reindex",
-    "db:embeddings": "node scripts/emmbedings-db-schema.mjs"
+    "db:embeddings": "node scripts/emmbedings-db-schema.mjs",
+    "ai:build-embeddings": "ts-node src/ai/scripts/build-schema-embeddings.ts"
   },
   "dependencies": {
+    "@ai-sdk/google": "^2.0.23",
     "@elastic/elasticsearch": "^8.19.1",
     "@google/genai": "^1.27.0",
     "@nestjs/bull": "^11.0.3",
@@ -54,6 +56,8 @@
     "@types/crypto-js": "^4.2.2",
     "@types/multer": "^2.0.0",
     "@types/puppeteer": "^7.0.4",
+    "@xenova/transformers": "^2.17.2",
+    "ai": "^5.0.79",
     "bcryptjs": "^2.4.3",
     "bull": "^4.16.5",
     "bullmq": "^5.60.0",

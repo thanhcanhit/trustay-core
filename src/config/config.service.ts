@@ -90,4 +90,15 @@ export class AppConfigService {
 			limit: this.configService.get<number>('rateLimit.limit')!,
 		};
 	}
+
+	// AI configuration getters
+	get aiConfig() {
+		return {
+			googleApiKey: this.configService.get<string>('ai.googleApiKey')!,
+			temperature: this.configService.get<number>('ai.temperature')!,
+			maxTokens: this.configService.get<number>('ai.maxTokens')!,
+			limit: this.configService.get<number>('ai.limit')!,
+			model: this.configService.get<string>('ai.model')!,
+		};
+	}
 }
