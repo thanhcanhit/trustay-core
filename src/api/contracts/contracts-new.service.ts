@@ -130,6 +130,7 @@ export class ContractsNewService {
 
 	/**
 	 * Helper: Tạo Contract từ Rental (tự động điền thông tin từ rental)
+	 * Được gọi tự động khi tạo rental mới
 	 */
 	async createContractFromRental(
 		rentalId: string,
@@ -403,6 +404,34 @@ export class ContractsNewService {
 		}
 
 		return this.formatContractResponse(updatedContract);
+	}
+
+	/**
+	 * Kiểm tra và tạo contract cho rental nếu chưa có
+	 * Hữu ích cho việc migrate hoặc xử lý rental cũ
+	 */
+	async ensureContractForRental(rentalId: string, userId: string) {
+		const rental = await this.prisma.rental.findUnique({
+			where: { id: rentalId },
+			include: { contract: true },
+		});
+
+		if (!rental) {
+			throw new NotFoundException('Rental not found');
+		}
+
+		// Check quyền (phải là landlord hoặc tenant)
+		if (rental.ownerId !== userId && rental.tenantId !== userId) {
+			throw new ForbiddenException('You are not authorized to create contract for this rental');
+		}
+
+		// Nếu đã có contract, return contract hiện tại
+		if (rental.contract) {
+			return this.getContractById(rental.contract.id, userId);
+		}
+
+		// Tạo contract mới
+		return this.createContractFromRental(rentalId, userId);
 	}
 
 	/**

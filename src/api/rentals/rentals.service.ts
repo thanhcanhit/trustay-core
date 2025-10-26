@@ -2,6 +2,7 @@ import {
 	BadRequestException,
 	ForbiddenException,
 	Injectable,
+	Logger,
 	NotFoundException,
 } from '@nestjs/common';
 import { RentalStatus, RequestStatus, UserRole } from '@prisma/client';
@@ -12,6 +13,8 @@ import { CreateRentalDto, QueryRentalDto, TerminateRentalDto, UpdateRentalDto } 
 
 @Injectable()
 export class RentalsService {
+	private readonly logger = new Logger(RentalsService.name);
+
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly notificationsService: NotificationsService,
@@ -187,10 +190,14 @@ export class RentalsService {
 
 		// Auto-create contract when rental is created (new contracts flow)
 		try {
-			await this.contractsService.createContractFromRental(rental.id, ownerId);
-		} catch {
+			const contract = await this.contractsService.createContractFromRental(rental.id, ownerId);
+			this.logger.log(
+				`Contract ${contract.contractCode} created successfully for rental ${rental.id}`,
+			);
+		} catch (error) {
 			// Log error but don't fail the rental creation
-			// TODO: Add proper logging service
+			this.logger.error(`Failed to create contract for rental ${rental.id}:`, error.message);
+			// TODO: Consider adding to a retry queue or notification system
 		}
 
 		return this.transformToResponseDto(rental);
@@ -627,5 +634,42 @@ export class RentalsService {
 		});
 
 		return this.transformToResponseDto(updatedRental);
+	}
+
+	/**
+	 * Tạo contract cho rental nếu chưa có
+	 * Hữu ích cho việc migrate hoặc xử lý rental cũ
+	 */
+	async createContractForRental(rentalId: string, userId: string) {
+		const rental = await this.prisma.rental.findUnique({
+			where: { id: rentalId },
+			include: { contract: true },
+		});
+
+		if (!rental) {
+			throw new NotFoundException('Rental not found');
+		}
+
+		// Check quyền (phải là landlord hoặc tenant)
+		if (rental.ownerId !== userId && rental.tenantId !== userId) {
+			throw new ForbiddenException('You are not authorized to create contract for this rental');
+		}
+
+		// Nếu đã có contract, return error
+		if (rental.contract) {
+			throw new BadRequestException(
+				`Rental already has a contract (${rental.contract.contractCode})`,
+			);
+		}
+
+		// Check rental phải active
+		if (rental.status !== 'active') {
+			throw new BadRequestException(
+				`Cannot create contract for rental with status: ${rental.status}`,
+			);
+		}
+
+		// Tạo contract
+		return this.contractsService.createContractFromRental(rentalId, userId);
 	}
 }
