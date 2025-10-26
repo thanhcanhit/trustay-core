@@ -24,6 +24,8 @@
     "test:pdf:standalone": "node scripts/test-pdf-generation.mjs",
     "db:setup": "node scripts/index.js sequence all",
     "db:setup-sample": "node scripts/index.js sequence sample",
+    "db:setup-fast": "node scripts/index.js sequence fast-all",
+    "db:setup-fast-sample": "node scripts/index.js sequence fast-sample",
     "db:import-sample": "node scripts/index.js script crawl-sample",
     "db:validate-data": "node scripts/crawl-import.js validate",
     "db:import-full": "node scripts/crawl-import.js import",

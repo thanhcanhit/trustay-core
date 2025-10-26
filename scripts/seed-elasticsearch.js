@@ -186,7 +186,7 @@ async function seedRooms(prisma, syncService) {
 				},
 				amenities: {
 					include: {
-						systemAmenity: {
+						amenity: {
 							select: { id: true, name: true },
 						},
 					},

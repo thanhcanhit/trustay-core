@@ -9,13 +9,13 @@ async function importSystemRoomRules() {
 	// Check if we already have room rules data
 	let existingCount = 0;
 	try {
-		existingCount = await prisma.systemRoomRule.count();
+		existingCount = await prisma.roomRuleTemplate.count();
 	} catch (error) {
-		console.log('⚠️ SystemRoomRule table does not exist yet, proceeding with import...');
+		console.log('⚠️ RoomRuleTemplate table does not exist yet, proceeding with import...');
 	}
 
 	if (existingCount > 0) {
-		console.log(`⏭️ System room rules already exist (${existingCount} rules). Skipping import.`);
+		console.log(`⏭️ Room rule templates already exist (${existingCount} rules). Skipping import.`);
 		console.log('✨ Room rules import completed: 0 created, 0 skipped (data exists)\n');
 		return;
 	}
@@ -26,7 +26,7 @@ async function importSystemRoomRules() {
 	for (const ruleData of defaultRoomRules) {
 		try {
 			// Check if rule already exists
-			const existing = await prisma.systemRoomRule.findUnique({
+			const existing = await prisma.roomRuleTemplate.findUnique({
 				where: { nameEn: ruleData.nameEn },
 			});
 
@@ -36,7 +36,7 @@ async function importSystemRoomRules() {
 				continue;
 			}
 
-			await prisma.systemRoomRule.create({
+			await prisma.roomRuleTemplate.create({
 				data: {
 					...ruleData,
 					isActive: true,
@@ -57,7 +57,7 @@ async function clearSystemRoomRules() {
 	console.log('🗑️  Clearing system room rules...');
 
 	try {
-		const deleteResult = await prisma.systemRoomRule.deleteMany({
+		const deleteResult = await prisma.roomRuleTemplate.deleteMany({
 			where: {
 				nameEn: {
 					in: defaultRoomRules.map((rule) => rule.nameEn),
@@ -65,7 +65,7 @@ async function clearSystemRoomRules() {
 			},
 		});
 
-		console.log(`✅ Deleted ${deleteResult.count} system room rules\n`);
+		console.log(`✅ Deleted ${deleteResult.count} room rule templates\n`);
 	} catch (error) {
 		console.error('❌ Error clearing room rules:', error.message);
 		throw error;
@@ -85,8 +85,8 @@ async function main() {
 		}
 
 		// Display summary
-		const rulesCount = await prisma.systemRoomRule.count({ where: { isActive: true } });
-		const rulesByCategory = await prisma.systemRoomRule.groupBy({
+		const rulesCount = await prisma.roomRuleTemplate.count({ where: { isActive: true } });
+		const rulesByCategory = await prisma.roomRuleTemplate.groupBy({
 			by: ['category'],
 			where: { isActive: true },
 			_count: {
@@ -95,7 +95,7 @@ async function main() {
 		});
 
 		console.log('📊 Summary:');
-		console.log(`   • Total Room Rules: ${rulesCount}`);
+		console.log(`   • Total Room Rule Templates: ${rulesCount}`);
 
 		console.log('\n📋 Rules by Category:');
 		rulesByCategory.forEach(({ category, _count }) => {

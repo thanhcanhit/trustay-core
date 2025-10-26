@@ -106,7 +106,7 @@ async function applyIntelligentAmenities(roomId, description, existingAmenities,
 		if (hasAmenity) {
 			try {
 				// ONLY find existing system amenity from default-amenities.js - DO NOT create new
-				const systemAmenity = await prisma.systemAmenity.findUnique({
+				const systemAmenity = await prisma.amenity.findUnique({
 					where: { nameEn: mapping.nameEn },
 				});
 
@@ -116,7 +116,7 @@ async function applyIntelligentAmenities(roomId, description, existingAmenities,
 						.create({
 							data: {
 								roomId: roomId,
-								systemAmenityId: systemAmenity.id,
+								amenityId: systemAmenity.id,
 							},
 						})
 						.catch(() => {}); // Ignore if already exists
@@ -337,7 +337,7 @@ async function applyIntelligentCostTypes(roomId, _description, price) {
 	for (const costMapping of costTypeMappings) {
 		try {
 			// Find system cost type
-			const systemCostType = await prisma.systemCostType.findUnique({
+			const systemCostType = await prisma.costTypeTemplate.findUnique({
 				where: { nameEn: costMapping.nameEn },
 			});
 
@@ -347,9 +347,9 @@ async function applyIntelligentCostTypes(roomId, _description, price) {
 					.create({
 						data: {
 							roomId: roomId,
-							systemCostTypeId: systemCostType.id,
+							costTypeTemplateId: systemCostType.id,
 							costType: costMapping.costType,
-							baseRate: costMapping.baseRate,
+							fixedAmount: costMapping.baseRate,
 							billingCycle: costMapping.billingCycle,
 							isActive: true,
 						},
@@ -421,7 +421,7 @@ async function applyIntelligentRoomRules(roomId, description, price) {
 	for (const ruleMapping of ruleMappings) {
 		try {
 			// Find system room rule
-			const systemRoomRule = await prisma.systemRoomRule.findUnique({
+			const systemRoomRule = await prisma.roomRuleTemplate.findUnique({
 				where: { nameEn: ruleMapping.nameEn },
 			});
 
@@ -431,7 +431,7 @@ async function applyIntelligentRoomRules(roomId, description, price) {
 					.create({
 						data: {
 							roomId: roomId,
-							systemRuleId: systemRoomRule.id,
+							ruleTemplateId: systemRoomRule.id,
 							isEnforced: true,
 						},
 					})
