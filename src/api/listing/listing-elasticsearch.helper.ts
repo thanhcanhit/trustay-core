@@ -142,7 +142,7 @@ export class ListingElasticsearchHelper {
 						id: true,
 						customValue: true,
 						notes: true,
-						systemAmenity: {
+						amenity: {
 							select: {
 								id: true,
 								name: true,
@@ -155,10 +155,10 @@ export class ListingElasticsearchHelper {
 				costs: {
 					select: {
 						id: true,
-						baseRate: true,
+						fixedAmount: true,
 						currency: true,
 						notes: true,
-						systemCostType: {
+						costTypeTemplate: {
 							select: {
 								id: true,
 								name: true,
@@ -189,7 +189,7 @@ export class ListingElasticsearchHelper {
 						customValue: true,
 						isEnforced: true,
 						notes: true,
-						systemRule: {
+						ruleTemplate: {
 							select: {
 								id: true,
 								ruleType: true,
@@ -207,7 +207,7 @@ export class ListingElasticsearchHelper {
 		const sortedRooms = roomIds.map((id) => roomMap.get(id)).filter(Boolean);
 
 		// Get unique owner IDs for batch fetching stats
-		const uniqueOwnerIds = [...new Set(sortedRooms.map((room) => room.building.owner.id))];
+		const uniqueOwnerIds = [...new Set(sortedRooms.map((room) => room.buildingId))];
 
 		// Batch get owner statistics
 		const ownerStatsMap = new Map<string, { totalBuildings: number; totalRoomInstances: number }>();
@@ -224,7 +224,7 @@ export class ListingElasticsearchHelper {
 				includeDistance: Boolean(query.latitude && query.longitude),
 				latitude: query.latitude,
 				longitude: query.longitude,
-				ownerStats: ownerStatsMap.get(room.building.owner.id),
+				ownerStats: ownerStatsMap.get(room.buildingId),
 			}),
 		);
 

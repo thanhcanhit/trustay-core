@@ -7,7 +7,7 @@ export class RoomCostDto {
 	id: string;
 
 	@ApiProperty({ description: 'Associated system cost type', type: SystemCostTypeDto })
-	systemCostType: SystemCostTypeDto;
+	costTypeTemplate: SystemCostTypeDto;
 
 	@ApiProperty({
 		description: 'Type of cost calculation',
@@ -107,7 +107,7 @@ export class RoomCostDto {
 
 export class CreateRoomCostDto {
 	@ApiProperty({ description: 'System cost type ID' })
-	systemCostTypeId: string;
+	costTypeTemplateId: string;
 
 	@ApiProperty({
 		description: 'Type of cost calculation',

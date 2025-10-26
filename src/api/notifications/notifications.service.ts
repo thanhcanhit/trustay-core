@@ -432,6 +432,8 @@ export class NotificationsService {
 			roomName: string;
 			amount: number;
 			billId: string;
+			dueDate: Date;
+			landlordName: string;
 		},
 	) {
 		const notification = this.notificationFactory.createBillNotification(tenantId, data);

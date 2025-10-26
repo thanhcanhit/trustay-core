@@ -125,11 +125,9 @@ enum RuleType {
 }
 
 enum CostType {
-  fixed // Giá cố định hàng tháng
-  per_unit // Theo đơn vị (kWh, m³)
-  metered // Theo đồng hồ
-  percentage // Theo phần trăm
-  tiered // Bậc thang (khác nhau theo mức sử dụng)
+  fixed // Cố định - giá cố định hàng tháng
+  per_person // Theo người - chia đều cho số người ở
+  metered // Thang đo - theo đồng hồ (điện, nước)
 }
 
 enum BillingCycle {
@@ -479,7 +477,7 @@ model RoomImage {
 // SIMPLIFIED ROOM RULES SYSTEM
 // ========================================
 
-model SystemRoomRule {
+model RoomRuleTemplate {
   id          String       @id @default(uuid())
   name        String
   nameEn      String       @unique @map("name_en")
@@ -496,13 +494,13 @@ model SystemRoomRule {
 
   @@index([category])
   @@index([isActive])
-  @@map("system_room_rules")
+  @@map("room_rule_templates")
 }
 
 model RoomRule {
   id           String   @id @default(uuid())
   roomId       String   @map("room_id")
-  systemRuleId String   @map("system_rule_id")
+  ruleTemplateId String   @map("rule_template_id")
   customValue  String?  @map("custom_value")
   isEnforced   Boolean  @default(true) @map("is_enforced")
   notes        String?
@@ -510,11 +508,11 @@ model RoomRule {
 
   // Relations
   room       Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  systemRule SystemRoomRule @relation(fields: [systemRuleId], references: [id], onDelete: Cascade)
+  ruleTemplate RoomRuleTemplate @relation(fields: [ruleTemplateId], references: [id], onDelete: Cascade)
 
-  @@unique([roomId, systemRuleId])
+  @@unique([roomId, ruleTemplateId])
   @@index([roomId])
-  @@index([systemRuleId])
+  @@index([ruleTemplateId])
   @@map("room_rules")
 }
 
@@ -522,7 +520,7 @@ model RoomRule {
 // SIMPLIFIED AMENITIES SYSTEM
 // ========================================
 
-model SystemAmenity {
+model Amenity {
   id          String          @id @default(uuid())
   name        String
   nameEn      String          @unique @map("name_en")
@@ -539,24 +537,24 @@ model SystemAmenity {
 
   @@index([category])
   @@index([isActive])
-  @@map("system_amenities")
+  @@map("amenities")
 }
 
 model RoomAmenity {
   id              String   @id @default(uuid())
   roomId          String   @map("room_id")
-  systemAmenityId String   @map("system_amenity_id")
+  amenityId String   @map("amenity_id")
   customValue     String?  @map("custom_value")
   notes           String?
   createdAt       DateTime @default(now()) @map("created_at")
 
   // Relations
   room          Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  systemAmenity SystemAmenity @relation(fields: [systemAmenityId], references: [id], onDelete: Cascade)
+  amenity Amenity @relation(fields: [amenityId], references: [id], onDelete: Cascade)
 
-  @@unique([roomId, systemAmenityId])
+  @@unique([roomId, amenityId])
   @@index([roomId])
-  @@index([systemAmenityId])
+  @@index([amenityId])
   @@map("room_amenities")
 }
 
@@ -564,7 +562,7 @@ model RoomAmenity {
 // SIMPLIFIED COST TYPES SYSTEM
 // ========================================
 
-model SystemCostType {
+model CostTypeTemplate {
   id          String       @id @default(uuid())
   name        String
   nameEn      String       @unique @map("name_en")
@@ -581,30 +579,29 @@ model SystemCostType {
 
   @@index([category])
   @@index([isActive])
-  @@map("system_cost_types")
+  @@map("cost_type_templates")
 }
 
 model RoomCost {
   id               String @id @default(uuid())
   roomId           String @map("room_id")
-  systemCostTypeId String @map("system_cost_type_id")
+  costTypeTemplateId String @map("cost_type_template_id")
 
-  // Flexible pricing fields
+  // Cost type and pricing
   costType    CostType @default(fixed) @map("cost_type")
-  baseRate    Decimal? @map("base_rate") @db.Decimal(15, 2)
-  unitPrice   Decimal? @map("unit_price") @db.Decimal(15, 2)
+  currency    String   @default("VND")
+  
+  // Fixed cost - giá cố định hàng tháng
   fixedAmount Decimal? @map("fixed_amount") @db.Decimal(15, 2)
-
-  // Additional pricing info
-  currency      String   @default("VND")
-  unit          String? // Override default unit from SystemCostType
-  minimumCharge Decimal? @map("minimum_charge") @db.Decimal(15, 2)
-  maximumCharge Decimal? @map("maximum_charge") @db.Decimal(15, 2)
-
-  // Usage tracking (for metered costs)
-  isMetered        Boolean  @default(false) @map("is_metered")
-  meterReading     Decimal? @map("meter_reading") @db.Decimal(15, 2)
-  lastMeterReading Decimal? @map("last_meter_reading") @db.Decimal(15, 2)
+  
+  // Per person cost - chia đều cho số người ở
+  perPersonAmount Decimal? @map("per_person_amount") @db.Decimal(15, 2)
+  
+  // Metered cost - theo đồng hồ
+  unitPrice   Decimal? @map("unit_price") @db.Decimal(15, 2) // Giá per unit (kWh, m³)
+  unit        String? // Đơn vị đo (kWh, m³, etc.)
+  meterReading     Decimal? @map("meter_reading") @db.Decimal(15, 2) // Số đồng hồ hiện tại
+  lastMeterReading Decimal? @map("last_meter_reading") @db.Decimal(15, 2) // Số đồng hồ tháng trước
 
   // Billing configuration
   billingCycle   BillingCycle @default(monthly) @map("billing_cycle")
@@ -618,9 +615,9 @@ model RoomCost {
 
   // Relations
   room           Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  systemCostType SystemCostType @relation(fields: [systemCostTypeId], references: [id], onDelete: Cascade)
+  costTypeTemplate CostTypeTemplate @relation(fields: [costTypeTemplateId], references: [id], onDelete: Cascade)
 
-  @@unique([roomId, systemCostTypeId])
+  @@unique([roomId, costTypeTemplateId])
   @@index([roomId])
   @@index([isActive])
   @@map("room_costs")
@@ -782,6 +779,11 @@ model Bill {
   periodStart    DateTime @map("period_start") @db.Date
   periodEnd      DateTime @map("period_end") @db.Date
 
+  // Rental period info for prorated calculation
+  rentalStartDate DateTime? @map("rental_start_date") @db.Date // Ngày bắt đầu rental trong kỳ
+  rentalEndDate   DateTime? @map("rental_end_date") @db.Date   // Ngày kết thúc rental trong kỳ
+  occupancyCount  Int?      @map("occupancy_count")            // Số người ở trong kỳ
+
   // Totals
   subtotal        Decimal @db.Decimal(15, 2)
   discountAmount  Decimal @default(0) @map("discount_amount") @db.Decimal(15, 2)
@@ -795,6 +797,10 @@ model Bill {
   dueDate  DateTime   @map("due_date") @db.Date
   paidDate DateTime?  @map("paid_date")
   notes    String?
+
+  // Auto-generation flags
+  isAutoGenerated Boolean @default(false) @map("is_auto_generated")
+  requiresMeterData Boolean @default(false) @map("requires_meter_data") // Cần nhập dữ liệu đồng hồ
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -947,7 +953,7 @@ model RoomSeekingPost {
 
   // Relations
   requester User            @relation(fields: [requesterId], references: [id], onDelete: Cascade)
-  amenities SystemAmenity[]
+  amenities Amenity[]
 
   // Relations
   preferredProvince Province?        @relation(fields: [preferredProvinceId], references: [id], onDelete: SetNull)
@@ -1162,7 +1168,7 @@ model TenantRoomPreferences {
   // Số người ở (giống RoomSeekingPost)
   maxOccupancy Int? @map("max_occupancy") // Tối đa bao nhiêu người ở chung
 
-  // Tiện ích quan trọng (subset của SystemAmenity)
+  // Tiện ích quan trọng (subset của Amenity)
   requiresAmenityIds String[] @map("requires_amenity_ids") // Must-have amenities
 
   // Thời gian thuê

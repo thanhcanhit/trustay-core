@@ -747,7 +747,7 @@ export class ListingService {
 							id: true,
 							customValue: true,
 							notes: true,
-							systemAmenity: {
+							amenity: {
 								select: {
 									id: true,
 									name: true,
@@ -760,10 +760,10 @@ export class ListingService {
 					costs: {
 						select: {
 							id: true,
-							baseRate: true,
+							fixedAmount: true,
 							currency: true,
 							notes: true,
-							systemCostType: {
+							costTypeTemplate: {
 								select: {
 									id: true,
 									name: true,
@@ -794,7 +794,7 @@ export class ListingService {
 							customValue: true,
 							isEnforced: true,
 							notes: true,
-							systemRule: {
+							ruleTemplate: {
 								select: {
 									id: true,
 									ruleType: true,
@@ -810,7 +810,7 @@ export class ListingService {
 		]);
 
 		// Get unique owner IDs to batch fetch their stats
-		const uniqueOwnerIds = [...new Set(rooms.map((room) => room.building.owner.id))];
+		const uniqueOwnerIds = [...new Set(rooms.map((room) => room.buildingId))];
 
 		// Batch get owner statistics for all unique owners
 		const ownerStatsMap = new Map<string, { totalBuildings: number; totalRoomInstances: number }>();
@@ -826,7 +826,7 @@ export class ListingService {
 				includeDistance: Boolean(finalLatitude && finalLongitude),
 				latitude: finalLatitude,
 				longitude: finalLongitude,
-				ownerStats: ownerStatsMap.get(room.building.owner.id),
+				ownerStats: ownerStatsMap.get(room.buildingId),
 			}),
 		);
 

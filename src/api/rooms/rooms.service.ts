@@ -364,7 +364,7 @@ export class RoomsService {
 				await tx.roomAmenity.createMany({
 					data: createRoomDto.amenities.map((amenity) => ({
 						roomId: room.id,
-						systemAmenityId: amenity.systemAmenityId,
+						amenityId: amenity.systemAmenityId,
 						customValue: amenity.customValue,
 						notes: amenity.notes,
 					})),
@@ -376,11 +376,11 @@ export class RoomsService {
 				await tx.roomCost.createMany({
 					data: createRoomDto.costs.map((cost) => ({
 						roomId: room.id,
-						systemCostTypeId: cost.systemCostTypeId,
+						costTypeTemplateId: cost.systemCostTypeId,
 						costType: cost.costType || 'fixed',
 						// Map value to appropriate field based on costType
 						fixedAmount: cost.costType === 'fixed' ? cost.value : null,
-						unitPrice: cost.costType === 'per_unit' ? cost.value : null,
+						unitPrice: cost.costType === 'per_person' ? cost.value : null,
 						baseRate: ['metered', 'percentage', 'tiered'].includes(cost.costType || 'fixed')
 							? cost.value
 							: null,
@@ -398,7 +398,7 @@ export class RoomsService {
 				await tx.roomRule.createMany({
 					data: createRoomDto.rules.map((rule) => ({
 						roomId: room.id,
-						systemRuleId: rule.systemRuleId,
+						ruleTemplateId: rule.systemRuleId,
 						customValue: rule.customValue,
 						isEnforced: rule.isEnforced ?? true,
 						notes: rule.notes,
@@ -501,7 +501,7 @@ export class RoomsService {
 						id: true,
 						customValue: true,
 						notes: true,
-						systemAmenity: {
+						amenity: {
 							select: {
 								id: true,
 								name: true,
@@ -514,10 +514,10 @@ export class RoomsService {
 				costs: {
 					select: {
 						id: true,
-						baseRate: true,
+						fixedAmount: true,
 						currency: true,
 						notes: true,
-						systemCostType: {
+						costTypeTemplate: {
 							select: {
 								id: true,
 								name: true,
@@ -548,7 +548,7 @@ export class RoomsService {
 						customValue: true,
 						isEnforced: true,
 						notes: true,
-						systemRule: {
+						ruleTemplate: {
 							select: {
 								id: true,
 								ruleType: true,
@@ -566,7 +566,7 @@ export class RoomsService {
 		}
 
 		// Get owner statistics
-		const ownerStats = await getOwnerStats(this.prisma, room.building.owner.id);
+		const ownerStats = await getOwnerStats(this.prisma, room.buildingId);
 
 		// Use the same format utility as public endpoint
 		// For admin, always show full info (authenticated = true)
@@ -577,7 +577,7 @@ export class RoomsService {
 		// Validate amenities
 		if (createRoomDto.amenities?.length) {
 			const amenityIds = createRoomDto.amenities.map((a) => a.systemAmenityId);
-			const existingAmenities = await this.prisma.systemAmenity.findMany({
+			const existingAmenities = await this.prisma.amenity.findMany({
 				where: { id: { in: amenityIds }, isActive: true },
 				select: { id: true },
 			});
@@ -590,7 +590,7 @@ export class RoomsService {
 		// Validate cost types
 		if (createRoomDto.costs?.length) {
 			const costTypeIds = createRoomDto.costs.map((c) => c.systemCostTypeId);
-			const existingCostTypes = await this.prisma.systemCostType.findMany({
+			const existingCostTypes = await this.prisma.costTypeTemplate.findMany({
 				where: { id: { in: costTypeIds }, isActive: true },
 				select: { id: true },
 			});
@@ -603,7 +603,7 @@ export class RoomsService {
 		// Validate rules
 		if (createRoomDto.rules?.length) {
 			const ruleIds = createRoomDto.rules.map((r) => r.systemRuleId);
-			const existingRules = await this.prisma.systemRoomRule.findMany({
+			const existingRules = await this.prisma.roomRuleTemplate.findMany({
 				where: { id: { in: ruleIds }, isActive: true },
 				select: { id: true },
 			});
@@ -759,7 +759,7 @@ export class RoomsService {
 						id: true,
 						customValue: true,
 						notes: true,
-						systemAmenity: {
+						amenity: {
 							select: {
 								id: true,
 								name: true,
@@ -772,10 +772,10 @@ export class RoomsService {
 				costs: {
 					select: {
 						id: true,
-						baseRate: true,
+						fixedAmount: true,
 						currency: true,
 						notes: true,
-						systemCostType: {
+						costTypeTemplate: {
 							select: {
 								id: true,
 								name: true,
@@ -806,7 +806,7 @@ export class RoomsService {
 						customValue: true,
 						isEnforced: true,
 						notes: true,
-						systemRule: {
+						ruleTemplate: {
 							select: {
 								id: true,
 								ruleType: true,
@@ -832,7 +832,7 @@ export class RoomsService {
 		}
 
 		// Get owner statistics
-		const ownerStats = await getOwnerStats(this.prisma, room.building.owner.id);
+		const ownerStats = await getOwnerStats(this.prisma, room.buildingId);
 
 		// Use the formatting utility function
 		const roomDetail = formatRoomDetail(room, isAuthenticated, ownerStats);
@@ -1014,7 +1014,7 @@ export class RoomsService {
 					await tx.roomAmenity.createMany({
 						data: updateRoomDto.amenities.map((amenity) => ({
 							roomId,
-							systemAmenityId: amenity.systemAmenityId!,
+							amenityId: amenity.systemAmenityId!,
 							customValue: amenity.customValue,
 							notes: amenity.notes,
 						})),
@@ -1034,11 +1034,11 @@ export class RoomsService {
 					await tx.roomCost.createMany({
 						data: updateRoomDto.costs.map((cost) => ({
 							roomId,
-							systemCostTypeId: cost.systemCostTypeId!,
+							costTypeTemplateId: cost.systemCostTypeId!,
 							costType: cost.costType || 'fixed',
 							// Map value to appropriate field based on costType
 							fixedAmount: cost.costType === 'fixed' ? cost.value : null,
-							unitPrice: cost.costType === 'per_unit' ? cost.value : null,
+							unitPrice: cost.costType === 'per_person' ? cost.value : null,
 							baseRate: ['metered', 'percentage', 'tiered'].includes(cost.costType || 'fixed')
 								? cost.value
 								: null,
@@ -1064,7 +1064,7 @@ export class RoomsService {
 					await tx.roomRule.createMany({
 						data: updateRoomDto.rules.map((rule) => ({
 							roomId,
-							systemRuleId: rule.systemRuleId!,
+							ruleTemplateId: rule.systemRuleId!,
 							customValue: rule.customValue,
 							isEnforced: rule.isStrict ?? true,
 							notes: rule.notes,
@@ -1233,7 +1233,7 @@ export class RoomsService {
 							id: true,
 							customValue: true,
 							notes: true,
-							systemAmenity: {
+							amenity: {
 								select: {
 									id: true,
 									name: true,
@@ -1246,10 +1246,10 @@ export class RoomsService {
 					costs: {
 						select: {
 							id: true,
-							baseRate: true,
+							fixedAmount: true,
 							currency: true,
 							notes: true,
-							systemCostType: {
+							costTypeTemplate: {
 								select: {
 									id: true,
 									name: true,
@@ -1280,7 +1280,7 @@ export class RoomsService {
 							customValue: true,
 							isEnforced: true,
 							notes: true,
-							systemRule: {
+							ruleTemplate: {
 								select: {
 									id: true,
 									ruleType: true,
@@ -1303,7 +1303,7 @@ export class RoomsService {
 		// Get owner statistics (all rooms belong to the same owner)
 		const ownerStats =
 			rooms.length > 0
-				? await getOwnerStats(this.prisma, rooms[0].building.owner.id)
+				? await getOwnerStats(this.prisma, rooms[0].buildingId)
 				: { totalBuildings: 0, totalRoomInstances: 0 };
 
 		return {
@@ -1383,7 +1383,7 @@ export class RoomsService {
 							id: true,
 							customValue: true,
 							notes: true,
-							systemAmenity: {
+							amenity: {
 								select: {
 									id: true,
 									name: true,
@@ -1396,10 +1396,10 @@ export class RoomsService {
 					costs: {
 						select: {
 							id: true,
-							baseRate: true,
+							fixedAmount: true,
 							currency: true,
 							notes: true,
-							systemCostType: {
+							costTypeTemplate: {
 								select: {
 									id: true,
 									name: true,
@@ -1430,7 +1430,7 @@ export class RoomsService {
 							customValue: true,
 							isEnforced: true,
 							notes: true,
-							systemRule: {
+							ruleTemplate: {
 								select: {
 									id: true,
 									ruleType: true,
@@ -1474,7 +1474,7 @@ export class RoomsService {
 				.map((a) => a.systemAmenityId!);
 
 			if (amenityIds.length > 0) {
-				const existingAmenities = await this.prisma.systemAmenity.findMany({
+				const existingAmenities = await this.prisma.amenity.findMany({
 					where: { id: { in: amenityIds }, isActive: true },
 					select: { id: true },
 				});
@@ -1492,7 +1492,7 @@ export class RoomsService {
 				.map((c) => c.systemCostTypeId!);
 
 			if (costTypeIds.length > 0) {
-				const existingCostTypes = await this.prisma.systemCostType.findMany({
+				const existingCostTypes = await this.prisma.costTypeTemplate.findMany({
 					where: { id: { in: costTypeIds }, isActive: true },
 					select: { id: true },
 				});
@@ -1508,7 +1508,7 @@ export class RoomsService {
 			const ruleIds = updateRoomDto.rules.filter((r) => r.systemRuleId).map((r) => r.systemRuleId!);
 
 			if (ruleIds.length > 0) {
-				const existingRules = await this.prisma.systemRoomRule.findMany({
+				const existingRules = await this.prisma.roomRuleTemplate.findMany({
 					where: { id: { in: ruleIds }, isActive: true },
 					select: { id: true },
 				});

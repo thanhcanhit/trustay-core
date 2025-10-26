@@ -66,13 +66,13 @@ export class ReferenceService {
 		orderBy[sortBy] = sortOrder;
 
 		const [amenities, total] = await Promise.all([
-			this.prisma.systemAmenity.findMany({
+			this.prisma.amenity.findMany({
 				where,
 				skip,
 				take,
 				orderBy,
 			}),
-			this.prisma.systemAmenity.count({ where }),
+			this.prisma.amenity.count({ where }),
 		]);
 
 		return PaginatedResponseDto.create(amenities, page, limit, total);
@@ -94,7 +94,7 @@ export class ReferenceService {
 					where.category = category;
 				}
 
-				return this.prisma.systemAmenity.findMany({
+				return this.prisma.amenity.findMany({
 					where,
 					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
 				});
@@ -125,13 +125,13 @@ export class ReferenceService {
 		orderBy[sortBy] = sortOrder;
 
 		const [costTypes, total] = await Promise.all([
-			this.prisma.systemCostType.findMany({
+			this.prisma.costTypeTemplate.findMany({
 				where,
 				skip,
 				take,
 				orderBy,
 			}),
-			this.prisma.systemCostType.count({ where }),
+			this.prisma.costTypeTemplate.count({ where }),
 		]);
 
 		return PaginatedResponseDto.create(costTypes, page, limit, total);
@@ -153,7 +153,7 @@ export class ReferenceService {
 					where.category = category;
 				}
 
-				return this.prisma.systemCostType.findMany({
+				return this.prisma.costTypeTemplate.findMany({
 					where,
 					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
 				});
@@ -184,13 +184,13 @@ export class ReferenceService {
 		orderBy[sortBy] = sortOrder;
 
 		const [roomRules, total] = await Promise.all([
-			this.prisma.systemRoomRule.findMany({
+			this.prisma.roomRuleTemplate.findMany({
 				where,
 				skip,
 				take,
 				orderBy,
 			}),
-			this.prisma.systemRoomRule.count({ where }),
+			this.prisma.roomRuleTemplate.count({ where }),
 		]);
 
 		return PaginatedResponseDto.create(roomRules, page, limit, total);
@@ -212,7 +212,7 @@ export class ReferenceService {
 					where.category = category;
 				}
 
-				return this.prisma.systemRoomRule.findMany({
+				return this.prisma.roomRuleTemplate.findMany({
 					where,
 					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
 				});
@@ -392,7 +392,7 @@ export class ReferenceService {
 					where.category = category;
 				}
 
-				return this.prisma.systemAmenity.findMany({
+				return this.prisma.amenity.findMany({
 					where,
 					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
 					select: {
@@ -420,7 +420,7 @@ export class ReferenceService {
 					where.category = category;
 				}
 
-				return this.prisma.systemCostType.findMany({
+				return this.prisma.costTypeTemplate.findMany({
 					where,
 					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
 					select: {
@@ -448,7 +448,7 @@ export class ReferenceService {
 					where.category = category;
 				}
 
-				return this.prisma.systemRoomRule.findMany({
+				return this.prisma.roomRuleTemplate.findMany({
 					where,
 					orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
 					select: {

@@ -255,6 +255,8 @@ export class NotificationFactory {
 			roomName: string;
 			amount: number;
 			billId: string;
+			dueDate: Date;
+			landlordName: string;
 		},
 	) {
 		return this.createFromTemplate(tenantId, NotificationType.MONTHLY_BILL_CREATED, data);

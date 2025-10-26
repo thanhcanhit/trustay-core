@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { BillsModule } from './api/bills/bills.module';
 import { BuildingModule } from './api/buildings/building.module';
 import { ChatModule } from './api/chat/chat.module';
 import { ContractsModule } from './api/contracts/contracts.module';
@@ -66,6 +67,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 		UsersModule,
 		AuthModule,
 		RoomBookingsModule,
+		BillsModule,
 		BuildingModule,
 		ContractsModule,
 		ListingModule,
