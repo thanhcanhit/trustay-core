@@ -1,11 +1,14 @@
-import { Body, Controller, Delete, Get, Ip, Post, Query, Req } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Request } from 'express';
+import { Body, Controller, Delete, Get, Ip, Post, Query, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AiService, ChatResponse } from './ai.service';
 import { Text2SqlDto } from './dto/text2sql.dto';
 
 @ApiTags('AI')
 @Controller('ai')
+@UseGuards(OptionalJwtAuthGuard) // Optional authentication - allows both authenticated and anonymous users
+@ApiBearerAuth()
 export class AiController {
 	constructor(private readonly aiService: AiService) {}
 
@@ -53,7 +56,7 @@ export class AiController {
 	})
 	async chat(
 		@Query('query') query: string,
-		@Req() req: Request,
+		@CurrentUser('id') userId: string | undefined,
 		@Ip() clientIp: string,
 	): Promise<{
 		success: boolean;
@@ -63,9 +66,6 @@ export class AiController {
 		query?: string;
 	}> {
 		try {
-			// Extract user ID from JWT token if authenticated (similar to rooms.service.ts pattern)
-			const userId = (req as any).user?.id;
-
 			const response = await this.aiService.chatWithAI(query, {
 				userId,
 				clientIp,
@@ -114,10 +114,8 @@ export class AiController {
 			},
 		},
 	})
-	async getChatHistory(@Req() req: Request, @Ip() clientIp: string) {
+	async getChatHistory(@CurrentUser('id') userId: string | undefined, @Ip() clientIp: string) {
 		try {
-			const userId = (req as any).user?.id;
-
 			const history = await this.aiService.getChatHistory({
 				userId,
 				clientIp,
@@ -165,10 +163,8 @@ export class AiController {
 			},
 		},
 	})
-	async clearChatHistory(@Req() req: Request, @Ip() clientIp: string) {
+	async clearChatHistory(@CurrentUser('id') userId: string | undefined, @Ip() clientIp: string) {
 		try {
-			const userId = (req as any).user?.id;
-
 			const result = await this.aiService.clearChatHistory({
 				userId,
 				clientIp,
@@ -223,9 +219,9 @@ export class AiController {
 			},
 		},
 	})
-	async generateSql(@Body() dto: Text2SqlDto) {
+	async generateSql(@Body() dto: Text2SqlDto, @CurrentUser('id') userId: string | undefined) {
 		try {
-			return await this.aiService.generateAndExecuteSql(dto.query);
+			return await this.aiService.generateAndExecuteSql(dto.query, userId);
 		} catch (error) {
 			return {
 				error: 'Failed to generate or execute SQL',

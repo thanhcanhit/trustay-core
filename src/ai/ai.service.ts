@@ -1,5 +1,5 @@
 import { google } from '@ai-sdk/google';
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { generateText } from 'ai';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -41,6 +41,7 @@ export interface ChatResponse {
 		needsIntroduction?: boolean;
 		clarificationQuestion?: string;
 	};
+	error?: string; // For debugging purposes
 }
 
 @Injectable()
@@ -189,9 +190,9 @@ Câu hỏi người dùng: "${query}"
 Hãy đánh giá câu hỏi này và phân loại:
 
 PHÂN LOẠI:
-1. VALID - Câu hỏi rõ ràng, có thể tạo SQL ngay
+1. VALID - Câu hỏi có thể tạo SQL ngay (ƯU TIÊN CAO)
 2. NEEDS_INTRODUCTION - Câu hỏi quá chung chung, cần giới thiệu tính năng AI
-3. NEEDS_CLARIFICATION - Câu hỏi liên quan dữ liệu nhưng cần làm rõ thêm
+3. NEEDS_CLARIFICATION - CHỈ khi hoàn toàn không hiểu ý định
 4. INVALID - Câu hỏi không liên quan hoặc không thể xử lý
 
 DỮ LIỆU CÓ SẴN:
@@ -204,10 +205,16 @@ DỮ LIỆU CÓ SẴN:
 - room_bookings: đặt phòng (trạng thái: pending/approved/rejected)
 - notifications: thông báo (tiêu đề, nội dung, đã đọc)
 
+NGUYÊN TẮC QUAN TRỌNG:
+- ƯU TIÊN VALID khi có thể suy đoán được ý định
+- Với câu hỏi tìm phòng: "giá rẻ", "quận 1", "phòng trọ" → VALID ngay
+- Với câu hỏi thống kê: "doanh thu", "thống kê" → VALID ngay
+- CHỈ NEEDS_CLARIFICATION khi hoàn toàn không hiểu ý định
+
 TIÊU CHÍ:
-- VALID: Câu hỏi cụ thể về dữ liệu trên
+- VALID: Câu hỏi về dữ liệu, có thể suy đoán ý định
 - NEEDS_INTRODUCTION: Câu hỏi quá chung chung như "help", "gì", "làm gì được", "tính năng"
-- NEEDS_CLARIFICATION: Câu hỏi về dữ liệu nhưng thiếu chi tiết (VD: "thống kê phòng" -> thống kê gì?)
+- NEEDS_CLARIFICATION: CHỈ khi hoàn toàn không hiểu ý định
 - INVALID: Chào hỏi, yêu cầu thao tác (tạo/sửa/xóa), không liên quan
 
 Trả về CHÍNH XÁC theo format:
@@ -276,14 +283,21 @@ REASON: [lý do nếu INVALID]`;
 		this.addMessageToSession(session, 'user', query);
 
 		try {
+			this.logger.debug(`Processing chat query: "${query}" for session: ${session.sessionId}`);
+
 			// MULTI-AGENT FLOW:
 			// Agent 1: Conversational Agent - Always responds naturally
 			const conversationalResponse = await this.conversationalAgent(query, session);
+			this.logger.debug(
+				`Conversational agent response: readyForSql=${conversationalResponse.readyForSql}`,
+			);
 
 			// If conversational agent determines we have enough info for SQL
 			if (conversationalResponse.readyForSql) {
+				this.logger.debug('Generating SQL...');
 				// Agent 2: SQL Generation Agent
 				const sqlResult = await this.sqlGenerationAgent(query, session);
+				this.logger.debug(`SQL generated successfully, results count: ${sqlResult.count}`);
 
 				// Generate final response combining conversation + SQL results
 				const finalResponse = await this.generateFinalResponse(
@@ -305,6 +319,7 @@ REASON: [lý do nếu INVALID]`;
 				};
 			} else {
 				// Agent 1 needs more info - return conversational response
+				this.logger.debug('Returning conversational response (not ready for SQL)');
 				this.addMessageToSession(session, 'assistant', conversationalResponse.message);
 
 				return {
@@ -319,6 +334,10 @@ REASON: [lý do nếu INVALID]`;
 				};
 			}
 		} catch (error) {
+			// Log detailed error for debugging
+			this.logger.error(`Chat error for session ${session.sessionId}:`, error);
+
+			// Generate user-friendly error message
 			const errorMessage = await this.generateErrorResponse(error.message, session);
 			this.addMessageToSession(session, 'assistant', errorMessage);
 
@@ -326,6 +345,7 @@ REASON: [lý do nếu INVALID]`;
 				sessionId: session.sessionId,
 				message: errorMessage,
 				timestamp: new Date().toISOString(),
+				error: error.message, // Include error for debugging
 			};
 		}
 	}
@@ -443,7 +463,180 @@ IMPORTANT NOTES:
 	}
 
 	/**
-	 * Build SQL generation prompt with error context
+	 * Validate user access to sensitive data
+	 * @param userId - User ID
+	 * @param query - User query to analyze
+	 * @returns Validation result with access restrictions
+	 */
+	private async validateUserAccess(
+		userId: string | undefined,
+		query: string,
+	): Promise<{
+		hasAccess: boolean;
+		userRole?: string;
+		restrictions: string[];
+	}> {
+		if (!userId) {
+			return {
+				hasAccess: false,
+				restrictions: ['Authentication required for sensitive data queries'],
+			};
+		}
+
+		// Get user role
+		const user = await this.prisma.user.findUnique({
+			where: { id: userId },
+			select: { role: true },
+		});
+
+		if (!user) {
+			throw new ForbiddenException('User not found');
+		}
+
+		const restrictions: string[] = [];
+		const queryLower = query.toLowerCase();
+
+		// Define sensitive data patterns
+		const sensitivePatterns = {
+			bills: ['hóa đơn', 'bill', 'thanh toán', 'tiền thuê', 'doanh thu'],
+			payments: ['payment', 'thanh toán', 'tiền', 'chuyển khoản'],
+			rentals: ['thuê', 'rental', 'hợp đồng', 'contract'],
+			personal: ['thông tin cá nhân', 'personal', 'private', 'riêng tư'],
+		};
+
+		// Check for sensitive data access
+		Object.entries(sensitivePatterns).forEach(([category, patterns]) => {
+			if (patterns.some((pattern) => queryLower.includes(pattern))) {
+				restrictions.push(`${category} data access requires proper authorization`);
+			}
+		});
+
+		return {
+			hasAccess: true,
+			userRole: user.role,
+			restrictions,
+		};
+	}
+
+	/**
+	 * Generate user-specific WHERE clauses for SQL queries
+	 * @param userId - User ID
+	 * @param userRole - User role (tenant/landlord)
+	 * @param query - User query
+	 * @returns WHERE clauses to restrict data access
+	 */
+	private generateUserWhereClauses(userId: string, userRole: string, query: string): string {
+		const queryLower = query.toLowerCase();
+		const clauses: string[] = [];
+
+		// Bills access - user can only see their own bills
+		if (queryLower.includes('bill') || queryLower.includes('hóa đơn')) {
+			if (userRole === 'tenant') {
+				clauses.push(`rentals.tenant_id = '${userId}'`);
+			} else if (userRole === 'landlord') {
+				clauses.push(`rentals.owner_id = '${userId}'`);
+			}
+		}
+
+		// Payments access - user can only see their own payments
+		if (queryLower.includes('payment') || queryLower.includes('thanh toán')) {
+			clauses.push(`payments.payer_id = '${userId}'`);
+		}
+
+		// Rentals access - user can only see their own rentals
+		if (queryLower.includes('rental') || queryLower.includes('thuê')) {
+			if (userRole === 'tenant') {
+				clauses.push(`rentals.tenant_id = '${userId}'`);
+			} else if (userRole === 'landlord') {
+				clauses.push(`rentals.owner_id = '${userId}'`);
+			}
+		}
+
+		// Buildings access - landlords can only see their own buildings
+		if (queryLower.includes('building') || queryLower.includes('tòa nhà')) {
+			if (userRole === 'landlord') {
+				clauses.push(`buildings.owner_id = '${userId}'`);
+			}
+		}
+
+		// Room bookings access - user can only see their own bookings
+		if (queryLower.includes('booking') || queryLower.includes('đặt phòng')) {
+			clauses.push(`room_bookings.tenant_id = '${userId}'`);
+		}
+
+		return clauses.length > 0 ? clauses.join(' AND ') : '';
+	}
+
+	/**
+	 * Enhanced SQL prompt with user context and security
+	 * @param query - User query
+	 * @param schema - Database schema
+	 * @param userId - User ID
+	 * @param userRole - User role
+	 * @param lastError - Previous error
+	 * @param attempt - Current attempt
+	 * @returns Enhanced prompt with security context
+	 */
+	private buildSecureSqlPrompt(
+		query: string,
+		schema: string,
+		userId: string,
+		userRole: string,
+		lastError: string = '',
+		attempt: number = 1,
+	): string {
+		const errorContext = lastError
+			? `
+PREVIOUS ERROR (Attempt ${attempt - 1}):
+${lastError}
+
+Please fix the SQL query based on this error. Common issues:
+- Column names are snake_case (not camelCase)
+- Use proper table aliases
+- Check foreign key relationships
+- Verify column existence in schema
+- Use correct JOIN syntax
+- Include proper WHERE clauses for user authorization
+
+`
+			: '';
+
+		const userWhereClauses = this.generateUserWhereClauses(userId, userRole, query);
+		const securityContext = userWhereClauses
+			? `
+SECURITY REQUIREMENTS:
+- User ID: ${userId}
+- User Role: ${userRole}
+- MANDATORY WHERE clauses: ${userWhereClauses}
+- ALWAYS include these WHERE clauses to ensure user can only access their own data
+- For sensitive data (bills, payments, rentals), user can ONLY see their own records
+
+`
+			: '';
+
+		return `
+Bạn là chuyên gia SQL PostgreSQL với trách nhiệm bảo mật cao. Dựa vào schema database, ngữ cảnh người dùng và câu hỏi, hãy tạo câu lệnh SQL chính xác và AN TOÀN.
+
+${schema}
+
+${securityContext}${errorContext}Câu hỏi người dùng: "${query}"
+
+QUY TẮC BẢO MẬT:
+1. Chỉ trả về câu lệnh SQL, không giải thích
+2. Sử dụng PostgreSQL syntax
+3. Chỉ sử dụng SELECT (không DELETE, UPDATE, INSERT)
+4. Sử dụng JOIN khi cần thiết
+5. Thêm LIMIT ${this.AI_CONFIG.limit} để tránh quá nhiều kết quả
+6. Sử dụng snake_case cho tên cột và bảng
+7. Kiểm tra kỹ tên cột trong schema trước khi sử dụng
+8. QUAN TRỌNG: Luôn bao gồm WHERE clauses để đảm bảo user chỉ truy cập dữ liệu của chính họ
+9. Đối với dữ liệu nhạy cảm (bills, payments, rentals), BẮT BUỘC phải có WHERE clauses theo user role
+
+SQL:`;
+	}
+
+	/**
+	 * Build SQL generation prompt with error context (for anonymous users)
 	 * @param query - User query
 	 * @param schema - Database schema
 	 * @param lastError - Previous error message
@@ -491,17 +684,24 @@ SQL:`;
 	}
 
 	/**
-	 * Legacy method for backward compatibility with retry logic
+	 * Legacy method for backward compatibility with retry logic and security
 	 * @param query - User query
+	 * @param userId - Optional user ID for authorization
 	 * @returns SQL execution result
 	 */
-	async generateAndExecuteSql(query: string) {
+	async generateAndExecuteSql(query: string, userId?: string) {
 		// Step 1: Validate query intent
 		const validation = await this.validateQueryIntent(query);
 		if (!validation.isValid) {
 			throw new Error(
 				`Query not suitable for database querying: ${validation.reason || 'Invalid query intent'}`,
 			);
+		}
+
+		// Step 2: Validate user access for sensitive data
+		const accessValidation = await this.validateUserAccess(userId, query);
+		if (!accessValidation.hasAccess) {
+			throw new ForbiddenException(accessValidation.restrictions.join('; '));
 		}
 
 		const dbSchema = this.getCompleteDatabaseSchema();
@@ -513,9 +713,20 @@ SQL:`;
 			attempts++;
 
 			try {
-				const prompt = this.buildSqlPrompt(query, dbSchema, lastError, attempts);
+				// Use secure prompt if user is authenticated
+				const prompt =
+					userId && accessValidation.userRole
+						? this.buildSecureSqlPrompt(
+								query,
+								dbSchema,
+								userId,
+								accessValidation.userRole,
+								lastError,
+								attempts,
+							)
+						: this.buildSqlPrompt(query, dbSchema, lastError, attempts);
 
-				// Step 2: Generate SQL using AI SDK
+				// Step 3: Generate SQL using AI SDK
 				const { text } = await generateText({
 					model: google(this.AI_CONFIG.model),
 					prompt,
@@ -540,18 +751,45 @@ SQL:`;
 					throw new Error('Only SELECT queries are allowed for security reasons');
 				}
 
-				// Step 3: Execute the SQL query
+				// Additional security check - ensure user-specific WHERE clauses are present for sensitive data
+				if (userId && accessValidation.restrictions.length > 0) {
+					const hasUserRestriction = accessValidation.restrictions.some((restriction) => {
+						if (restriction.includes('bills')) {
+							return sqlLower.includes('tenant_id') || sqlLower.includes('owner_id');
+						}
+						if (restriction.includes('payments')) {
+							return sqlLower.includes('payer_id');
+						}
+						if (restriction.includes('rentals')) {
+							return sqlLower.includes('tenant_id') || sqlLower.includes('owner_id');
+						}
+						return false;
+					});
+
+					if (!hasUserRestriction) {
+						throw new Error(
+							'Security violation: Query must include user-specific WHERE clauses for sensitive data',
+						);
+					}
+				}
+
+				// Step 4: Execute the SQL query
 				const results = await this.prisma.$queryRawUnsafe(sql);
+
+				// Convert BigInt to string for JSON serialization
+				const serializedResults = this.serializeBigInt(results);
 
 				return {
 					query,
 					sql,
-					results,
-					count: Array.isArray(results) ? results.length : 1,
+					results: serializedResults,
+					count: Array.isArray(serializedResults) ? serializedResults.length : 1,
 					config: this.AI_CONFIG,
 					timestamp: new Date().toISOString(),
 					validation: validation,
 					attempts: attempts,
+					userId: userId,
+					userRole: accessValidation.userRole,
 				};
 			} catch (error) {
 				lastError = error.message;
@@ -602,8 +840,8 @@ Câu hỏi hiện tại: "${query}"
 Hãy đánh giá câu hỏi này và phân loại:
 
 PHÂN LOẠI:
-1. VALID - Câu hỏi rõ ràng, có thể tạo SQL ngay (kể cả với ngữ cảnh)
-2. NEEDS_CLARIFICATION - Câu hỏi liên quan đến dữ liệu nhưng cần thêm thông tin
+1. VALID - Câu hỏi có thể tạo SQL ngay (ƯU TIÊN CAO)
+2. NEEDS_CLARIFICATION - CHỈ khi hoàn toàn không hiểu ý định
 3. INVALID - Câu hỏi không liên quan hoặc không thể xử lý
 
 DỮ LIỆU CÓ SẴN:
@@ -616,12 +854,15 @@ DỮ LIỆU CÓ SẴN:
 - room_bookings: đặt phòng (trạng thái: pending/approved/rejected)
 - notifications: thông báo (tiêu đề, nội dung, đã đọc)
 
-TIÊU CHÍ:
-- VALID: Câu hỏi cụ thể về dữ liệu trên, hoặc câu hỏi tiếp theo có ngữ cảnh rõ ràng
-- NEEDS_CLARIFICATION: Câu hỏi chung chung nhưng có thể làm rõ (VD: "thống kê" -> thống kê gì?)
-- INVALID: Chào hỏi (trừ tin nhắn đầu tiên), yêu cầu thao tác (tạo/sửa/xóa), không liên quan
+NGUYÊN TẮC QUAN TRỌNG:
+- ƯU TIÊN VALID khi có thể suy đoán được ý định
+- Với ngữ cảnh hội thoại, câu hỏi tiếp theo như "còn gì khác?", "thế còn..." → VALID
+- CHỈ NEEDS_CLARIFICATION khi hoàn toàn không hiểu ý định
 
-LƯU Ý: Nếu có ngữ cảnh hội thoại, câu hỏi tiếp theo như "còn gì khác?", "thế còn..." có thể VALID.
+TIÊU CHÍ:
+- VALID: Câu hỏi về dữ liệu, có thể suy đoán ý định (kể cả với ngữ cảnh)
+- NEEDS_CLARIFICATION: CHỈ khi hoàn toàn không hiểu ý định
+- INVALID: Chào hỏi (trừ tin nhắn đầu tiên), yêu cầu thao tác (tạo/sửa/xóa), không liên quan
 
 Trả về CHÍNH XÁC theo format:
 CLASSIFICATION: VALID/NEEDS_CLARIFICATION/INVALID
@@ -879,6 +1120,79 @@ Bạn muốn xem thông tin gì cụ thể nhất? 🤔`;
 	}
 
 	/**
+	 * Build secure contextual SQL prompt with conversation history, user context and security
+	 * @param query - User query
+	 * @param schema - Database schema
+	 * @param recentMessages - Recent conversation messages
+	 * @param userId - User ID
+	 * @param userRole - User role
+	 * @param lastError - Previous error message
+	 * @param attempt - Current attempt number
+	 * @returns Formatted secure contextual prompt
+	 */
+	private buildSecureContextualSqlPrompt(
+		query: string,
+		schema: string,
+		recentMessages: string,
+		userId: string,
+		userRole: string,
+		lastError: string = '',
+		attempt: number = 1,
+	): string {
+		const errorContext = lastError
+			? `
+PREVIOUS ERROR (Attempt ${attempt - 1}):
+${lastError}
+
+Please fix the SQL query based on this error. Common issues:
+- Column names are snake_case (not camelCase)
+- Use proper table aliases
+- Check foreign key relationships
+- Verify column existence in schema
+- Use correct JOIN syntax
+- Include proper WHERE clauses for user authorization
+
+`
+			: '';
+
+		const userWhereClauses = this.generateUserWhereClauses(userId, userRole, query);
+		const securityContext = userWhereClauses
+			? `
+SECURITY REQUIREMENTS:
+- User ID: ${userId}
+- User Role: ${userRole}
+- MANDATORY WHERE clauses: ${userWhereClauses}
+- ALWAYS include these WHERE clauses to ensure user can only access their own data
+- For sensitive data (bills, payments, rentals), user can ONLY see their own records
+
+`
+			: '';
+
+		return `
+Bạn là chuyên gia SQL PostgreSQL với trách nhiệm bảo mật cao. Dựa vào schema database, ngữ cảnh hội thoại, ngữ cảnh người dùng và câu hỏi, hãy tạo câu lệnh SQL chính xác và AN TOÀN.
+
+${schema}
+
+${securityContext}${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
+
+${errorContext}Câu hỏi hiện tại: "${query}"
+
+QUY TẮC BẢO MẬT:
+1. Chỉ trả về câu lệnh SQL, không giải thích
+2. Sử dụng PostgreSQL syntax
+3. Chỉ sử dụng SELECT (không DELETE, UPDATE, INSERT)
+4. Sử dụng JOIN khi cần thiết
+5. Thêm LIMIT ${this.AI_CONFIG.limit} để tránh quá nhiều kết quả
+6. Sử dụng snake_case cho tên cột và bảng
+7. Kiểm tra kỹ tên cột trong schema trước khi sử dụng
+8. QUAN TRỌNG: Luôn bao gồm WHERE clauses để đảm bảo user chỉ truy cập dữ liệu của chính họ
+9. Đối với dữ liệu nhạy cảm (bills, payments, rentals), BẮT BUỘC phải có WHERE clauses theo user role
+10. Xem xét ngữ cảnh hội thoại để hiểu rõ ý định người dùng
+
+SQL:`;
+	}
+
+	/**
 	 * Build contextual SQL prompt with conversation history and error context
 	 * @param query - User query
 	 * @param schema - Database schema
@@ -931,7 +1245,7 @@ SQL:`;
 	}
 
 	/**
-	 * Generate and execute SQL with conversation context and retry logic
+	 * Generate and execute SQL with conversation context, retry logic and security
 	 * @param query - User query
 	 * @param session - Chat session for context
 	 * @returns SQL execution result
@@ -944,6 +1258,15 @@ SQL:`;
 			.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
 			.join('\n');
 
+		// Extract user ID from session
+		const userId = session.userId;
+
+		// Validate user access for sensitive data
+		const accessValidation = await this.validateUserAccess(userId, query);
+		if (!accessValidation.hasAccess) {
+			throw new ForbiddenException(accessValidation.restrictions.join('; '));
+		}
+
 		const dbSchema = this.getCompleteDatabaseSchema();
 		let lastError: string = '';
 		let attempts = 0;
@@ -953,13 +1276,19 @@ SQL:`;
 			attempts++;
 
 			try {
-				const contextualPrompt = this.buildContextualSqlPrompt(
-					query,
-					dbSchema,
-					recentMessages,
-					lastError,
-					attempts,
-				);
+				// Use secure contextual prompt if user is authenticated
+				const contextualPrompt =
+					userId && accessValidation.userRole
+						? this.buildSecureContextualSqlPrompt(
+								query,
+								dbSchema,
+								recentMessages,
+								userId,
+								accessValidation.userRole,
+								lastError,
+								attempts,
+							)
+						: this.buildContextualSqlPrompt(query, dbSchema, recentMessages, lastError, attempts);
 
 				// Generate SQL using AI SDK
 				const { text } = await generateText({
@@ -986,14 +1315,41 @@ SQL:`;
 					throw new Error('Only SELECT queries are allowed for security reasons');
 				}
 
+				// Additional security check for authenticated users
+				if (userId && accessValidation.restrictions.length > 0) {
+					const hasUserRestriction = accessValidation.restrictions.some((restriction) => {
+						if (restriction.includes('bills')) {
+							return sqlLower.includes('tenant_id') || sqlLower.includes('owner_id');
+						}
+						if (restriction.includes('payments')) {
+							return sqlLower.includes('payer_id');
+						}
+						if (restriction.includes('rentals')) {
+							return sqlLower.includes('tenant_id') || sqlLower.includes('owner_id');
+						}
+						return false;
+					});
+
+					if (!hasUserRestriction) {
+						throw new Error(
+							'Security violation: Query must include user-specific WHERE clauses for sensitive data',
+						);
+					}
+				}
+
 				// Execute the SQL query
 				const results = await this.prisma.$queryRawUnsafe(sql);
 
+				// Convert BigInt to string for JSON serialization
+				const serializedResults = this.serializeBigInt(results);
+
 				return {
 					sql,
-					results,
-					count: Array.isArray(results) ? results.length : 1,
+					results: serializedResults,
+					count: Array.isArray(serializedResults) ? serializedResults.length : 1,
 					attempts: attempts,
+					userId: userId,
+					userRole: accessValidation.userRole,
 				};
 			} catch (error) {
 				lastError = error.message;
@@ -1098,7 +1454,7 @@ Câu trả lời:`;
 Bạn là AI Agent 1 - Conversational Agent của hệ thống Trustay. Nhiệm vụ của bạn là:
 1. Trò chuyện tự nhiên với người dùng
 2. Xác định xem có đủ thông tin để tạo SQL query không
-3. Yêu cầu thông tin bổ sung nếu cần thiết
+3. CHỈ hỏi thông tin THỰC SỰ CẦN THIẾT - không hỏi quá nhiều
 
 ${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
 
@@ -1115,25 +1471,34 @@ DỮ LIỆU CÓ SẴN TRONG HỆ THỐNG:
 - room_bookings: đặt phòng (trạng thái: pending/approved/rejected)
 - notifications: thông báo (tiêu đề, nội dung, đã đọc)
 
+NGUYÊN TẮC QUAN TRỌNG:
+- ƯU TIÊN READY_FOR_SQL khi có thể suy đoán được ý định
+- CHỈ hỏi thêm khi THỰC SỰ CẦN THIẾT để tạo SQL
+- Với câu hỏi tìm phòng: "giá rẻ", "quận 1", "phòng trọ" → READY_FOR_SQL ngay
+- Với câu hỏi thống kê: "doanh thu", "thống kê" → có thể READY_FOR_SQL
+- CHỈ NEEDS_CLARIFICATION khi hoàn toàn không hiểu ý định
+
 HÃY PHÂN TÍCH VÀ TRẢ LỜI:
 
 1. PHÂN LOẠI TÌNH HUỐNG:
    - GREETING: Lời chào, giới thiệu (chỉ tin nhắn đầu tiên)
-   - READY_FOR_SQL: Câu hỏi rõ ràng, có thể tạo SQL ngay
-   - NEEDS_CLARIFICATION: Câu hỏi liên quan dữ liệu nhưng cần thêm thông tin
+   - READY_FOR_SQL: Câu hỏi có thể tạo SQL ngay (ưu tiên cao)
+   - NEEDS_CLARIFICATION: Chỉ khi hoàn toàn không hiểu ý định
    - GENERAL_CHAT: Trò chuyện chung, không liên quan dữ liệu
 
 2. TẠO CÂU TRẢ LỜI TỰ NHIÊN:
    - Thân thiện, như đang trò chuyện
    - Không cứng nhắc hay mang tính kỹ thuật
    - Sử dụng emoji phù hợp
-   - Nếu cần thêm thông tin, hỏi một cách tự nhiên
+   - CHỈ hỏi thêm khi THỰC SỰ CẦN THIẾT
 
 Trả về theo format:
 SITUATION: GREETING/READY_FOR_SQL/NEEDS_CLARIFICATION/GENERAL_CHAT
 RESPONSE: [câu trả lời tự nhiên của bạn]`;
 
 		try {
+			this.logger.debug(`Generating conversational response for query: "${query}"`);
+
 			const { text } = await generateText({
 				model: google(this.AI_CONFIG.model),
 				prompt: conversationalPrompt,
@@ -1142,6 +1507,7 @@ RESPONSE: [câu trả lời tự nhiên của bạn]`;
 			});
 
 			const response = text.trim();
+			this.logger.debug(`AI response: ${response.substring(0, 200)}...`);
 
 			// Parse response
 			const situationMatch = response.match(
@@ -1154,13 +1520,18 @@ RESPONSE: [câu trả lời tự nhiên của bạn]`;
 				? responseMatch[1].trim()
 				: this.getDefaultConversationalResponse(query, isFirstMessage);
 
+			this.logger.debug(
+				`Parsed situation: ${situation}, readyForSql: ${situation === 'READY_FOR_SQL'}`,
+			);
+
 			return {
 				message,
 				readyForSql: situation === 'READY_FOR_SQL',
 				needsClarification: situation === 'NEEDS_CLARIFICATION',
 				needsIntroduction: situation === 'GREETING',
 			};
-		} catch {
+		} catch (error) {
+			this.logger.error('Conversational agent error:', error);
 			// Fallback conversational response
 			return {
 				message: this.getDefaultConversationalResponse(query, isFirstMessage),
@@ -1243,6 +1614,35 @@ Câu trả lời cuối cùng:`;
 	}
 
 	/**
+	 * Serialize BigInt values to strings for JSON compatibility
+	 * @param data - Data that may contain BigInt values
+	 * @returns Serialized data with BigInt converted to strings
+	 */
+	private serializeBigInt(data: any): any {
+		if (data === null || data === undefined) {
+			return data;
+		}
+
+		if (typeof data === 'bigint') {
+			return data.toString();
+		}
+
+		if (Array.isArray(data)) {
+			return data.map((item) => this.serializeBigInt(item));
+		}
+
+		if (typeof data === 'object') {
+			const serialized: any = {};
+			for (const [key, value] of Object.entries(data)) {
+				serialized[key] = this.serializeBigInt(value);
+			}
+			return serialized;
+		}
+
+		return data;
+	}
+
+	/**
 	 * Generate error response in conversational style
 	 * @param errorMessage - Technical error message
 	 * @param session - Chat session for context
@@ -1252,31 +1652,21 @@ Câu trả lời cuối cùng:`;
 		errorMessage: string,
 		_session: ChatSession,
 	): Promise<string> {
-		const errorPrompt = `
-Bạn là AI assistant thân thiện của Trustay. Hệ thống vừa gặp lỗi kỹ thuật.
-
-Lỗi kỹ thuật: "${errorMessage}"
-
-Hãy tạo câu trả lời:
-1. Thân thiện, xin lỗi một cách tự nhiên
-2. Không hiển thị chi tiết lỗi kỹ thuật
-3. Đề xuất người dùng thử lại hoặc hỏi cách khác
-4. Sử dụng tiếng Việt và emoji phù hợp
-
-Câu trả lời thân thiện:`;
-
-		try {
-			const { text } = await generateText({
-				model: google(this.AI_CONFIG.model),
-				prompt: errorPrompt,
-				temperature: 0.3,
-				maxOutputTokens: 150,
-			});
-
-			return text.trim();
-		} catch {
-			return `Xin lỗi, tôi gặp một chút trục trặc. Bạn có thể thử hỏi lại được không? 😅`;
+		// Simple, direct error response without AI generation to avoid loops
+		if (errorMessage.includes('Authentication required')) {
+			return `Bạn cần đăng nhập để truy cập thông tin này. Vui lòng đăng nhập và thử lại. 🔐`;
 		}
+
+		if (errorMessage.includes('Security violation')) {
+			return `Tôi không thể truy cập thông tin này vì lý do bảo mật. Vui lòng kiểm tra quyền truy cập của bạn. 🛡️`;
+		}
+
+		if (errorMessage.includes('Failed to generate valid SQL')) {
+			return `Tôi gặp khó khăn trong việc tìm kiếm thông tin. Bạn có thể thử hỏi theo cách khác không? 🔍`;
+		}
+
+		// Default error response
+		return `Xin lỗi, tôi gặp một chút trục trặc. Bạn có thể thử hỏi lại được không? 😅`;
 	}
 
 	/**
@@ -1294,10 +1684,7 @@ Tôi có thể giúp bạn tìm hiểu về dữ liệu phòng trọ, thống k�
 Bạn muốn tìm hiểu điều gì? 😊`;
 		}
 
-		return `Tôi hiểu bạn đang quan tâm đến thông tin nào đó. Bạn có thể nói cụ thể hơn được không? 
-
-Ví dụ: "Có bao nhiêu phòng trống?" hoặc "Thống kê doanh thu tháng này"
-
-Tôi sẵn sàng giúp bạn! 🤗`;
+		// Với tin nhắn tiếp theo, ưu tiên tạo SQL thay vì hỏi thêm
+		return `Tôi sẽ tìm kiếm thông tin cho bạn ngay! 🔍`;
 	}
 }
