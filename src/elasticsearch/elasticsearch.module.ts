@@ -1,9 +1,11 @@
 import { Module, OnModuleInit } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ElasticsearchModule as NestElasticsearchModule } from '@nestjs/elasticsearch';
+import { ElasticsearchDebugService } from './services/elasticsearch-debug.service';
 import { ElasticsearchIndexService } from './services/elasticsearch-index.service';
 import { ElasticsearchSearchService } from './services/elasticsearch-search.service';
 import { ElasticsearchSyncService } from './services/elasticsearch-sync.service';
+import { VietnameseElasticsearchConfigService } from './services/vietnamese-elasticsearch-config.service';
 
 @Module({
 	imports: [
@@ -25,8 +27,20 @@ import { ElasticsearchSyncService } from './services/elasticsearch-sync.service'
 			inject: [ConfigService],
 		}),
 	],
-	providers: [ElasticsearchIndexService, ElasticsearchSearchService, ElasticsearchSyncService],
-	exports: [ElasticsearchIndexService, ElasticsearchSearchService, ElasticsearchSyncService],
+	providers: [
+		ElasticsearchIndexService,
+		ElasticsearchSearchService,
+		ElasticsearchSyncService,
+		VietnameseElasticsearchConfigService,
+		ElasticsearchDebugService,
+	],
+	exports: [
+		ElasticsearchIndexService,
+		ElasticsearchSearchService,
+		ElasticsearchSyncService,
+		VietnameseElasticsearchConfigService,
+		ElasticsearchDebugService,
+	],
 })
 export class ElasticsearchCustomModule implements OnModuleInit {
 	constructor(private readonly elasticsearchIndexService: ElasticsearchIndexService) {}

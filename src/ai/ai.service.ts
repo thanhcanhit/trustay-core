@@ -181,87 +181,184 @@ export class AiService {
 		needsClarification?: boolean;
 		needsIntroduction?: boolean;
 		clarificationQuestion?: string;
+		queryType?: 'STATISTICS' | 'ROOM_SEARCH' | 'ROOM_CREATION' | 'INVALID';
 	}> {
-		const validationPrompt = `
-Bạn là AI validator cho hệ thống Text-to-SQL của ứng dụng Trustay (quản lý thuê phòng).
+		const queryLower = query.toLowerCase().trim();
 
-Câu hỏi người dùng: "${query}"
+		// Check for invalid patterns first
+		const invalidPatterns = [
+			'chào',
+			'hello',
+			'hi',
+			'xin chào',
+			'cảm ơn',
+			'thank',
+			'thanks',
+			'tạm biệt',
+			'bye',
+			'goodbye',
+			'làm gì',
+			'làm sao',
+			'như thế nào',
+			'help',
+			'giúp',
+			'hướng dẫn',
+			'đăng nhập',
+			'login',
+			'đăng ký',
+			'register',
+			'thông tin cá nhân',
+			'profile',
+			'account',
+		];
 
-Hãy đánh giá câu hỏi này và phân loại:
-
-PHÂN LOẠI:
-1. VALID - Câu hỏi có thể tạo SQL ngay (ƯU TIÊN CAO)
-2. NEEDS_INTRODUCTION - Câu hỏi quá chung chung, cần giới thiệu tính năng AI
-3. NEEDS_CLARIFICATION - CHỈ khi hoàn toàn không hiểu ý định
-4. INVALID - Câu hỏi không liên quan hoặc không thể xử lý
-
-DỮ LIỆU CÓ SẴN:
-- users: thông tin người dùng (tenant/landlord, email, phone, tên, ngày tạo)
-- buildings: tòa nhà (tên, địa chỉ, chủ sở hữu)
-- rooms: phòng (tên, giá, diện tích, loại phòng, trạng thái)
-- rentals: hợp đồng thuê (tenant, owner, trạng thái, ngày bắt đầu/kết thúc)
-- bills: hóa đơn (số tiền, trạng thái thanh toán, hạn thanh toán)
-- payments: thanh toán (số tiền, phương thức, trạng thái)
-- room_bookings: đặt phòng (trạng thái: pending/approved/rejected)
-- notifications: thông báo (tiêu đề, nội dung, đã đọc)
-
-NGUYÊN TẮC QUAN TRỌNG:
-- ƯU TIÊN VALID khi có thể suy đoán được ý định
-- Với câu hỏi tìm phòng: "giá rẻ", "quận 1", "phòng trọ" → VALID ngay
-- Với câu hỏi thống kê: "doanh thu", "thống kê" → VALID ngay
-- CHỈ NEEDS_CLARIFICATION khi hoàn toàn không hiểu ý định
-
-TIÊU CHÍ:
-- VALID: Câu hỏi về dữ liệu, có thể suy đoán ý định
-- NEEDS_INTRODUCTION: Câu hỏi quá chung chung như "help", "gì", "làm gì được", "tính năng"
-- NEEDS_CLARIFICATION: CHỈ khi hoàn toàn không hiểu ý định
-- INVALID: Chào hỏi, yêu cầu thao tác (tạo/sửa/xóa), không liên quan
-
-Trả về CHÍNH XÁC theo format:
-CLASSIFICATION: VALID/NEEDS_INTRODUCTION/NEEDS_CLARIFICATION/INVALID
-CLARIFICATION_QUESTION: [nếu NEEDS_CLARIFICATION, đưa ra câu hỏi cụ thể để làm rõ]
-REASON: [lý do nếu INVALID]`;
-
-		try {
-			const { text } = await generateText({
-				model: google(this.AI_CONFIG.model),
-				prompt: validationPrompt,
-				temperature: 0.1,
-				maxOutputTokens: 300,
-			});
-
-			const response = text.trim();
-
-			if (response.includes('CLASSIFICATION: VALID')) {
-				return { isValid: true };
-			}
-
-			if (response.includes('CLASSIFICATION: NEEDS_CLARIFICATION')) {
-				const clarificationMatch = response.match(/CLARIFICATION_QUESTION: (.+)/);
-				const clarificationQuestion = clarificationMatch
-					? clarificationMatch[1].trim()
-					: 'Bạn có thể cung cấp thêm thông tin cụ thể để tôi có thể giúp bạn tốt hơn?';
-
+		// Check for invalid patterns
+		for (const pattern of invalidPatterns) {
+			if (queryLower.includes(pattern)) {
 				return {
 					isValid: false,
-					needsClarification: true,
-					clarificationQuestion,
+					reason: `Câu hỏi "${pattern}" không được hỗ trợ`,
+					queryType: 'INVALID',
 				};
 			}
-
-			// INVALID case
-			const reasonMatch = response.match(/REASON: (.+)/);
-			const reason = reasonMatch ? reasonMatch[1].trim() : 'Câu hỏi không phù hợp';
-
-			return {
-				isValid: false,
-				needsClarification: false,
-				reason,
-			};
-		} catch {
-			// If validation fails, default to allowing the query
-			return { isValid: true };
 		}
+
+		// Check for valid query types
+		const statisticsPatterns = [
+			'thống kê',
+			'doanh thu',
+			'revenue',
+			'income',
+			'tổng quan',
+			'overview',
+			'báo cáo',
+			'report',
+			'phân tích',
+			'analysis',
+			'dashboard',
+			'tiền thuê',
+			'rental income',
+			'profit',
+			'khách thuê',
+			'tenants',
+			'occupancy',
+			'tỷ lệ',
+			'rate',
+			'percentage',
+			'bao nhiêu',
+			'how many',
+			'count',
+			'tổng',
+			'total',
+			'sum',
+		];
+
+		const roomSearchPatterns = [
+			'tìm phòng',
+			'tìm trọ',
+			'phòng trọ',
+			'room',
+			'giá',
+			'price',
+			'cost',
+			'tiền thuê',
+			'địa chỉ',
+			'address',
+			'location',
+			'vị trí',
+			'quận',
+			'district',
+			'huyện',
+			'ward',
+			'thuê',
+			'rent',
+			'booking',
+			'đặt phòng',
+			'phù hợp',
+			'suitable',
+			'available',
+			'gần',
+			'near',
+			'close to',
+			'tiện nghi',
+			'amenities',
+			'facilities',
+			'có',
+			'còn',
+			'exist',
+			'ở đâu',
+			'where',
+		];
+
+		const roomCreationPatterns = [
+			'tạo phòng',
+			'thêm phòng',
+			'đăng phòng',
+			'create room',
+			'add room',
+			'list room',
+			'đăng tin',
+			'post listing',
+			'advertise',
+			'quản lý phòng',
+			'manage room',
+			'room management',
+			'cập nhật phòng',
+			'update room',
+			'edit room',
+			'giá phòng',
+			'room price',
+			'pricing',
+			'mô tả phòng',
+			'room description',
+			'hình ảnh phòng',
+			'room images',
+			'photos',
+			'thiết lập',
+			'setup',
+			'configure',
+		];
+
+		// Determine query type
+		let queryType: 'STATISTICS' | 'ROOM_SEARCH' | 'ROOM_CREATION' | 'INVALID' = 'INVALID';
+
+		if (statisticsPatterns.some((pattern) => queryLower.includes(pattern))) {
+			queryType = 'STATISTICS';
+		} else if (roomSearchPatterns.some((pattern) => queryLower.includes(pattern))) {
+			queryType = 'ROOM_SEARCH';
+		} else if (roomCreationPatterns.some((pattern) => queryLower.includes(pattern))) {
+			queryType = 'ROOM_CREATION';
+		}
+
+		// If no valid pattern found, check if it's a general data query
+		if (queryType === 'INVALID') {
+			// Allow general data queries that might be room search
+			const generalDataPatterns = [
+				'có',
+				'còn',
+				'available',
+				'exist',
+				'bao nhiêu',
+				'how many',
+				'count',
+				'ở đâu',
+				'where',
+				'location',
+				'như thế nào',
+				'how',
+				'what',
+			];
+
+			if (generalDataPatterns.some((pattern) => queryLower.includes(pattern))) {
+				queryType = 'ROOM_SEARCH'; // Default to room search for general queries
+			}
+		}
+
+		return {
+			isValid: queryType !== 'INVALID',
+			reason: queryType === 'INVALID' ? 'Loại câu hỏi không được hỗ trợ' : undefined,
+			queryType,
+		};
 	}
 
 	/**
@@ -470,16 +567,35 @@ IMPORTANT NOTES:
 	 */
 	private async validateUserAccess(
 		userId: string | undefined,
-		query: string,
+		_query: string,
+		queryType?: 'STATISTICS' | 'ROOM_SEARCH' | 'ROOM_CREATION' | 'INVALID',
 	): Promise<{
 		hasAccess: boolean;
 		userRole?: string;
 		restrictions: string[];
 	}> {
-		if (!userId) {
+		// For room search, allow anonymous access
+		if (queryType === 'ROOM_SEARCH' && !userId) {
+			return {
+				hasAccess: true,
+				userRole: undefined,
+				restrictions: [],
+			};
+		}
+
+		// For statistics and room creation, require authentication
+		if ((queryType === 'STATISTICS' || queryType === 'ROOM_CREATION') && !userId) {
 			return {
 				hasAccess: false,
-				restrictions: ['Authentication required for sensitive data queries'],
+				restrictions: ['Authentication required for statistics and room creation queries'],
+			};
+		}
+
+		// If no user ID, allow basic room search only
+		if (!userId) {
+			return {
+				hasAccess: queryType === 'ROOM_SEARCH',
+				restrictions: queryType !== 'ROOM_SEARCH' ? ['Authentication required'] : [],
 			};
 		}
 
@@ -494,25 +610,24 @@ IMPORTANT NOTES:
 		}
 
 		const restrictions: string[] = [];
-		const queryLower = query.toLowerCase();
 
-		// Define sensitive data patterns
-		const sensitivePatterns = {
-			bills: ['hóa đơn', 'bill', 'thanh toán', 'tiền thuê', 'doanh thu'],
-			payments: ['payment', 'thanh toán', 'tiền', 'chuyển khoản'],
-			rentals: ['thuê', 'rental', 'hợp đồng', 'contract'],
-			personal: ['thông tin cá nhân', 'personal', 'private', 'riêng tư'],
-		};
-
-		// Check for sensitive data access
-		Object.entries(sensitivePatterns).forEach(([category, patterns]) => {
-			if (patterns.some((pattern) => queryLower.includes(pattern))) {
-				restrictions.push(`${category} data access requires proper authorization`);
+		// Role-based access control
+		if (queryType === 'STATISTICS') {
+			// Only landlords can access statistics
+			if (user.role !== 'landlord') {
+				restrictions.push('Only landlords can access statistics');
 			}
-		});
+		}
+
+		if (queryType === 'ROOM_CREATION') {
+			// Only landlords can create/manage rooms
+			if (user.role !== 'landlord') {
+				restrictions.push('Only landlords can create and manage rooms');
+			}
+		}
 
 		return {
-			hasAccess: true,
+			hasAccess: restrictions.length === 0,
 			userRole: user.role,
 			restrictions,
 		};
@@ -699,7 +814,7 @@ SQL:`;
 		}
 
 		// Step 2: Validate user access for sensitive data
-		const accessValidation = await this.validateUserAccess(userId, query);
+		const accessValidation = await this.validateUserAccess(userId, query, validation.queryType);
 		if (!accessValidation.hasAccess) {
 			throw new ForbiddenException(accessValidation.restrictions.join('; '));
 		}
@@ -815,108 +930,18 @@ SQL:`;
 	 */
 	private async validateQueryIntentWithContext(
 		query: string,
-		session: ChatSession,
+		_session: ChatSession,
 	): Promise<{
 		isValid: boolean;
 		reason?: string;
 		needsClarification?: boolean;
 		needsIntroduction?: boolean;
 		clarificationQuestion?: string;
+		queryType?: 'STATISTICS' | 'ROOM_SEARCH' | 'ROOM_CREATION' | 'INVALID';
 	}> {
-		// Get recent conversation context
-		const recentMessages = session.messages
-			.filter((m) => m.role !== 'system')
-			.slice(-3) // Last 3 messages for context
-			.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
-			.join('\n');
-
-		const contextualPrompt = `
-Bạn là AI validator cho hệ thống Text-to-SQL của ứng dụng Trustay (quản lý thuê phòng).
-
-${recentMessages ? `NGỮ CẢNH HỘI THOẠI GẦN ĐÂY:\n${recentMessages}\n\n` : ''}
-
-Câu hỏi hiện tại: "${query}"
-
-Hãy đánh giá câu hỏi này và phân loại:
-
-PHÂN LOẠI:
-1. VALID - Câu hỏi có thể tạo SQL ngay (ƯU TIÊN CAO)
-2. NEEDS_CLARIFICATION - CHỈ khi hoàn toàn không hiểu ý định
-3. INVALID - Câu hỏi không liên quan hoặc không thể xử lý
-
-DỮ LIỆU CÓ SẴN:
-- users: thông tin người dùng (tenant/landlord, email, phone, tên, ngày tạo)
-- buildings: tòa nhà (tên, địa chỉ, chủ sở hữu)
-- rooms: phòng (tên, giá, diện tích, loại phòng, trạng thái)
-- rentals: hợp đồng thuê (tenant, owner, trạng thái, ngày bắt đầu/kết thúc)
-- bills: hóa đơn (số tiền, trạng thái thanh toán, hạn thanh toán)
-- payments: thanh toán (số tiền, phương thức, trạng thái)
-- room_bookings: đặt phòng (trạng thái: pending/approved/rejected)
-- notifications: thông báo (tiêu đề, nội dung, đã đọc)
-
-NGUYÊN TẮC QUAN TRỌNG:
-- ƯU TIÊN VALID khi có thể suy đoán được ý định
-- Với ngữ cảnh hội thoại, câu hỏi tiếp theo như "còn gì khác?", "thế còn..." → VALID
-- CHỈ NEEDS_CLARIFICATION khi hoàn toàn không hiểu ý định
-
-TIÊU CHÍ:
-- VALID: Câu hỏi về dữ liệu, có thể suy đoán ý định (kể cả với ngữ cảnh)
-- NEEDS_CLARIFICATION: CHỈ khi hoàn toàn không hiểu ý định
-- INVALID: Chào hỏi (trừ tin nhắn đầu tiên), yêu cầu thao tác (tạo/sửa/xóa), không liên quan
-
-Trả về CHÍNH XÁC theo format:
-CLASSIFICATION: VALID/NEEDS_CLARIFICATION/INVALID
-CLARIFICATION_QUESTION: [nếu NEEDS_CLARIFICATION, đưa ra câu hỏi cụ thể để làm rõ]
-REASON: [lý do nếu INVALID]`;
-
-		try {
-			const { text } = await generateText({
-				model: google(this.AI_CONFIG.model),
-				prompt: contextualPrompt,
-				temperature: 0.1,
-				maxOutputTokens: 300,
-			});
-
-			const response = text.trim();
-
-			if (response.includes('CLASSIFICATION: VALID')) {
-				return { isValid: true };
-			}
-
-			if (response.includes('CLASSIFICATION: NEEDS_INTRODUCTION')) {
-				return {
-					isValid: false,
-					needsClarification: false,
-					needsIntroduction: true,
-				};
-			}
-
-			if (response.includes('CLASSIFICATION: NEEDS_CLARIFICATION')) {
-				const clarificationMatch = response.match(/CLARIFICATION_QUESTION: (.+)/);
-				const clarificationQuestion = clarificationMatch
-					? clarificationMatch[1].trim()
-					: 'Bạn có thể cung cấp thêm thông tin cụ thể để tôi có thể giúp bạn tốt hơn?';
-
-				return {
-					isValid: false,
-					needsClarification: true,
-					clarificationQuestion,
-				};
-			}
-
-			// INVALID case
-			const reasonMatch = response.match(/REASON: (.+)/);
-			const reason = reasonMatch ? reasonMatch[1].trim() : 'Câu hỏi không phù hợp';
-
-			return {
-				isValid: false,
-				needsClarification: false,
-				reason,
-			};
-		} catch {
-			// If validation fails, default to allowing the query
-			return { isValid: true };
-		}
+		// Use the same validation logic as validateQueryIntent
+		// Context doesn't change the fundamental query type
+		return await this.validateQueryIntent(query);
 	}
 
 	/**
@@ -1261,8 +1286,16 @@ SQL:`;
 		// Extract user ID from session
 		const userId = session.userId;
 
+		// Validate query intent first
+		const validation = await this.validateQueryIntent(query);
+		if (!validation.isValid) {
+			throw new Error(
+				`Query not suitable for database querying: ${validation.reason || 'Invalid query intent'}`,
+			);
+		}
+
 		// Validate user access for sensitive data
-		const accessValidation = await this.validateUserAccess(userId, query);
+		const accessValidation = await this.validateUserAccess(userId, query, validation.queryType);
 		if (!accessValidation.hasAccess) {
 			throw new ForbiddenException(accessValidation.restrictions.join('; '));
 		}
