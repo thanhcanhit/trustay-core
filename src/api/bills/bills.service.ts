@@ -10,12 +10,16 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
 	BillResponseDto,
+	BuildingBillPreviewDto,
 	CreateBillDto,
-	GenerateBillDto,
+	CreateBillForRoomDto,
 	MeterDataDto,
 	PaginatedBillResponseDto,
+	PreviewBuildingBillDto,
 	QueryBillDto,
+	RoomBillPreviewDto,
 	UpdateBillDto,
+	UpdateBillWithMeterDataDto,
 } from './dto';
 
 @Injectable()
@@ -113,49 +117,54 @@ export class BillsService {
 		return this.transformToResponseDto(bill);
 	}
 
-	async generateBill(userId: string, dto: GenerateBillDto): Promise<BillResponseDto> {
-		// Verify rental exists and user has access
-		const rental = await this.prisma.rental.findUnique({
-			where: { id: dto.rentalId },
+	async createBillForRoom(userId: string, dto: CreateBillForRoomDto): Promise<BillResponseDto> {
+		// First, get room instance to find the rental
+		const roomInstance = await this.prisma.roomInstance.findUnique({
+			where: { id: dto.roomInstanceId },
 			include: {
-				tenant: true,
-				owner: true,
-				roomInstance: {
+				rentals: {
+					where: {
+						status: 'active', // Only active rentals
+					},
 					include: {
-						room: {
+						tenant: true,
+						owner: true,
+					},
+				},
+				room: {
+					include: {
+						costs: {
 							include: {
-								costs: {
-									include: {
-										costTypeTemplate: true,
-									},
-								},
-								pricing: true,
+								costTypeTemplate: true,
 							},
 						},
+						pricing: true,
 					},
 				},
 			},
 		});
 
-		if (!rental) {
-			throw new NotFoundException('Rental not found');
+		if (!roomInstance) {
+			throw new NotFoundException('Room instance not found');
 		}
+
+		if (!roomInstance.rentals || roomInstance.rentals.length === 0) {
+			throw new BadRequestException('Room instance is not associated with any active rental');
+		}
+
+		// Get the first active rental (should be only one)
+		const rental = roomInstance.rentals[0];
 
 		// Check if user is owner of this rental
 		if (rental.ownerId !== userId) {
-			throw new ForbiddenException('Not authorized to generate bill for this rental');
-		}
-
-		// Check if room instance belongs to this rental
-		if (rental.roomInstanceId !== dto.roomInstanceId) {
-			throw new BadRequestException('Room instance does not belong to this rental');
+			throw new ForbiddenException('Not authorized to create bill for this rental');
 		}
 
 		// Check if bill already exists for this period
 		const existingBill = await this.prisma.bill.findUnique({
 			where: {
 				rentalId_billingPeriod: {
-					rentalId: dto.rentalId,
+					rentalId: rental.id,
 					billingPeriod: dto.billingPeriod,
 				},
 			},
@@ -165,19 +174,37 @@ export class BillsService {
 			throw new BadRequestException('Bill already exists for this period');
 		}
 
-		// Calculate rental period within billing period
+		// Update meter readings for metered costs
+		for (const meterReading of dto.meterReadings) {
+			await this.prisma.roomCost.update({
+				where: { id: meterReading.roomCostId },
+				data: {
+					meterReading: meterReading.currentReading,
+					lastMeterReading: meterReading.lastReading,
+				},
+			});
+		}
+
+		// Get updated room costs
+		const updatedRoomCosts = await this.prisma.roomCost.findMany({
+			where: {
+				roomId: roomInstance.room.id,
+				isActive: true,
+			},
+			include: {
+				costTypeTemplate: true,
+			},
+		});
+
+		// Calculate proration factor
 		const periodStart = new Date(dto.periodStart);
 		const periodEnd = new Date(dto.periodEnd);
-		const rentalStart = dto.rentalStartDate
-			? new Date(dto.rentalStartDate)
-			: rental.contractStartDate;
-		const rentalEnd = dto.rentalEndDate ? new Date(dto.rentalEndDate) : rental.contractEndDate;
+		const rentalStart = rental.contractStartDate;
+		const rentalEnd = rental.contractEndDate;
 
-		// Calculate effective rental period within billing period
 		const effectiveRentalStart = rentalStart > periodStart ? rentalStart : periodStart;
 		const effectiveRentalEnd = rentalEnd && rentalEnd < periodEnd ? rentalEnd : periodEnd;
 
-		// Calculate proration factor (percentage of month)
 		const totalDaysInPeriod =
 			Math.ceil((periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 		const rentalDaysInPeriod =
@@ -186,29 +213,21 @@ export class BillsService {
 			) + 1;
 		const prorationFactor = rentalDaysInPeriod / totalDaysInPeriod;
 
-		// Check if there are metered costs that need manual input
-		const meteredCosts = rental.roomInstance.room.costs.filter(
-			(cost) =>
-				cost.isActive &&
-				cost.costType === 'metered' &&
-				(cost.meterReading === null || cost.lastMeterReading === null),
-		);
-
-		// Calculate bill items based on room costs
+		// Calculate bill items
 		const billItems = await this.calculateBillItems(
-			rental.roomInstance.room.costs,
-			dto.occupancyCount || 1,
+			updatedRoomCosts,
+			dto.occupancyCount,
 			prorationFactor,
-			rental.roomInstance.room.pricing,
+			roomInstance.room.pricing,
 		);
 
 		// Calculate totals
 		const subtotal = billItems.reduce((sum, item) => sum + Number(item.amount), 0);
-		const totalAmount = subtotal; // No discount or tax for now
+		const totalAmount = subtotal;
 
 		const bill = await this.prisma.bill.create({
 			data: {
-				rentalId: dto.rentalId,
+				rentalId: rental.id, // Auto-get from roomInstance
 				roomInstanceId: dto.roomInstanceId,
 				billingPeriod: dto.billingPeriod,
 				billingMonth: dto.billingMonth,
@@ -217,16 +236,16 @@ export class BillsService {
 				periodEnd,
 				rentalStartDate: effectiveRentalStart,
 				rentalEndDate: effectiveRentalEnd,
-				occupancyCount: dto.occupancyCount || 1,
+				occupancyCount: dto.occupancyCount,
 				subtotal,
 				discountAmount: 0,
 				taxAmount: 0,
 				totalAmount,
 				remainingAmount: totalAmount,
-				dueDate: periodEnd, // Due date is end of period
+				dueDate: periodEnd,
 				notes: dto.notes,
-				isAutoGenerated: true,
-				requiresMeterData: meteredCosts.length > 0,
+				isAutoGenerated: false,
+				requiresMeterData: false,
 				billItems: {
 					create: billItems,
 				},
@@ -249,7 +268,7 @@ export class BillsService {
 		await this.notificationsService.notifyBill(rental.tenantId, {
 			month: bill.billingMonth,
 			year: bill.billingYear,
-			roomName: `${rental.roomInstance.room.name} - ${rental.roomInstance.roomNumber}`,
+			roomName: `${roomInstance.room.name} - ${roomInstance.roomNumber}`,
 			amount: Number(bill.totalAmount),
 			billId: bill.id,
 			dueDate: bill.dueDate,
@@ -257,6 +276,319 @@ export class BillsService {
 		});
 
 		return this.transformToResponseDto(bill);
+	}
+
+	async previewBillForBuilding(
+		userId: string,
+		dto: PreviewBuildingBillDto,
+	): Promise<BuildingBillPreviewDto> {
+		// Verify building exists and user has access
+		const building = await this.prisma.building.findUnique({
+			where: { id: dto.buildingId },
+			include: {
+				owner: true,
+			},
+		});
+
+		if (!building) {
+			throw new NotFoundException('Building not found');
+		}
+
+		// Check if user is owner of this building
+		if (building.ownerId !== userId) {
+			throw new ForbiddenException('Not authorized to preview bills for this building');
+		}
+
+		// Get all active room instances in this building with their rentals
+		const roomInstances = await this.prisma.roomInstance.findMany({
+			where: {
+				room: {
+					buildingId: dto.buildingId,
+				},
+				isActive: true,
+			},
+			include: {
+				rentals: {
+					where: {
+						status: 'active',
+					},
+					include: {
+						tenant: true,
+						owner: true,
+					},
+				},
+				room: {
+					include: {
+						costs: {
+							where: {
+								isActive: true,
+							},
+							include: {
+								costTypeTemplate: true,
+							},
+						},
+						pricing: true,
+					},
+				},
+			},
+		});
+
+		// Filter only room instances with active rentals
+		const activeRoomInstances = roomInstances.filter((ri) => ri.rentals.length > 0);
+
+		const roomBills: RoomBillPreviewDto[] = [];
+		let totalBuildingAmount = 0;
+		let roomsNeedingMeterData = 0;
+
+		const periodStart = new Date(dto.periodStart);
+		const periodEnd = new Date(dto.periodEnd);
+
+		for (const roomInstance of activeRoomInstances) {
+			const rental = roomInstance.rentals[0]; // Get first active rental
+
+			// Calculate proration factor
+			const rentalStart = rental.contractStartDate;
+			const rentalEnd = rental.contractEndDate;
+
+			const effectiveRentalStart = rentalStart > periodStart ? rentalStart : periodStart;
+			const effectiveRentalEnd = rentalEnd && rentalEnd < periodEnd ? rentalEnd : periodEnd;
+
+			const totalDaysInPeriod =
+				Math.ceil((periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+			const rentalDaysInPeriod =
+				Math.ceil(
+					(effectiveRentalEnd.getTime() - effectiveRentalStart.getTime()) / (1000 * 60 * 60 * 24),
+				) + 1;
+			const prorationFactor = rentalDaysInPeriod / totalDaysInPeriod;
+
+			// Calculate bill items (only fixed and per_person costs)
+			const calculatedItems = [];
+			const meterCostsToInput = [];
+			let calculatedTotal = 0;
+
+			// Add rent
+			if (roomInstance.room.pricing) {
+				const rentAmount = Number(roomInstance.room.pricing.basePriceMonthly) * prorationFactor;
+				if (rentAmount > 0) {
+					calculatedItems.push({
+						itemType: 'rent',
+						itemName: 'Tiền thuê phòng',
+						description: `Tiền thuê phòng (${Math.round(prorationFactor * 100)}% tháng)`,
+						quantity: 1,
+						unitPrice: rentAmount,
+						amount: rentAmount,
+						currency: roomInstance.room.pricing.currency || 'VND',
+					});
+					calculatedTotal += rentAmount;
+				}
+			}
+
+			// Process room costs
+			for (const cost of roomInstance.room.costs) {
+				let amount = 0;
+				let quantity = 1;
+				let itemName = cost.costTypeTemplate.name;
+				let description = cost.notes;
+
+				switch (cost.costType) {
+					case 'fixed':
+						// Fixed costs are prorated
+						amount = Number(cost.fixedAmount || 0) * prorationFactor;
+						description =
+							`${cost.notes || ''} (${Math.round(prorationFactor * 100)}% tháng)`.trim();
+						break;
+
+					case 'per_person':
+						// Per person costs are prorated and multiplied by occupancy
+						amount = Number(cost.perPersonAmount || 0) * 1 * prorationFactor; // Default occupancy = 1
+						quantity = 1;
+						itemName += ` (1 người)`;
+						description =
+							`${cost.notes || ''} (${Math.round(prorationFactor * 100)}% tháng)`.trim();
+						break;
+
+					case 'metered':
+						// Metered costs need manual input
+						meterCostsToInput.push({
+							roomCostId: cost.id,
+							costName: cost.costTypeTemplate.name,
+							unit: cost.unit,
+							unitPrice: cost.unitPrice,
+							currentReading: cost.meterReading,
+							lastReading: cost.lastMeterReading,
+							notes: cost.notes,
+						});
+						continue; // Skip adding to calculated items
+				}
+
+				if (amount > 0) {
+					calculatedItems.push({
+						itemType: cost.costTypeTemplate.category,
+						itemName,
+						description,
+						quantity,
+						unitPrice: amount / quantity,
+						amount,
+						currency: cost.currency,
+						notes: cost.notes,
+					});
+					calculatedTotal += amount;
+				}
+			}
+
+			roomBills.push({
+				roomInstanceId: roomInstance.id,
+				roomNumber: roomInstance.roomNumber,
+				roomName: roomInstance.room.name,
+				rentalId: rental.id,
+				tenantName: `${rental.tenant.firstName} ${rental.tenant.lastName}`,
+				occupancyCount: 1, // Default, will be updated when creating actual bill
+				calculatedItems,
+				calculatedTotal,
+				meterCostsToInput,
+			});
+
+			totalBuildingAmount += calculatedTotal;
+			if (meterCostsToInput.length > 0) {
+				roomsNeedingMeterData++;
+			}
+		}
+
+		return {
+			buildingId: dto.buildingId,
+			buildingName: building.name,
+			billingPeriod: dto.billingPeriod,
+			roomBills,
+			totalBuildingAmount,
+			totalRooms: roomBills.length,
+			roomsNeedingMeterData,
+		};
+	}
+
+	async updateBillWithMeterData(
+		userId: string,
+		dto: UpdateBillWithMeterDataDto,
+	): Promise<BillResponseDto> {
+		// Get existing bill
+		const bill = await this.prisma.bill.findUnique({
+			where: { id: dto.billId },
+			include: {
+				rental: {
+					include: {
+						owner: true,
+						roomInstance: {
+							include: {
+								room: {
+									include: {
+										costs: {
+											include: {
+												costTypeTemplate: true,
+											},
+										},
+										pricing: true,
+									},
+								},
+							},
+						},
+					},
+				},
+				billItems: true,
+			},
+		});
+
+		if (!bill) {
+			throw new NotFoundException('Bill not found');
+		}
+
+		// Check if user is owner of this rental
+		if (bill.rental.ownerId !== userId) {
+			throw new ForbiddenException('Not authorized to update this bill');
+		}
+
+		// Update meter readings for metered costs
+		for (const meterData of dto.meterData) {
+			await this.prisma.roomCost.update({
+				where: { id: meterData.roomCostId },
+				data: {
+					meterReading: meterData.currentReading,
+					lastMeterReading: meterData.lastReading,
+				},
+			});
+		}
+
+		// Get updated room costs
+		const updatedRoomCosts = await this.prisma.roomCost.findMany({
+			where: {
+				roomId: bill.rental.roomInstance.room.id,
+				isActive: true,
+			},
+			include: {
+				costTypeTemplate: true,
+			},
+		});
+
+		// Calculate proration factor
+		const periodStart = bill.periodStart;
+		const periodEnd = bill.periodEnd;
+		const rentalStart = bill.rentalStartDate || bill.rental.contractStartDate;
+		const rentalEnd = bill.rentalEndDate || bill.rental.contractEndDate;
+
+		const effectiveRentalStart = rentalStart > periodStart ? rentalStart : periodStart;
+		const effectiveRentalEnd = rentalEnd && rentalEnd < periodEnd ? rentalEnd : periodEnd;
+
+		const totalDaysInPeriod =
+			Math.ceil((periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+		const rentalDaysInPeriod =
+			Math.ceil(
+				(effectiveRentalEnd.getTime() - effectiveRentalStart.getTime()) / (1000 * 60 * 60 * 24),
+			) + 1;
+		const prorationFactor = rentalDaysInPeriod / totalDaysInPeriod;
+
+		// Recalculate bill items with updated occupancy and meter data
+		const newBillItems = await this.calculateBillItems(
+			updatedRoomCosts,
+			dto.occupancyCount,
+			prorationFactor,
+			bill.rental.roomInstance.room.pricing,
+		);
+
+		// Delete old bill items and create new ones
+		await this.prisma.billItem.deleteMany({
+			where: { billId: dto.billId },
+		});
+
+		// Calculate new totals
+		const subtotal = newBillItems.reduce((sum, item) => sum + Number(item.amount), 0);
+		const totalAmount = subtotal;
+
+		// Update bill
+		const updatedBill = await this.prisma.bill.update({
+			where: { id: dto.billId },
+			data: {
+				occupancyCount: dto.occupancyCount,
+				subtotal,
+				totalAmount,
+				remainingAmount: totalAmount - Number(bill.paidAmount),
+				requiresMeterData: false,
+				billItems: {
+					create: newBillItems,
+				},
+			},
+			include: {
+				rental: {
+					include: {
+						roomInstance: {
+							include: {
+								room: true,
+							},
+						},
+					},
+				},
+				billItems: true,
+			},
+		});
+
+		return this.transformToResponseDto(updatedBill);
 	}
 
 	private async calculateBillItems(
@@ -286,7 +618,9 @@ export class BillsService {
 
 		// Process room costs
 		for (const cost of roomCosts) {
-			if (!cost.isActive) continue;
+			if (!cost.isActive) {
+				continue;
+			}
 
 			let amount = 0;
 			let quantity = 1;
@@ -344,7 +678,7 @@ export class BillsService {
 
 	async getBills(
 		userId: string,
-		userRole: UserRole,
+		_userRole: UserRole,
 		query: QueryBillDto,
 	): Promise<PaginatedBillResponseDto> {
 		const {
@@ -361,7 +695,7 @@ export class BillsService {
 
 		// Base where condition - user can only see bills for their own rentals
 		const baseWhere: any = {
-			rental: userRole === UserRole.tenant ? { tenantId: userId } : { ownerId: userId },
+			rental: _userRole === UserRole.tenant ? { tenantId: userId } : { ownerId: userId },
 		};
 
 		// Add optional filters
@@ -414,7 +748,7 @@ export class BillsService {
 		return PaginatedResponseDto.create(billDtos, page, limit, total);
 	}
 
-	async getBillById(billId: string, userId: string, userRole: UserRole): Promise<BillResponseDto> {
+	async getBillById(billId: string, userId: string, _userRole: UserRole): Promise<BillResponseDto> {
 		const bill = await this.prisma.bill.findUnique({
 			where: { id: billId },
 			include: {

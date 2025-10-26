@@ -9,14 +9,7 @@ import {
 	Query,
 	UseGuards,
 } from '@nestjs/common';
-import {
-	ApiBearerAuth,
-	ApiOperation,
-	ApiParam,
-	ApiQuery,
-	ApiResponse,
-	ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -25,12 +18,15 @@ import { RolesGuard } from '../../auth/guards/roles.guard';
 import { BillsService } from './bills.service';
 import {
 	BillResponseDto,
+	BuildingBillPreviewDto,
 	CreateBillDto,
-	GenerateBillDto,
+	CreateBillForRoomDto,
 	MeterDataDto,
 	PaginatedBillResponseDto,
+	PreviewBuildingBillDto,
 	QueryBillDto,
 	UpdateBillDto,
+	UpdateBillWithMeterDataDto,
 } from './dto';
 
 @ApiTags('Bills')
@@ -55,19 +51,49 @@ export class BillsController {
 		return this.billsService.createBill(userId, createBillDto);
 	}
 
-	@Post('generate')
+	@Post('create-for-room')
 	@Roles(UserRole.landlord)
-	@ApiOperation({ summary: 'Tự động tạo hóa đơn cho phòng' })
+	@ApiOperation({ summary: 'Tạo hóa đơn cho phòng với tính toán tự động' })
 	@ApiResponse({
 		status: 201,
-		description: 'Hóa đơn được tạo tự động thành công',
+		description: 'Hóa đơn được tạo thành công',
 		type: BillResponseDto,
 	})
-	async generateBill(
+	async createBillForRoom(
 		@CurrentUser('id') userId: string,
-		@Body() generateBillDto: GenerateBillDto,
+		@Body() createBillDto: CreateBillForRoomDto,
 	): Promise<BillResponseDto> {
-		return this.billsService.generateBill(userId, generateBillDto);
+		return this.billsService.createBillForRoom(userId, createBillDto);
+	}
+
+	@Post('preview-for-building')
+	@Roles(UserRole.landlord)
+	@ApiOperation({ summary: 'Preview hóa đơn cho toàn bộ building' })
+	@ApiResponse({
+		status: 200,
+		description: 'Preview hóa đơn và danh sách costs cần nhập',
+		type: BuildingBillPreviewDto,
+	})
+	async previewBillForBuilding(
+		@CurrentUser('id') userId: string,
+		@Body() previewDto: PreviewBuildingBillDto,
+	): Promise<BuildingBillPreviewDto> {
+		return this.billsService.previewBillForBuilding(userId, previewDto);
+	}
+
+	@Post('update-with-meter-data')
+	@Roles(UserRole.landlord)
+	@ApiOperation({ summary: 'Cập nhật bill với meter data và occupancy' })
+	@ApiResponse({
+		status: 200,
+		description: 'Bill được cập nhật thành công',
+		type: BillResponseDto,
+	})
+	async updateBillWithMeterData(
+		@CurrentUser('id') userId: string,
+		@Body() updateDto: UpdateBillWithMeterDataDto,
+	): Promise<BillResponseDto> {
+		return this.billsService.updateBillWithMeterData(userId, updateDto);
 	}
 
 	@Get()
