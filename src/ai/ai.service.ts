@@ -1,5 +1,5 @@
 import { google } from '@ai-sdk/google';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { generateText } from 'ai';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -34,7 +34,13 @@ export interface ChatResponse {
 	results?: any;
 	count?: number;
 	timestamp: string;
-	validation?: { isValid: boolean; reason?: string };
+	validation?: {
+		isValid: boolean;
+		reason?: string;
+		needsClarification?: boolean;
+		needsIntroduction?: boolean;
+		clarificationQuestion?: string;
+	};
 }
 
 @Injectable()
@@ -46,6 +52,9 @@ export class AiService {
 		limit: 100,
 		model: 'gemini-2.0-flash',
 	};
+
+	// Logger for debugging
+	private readonly logger = new Logger(AiService.name);
 
 	// Chat session management - similar to rooms.service.ts view cache pattern
 	private chatSessions = new Map<string, ChatSession>();
@@ -163,45 +172,85 @@ export class AiService {
 	/**
 	 * Validates if the user query is appropriate for database querying
 	 * @param query - User input query
-	 * @returns boolean indicating if query is valid for SQL generation
+	 * @returns validation result with clarification questions if needed
 	 */
-	private async validateQueryIntent(query: string): Promise<{ isValid: boolean; reason?: string }> {
+	private async validateQueryIntent(query: string): Promise<{
+		isValid: boolean;
+		reason?: string;
+		needsClarification?: boolean;
+		needsIntroduction?: boolean;
+		clarificationQuestion?: string;
+	}> {
 		const validationPrompt = `
 Bạn là AI validator cho hệ thống Text-to-SQL của ứng dụng Trustay (quản lý thuê phòng).
 
 Câu hỏi người dùng: "${query}"
 
-Hãy đánh giá xem câu hỏi này có phù hợp để chuyển đổi thành SQL query không?
+Hãy đánh giá câu hỏi này và phân loại:
 
-TIÊU CHÍ CHẤP NHẬN:
-- Câu hỏi về dữ liệu: users, buildings, rooms, rentals, bills, payments, bookings, notifications
-- Câu hỏi thống kê, báo cáo, tìm kiếm thông tin
-- Câu hỏi về trạng thái, số lượng, danh sách
+PHÂN LOẠI:
+1. VALID - Câu hỏi rõ ràng, có thể tạo SQL ngay
+2. NEEDS_INTRODUCTION - Câu hỏi quá chung chung, cần giới thiệu tính năng AI
+3. NEEDS_CLARIFICATION - Câu hỏi liên quan dữ liệu nhưng cần làm rõ thêm
+4. INVALID - Câu hỏi không liên quan hoặc không thể xử lý
 
-TIÊU CHÍ TỪ CHỐI:
-- Chào hỏi đơn thuần: "hello", "hi", "xin chào"
-- Câu hỏi không liên quan đến dữ liệu
-- Yêu cầu thực hiện hành động (tạo, sửa, xóa)
-- Câu hỏi mơ hồ không rõ ràng
+DỮ LIỆU CÓ SẴN:
+- users: thông tin người dùng (tenant/landlord, email, phone, tên, ngày tạo)
+- buildings: tòa nhà (tên, địa chỉ, chủ sở hữu)
+- rooms: phòng (tên, giá, diện tích, loại phòng, trạng thái)
+- rentals: hợp đồng thuê (tenant, owner, trạng thái, ngày bắt đầu/kết thúc)
+- bills: hóa đơn (số tiền, trạng thái thanh toán, hạn thanh toán)
+- payments: thanh toán (số tiền, phương thức, trạng thái)
+- room_bookings: đặt phòng (trạng thái: pending/approved/rejected)
+- notifications: thông báo (tiêu đề, nội dung, đã đọc)
+
+TIÊU CHÍ:
+- VALID: Câu hỏi cụ thể về dữ liệu trên
+- NEEDS_INTRODUCTION: Câu hỏi quá chung chung như "help", "gì", "làm gì được", "tính năng"
+- NEEDS_CLARIFICATION: Câu hỏi về dữ liệu nhưng thiếu chi tiết (VD: "thống kê phòng" -> thống kê gì?)
+- INVALID: Chào hỏi, yêu cầu thao tác (tạo/sửa/xóa), không liên quan
 
 Trả về CHÍNH XÁC theo format:
-VALID: true/false
-REASON: lý do (nếu false)`;
+CLASSIFICATION: VALID/NEEDS_INTRODUCTION/NEEDS_CLARIFICATION/INVALID
+CLARIFICATION_QUESTION: [nếu NEEDS_CLARIFICATION, đưa ra câu hỏi cụ thể để làm rõ]
+REASON: [lý do nếu INVALID]`;
 
 		try {
 			const { text } = await generateText({
 				model: google(this.AI_CONFIG.model),
 				prompt: validationPrompt,
 				temperature: 0.1,
-				maxOutputTokens: 200,
+				maxOutputTokens: 300,
 			});
 
 			const response = text.trim();
-			const isValid = response.includes('VALID: true');
-			const reasonMatch = response.match(/REASON: (.+)/);
-			const reason = reasonMatch ? reasonMatch[1].trim() : undefined;
 
-			return { isValid, reason };
+			if (response.includes('CLASSIFICATION: VALID')) {
+				return { isValid: true };
+			}
+
+			if (response.includes('CLASSIFICATION: NEEDS_CLARIFICATION')) {
+				const clarificationMatch = response.match(/CLARIFICATION_QUESTION: (.+)/);
+				const clarificationQuestion = clarificationMatch
+					? clarificationMatch[1].trim()
+					: 'Bạn có thể cung cấp thêm thông tin cụ thể để tôi có thể giúp bạn tốt hơn?';
+
+				return {
+					isValid: false,
+					needsClarification: true,
+					clarificationQuestion,
+				};
+			}
+
+			// INVALID case
+			const reasonMatch = response.match(/REASON: (.+)/);
+			const reason = reasonMatch ? reasonMatch[1].trim() : 'Câu hỏi không phù hợp';
+
+			return {
+				isValid: false,
+				needsClarification: false,
+				reason,
+			};
 		} catch {
 			// If validation fails, default to allowing the query
 			return { isValid: true };
@@ -209,7 +258,7 @@ REASON: lý do (nếu false)`;
 	}
 
 	/**
-	 * Chat with AI for database queries - Main method for frontend integration
+	 * Chat with AI for database queries - Multi-agent flow implementation
 	 * @param query - User query
 	 * @param context - User context (userId, clientIp)
 	 * @returns Chat response with conversation history
@@ -227,40 +276,50 @@ REASON: lý do (nếu false)`;
 		this.addMessageToSession(session, 'user', query);
 
 		try {
-			// Step 2: Validate query intent with conversation context
-			const validation = await this.validateQueryIntentWithContext(query, session);
-			if (!validation.isValid) {
-				const errorMessage = `Câu hỏi không phù hợp để truy vấn dữ liệu: ${validation.reason || 'Câu hỏi không hợp lệ'}`;
-				this.addMessageToSession(session, 'assistant', errorMessage);
+			// MULTI-AGENT FLOW:
+			// Agent 1: Conversational Agent - Always responds naturally
+			const conversationalResponse = await this.conversationalAgent(query, session);
+
+			// If conversational agent determines we have enough info for SQL
+			if (conversationalResponse.readyForSql) {
+				// Agent 2: SQL Generation Agent
+				const sqlResult = await this.sqlGenerationAgent(query, session);
+
+				// Generate final response combining conversation + SQL results
+				const finalResponse = await this.generateFinalResponse(
+					conversationalResponse.message,
+					sqlResult,
+					session,
+				);
+
+				this.addMessageToSession(session, 'assistant', finalResponse);
 
 				return {
 					sessionId: session.sessionId,
-					message: errorMessage,
+					message: finalResponse,
+					sql: sqlResult.sql,
+					results: sqlResult.results,
+					count: sqlResult.count,
 					timestamp: new Date().toISOString(),
-					validation,
+					validation: { isValid: true },
+				};
+			} else {
+				// Agent 1 needs more info - return conversational response
+				this.addMessageToSession(session, 'assistant', conversationalResponse.message);
+
+				return {
+					sessionId: session.sessionId,
+					message: conversationalResponse.message,
+					timestamp: new Date().toISOString(),
+					validation: {
+						isValid: false,
+						needsClarification: conversationalResponse.needsClarification,
+						needsIntroduction: conversationalResponse.needsIntroduction,
+					},
 				};
 			}
-
-			// Step 3: Generate and execute SQL with conversation context
-			const sqlResult = await this.generateAndExecuteSqlWithContext(query, session);
-
-			// Step 4: Generate human-friendly response
-			const friendlyResponse = await this.generateFriendlyResponse(query, sqlResult, session);
-
-			// Add assistant response to session
-			this.addMessageToSession(session, 'assistant', friendlyResponse);
-
-			return {
-				sessionId: session.sessionId,
-				message: friendlyResponse,
-				sql: sqlResult.sql,
-				results: sqlResult.results,
-				count: sqlResult.count,
-				timestamp: new Date().toISOString(),
-				validation,
-			};
 		} catch (error) {
-			const errorMessage = `Xin lỗi, tôi gặp lỗi khi xử lý câu hỏi của bạn: ${error.message}`;
+			const errorMessage = await this.generateErrorResponse(error.message, session);
 			this.addMessageToSession(session, 'assistant', errorMessage);
 
 			return {
@@ -319,7 +378,120 @@ REASON: lý do (nếu false)`;
 	}
 
 	/**
-	 * Legacy method for backward compatibility
+	 * Get complete database schema for AI context
+	 * @returns Complete database schema string
+	 */
+	private getCompleteDatabaseSchema(): string {
+		return `
+DATABASE SCHEMA - Trustay App (PostgreSQL):
+
+MAIN TABLES:
+- users (id, email, phone, password_hash, first_name, last_name, role: tenant|landlord, created_at, updated_at)
+- buildings (id, slug, owner_id -> users.id, name, address_line_1, address_line_2, district_id, province_id, latitude, longitude, is_active, created_at, updated_at)
+- rooms (id, slug, building_id -> buildings.id, floor_number, name, description, room_type: boarding_house|dormitory|sleepbox|apartment|whole_house, area_sqm, max_occupancy, total_rooms, view_count, is_active, created_at, updated_at)
+- room_instances (id, room_id -> rooms.id, room_number, status: available|occupied|maintenance|reserved|unavailable, is_active, created_at, updated_at)
+- rentals (id, room_instance_id -> room_instances.id, tenant_id -> users.id, owner_id -> users.id, contract_start_date, contract_end_date, monthly_rent, deposit_paid, status: active|terminated|expired|pending_renewal, created_at, updated_at)
+- bills (id, rental_id -> rentals.id, room_instance_id -> room_instances.id, billing_period, billing_month, billing_year, period_start, period_end, subtotal, discount_amount, tax_amount, total_amount, status: draft|pending|paid|overdue|cancelled, due_date, created_at, updated_at)
+- bill_items (id, bill_id -> bills.id, item_type, item_name, description, quantity, unit_price, amount, currency, created_at)
+- payments (id, rental_id -> rentals.id, bill_id -> bills.id, payer_id -> users.id, payment_type: rent|deposit|utility|fee|refund, amount, currency, payment_method: bank_transfer|cash|e_wallet|card, payment_status: pending|completed|failed|refunded, payment_date, created_at, updated_at)
+- room_bookings (id, room_id -> rooms.id, tenant_id -> users.id, move_in_date, move_out_date, rental_months, monthly_rent, deposit_amount, status: pending|accepted|rejected|expired|cancelled|awaiting_confirmation, created_at, updated_at)
+- room_invitations (id, room_id -> rooms.id, sender_id -> users.id, recipient_id -> users.id, monthly_rent, deposit_amount, move_in_date, rental_months, status: pending|accepted|rejected|expired|cancelled|awaiting_confirmation, created_at, updated_at)
+- notifications (id, user_id -> users.id, notification_type, title, message, data, is_read, read_at, expires_at, created_at)
+
+ROOM DETAILS:
+- room_images (id, room_id -> rooms.id, image_url, alt_text, sort_order, is_primary, created_at)
+- room_amenities (id, room_id -> rooms.id, amenity_id -> amenities.id, custom_value, notes, created_at)
+- room_costs (id, room_id -> rooms.id, cost_type_template_id -> cost_type_templates.id, cost_type: fixed|per_person|metered, currency, fixed_amount, per_person_amount, unit_price, unit, meter_reading, last_meter_reading, billing_cycle, included_in_rent, is_optional, notes, created_at, updated_at)
+- room_pricing (id, room_id -> rooms.id, base_price_monthly, currency, deposit_amount, deposit_months, utility_included, utility_cost_monthly, cleaning_fee, service_fee_percentage, minimum_stay_months, maximum_stay_months, price_negotiable, created_at, updated_at)
+- room_rules (id, room_id -> rooms.id, rule_template_id -> room_rule_templates.id, custom_value, is_enforced, notes, created_at)
+
+REFERENCE TABLES:
+- amenities (id, name, name_en, category: basic|kitchen|bathroom|entertainment|safety|connectivity|building, description, is_active, sort_order, created_at, updated_at)
+- cost_type_templates (id, name, name_en, category: utility|service|parking|maintenance, default_unit, description, is_active, sort_order, created_at, updated_at)
+- room_rule_templates (id, name, name_en, category: smoking|pets|visitors|noise|cleanliness|security|usage|other, rule_type: allowed|forbidden|required|conditional, description, is_active, sort_order, created_at, updated_at)
+
+LOCATION TABLES:
+- provinces (id, province_code, province_name, province_name_en, created_at, updated_at)
+- districts (id, district_code, district_name, district_name_en, province_id -> provinces.id, created_at, updated_at)
+- wards (id, ward_code, ward_name, ward_name_en, ward_level, district_id -> districts.id, created_at, updated_at)
+
+ENUMS:
+- UserRole: tenant, landlord
+- RoomType: boarding_house, dormitory, sleepbox, apartment, whole_house
+- RoomStatus: available, occupied, maintenance, reserved, unavailable
+- RentalStatus: active, terminated, expired, pending_renewal
+- BillStatus: draft, pending, paid, overdue, cancelled
+- PaymentStatus: pending, completed, failed, refunded
+- PaymentType: rent, deposit, utility, fee, refund
+- PaymentMethod: bank_transfer, cash, e_wallet, card
+- RequestStatus: pending, accepted, rejected, expired, cancelled, awaiting_confirmation
+- AmenityCategory: basic, kitchen, bathroom, entertainment, safety, connectivity, building
+- CostCategory: utility, service, parking, maintenance
+- RuleCategory: smoking, pets, visitors, noise, cleanliness, security, usage, other
+- RuleType: allowed, forbidden, required, conditional
+- CostType: fixed, per_person, metered
+- BillingCycle: daily, weekly, monthly, quarterly, yearly, per_use
+
+IMPORTANT NOTES:
+- rooms table does NOT have 'price' column - use room_pricing.base_price_monthly instead
+- Use room_instances for specific room instances, rooms for room types
+- All foreign key relationships use snake_case column names
+- All timestamps are in snake_case (created_at, updated_at)
+- Use proper JOIN syntax for related tables
+- Always include LIMIT to prevent large result sets
+`;
+	}
+
+	/**
+	 * Build SQL generation prompt with error context
+	 * @param query - User query
+	 * @param schema - Database schema
+	 * @param lastError - Previous error message
+	 * @param attempt - Current attempt number
+	 * @returns Formatted prompt
+	 */
+	private buildSqlPrompt(
+		query: string,
+		schema: string,
+		lastError: string = '',
+		attempt: number = 1,
+	): string {
+		const errorContext = lastError
+			? `
+PREVIOUS ERROR (Attempt ${attempt - 1}):
+${lastError}
+
+Please fix the SQL query based on this error. Common issues:
+- Column names are snake_case (not camelCase)
+- Use proper table aliases
+- Check foreign key relationships
+- Verify column existence in schema
+- Use correct JOIN syntax
+
+`
+			: '';
+
+		return `
+Bạn là chuyên gia SQL PostgreSQL. Dựa vào schema database và câu hỏi của người dùng, hãy tạo câu lệnh SQL chính xác.
+
+${schema}
+
+${errorContext}Câu hỏi người dùng: "${query}"
+
+QUY TẮC:
+1. Chỉ trả về câu lệnh SQL, không giải thích
+2. Sử dụng PostgreSQL syntax
+3. Chỉ sử dụng SELECT (không DELETE, UPDATE, INSERT)
+4. Sử dụng JOIN khi cần thiết
+5. Thêm LIMIT ${this.AI_CONFIG.limit} để tránh quá nhiều kết quả
+6. Sử dụng snake_case cho tên cột và bảng
+7. Kiểm tra kỹ tên cột trong schema trước khi sử dụng
+
+SQL:`;
+	}
+
+	/**
+	 * Legacy method for backward compatibility with retry logic
 	 * @param query - User query
 	 * @returns SQL execution result
 	 */
@@ -332,82 +504,68 @@ REASON: lý do (nếu false)`;
 			);
 		}
 
-		const dbSchema = `
-DATABASE SCHEMA - Trustay App:
+		const dbSchema = this.getCompleteDatabaseSchema();
+		let lastError: string = '';
+		let attempts = 0;
+		const maxAttempts = 5;
 
-MAIN TABLES:
-- users (id, email, phone, first_name, last_name, role: tenant|landlord, created_at)
-- buildings (id, name, address, owner_id -> users.id, created_at)
-- rooms (id, building_id -> buildings.id, name, price, area_sqm, room_type, is_available)
-- rentals (id, room_id -> rooms.id, tenant_id -> users.id, owner_id -> users.id, status: active|terminated, start_date, end_date)
-- bills (id, rental_id -> rentals.id, amount, status: pending|paid|overdue, due_date, created_at)
-- payments (id, bill_id -> bills.id, amount, payment_method, status: pending|completed, created_at)
-- room_bookings (id, room_id -> rooms.id, user_id -> users.id, status: pending|approved|rejected, created_at)
-- notifications (id, user_id -> users.id, title, message, is_read, created_at)
+		while (attempts < maxAttempts) {
+			attempts++;
 
-ENUMS:
-- UserRole: tenant, landlord
-- RoomType: boarding_house, dormitory, sleepbox, apartment, whole_house
-- BillStatus: draft, pending, paid, overdue, cancelled
-- PaymentStatus: pending, completed, failed, refunded
-`;
+			try {
+				const prompt = this.buildSqlPrompt(query, dbSchema, lastError, attempts);
 
-		const prompt = `
-Bạn là chuyên gia SQL PostgreSQL. Dựa vào schema database và câu hỏi của người dùng, hãy tạo câu lệnh SQL chính xác.
+				// Step 2: Generate SQL using AI SDK
+				const { text } = await generateText({
+					model: google(this.AI_CONFIG.model),
+					prompt,
+					temperature: this.AI_CONFIG.temperature,
+					maxOutputTokens: this.AI_CONFIG.maxTokens,
+				});
 
-${dbSchema}
+				let sql = text.trim();
 
-Câu hỏi người dùng: "${query}"
+				// Clean up SQL response
+				sql = sql
+					.replace(/```sql\n?/g, '')
+					.replace(/```\n?/g, '')
+					.trim();
+				if (!sql.endsWith(';')) {
+					sql += ';';
+				}
 
-QUY TẮC:
-1. Chỉ trả về câu lệnh SQL, không giải thích
-2. Sử dụng PostgreSQL syntax
-3. Chỉ sử dụng SELECT (không DELETE, UPDATE, INSERT)
-4. Sử dụng JOIN khi cần thiết
-5. Thêm LIMIT ${this.AI_CONFIG.limit} để tránh quá nhiều kết quả
+				// Basic safety check - only allow SELECT queries
+				const sqlLower = sql.toLowerCase().trim();
+				if (!sqlLower.startsWith('select')) {
+					throw new Error('Only SELECT queries are allowed for security reasons');
+				}
 
-SQL:`;
+				// Step 3: Execute the SQL query
+				const results = await this.prisma.$queryRawUnsafe(sql);
 
-		try {
-			// Step 2: Generate SQL using AI SDK
-			const { text } = await generateText({
-				model: google(this.AI_CONFIG.model),
-				prompt,
-				temperature: this.AI_CONFIG.temperature,
-				maxOutputTokens: this.AI_CONFIG.maxTokens,
-			});
+				return {
+					query,
+					sql,
+					results,
+					count: Array.isArray(results) ? results.length : 1,
+					config: this.AI_CONFIG,
+					timestamp: new Date().toISOString(),
+					validation: validation,
+					attempts: attempts,
+				};
+			} catch (error) {
+				lastError = error.message;
+				this.logger.warn(`SQL generation attempt ${attempts} failed: ${lastError}`);
 
-			let sql = text.trim();
+				if (attempts >= maxAttempts) {
+					throw new Error(
+						`Failed to generate valid SQL after ${maxAttempts} attempts. Last error: ${lastError}`,
+					);
+				}
 
-			// Clean up SQL response
-			sql = sql
-				.replace(/```sql\n?/g, '')
-				.replace(/```\n?/g, '')
-				.trim();
-			if (!sql.endsWith(';')) {
-				sql += ';';
+				// Wait a bit before retry
+				await new Promise((resolve) => setTimeout(resolve, 1000));
 			}
-
-			// Basic safety check - only allow SELECT queries
-			const sqlLower = sql.toLowerCase().trim();
-			if (!sqlLower.startsWith('select')) {
-				throw new Error('Only SELECT queries are allowed for security reasons');
-			}
-
-			// Step 3: Execute the SQL query
-			const results = await this.prisma.$queryRawUnsafe(sql);
-
-			return {
-				query,
-				sql,
-				results,
-				count: Array.isArray(results) ? results.length : 1,
-				config: this.AI_CONFIG,
-				timestamp: new Date().toISOString(),
-				validation: validation,
-			};
-		} catch (error) {
-			throw new Error(`Failed to generate or execute SQL: ${error.message}`);
 		}
 	}
 
@@ -420,7 +578,13 @@ SQL:`;
 	private async validateQueryIntentWithContext(
 		query: string,
 		session: ChatSession,
-	): Promise<{ isValid: boolean; reason?: string }> {
+	): Promise<{
+		isValid: boolean;
+		reason?: string;
+		needsClarification?: boolean;
+		needsIntroduction?: boolean;
+		clarificationQuestion?: string;
+	}> {
 		// Get recent conversation context
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
@@ -435,38 +599,79 @@ ${recentMessages ? `NGỮ CẢNH HỘI THOẠI GẦN ĐÂY:\n${recentMessages}\n
 
 Câu hỏi hiện tại: "${query}"
 
-Hãy đánh giá xem câu hỏi này có phù hợp để chuyển đổi thành SQL query không?
+Hãy đánh giá câu hỏi này và phân loại:
 
-TIÊU CHÍ CHẤP NHẬN:
-- Câu hỏi về dữ liệu: users, buildings, rooms, rentals, bills, payments, bookings, notifications
-- Câu hỏi thống kê, báo cáo, tìm kiếm thông tin
-- Câu hỏi về trạng thái, số lượng, danh sách
-- Câu hỏi tiếp theo liên quan đến chủ đề đang thảo luận
+PHÂN LOẠI:
+1. VALID - Câu hỏi rõ ràng, có thể tạo SQL ngay (kể cả với ngữ cảnh)
+2. NEEDS_CLARIFICATION - Câu hỏi liên quan đến dữ liệu nhưng cần thêm thông tin
+3. INVALID - Câu hỏi không liên quan hoặc không thể xử lý
 
-TIÊU CHÍ TỪ CHỐI:
-- Chào hỏi đơn thuần: "hello", "hi", "xin chào" (trừ khi là tin nhắn đầu tiên)
-- Câu hỏi không liên quan đến dữ liệu
-- Yêu cầu thực hiện hành động (tạo, sửa, xóa)
-- Câu hỏi mơ hồ không rõ ràng
+DỮ LIỆU CÓ SẴN:
+- users: thông tin người dùng (tenant/landlord, email, phone, tên, ngày tạo)
+- buildings: tòa nhà (tên, địa chỉ, chủ sở hữu)
+- rooms: phòng (tên, giá, diện tích, loại phòng, trạng thái)
+- rentals: hợp đồng thuê (tenant, owner, trạng thái, ngày bắt đầu/kết thúc)
+- bills: hóa đơn (số tiền, trạng thái thanh toán, hạn thanh toán)
+- payments: thanh toán (số tiền, phương thức, trạng thái)
+- room_bookings: đặt phòng (trạng thái: pending/approved/rejected)
+- notifications: thông báo (tiêu đề, nội dung, đã đọc)
+
+TIÊU CHÍ:
+- VALID: Câu hỏi cụ thể về dữ liệu trên, hoặc câu hỏi tiếp theo có ngữ cảnh rõ ràng
+- NEEDS_CLARIFICATION: Câu hỏi chung chung nhưng có thể làm rõ (VD: "thống kê" -> thống kê gì?)
+- INVALID: Chào hỏi (trừ tin nhắn đầu tiên), yêu cầu thao tác (tạo/sửa/xóa), không liên quan
+
+LƯU Ý: Nếu có ngữ cảnh hội thoại, câu hỏi tiếp theo như "còn gì khác?", "thế còn..." có thể VALID.
 
 Trả về CHÍNH XÁC theo format:
-VALID: true/false
-REASON: lý do (nếu false)`;
+CLASSIFICATION: VALID/NEEDS_CLARIFICATION/INVALID
+CLARIFICATION_QUESTION: [nếu NEEDS_CLARIFICATION, đưa ra câu hỏi cụ thể để làm rõ]
+REASON: [lý do nếu INVALID]`;
 
 		try {
 			const { text } = await generateText({
 				model: google(this.AI_CONFIG.model),
 				prompt: contextualPrompt,
 				temperature: 0.1,
-				maxOutputTokens: 200,
+				maxOutputTokens: 300,
 			});
 
 			const response = text.trim();
-			const isValid = response.includes('VALID: true');
-			const reasonMatch = response.match(/REASON: (.+)/);
-			const reason = reasonMatch ? reasonMatch[1].trim() : undefined;
 
-			return { isValid, reason };
+			if (response.includes('CLASSIFICATION: VALID')) {
+				return { isValid: true };
+			}
+
+			if (response.includes('CLASSIFICATION: NEEDS_INTRODUCTION')) {
+				return {
+					isValid: false,
+					needsClarification: false,
+					needsIntroduction: true,
+				};
+			}
+
+			if (response.includes('CLASSIFICATION: NEEDS_CLARIFICATION')) {
+				const clarificationMatch = response.match(/CLARIFICATION_QUESTION: (.+)/);
+				const clarificationQuestion = clarificationMatch
+					? clarificationMatch[1].trim()
+					: 'Bạn có thể cung cấp thêm thông tin cụ thể để tôi có thể giúp bạn tốt hơn?';
+
+				return {
+					isValid: false,
+					needsClarification: true,
+					clarificationQuestion,
+				};
+			}
+
+			// INVALID case
+			const reasonMatch = response.match(/REASON: (.+)/);
+			const reason = reasonMatch ? reasonMatch[1].trim() : 'Câu hỏi không phù hợp';
+
+			return {
+				isValid: false,
+				needsClarification: false,
+				reason,
+			};
 		} catch {
 			// If validation fails, default to allowing the query
 			return { isValid: true };
@@ -474,7 +679,259 @@ REASON: lý do (nếu false)`;
 	}
 
 	/**
-	 * Generate and execute SQL with conversation context
+	 * Generate AI introduction and feature showcase for first-time or vague queries
+	 * @param query - User query that triggered introduction
+	 * @param session - Chat session for context
+	 * @returns AI introduction with capabilities and examples
+	 */
+	private async generateAIIntroduction(query: string, session: ChatSession): Promise<string> {
+		const isFirstMessage = session.messages.filter((m) => m.role === 'user').length <= 1;
+
+		const introPrompt = `
+Bạn là AI assistant thông minh cho hệ thống quản lý thuê phòng Trustay. Người dùng vừa hỏi một câu hỏi chung chung.
+
+Câu hỏi: "${query}"
+Là tin nhắn đầu tiên: ${isFirstMessage}
+
+Hãy tạo lời giới thiệu về khả năng của AI:
+
+1. CHÀO MỪNG (nếu là tin nhắn đầu tiên)
+2. GIỚI THIỆU KHẢ NĂNG CỦA AI
+3. CÁC LOẠI CÂU HỎI CÓ THỂ TRẢ LỜI
+4. VÍ DỤ CÂU HỎI CỤ THỂ (3-4 ví dụ)
+5. LỜI MỜI THÂN THIỆN
+
+KHẢ NĂNG CỦA AI:
+- Truy vấn và phân tích dữ liệu phòng trọ
+- Thống kê và báo cáo theo yêu cầu
+- Tìm kiếm thông tin cụ thể
+- Phân tích xu hướng và so sánh
+
+DỮ LIỆU CÓ SẴN:
+- Phòng trọ: 245+ phòng với thông tin giá, diện tích, loại, trạng thái
+- Người dùng: tenant, landlord, thông tin liên hệ
+- Hóa đơn & thanh toán: trạng thái, số tiền, thời hạn
+- Hợp đồng thuê: active, terminated, thời gian
+- Đặt phòng: pending, approved, rejected
+
+Tạo lời giới thiệu thân thiện, hấp dẫn, sử dụng tiếng Việt:`;
+
+		try {
+			const { text } = await generateText({
+				model: google(this.AI_CONFIG.model),
+				prompt: introPrompt,
+				temperature: 0.4, // Slightly higher for more engaging tone
+				maxOutputTokens: 400,
+			});
+
+			return text.trim();
+		} catch {
+			// Fallback introduction
+			return this.getDefaultAIIntroduction(isFirstMessage);
+		}
+	}
+
+	/**
+	 * Get default AI introduction when generation fails
+	 * @param isFirstMessage - Whether this is the first message
+	 * @returns Default introduction text
+	 */
+	private getDefaultAIIntroduction(isFirstMessage: boolean): string {
+		if (isFirstMessage) {
+			return `Xin chào! 👋 Tôi là AI Assistant của Trustay, rất vui được hỗ trợ bạn!
+
+Tôi có thể giúp bạn tìm hiểu và phân tích dữ liệu về:
+• Phòng trọ và tình trạng cho thuê
+• Thống kê doanh thu và thanh toán  
+• Thông tin người dùng và chủ nhà
+• Báo cáo và xu hướng thị trường
+
+Ví dụ bạn có thể hỏi tôi:
+"Có bao nhiêu phòng trống hiện tại?" hoặc "Thống kê doanh thu tháng này"
+
+Bạn muốn tìm hiểu điều gì về dữ liệu Trustay? 😊`;
+		} else {
+			return `Tôi có thể giúp bạn phân tích dữ liệu Trustay! 
+
+Hãy thử hỏi tôi về:
+• Tình trạng phòng trọ
+• Thống kê doanh thu
+• Thông tin người dùng
+• Báo cáo chi tiết
+
+Bạn muốn xem thông tin gì cụ thể? 🤔`;
+		}
+	}
+
+	/**
+	 * Generate friendly rejection message for invalid queries
+	 * @param query - User query that was invalid
+	 * @param reason - Reason for rejection
+	 * @param session - Chat session for context
+	 * @returns Friendly rejection message
+	 */
+	private async generateFriendlyRejection(
+		query: string,
+		reason?: string,
+		session?: ChatSession,
+	): Promise<string> {
+		const recentMessages = session?.messages
+			.filter((m) => m.role !== 'system')
+			.slice(-2)
+			.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
+			.join('\n');
+
+		const rejectionPrompt = `
+Bạn là AI assistant thân thiện của Trustay. Người dùng vừa hỏi một câu hỏi không phù hợp với khả năng của bạn.
+
+${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
+
+Câu hỏi: "${query}"
+Lý do không phù hợp: ${reason || 'Không liên quan đến dữ liệu'}
+
+Hãy tạo câu trả lời:
+1. Thân thiện, lịch sự, không cứng nhắc
+2. Giải thích nhẹ nhàng tại sao không thể trả lời
+3. Hướng dẫn người dùng về những gì bạn có thể làm
+4. Đưa ra 2-3 ví dụ câu hỏi cụ thể
+5. Kết thúc bằng lời mời thân thiện
+
+KHẢ NĂNG CỦA BẠN:
+- Phân tích dữ liệu phòng trọ, người dùng, hóa đơn
+- Thống kê và báo cáo
+- Tìm kiếm thông tin cụ thể
+
+Câu trả lời thân thiện:`;
+
+		try {
+			const { text } = await generateText({
+				model: google(this.AI_CONFIG.model),
+				prompt: rejectionPrompt,
+				temperature: 0.4,
+				maxOutputTokens: 250,
+			});
+
+			return text.trim();
+		} catch {
+			// Fallback friendly rejection
+			return `Xin lỗi, tôi chưa thể trả lời câu hỏi này được. 😅
+
+Tôi chuyên về phân tích dữ liệu Trustay như:
+• Thông tin phòng trọ và tình trạng
+• Thống kê doanh thu và thanh toán
+• Báo cáo về người dùng
+
+Bạn có thể thử hỏi: "Có bao nhiêu phòng trống?" hoặc "Doanh thu tháng này là bao nhiêu?"
+
+Bạn muốn tìm hiểu điều gì khác không? 🤔`;
+		}
+	}
+
+	/**
+	 * Generate smart clarification questions based on query context
+	 * @param query - User query that needs clarification
+	 * @param session - Chat session for context
+	 * @returns Smart clarification question
+	 */
+	private async generateSmartClarification(query: string, session: ChatSession): Promise<string> {
+		const recentMessages = session.messages
+			.filter((m) => m.role !== 'system')
+			.slice(-3)
+			.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
+			.join('\n');
+
+		const clarificationPrompt = `
+Bạn là AI assistant thân thiện của Trustay. Người dùng hỏi câu hỏi liên quan đến dữ liệu nhưng cần làm rõ thêm.
+
+${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
+
+Câu hỏi cần làm rõ: "${query}"
+
+Hãy tạo câu trả lời thân thiện:
+1. Thể hiện sự hiểu biết về ý định của người dùng
+2. Hỏi lại một cách tự nhiên, không cứng nhắc
+3. Đưa ra 2-3 lựa chọn cụ thể với ví dụ
+4. Sử dụng emoji phù hợp
+5. Kết thúc bằng câu hỏi mở
+
+Câu trả lời thân thiện:`;
+
+		try {
+			const { text } = await generateText({
+				model: google(this.AI_CONFIG.model),
+				prompt: clarificationPrompt,
+				temperature: 0.3,
+				maxOutputTokens: 150,
+			});
+
+			return text.trim();
+		} catch {
+			// Fallback clarification
+			return `Tôi hiểu bạn muốn tìm hiểu thông tin, nhưng có thể bạn cụ thể hơn được không? 😊
+
+Ví dụ bạn có thể hỏi về:
+• Thống kê phòng trọ (số lượng, trạng thái, giá cả)
+• Thông tin người dùng (tenant, landlord)  
+• Dữ liệu hóa đơn và thanh toán
+
+Bạn muốn xem thông tin gì cụ thể nhất? 🤔`;
+		}
+	}
+
+	/**
+	 * Build contextual SQL prompt with conversation history and error context
+	 * @param query - User query
+	 * @param schema - Database schema
+	 * @param recentMessages - Recent conversation messages
+	 * @param lastError - Previous error message
+	 * @param attempt - Current attempt number
+	 * @returns Formatted contextual prompt
+	 */
+	private buildContextualSqlPrompt(
+		query: string,
+		schema: string,
+		recentMessages: string,
+		lastError: string = '',
+		attempt: number = 1,
+	): string {
+		const errorContext = lastError
+			? `
+PREVIOUS ERROR (Attempt ${attempt - 1}):
+${lastError}
+
+Please fix the SQL query based on this error. Common issues:
+- Column names are snake_case (not camelCase)
+- Use proper table aliases
+- Check foreign key relationships
+- Verify column existence in schema
+- Use correct JOIN syntax
+
+`
+			: '';
+
+		return `
+Bạn là chuyên gia SQL PostgreSQL. Dựa vào schema database, ngữ cảnh hội thoại và câu hỏi của người dùng, hãy tạo câu lệnh SQL chính xác.
+
+${schema}
+
+${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
+
+${errorContext}Câu hỏi hiện tại: "${query}"
+
+QUY TẮC:
+1. Chỉ trả về câu lệnh SQL, không giải thích
+2. Sử dụng PostgreSQL syntax
+3. Chỉ sử dụng SELECT (không DELETE, UPDATE, INSERT)
+4. Sử dụng JOIN khi cần thiết
+5. Thêm LIMIT ${this.AI_CONFIG.limit} để tránh quá nhiều kết quả
+6. Sử dụng snake_case cho tên cột và bảng
+7. Kiểm tra kỹ tên cột trong schema trước khi sử dụng
+
+SQL:`;
+	}
+
+	/**
+	 * Generate and execute SQL with conversation context and retry logic
 	 * @param query - User query
 	 * @param session - Chat session for context
 	 * @returns SQL execution result
@@ -487,81 +944,70 @@ REASON: lý do (nếu false)`;
 			.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
 			.join('\n');
 
-		const dbSchema = `
-DATABASE SCHEMA - Trustay App:
+		const dbSchema = this.getCompleteDatabaseSchema();
+		let lastError: string = '';
+		let attempts = 0;
+		const maxAttempts = 5;
 
-MAIN TABLES:
-- users (id, email, phone, first_name, last_name, role: tenant|landlord, created_at)
-- buildings (id, name, address, owner_id -> users.id, created_at)
-- rooms (id, building_id -> buildings.id, name, price, area_sqm, room_type, is_available)
-- rentals (id, room_id -> rooms.id, tenant_id -> users.id, owner_id -> users.id, status: active|terminated, start_date, end_date)
-- bills (id, rental_id -> rentals.id, amount, status: pending|paid|overdue, due_date, created_at)
-- payments (id, bill_id -> bills.id, amount, payment_method, status: pending|completed, created_at)
-- room_bookings (id, room_id -> rooms.id, user_id -> users.id, status: pending|approved|rejected, created_at)
-- notifications (id, user_id -> users.id, title, message, is_read, created_at)
+		while (attempts < maxAttempts) {
+			attempts++;
 
-ENUMS:
-- UserRole: tenant, landlord
-- RoomType: boarding_house, dormitory, sleepbox, apartment, whole_house
-- BillStatus: draft, pending, paid, overdue, cancelled
-- PaymentStatus: pending, completed, failed, refunded
-`;
+			try {
+				const contextualPrompt = this.buildContextualSqlPrompt(
+					query,
+					dbSchema,
+					recentMessages,
+					lastError,
+					attempts,
+				);
 
-		const contextualPrompt = `
-Bạn là chuyên gia SQL PostgreSQL. Dựa vào schema database, ngữ cảnh hội thoại và câu hỏi của người dùng, hãy tạo câu lệnh SQL chính xác.
+				// Generate SQL using AI SDK
+				const { text } = await generateText({
+					model: google(this.AI_CONFIG.model),
+					prompt: contextualPrompt,
+					temperature: this.AI_CONFIG.temperature,
+					maxOutputTokens: this.AI_CONFIG.maxTokens,
+				});
 
-${dbSchema}
+				let sql = text.trim();
 
-${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
+				// Clean up SQL response
+				sql = sql
+					.replace(/```sql\n?/g, '')
+					.replace(/```\n?/g, '')
+					.trim();
+				if (!sql.endsWith(';')) {
+					sql += ';';
+				}
 
-Câu hỏi hiện tại: "${query}"
+				// Basic safety check - only allow SELECT queries
+				const sqlLower = sql.toLowerCase().trim();
+				if (!sqlLower.startsWith('select')) {
+					throw new Error('Only SELECT queries are allowed for security reasons');
+				}
 
-QUY TẮC:
-1. Chỉ trả về câu lệnh SQL, không giải thích
-2. Sử dụng PostgreSQL syntax
-3. Chỉ sử dụng SELECT (không DELETE, UPDATE, INSERT)
-4. Sử dụng JOIN khi cần thiết
-5. Thêm LIMIT ${this.AI_CONFIG.limit} để tránh quá nhiều kết quả
-6. Xem xét ngữ cảnh hội thoại để hiểu rõ ý định người dùng
+				// Execute the SQL query
+				const results = await this.prisma.$queryRawUnsafe(sql);
 
-SQL:`;
+				return {
+					sql,
+					results,
+					count: Array.isArray(results) ? results.length : 1,
+					attempts: attempts,
+				};
+			} catch (error) {
+				lastError = error.message;
+				this.logger.warn(`Contextual SQL generation attempt ${attempts} failed: ${lastError}`);
 
-		try {
-			// Generate SQL using AI SDK
-			const { text } = await generateText({
-				model: google(this.AI_CONFIG.model),
-				prompt: contextualPrompt,
-				temperature: this.AI_CONFIG.temperature,
-				maxOutputTokens: this.AI_CONFIG.maxTokens,
-			});
+				if (attempts >= maxAttempts) {
+					throw new Error(
+						`Failed to generate valid SQL after ${maxAttempts} attempts. Last error: ${lastError}`,
+					);
+				}
 
-			let sql = text.trim();
-
-			// Clean up SQL response
-			sql = sql
-				.replace(/```sql\n?/g, '')
-				.replace(/```\n?/g, '')
-				.trim();
-			if (!sql.endsWith(';')) {
-				sql += ';';
+				// Wait a bit before retry
+				await new Promise((resolve) => setTimeout(resolve, 1000));
 			}
-
-			// Basic safety check - only allow SELECT queries
-			const sqlLower = sql.toLowerCase().trim();
-			if (!sqlLower.startsWith('select')) {
-				throw new Error('Only SELECT queries are allowed for security reasons');
-			}
-
-			// Execute the SQL query
-			const results = await this.prisma.$queryRawUnsafe(sql);
-
-			return {
-				sql,
-				results,
-				count: Array.isArray(results) ? results.length : 1,
-			};
-		} catch (error) {
-			throw new Error(`Failed to generate or execute SQL: ${error.message}`);
 		}
 	}
 
@@ -621,5 +1067,237 @@ Câu trả lời:`;
 
 			return `Tôi đã tìm thấy ${sqlResult.count} kết quả cho câu hỏi của bạn về "${query}".`;
 		}
+	}
+
+	// ===== MULTI-AGENT FLOW METHODS =====
+
+	/**
+	 * Agent 1: Conversational Agent - Handles natural conversation and determines readiness for SQL
+	 * @param query - User query
+	 * @param session - Chat session for context
+	 * @returns Conversational response with readiness indicator
+	 */
+	private async conversationalAgent(
+		query: string,
+		session: ChatSession,
+	): Promise<{
+		message: string;
+		readyForSql: boolean;
+		needsClarification?: boolean;
+		needsIntroduction?: boolean;
+	}> {
+		const recentMessages = session.messages
+			.filter((m) => m.role !== 'system')
+			.slice(-4)
+			.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
+			.join('\n');
+
+		const isFirstMessage = session.messages.filter((m) => m.role === 'user').length <= 1;
+
+		const conversationalPrompt = `
+Bạn là AI Agent 1 - Conversational Agent của hệ thống Trustay. Nhiệm vụ của bạn là:
+1. Trò chuyện tự nhiên với người dùng
+2. Xác định xem có đủ thông tin để tạo SQL query không
+3. Yêu cầu thông tin bổ sung nếu cần thiết
+
+${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
+
+Câu hỏi hiện tại: "${query}"
+Là tin nhắn đầu tiên: ${isFirstMessage}
+
+DỮ LIỆU CÓ SẴN TRONG HỆ THỐNG:
+- users: thông tin người dùng (tenant/landlord, email, phone, tên, ngày tạo)
+- buildings: tòa nhà (tên, địa chỉ, chủ sở hữu)
+- rooms: phòng (tên, giá, diện tích, loại phòng, trạng thái)
+- rentals: hợp đồng thuê (tenant, owner, trạng thái, ngày bắt đầu/kết thúc)
+- bills: hóa đơn (số tiền, trạng thái thanh toán, hạn thanh toán)
+- payments: thanh toán (số tiền, phương thức, trạng thái)
+- room_bookings: đặt phòng (trạng thái: pending/approved/rejected)
+- notifications: thông báo (tiêu đề, nội dung, đã đọc)
+
+HÃY PHÂN TÍCH VÀ TRẢ LỜI:
+
+1. PHÂN LOẠI TÌNH HUỐNG:
+   - GREETING: Lời chào, giới thiệu (chỉ tin nhắn đầu tiên)
+   - READY_FOR_SQL: Câu hỏi rõ ràng, có thể tạo SQL ngay
+   - NEEDS_CLARIFICATION: Câu hỏi liên quan dữ liệu nhưng cần thêm thông tin
+   - GENERAL_CHAT: Trò chuyện chung, không liên quan dữ liệu
+
+2. TẠO CÂU TRẢ LỜI TỰ NHIÊN:
+   - Thân thiện, như đang trò chuyện
+   - Không cứng nhắc hay mang tính kỹ thuật
+   - Sử dụng emoji phù hợp
+   - Nếu cần thêm thông tin, hỏi một cách tự nhiên
+
+Trả về theo format:
+SITUATION: GREETING/READY_FOR_SQL/NEEDS_CLARIFICATION/GENERAL_CHAT
+RESPONSE: [câu trả lời tự nhiên của bạn]`;
+
+		try {
+			const { text } = await generateText({
+				model: google(this.AI_CONFIG.model),
+				prompt: conversationalPrompt,
+				temperature: 0.4, // Higher for more natural conversation
+				maxOutputTokens: 400,
+			});
+
+			const response = text.trim();
+
+			// Parse response
+			const situationMatch = response.match(
+				/SITUATION: (GREETING|READY_FOR_SQL|NEEDS_CLARIFICATION|GENERAL_CHAT)/,
+			);
+			const responseMatch = response.match(/RESPONSE: (.+)/s);
+
+			const situation = situationMatch ? situationMatch[1] : 'GENERAL_CHAT';
+			const message = responseMatch
+				? responseMatch[1].trim()
+				: this.getDefaultConversationalResponse(query, isFirstMessage);
+
+			return {
+				message,
+				readyForSql: situation === 'READY_FOR_SQL',
+				needsClarification: situation === 'NEEDS_CLARIFICATION',
+				needsIntroduction: situation === 'GREETING',
+			};
+		} catch {
+			// Fallback conversational response
+			return {
+				message: this.getDefaultConversationalResponse(query, isFirstMessage),
+				readyForSql: false,
+				needsClarification: true,
+			};
+		}
+	}
+
+	/**
+	 * Agent 2: SQL Generation Agent - Generates and executes SQL when ready
+	 * @param query - User query
+	 * @param session - Chat session for context
+	 * @returns SQL execution result
+	 */
+	private async sqlGenerationAgent(
+		query: string,
+		session: ChatSession,
+	): Promise<{
+		sql: string;
+		results: any;
+		count: number;
+	}> {
+		// Use existing SQL generation logic with context
+		return await this.generateAndExecuteSqlWithContext(query, session);
+	}
+
+	/**
+	 * Generate final response combining conversational context with SQL results
+	 * @param conversationalMessage - Message from conversational agent
+	 * @param sqlResult - SQL execution result
+	 * @param session - Chat session for context
+	 * @returns Final combined response
+	 */
+	private async generateFinalResponse(
+		conversationalMessage: string,
+		sqlResult: { sql: string; results: any; count: number },
+		session: ChatSession,
+	): Promise<string> {
+		const recentMessages = session.messages
+			.filter((m) => m.role !== 'system')
+			.slice(-3)
+			.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
+			.join('\n');
+
+		const finalPrompt = `
+Bạn là AI assistant của Trustay. Hãy tạo câu trả lời cuối cùng kết hợp thông tin từ cuộc trò chuyện và kết quả truy vấn.
+
+${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
+
+Thông điệp từ Agent hội thoại: "${conversationalMessage}"
+Số kết quả tìm được: ${sqlResult.count}
+Dữ liệu kết quả: ${JSON.stringify(sqlResult.results).substring(0, 800)}...
+
+Hãy tạo câu trả lời:
+1. Tự nhiên, như đang trò chuyện
+2. Tóm tắt kết quả một cách dễ hiểu
+3. Không hiển thị SQL query
+4. Sử dụng tiếng Việt và emoji phù hợp
+5. Nếu không có kết quả, đưa ra gợi ý hữu ích
+
+Câu trả lời cuối cùng:`;
+
+		try {
+			const { text } = await generateText({
+				model: google(this.AI_CONFIG.model),
+				prompt: finalPrompt,
+				temperature: 0.3,
+				maxOutputTokens: 350,
+			});
+
+			return text.trim();
+		} catch {
+			// Fallback response
+			if (sqlResult.count === 0) {
+				return `Tôi đã tìm kiếm nhưng không thấy kết quả nào phù hợp. Bạn có thể thử hỏi theo cách khác không? 🤔`;
+			}
+			return `Tôi đã tìm thấy ${sqlResult.count} kết quả cho bạn! 😊`;
+		}
+	}
+
+	/**
+	 * Generate error response in conversational style
+	 * @param errorMessage - Technical error message
+	 * @param session - Chat session for context
+	 * @returns User-friendly error response
+	 */
+	private async generateErrorResponse(
+		errorMessage: string,
+		_session: ChatSession,
+	): Promise<string> {
+		const errorPrompt = `
+Bạn là AI assistant thân thiện của Trustay. Hệ thống vừa gặp lỗi kỹ thuật.
+
+Lỗi kỹ thuật: "${errorMessage}"
+
+Hãy tạo câu trả lời:
+1. Thân thiện, xin lỗi một cách tự nhiên
+2. Không hiển thị chi tiết lỗi kỹ thuật
+3. Đề xuất người dùng thử lại hoặc hỏi cách khác
+4. Sử dụng tiếng Việt và emoji phù hợp
+
+Câu trả lời thân thiện:`;
+
+		try {
+			const { text } = await generateText({
+				model: google(this.AI_CONFIG.model),
+				prompt: errorPrompt,
+				temperature: 0.3,
+				maxOutputTokens: 150,
+			});
+
+			return text.trim();
+		} catch {
+			return `Xin lỗi, tôi gặp một chút trục trặc. Bạn có thể thử hỏi lại được không? 😅`;
+		}
+	}
+
+	/**
+	 * Get default conversational response when AI generation fails
+	 * @param query - User query
+	 * @param isFirstMessage - Whether this is the first message
+	 * @returns Default conversational response
+	 */
+	private getDefaultConversationalResponse(_query: string, isFirstMessage: boolean): string {
+		if (isFirstMessage) {
+			return `Xin chào! 👋 Tôi là AI Assistant của Trustay, rất vui được trò chuyện với bạn!
+
+Tôi có thể giúp bạn tìm hiểu về dữ liệu phòng trọ, thống kê doanh thu, thông tin người dùng và nhiều thứ khác.
+
+Bạn muốn tìm hiểu điều gì? 😊`;
+		}
+
+		return `Tôi hiểu bạn đang quan tâm đến thông tin nào đó. Bạn có thể nói cụ thể hơn được không? 
+
+Ví dụ: "Có bao nhiêu phòng trống?" hoặc "Thống kê doanh thu tháng này"
+
+Tôi sẵn sàng giúp bạn! 🤗`;
 	}
 }
