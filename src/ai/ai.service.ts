@@ -4,6 +4,7 @@ import { ConversationalAgent } from './agents/conversational-agent';
 import { ErrorHandler } from './agents/error-handler';
 import { ResponseGenerator } from './agents/response-generator';
 import { SqlGenerationAgent } from './agents/sql-generation-agent';
+import { KnowledgeService } from './knowledge/knowledge.service';
 import { ChatMessage, ChatResponse, ChatSession } from './types/chat.types';
 export { ChatResponse };
 
@@ -31,7 +32,10 @@ export class AiService {
 	private readonly MAX_MESSAGES_PER_SESSION = 20; // Giới hạn tin nhắn mỗi session
 	private readonly CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 phút
 
-	constructor(private readonly prisma: PrismaService) {
+	constructor(
+		private readonly prisma: PrismaService,
+		private readonly knowledge: KnowledgeService,
+	) {
 		// Dọn dẹp session cũ định kỳ - similar to rooms.service.ts cleanup pattern
 		setInterval(() => {
 			this.cleanupExpiredSessions();
@@ -189,6 +193,20 @@ export class AiService {
 					session,
 					this.AI_CONFIG,
 				);
+
+				// Persist Q&A with SQL canonical for self-learning
+				try {
+					await this.knowledge.saveQAInteraction({
+						question: query,
+						answer: finalResponse,
+						sql: sqlResult.sql,
+						sessionId: session.sessionId,
+						userId: session.userId,
+						context: { count: sqlResult.count },
+					});
+				} catch (persistErr) {
+					this.logger.warn('Failed to persist Q&A to knowledge store', persistErr);
+				}
 
 				this.addMessageToSession(session, 'assistant', finalResponse);
 

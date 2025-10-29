@@ -41,4 +41,9 @@ export const validationSchema = Joi.object({
 	AI_MAX_TOKENS: Joi.number().positive().default(500),
 	AI_LIMIT: Joi.number().positive().default(100),
 	AI_MODEL: Joi.string().default('gemini-1.5-flash-latest'),
+
+	// Supabase Vector Store
+	SUPABASE_URL: Joi.string().uri().optional(),
+	SUPABASE_ANON_KEY: Joi.string().optional(),
+	SUPABASE_SERVICE_KEY: Joi.string().optional(),
 });

@@ -101,4 +101,13 @@ export class AppConfigService {
 			model: this.configService.get<string>('ai.model')!,
 		};
 	}
+
+	// Supabase configuration getters
+	get supabaseConfig() {
+		return {
+			url: this.configService.get<string>('supabase.url')!,
+			anonKey: this.configService.get<string>('supabase.anonKey')!,
+			serviceKey: this.configService.get<string>('supabase.serviceKey'),
+		};
+	}
 }

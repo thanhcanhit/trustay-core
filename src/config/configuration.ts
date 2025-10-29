@@ -51,6 +51,11 @@ export interface AppConfig {
 		limit: number;
 		model: string;
 	};
+	supabase: {
+		url: string;
+		anonKey: string;
+		serviceKey?: string;
+	};
 }
 
 /**
@@ -105,6 +110,11 @@ const getConfig = (): AppConfig => ({
 		maxTokens: parseInt(process.env.AI_MAX_TOKENS ?? '500', 10),
 		limit: parseInt(process.env.AI_LIMIT ?? '100', 10),
 		model: process.env.AI_MODEL ?? 'gemini-1.5-flash-latest',
+	},
+	supabase: {
+		url: process.env.SUPABASE_URL ?? '',
+		anonKey: process.env.SUPABASE_ANON_KEY ?? '',
+		serviceKey: process.env.SUPABASE_SERVICE_KEY ?? '',
 	},
 });
 
