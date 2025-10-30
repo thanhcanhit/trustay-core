@@ -274,6 +274,24 @@ export class KnowledgeService {
 			return { chunkId: reuse.chunkId, sqlQAId: reuse.sqlQAId };
 		}
 
+		// Similarity dedupe: if a near-duplicate QA chunk already exists, do not insert a new one
+		try {
+			const near = await this.vectorStore.similaritySearch(question, 'qa', {
+				limit: 1,
+				tenantId: this.tenantId,
+				dbKey: this.dbKey,
+			});
+			const top = near[0];
+			if (top && typeof top.score === 'number' && top.score >= 0.9) {
+				this.logger.debug(
+					`Skipping QA chunk insert (near-duplicate found, score=${top.score.toFixed(2)}, chunkId=${top.id})`,
+				);
+				return { chunkId: Number(top.id), sqlQAId: 0 };
+			}
+		} catch (e) {
+			this.logger.warn('Similarity dedupe check failed, proceeding to save QA', e);
+		}
+
 		// Instead of full Q/A:
 		// const qaContent = `Q: ${question}\nA: ${answer}`;
 		const qaContent = `${question}`;
@@ -495,7 +513,8 @@ export class KnowledgeService {
 		const qPrefix = 'Q: ';
 		const start = content.indexOf(qPrefix);
 		if (start === -1) {
-			return '';
+			// Fallback: treat entire content as the question if no prefix is present
+			return (content || '').trim();
 		}
 		const rest = content.slice(start + qPrefix.length);
 		const end = rest.indexOf('\n');
