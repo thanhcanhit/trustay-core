@@ -1,7 +1,7 @@
 /**
  * AI Chunk collection type
  */
-export type AiChunkCollection = 'schema' | 'qa';
+export type AiChunkCollection = 'schema' | 'qa' | 'business';
 
 /**
  * AI Chunk with embedding for ai_chunks table

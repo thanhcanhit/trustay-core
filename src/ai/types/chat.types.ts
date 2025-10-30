@@ -42,7 +42,15 @@ export interface ChatResponse {
 /**
  * Query type classification
  */
-export type QueryType = 'STATISTICS' | 'ROOM_SEARCH' | 'ROOM_CREATION' | 'INVALID';
+export type QueryType =
+	| 'STATISTICS'
+	| 'ROOM_SEARCH'
+	| 'ROOM_CREATION'
+	| 'CREATE_BUILDING'
+	| 'CREATE_ROOM'
+	| 'UPDATE_BUILDING'
+	| 'UPDATE_ROOM'
+	| 'INVALID';
 
 /**
  * Query validation result

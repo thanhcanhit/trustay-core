@@ -227,7 +227,6 @@ export class AiService {
 					this.logDebug('PERSIST', 'Saving Q&A interaction (canonical + QA chunk if new)...');
 					await this.knowledge.saveQAInteraction({
 						question: query,
-						answer: finalResponse,
 						sql: sqlResult.sql,
 						sessionId: session.sessionId,
 						userId: session.userId,

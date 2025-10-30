@@ -79,31 +79,42 @@ export class SqlGenerationAgent {
 						userRole: accessValidation.userRole,
 					};
 				}
-				const ragResults = await this.knowledgeService.retrieveContext(query, {
+				// Step 1: always fetch schema context
+				const schemaResults = await this.knowledgeService.retrieveSchemaContext(query, {
 					limit: 8,
 					threshold: 0.6,
 				});
-				const schemaContext = ragResults.schema.map((r) => r.content).join('\n');
-				const qaContext = ragResults.knowledge
-					.slice(0, 2)
-					.map((r) => r.content)
-					.join('\n');
+				const schemaContext = schemaResults.map((r) => r.content).join('\n');
 				ragContext = schemaContext
 					? `RELEVANT SCHEMA CONTEXT (from vector search):\n${schemaContext}\n`
 					: '';
-				ragContext += qaContext ? `RELEVANT Q&A EXAMPLES:\n${qaContext}\n` : '';
+
+				// Step 2: optionally fetch QA examples when helpful (e.g., canonical hint)
+				const needExamples = canonicalDecision?.mode === 'hint';
+				if (needExamples) {
+					const qaResults = await this.knowledgeService.retrieveKnowledgeContext(query, {
+						limit: 8,
+						threshold: 0.6,
+					});
+					const qaContext = qaResults
+						.slice(0, 2)
+						.map((r) => r.content)
+						.join('\n');
+					ragContext += qaContext ? `RELEVANT Q&A EXAMPLES:\n${qaContext}\n` : '';
+				}
 				if (canonicalDecision?.mode === 'hint') {
 					ragContext += `\nCANONICAL SQL HINT (score=${canonicalDecision.score.toFixed(2)}):\n`;
 					ragContext += `Question: ${canonicalDecision.question}\nSQL:\n${canonicalDecision.sql}\n`;
 				}
 				this.logger.debug(
-					`RAG retrieved ${ragResults.schema.length} schema chunks and ${ragResults.knowledge.length} QA chunks`,
+					`RAG retrieved ${schemaResults.length} schema chunks` +
+						(canonicalDecision?.mode === 'hint' ? ' and QA examples' : ''),
 				);
 			} catch (ragError) {
 				this.logger.warn('RAG retrieval failed, using fallback schema', ragError);
 			}
 		}
-		const dbSchema = ragContext || SchemaProvider.getCompleteDatabaseSchema();
+		const dbSchema = SchemaProvider.getCompleteDatabaseSchema();
 		let lastError: string = '';
 		let attempts = 0;
 		const maxAttempts = 5;

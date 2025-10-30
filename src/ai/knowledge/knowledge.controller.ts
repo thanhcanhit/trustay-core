@@ -47,7 +47,6 @@ export class KnowledgeController {
 		// Save as golden QA - stores in sql_qa and ai_chunks(qa)
 		const result = await this.knowledge.saveQAInteraction({
 			question: body.question,
-			answer: `SQL: ${body.sql}`, // Simple answer for golden QA
 			sql: body.sql,
 			sessionId: body.sessionId,
 			userId: body.userId,

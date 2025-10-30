@@ -11,40 +11,9 @@ export class QueryValidator {
 	 */
 	static async validateQueryIntent(query: string): Promise<QueryValidationResult> {
 		const queryLower = query.toLowerCase().trim();
-		const invalidPatterns = [
-			'chào',
-			'hello',
-			'hi',
-			'xin chào',
-			'cảm ơn',
-			'thank',
-			'thanks',
-			'tạm biệt',
-			'bye',
-			'goodbye',
-			'làm gì',
-			'làm sao',
-			'như thế nào',
-			'help',
-			'giúp',
-			'hướng dẫn',
-			'đăng nhập',
-			'login',
-			'đăng ký',
-			'register',
-			'thông tin cá nhân',
-			'profile',
-			'account',
-		];
-		for (const pattern of invalidPatterns) {
-			if (queryLower.includes(pattern)) {
-				return {
-					isValid: false,
-					reason: `Câu hỏi "${pattern}" không được hỗ trợ`,
-					queryType: 'INVALID',
-				};
-			}
-		}
+		// Completely remove strict invalidPatterns rejection.
+		// Only pattern-categorize below, let all queries be considered ROOM_SEARCH/statistics/creation or INVALID by matching meaningful patterns
+
 		const statisticsPatterns = [
 			'thống kê',
 			'doanh thu',
@@ -109,65 +78,57 @@ export class QueryValidator {
 			'ở đâu',
 			'where',
 		];
-		const roomCreationPatterns = [
+		const createBuildingPatterns = [
+			'tạo toà',
+			'tạo tòa',
+			'tạo building',
+			'thêm building',
+			'add building',
+			'create building',
+			'đăng toà',
+			'đăng tòa',
+			'create apartment building',
+		];
+		const createRoomPatterns = [
 			'tạo phòng',
 			'thêm phòng',
 			'đăng phòng',
 			'create room',
 			'add room',
-			'list room',
-			'đăng tin',
 			'post listing',
-			'advertise',
-			'quản lý phòng',
-			'manage room',
-			'room management',
+		];
+		const updateBuildingPatterns = [
+			'cập nhật toà',
+			'cập nhật tòa',
+			'update building',
+			'sửa building',
+			'chỉnh building',
+		];
+		const updateRoomPatterns = [
 			'cập nhật phòng',
 			'update room',
 			'edit room',
-			'giá phòng',
-			'room price',
-			'pricing',
-			'mô tả phòng',
-			'room description',
-			'hình ảnh phòng',
-			'room images',
-			'photos',
-			'thiết lập',
-			'setup',
-			'configure',
+			'sửa phòng',
+			'chỉnh phòng',
 		];
-		let queryType: QueryType = 'INVALID';
-		if (statisticsPatterns.some((pattern) => queryLower.includes(pattern))) {
+		// Default to ROOM_SEARCH so free-form inputs (e.g., mô tả phòng) are not rejected
+		let queryType: QueryType = 'ROOM_SEARCH';
+		if (createBuildingPatterns.some((p) => queryLower.includes(p))) {
+			queryType = 'CREATE_BUILDING';
+		} else if (createRoomPatterns.some((p) => queryLower.includes(p))) {
+			queryType = 'CREATE_ROOM';
+		} else if (updateBuildingPatterns.some((p) => queryLower.includes(p))) {
+			queryType = 'UPDATE_BUILDING';
+		} else if (updateRoomPatterns.some((p) => queryLower.includes(p))) {
+			queryType = 'UPDATE_ROOM';
+		} else if (statisticsPatterns.some((pattern) => queryLower.includes(pattern))) {
 			queryType = 'STATISTICS';
 		} else if (roomSearchPatterns.some((pattern) => queryLower.includes(pattern))) {
 			queryType = 'ROOM_SEARCH';
-		} else if (roomCreationPatterns.some((pattern) => queryLower.includes(pattern))) {
-			queryType = 'ROOM_CREATION';
-		}
-		if (queryType === 'INVALID') {
-			const generalDataPatterns = [
-				'có',
-				'còn',
-				'available',
-				'exist',
-				'bao nhiêu',
-				'how many',
-				'count',
-				'ở đâu',
-				'where',
-				'location',
-				'như thế nào',
-				'how',
-				'what',
-			];
-			if (generalDataPatterns.some((pattern) => queryLower.includes(pattern))) {
-				queryType = 'ROOM_SEARCH';
-			}
 		}
 		return {
-			isValid: queryType !== 'INVALID',
-			reason: queryType === 'INVALID' ? 'Loại câu hỏi không được hỗ trợ' : undefined,
+			isValid: true,
+			reason: undefined,
 			queryType,
 		};
 	}

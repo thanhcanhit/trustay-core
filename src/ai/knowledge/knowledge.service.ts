@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '@/prisma/prisma.service';
+import { businessDocument } from '../utils/business';
 import { SchemaProvider } from '../utils/schema-provider';
 import { SupabaseVectorStoreService } from '../vector-store/supabase-vector-store.service';
 import {
@@ -14,7 +16,7 @@ import {
  *   - SOFT: provide canonical as LLM context if threshold.soft <= score < threshold.hard
  *   - Below SOFT: treat as new
  */
-const CANONICAL_REUSE_THRESHOLDS: { hard: number; soft: number } = { hard: 0.92, soft: 0.8 };
+const _CANONICAL_REUSE_THRESHOLDS: { hard: number; soft: number } = { hard: 0.92, soft: 0.8 };
 
 /**
  * Maximum #lines per schema chunk for text-based ingestion
@@ -32,7 +34,10 @@ export class KnowledgeService {
 	private readonly tenantId: string;
 	private readonly dbKey: string;
 
-	constructor(private readonly vectorStore: SupabaseVectorStoreService) {
+	constructor(
+		private readonly vectorStore: SupabaseVectorStoreService,
+		private readonly prisma: PrismaService,
+	) {
 		// Get tenant_id and db_key from vector store config
 		// In a real app, these would come from the request context or config
 		const config = this.vectorStore.getConfig();
@@ -59,6 +64,86 @@ export class KnowledgeService {
 			model: 'text-embedding-004',
 			batchSize: 10,
 		});
+	}
+
+	/**
+	 * Ingest core business knowledge from DB (amenities, cost types, room rules)
+	 * Stores as text chunks in the 'schema' collection for unified retrieval
+	 */
+	async ingestBusinessKnowledge(): Promise<number[]> {
+		const [amenities, costTypes, roomRules] = await Promise.all([
+			this.prisma.amenity.findMany({
+				where: { isActive: true },
+				orderBy: [{ sortOrder: 'asc' }, { nameEn: 'asc' }],
+				select: { id: true, name: true, nameEn: true, category: true, description: true },
+			}),
+			this.prisma.costTypeTemplate.findMany({
+				where: { isActive: true },
+				orderBy: [{ sortOrder: 'asc' }, { nameEn: 'asc' }],
+				select: {
+					id: true,
+					name: true,
+					nameEn: true,
+					category: true,
+					defaultUnit: true,
+					description: true,
+				},
+			}),
+			this.prisma.roomRuleTemplate.findMany({
+				where: { isActive: true },
+				orderBy: [{ sortOrder: 'asc' }, { nameEn: 'asc' }],
+				select: {
+					id: true,
+					name: true,
+					nameEn: true,
+					category: true,
+					ruleType: true,
+					description: true,
+				},
+			}),
+		]);
+
+		const businessDoc = this.buildBusinessKnowledgeText({ amenities, costTypes, roomRules });
+		const chunks = this.splitSchemaIntoChunks(businessDoc);
+		const aiChunks = chunks.map((content) => ({
+			tenantId: this.tenantId,
+			collection: 'schema' as AiChunkCollection,
+			dbKey: this.dbKey,
+			content,
+		}));
+
+		return await this.vectorStore.addChunks(aiChunks, {
+			model: 'text-embedding-004',
+			batchSize: 10,
+		});
+	}
+
+	/**
+	 * Ingest narrative business document (Vietnamese) into 'business' collection
+	 */
+	async ingestBusinessNarrative(): Promise<number[]> {
+		const chunks = this.splitBusinessIntoChunks(businessDocument);
+		const aiChunks = chunks.map((content) => ({
+			tenantId: this.tenantId,
+			collection: 'business' as AiChunkCollection,
+			dbKey: this.dbKey,
+			content,
+		}));
+		return await this.vectorStore.addChunks(aiChunks, {
+			model: 'text-embedding-004',
+			batchSize: 10,
+		});
+	}
+
+	/**
+	 * Convenience method to ingest both DB schema and business knowledge
+	 */
+	async ingestAllKnowledge(): Promise<{ schemaIds: number[]; businessIds: number[] }> {
+		const [schemaIds, businessIds] = await Promise.all([
+			this.ingestDatabaseSchema(),
+			this.ingestBusinessKnowledge(),
+		]);
+		return { schemaIds, businessIds };
 	}
 
 	/**
@@ -94,7 +179,7 @@ export class KnowledgeService {
 			dbKey: this.dbKey,
 		});
 		const exactHit = exact.find((x) => this.normalizeQuestion(x.question) === normalized);
-		if (exactHit && exactHit.sqlCanonical) {
+		if (exactHit?.sqlCanonical) {
 			return {
 				mode: 'reuse',
 				sql: exactHit.sqlCanonical,
@@ -153,13 +238,12 @@ export class KnowledgeService {
 	 */
 	async saveQAInteraction(params: {
 		question: string;
-		answer: string;
 		sql?: string;
 		sessionId?: string;
 		userId?: string;
 		context?: Record<string, unknown>;
 	}): Promise<{ chunkId: number; sqlQAId: number }> {
-		const { question, answer, sql } = params;
+		const { question, sql } = params;
 
 		// Exact-first check: reuse if identical question exists in sql_qa
 		const normalized = this.normalizeQuestion(question);
@@ -267,6 +351,84 @@ export class KnowledgeService {
 	}
 
 	/**
+	 * Retrieve similar business narrative chunks
+	 */
+	async retrieveBusinessContext(
+		query: string,
+		options: VectorSearchOptions = { limit: 5 },
+	): Promise<VectorSearchResult[]> {
+		return await this.vectorStore.similaritySearch(query, 'business', {
+			...options,
+			tenantId: this.tenantId,
+			dbKey: this.dbKey,
+		});
+	}
+
+	/**
+	 * Build RAG context blocks explicitly: schema first, optional business, optional QA
+	 */
+	async buildRagContext(
+		query: string,
+		params: {
+			limit?: number;
+			threshold?: number;
+			includeBusiness?: boolean;
+			includeQA?: boolean;
+			qaLimit?: number;
+		} = {},
+	): Promise<{
+		schemaBlock: string;
+		businessBlock: string;
+		qaBlock: string;
+		ragContext: string;
+		schemaCount: number;
+		businessCount: number;
+		qaCount: number;
+	}> {
+		const limit = params.limit ?? 8;
+		const threshold = params.threshold ?? 0.6;
+		const qaLimit = params.qaLimit ?? 2;
+
+		const schemaResults = await this.retrieveSchemaContext(query, { limit, threshold });
+		const schemaBlock = schemaResults.length
+			? `RELEVANT SCHEMA CONTEXT (from vector search):\n${schemaResults
+					.map((r) => r.content)
+					.join('\n')}\n`
+			: '';
+
+		let businessBlock = '';
+		let qaBlock = '';
+
+		if (params.includeBusiness) {
+			const businessResults = await this.retrieveBusinessContext(query, { limit, threshold });
+			businessBlock = businessResults.length
+				? `RELEVANT BUSINESS CONTEXT:\n${businessResults.map((r) => r.content).join('\n')}\n`
+				: '';
+		}
+
+		if (params.includeQA) {
+			const qaResults = await this.retrieveKnowledgeContext(query, { limit, threshold });
+			qaBlock = qaResults.length
+				? `RELEVANT Q&A EXAMPLES:\n${qaResults
+						.slice(0, qaLimit)
+						.map((r) => r.content)
+						.join('\n')}\n`
+				: '';
+		}
+
+		const ragContext = `${schemaBlock}${businessBlock}${qaBlock}`;
+		return {
+			schemaBlock,
+			businessBlock,
+			qaBlock,
+			ragContext,
+			schemaCount: schemaResults.length,
+			businessCount: businessBlock ? businessBlock.split('\n').length : 0,
+			qaCount: qaBlock ? qaBlock.split('\n').length : 0,
+		};
+	}
+
+	/**
 	 * Retrieve both schema and knowledge context
 	 */
 	async retrieveContext(
@@ -275,6 +437,7 @@ export class KnowledgeService {
 	): Promise<{
 		schema: VectorSearchResult[];
 		knowledge: VectorSearchResult[];
+		business?: VectorSearchResult[];
 	}> {
 		const [schema, knowledge] = await Promise.all([
 			this.retrieveSchemaContext(query, options),
@@ -350,5 +513,62 @@ export class KnowledgeService {
 			chunks.push(lines.slice(i, i + MAX_LINES_PER_SCHEMA_CHUNK).join('\n'));
 		}
 		return chunks.filter((c) => c.trim().length > 0);
+	}
+
+	private splitBusinessIntoChunks(doc: string): string[] {
+		// Split by major headings to keep semantics (CHƯƠNG, numbered sections)
+		const normalized = (doc || '').replace(/\r\n/g, '\n').trim();
+		const sections = normalized.split(/\n(?=CHƯƠNG\s+\d+|\d+\.[^\n]+)/u);
+		return sections.map((s) => s.trim()).filter((s) => s.length > 0);
+	}
+
+	private buildBusinessKnowledgeText(input: {
+		amenities: Array<{
+			id: string;
+			name: string;
+			nameEn: string;
+			category: string;
+			description: string | null;
+		}>;
+		costTypes: Array<{
+			id: string;
+			name: string;
+			nameEn: string;
+			category: string;
+			defaultUnit: string | null;
+			description: string | null;
+		}>;
+		roomRules: Array<{
+			id: string;
+			name: string;
+			nameEn: string;
+			category: string;
+			ruleType: string;
+			description: string | null;
+		}>;
+	}): string {
+		const mapNull = (v?: string | null): string => (v && v.trim().length > 0 ? v.trim() : '-');
+		const amenitySection = [
+			'# Business: Amenities',
+			...input.amenities.map(
+				(a) =>
+					`Amenity | id=${a.id} | key=${a.nameEn} | name=${a.name} | category=${a.category} | description=${mapNull(a.description)}`,
+			),
+		].join('\n');
+		const costTypeSection = [
+			'# Business: Cost Types',
+			...input.costTypes.map(
+				(c) =>
+					`CostType | id=${c.id} | key=${c.nameEn} | name=${c.name} | category=${c.category} | unit=${mapNull(c.defaultUnit)} | description=${mapNull(c.description)}`,
+			),
+		].join('\n');
+		const ruleSection = [
+			'# Business: Room Rules',
+			...input.roomRules.map(
+				(r) =>
+					`RoomRule | id=${r.id} | key=${r.nameEn} | name=${r.name} | category=${r.category} | type=${r.ruleType} | description=${mapNull(r.description)}`,
+			),
+		].join('\n');
+		return [amenitySection, costTypeSection, ruleSection].join('\n\n');
 	}
 }
