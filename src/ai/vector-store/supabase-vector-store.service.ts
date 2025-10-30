@@ -268,6 +268,11 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 		}
 	}
 
+	private normalizeSqlTemplate(template?: string): string {
+		if (!template) return '';
+		return template.toLowerCase().replace(/\s+/g, ' ').trim();
+	}
+
 	/**
 	 * Save SQL QA entry to sql_qa table
 	 * @param entry - SQL QA entry with question and canonical SQL
@@ -275,24 +280,47 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 	 */
 	async saveSqlQA(entry: SqlQAEntry): Promise<number> {
 		try {
+			const normalizedTemplate = this.normalizeSqlTemplate(entry.sqlTemplate);
+			if (normalizedTemplate) {
+				const { data: existing } = await this.supabaseClient
+					.from('sql_qa')
+					.select('id')
+					.eq('tenant_id', entry.tenantId || this.config.tenantId)
+					.eq('db_key', entry.dbKey || this.config.dbKey)
+					.eq('sql_template', normalizedTemplate)
+					.maybeSingle();
+				if (existing && existing.id) {
+					await this.supabaseClient
+						.from('sql_qa')
+						.update({ last_used_at: new Date().toISOString() })
+						.eq('id', existing.id);
+					this.logger.debug(
+						`Canonical SQL (template) exists, not inserting. Using id: ${existing.id}`,
+					);
+					return existing.id;
+				}
+			}
+			// No template or not found, insert new
+			const payload: any = {
+				tenant_id: entry.tenantId || this.config.tenantId,
+				db_key: entry.dbKey || this.config.dbKey,
+				question: entry.question,
+				sql_canonical: entry.sqlCanonical,
+				sql_template: normalizedTemplate || null,
+				parameters: entry.parameters || null,
+				last_used_at: new Date().toISOString(),
+			};
+			const conflictTarget = normalizedTemplate
+				? 'tenant_id,db_key,sql_template'
+				: 'tenant_id,db_key,question';
 			const { data, error } = await this.supabaseClient
 				.from('sql_qa')
-				.upsert(
-					{
-						tenant_id: entry.tenantId || this.config.tenantId,
-						db_key: entry.dbKey || this.config.dbKey,
-						question: entry.question,
-						sql_canonical: entry.sqlCanonical,
-					},
-					{ onConflict: 'tenant_id,db_key,question' },
-				)
+				.upsert(payload, { onConflict: conflictTarget })
 				.select('id')
 				.single();
-
 			if (error) {
 				throw new Error(`Failed to insert SQL QA: ${error.message}`);
 			}
-
 			this.logger.debug(`SQL QA saved with ID: ${data.id}`);
 			return data.id;
 		} catch (error) {

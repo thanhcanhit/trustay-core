@@ -183,14 +183,19 @@ export class KnowledgeService {
 			return { chunkId: reuse.chunkId, sqlQAId: reuse.sqlQAId };
 		}
 
-		const qaContent = `Q: ${question}\nA: ${answer}`;
+		// Instead of full Q/A:
+		// const qaContent = `Q: ${question}\nA: ${answer}`;
+		const qaContent = `${question}`;
 		let sqlQAId: number | undefined;
 		if (sql) {
+			const templated = this.buildSqlTemplate(sql, question);
 			sqlQAId = await this.vectorStore.saveSqlQA({
 				tenantId: this.tenantId,
 				dbKey: this.dbKey,
 				question,
 				sqlCanonical: sql,
+				sqlTemplate: templated.sqlTemplate,
+				parameters: templated.parameters,
 			});
 		}
 		const chunkId = await this.vectorStore.addChunk(
@@ -208,6 +213,29 @@ export class KnowledgeService {
 			`Saved Q&A interaction - Chunk ID: ${chunkId}, SQL QA ID: ${sqlQAId || 'N/A'}`,
 		);
 		return { chunkId, sqlQAId: sqlQAId || 0 };
+	}
+	/**
+	 * Very simple template builder: parameterize district literal in SQL.
+	 * Extensible for other parameters later.
+	 */
+	private buildSqlTemplate(
+		sql: string,
+		_question: string,
+	): {
+		sqlTemplate: string;
+		parameters: Record<string, unknown>;
+	} {
+		let sqlTemplate = sql;
+		const parameters: Record<string, unknown> = {};
+		// Match WHERE ... district_name (I)LIKE '%...%'
+		const districtRegex = /(district_name\s+(?:ILIKE|LIKE)\s+)(['"])%([^%]+)%\2/iu;
+		const m = sqlTemplate.match(districtRegex);
+		if (m) {
+			const district = m[3].trim();
+			parameters.district = district;
+			sqlTemplate = sqlTemplate.replace(districtRegex, `$1:district`);
+		}
+		return { sqlTemplate, parameters };
 	}
 
 	/**

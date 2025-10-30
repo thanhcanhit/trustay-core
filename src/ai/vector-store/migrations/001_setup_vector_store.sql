@@ -38,6 +38,10 @@ CREATE TABLE IF NOT EXISTS sql_qa (
 	db_key TEXT NOT NULL,
 	question TEXT NOT NULL,
 	sql_canonical TEXT NOT NULL,
+	-- Optional: parameterized canonical template and parameters
+	sql_template TEXT,
+	parameters JSONB,
+	last_used_at TIMESTAMP WITH TIME ZONE,
 	created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 	updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -53,6 +57,10 @@ ON sql_qa USING GIN (to_tsvector('english', question));
 -- Enforce uniqueness per tenant/db on question to prevent duplicates
 CREATE UNIQUE INDEX IF NOT EXISTS sql_qa_unique_question_per_tenant_db
 ON sql_qa(tenant_id, db_key, question);
+
+-- Optional: ensure one row per canonical template pattern (better dedup)
+CREATE UNIQUE INDEX IF NOT EXISTS sql_qa_unique_template_per_tenant_db
+ON sql_qa(tenant_id, db_key, sql_template);
 
 -- ========================================
 -- FUNCTION: Match AI Chunks

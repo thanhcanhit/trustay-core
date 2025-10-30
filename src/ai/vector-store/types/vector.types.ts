@@ -63,6 +63,8 @@ export interface SqlQAEntry {
 	dbKey: string;
 	question: string;
 	sqlCanonical: string;
+	sqlTemplate?: string;
+	parameters?: Record<string, unknown>;
 }
 
 /**
