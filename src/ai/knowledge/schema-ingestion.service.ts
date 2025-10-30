@@ -101,6 +101,95 @@ export class SchemaIngestionService {
 	}
 
 	/**
+	 * Ingest full reference data for amenities, cost type templates, room rule templates
+	 * This enriches RAG with actual Vietnamese titles/descriptions from the DB.
+	 */
+	async ingestReferenceLookupData(tenantId: string, dbKey: string): Promise<number[]> {
+		this.logger.log(`Starting reference lookup ingestion for tenant: ${tenantId}, db: ${dbKey}`);
+		const [amenities, costTypes, roomRules] = await Promise.all([
+			this.prisma.amenity.findMany({
+				where: { isActive: true },
+				orderBy: [{ sortOrder: 'asc' }, { nameEn: 'asc' }],
+				select: { id: true, name: true, nameEn: true, category: true, description: true },
+			}),
+			this.prisma.costTypeTemplate.findMany({
+				where: { isActive: true },
+				orderBy: [{ sortOrder: 'asc' }, { nameEn: 'asc' }],
+				select: {
+					id: true,
+					name: true,
+					nameEn: true,
+					category: true,
+					defaultUnit: true,
+					description: true,
+				},
+			}),
+			this.prisma.roomRuleTemplate.findMany({
+				where: { isActive: true },
+				orderBy: [{ sortOrder: 'asc' }, { nameEn: 'asc' }],
+				select: {
+					id: true,
+					name: true,
+					nameEn: true,
+					category: true,
+					ruleType: true,
+					description: true,
+				},
+			}),
+		]);
+
+		const mapNull = (v?: string | null): string => (v && v.trim().length > 0 ? v.trim() : '-');
+		const sections: string[] = [];
+		sections.push(
+			[
+				'# Reference: Amenities (id, name, name_en, category, description)',
+				...amenities.map(
+					(a) =>
+						`amenities | id=${a.id} | name=${a.name} | name_en=${a.nameEn} | category=${a.category} | description=${mapNull(
+							a.description,
+						)}`,
+				),
+			].join('\n'),
+		);
+		sections.push(
+			[
+				'# Reference: Cost Type Templates (id, name, name_en, category, default_unit, description)',
+				...costTypes.map(
+					(c) =>
+						`cost_type_templates | id=${c.id} | name=${c.name} | name_en=${c.nameEn} | category=${c.category} | default_unit=${mapNull(
+							c.defaultUnit,
+						)} | description=${mapNull(c.description)}`,
+				),
+			].join('\n'),
+		);
+		sections.push(
+			[
+				'# Reference: Room Rule Templates (id, name, name_en, category, rule_type, description)',
+				...roomRules.map(
+					(r) =>
+						`room_rule_templates | id=${r.id} | name=${r.name} | name_en=${r.nameEn} | category=${r.category} | rule_type=${r.ruleType} | description=${mapNull(
+							r.description,
+						)}`,
+				),
+			].join('\n'),
+		);
+
+		const content = sections.join('\n\n');
+		const aiChunks = this.splitContent(content).map((chunk) => ({
+			tenantId,
+			collection: 'schema' as AiChunkCollection,
+			dbKey,
+			content: chunk,
+		}));
+		const ids = await this.vectorStore.addChunks(aiChunks, {
+			model: 'text-embedding-004',
+			batchSize: 10,
+		});
+		this.logger.log(`Reference lookup ingestion completed: ${ids.length} chunks`);
+		return ids;
+	}
+
+	/**
 	 * Ingest schema as JSON-structured descriptions per table for richer RAG
 	 */
 	async ingestSchemaJsonDescriptions(
@@ -121,7 +210,19 @@ export class SchemaIngestionService {
 		}
 		const tables = await this.getTables(schemaName);
 		const chunks: string[] = [];
+		const EXCLUDED_TABLES = new Set<string>([
+			'_prisma_migrations',
+			'error_logs',
+			'refresh_tokens',
+			'verification_codes',
+			'bills',
+			'bill_items',
+			'payments',
+		]);
 		for (const table of tables) {
+			if (EXCLUDED_TABLES.has(table.table_name)) {
+				continue;
+			}
 			const [columns, foreignKeys, constraints, enumMap] = await Promise.all([
 				this.getTableColumns(schemaName, table.table_name),
 				this.getForeignKeys(schemaName, table.table_name),
@@ -143,6 +244,24 @@ export class SchemaIngestionService {
 				samples,
 			);
 			chunks.push(JSON.stringify(json, null, 2));
+		}
+
+		// Denormalized documents for better RAG retrieval (rooms and requests/posts)
+		try {
+			const roomDocs = await this.buildDenormalizedRoomDocs();
+			for (const doc of roomDocs) {
+				chunks.push(JSON.stringify({ docType: 'room', ...doc }, null, 2));
+			}
+		} catch (err) {
+			this.logger.warn('Failed to build denormalized room docs', err);
+		}
+		try {
+			const requestDocs = await this.buildDenormalizedRequestDocs();
+			for (const doc of requestDocs) {
+				chunks.push(JSON.stringify({ docType: 'request', ...doc }, null, 2));
+			}
+		} catch (err) {
+			this.logger.warn('Failed to build denormalized request docs', err);
 		}
 		const aiChunks = chunks.map((content) => ({
 			tenantId,
@@ -235,7 +354,7 @@ export class SchemaIngestionService {
 			`
 			SELECT a.attname AS column_name, t.typname AS enum_type, e.enumlabel
 			FROM pg_attribute a
-			JOIN pg_class c ON a.atttrelid = c.oid
+			JOIN pg_class c ON a.attrelid = c.oid
 			JOIN pg_namespace n ON c.relnamespace = n.oid
 			JOIN pg_type t ON a.atttypid = t.oid
 			JOIN pg_enum e ON t.oid = e.enumtypid
@@ -403,6 +522,146 @@ export class SchemaIngestionService {
 		return `${tableName}: ${columnDescriptions}${fkDescriptions ? `. FK: ${fkDescriptions}` : ''}${constraintDescriptions ? `. Constraints: ${constraintDescriptions}` : ''}${indexDescriptions ? `. Indexes: ${indexDescriptions}` : ''}${tableDesc}`;
 	}
 
+	/**
+	 * Split long content into manageable chunks for embeddings
+	 */
+	private splitContent(content: string, maxChars: number = 4000): string[] {
+		const out: string[] = [];
+		let start = 0;
+		while (start < content.length) {
+			out.push(content.slice(start, start + maxChars));
+			start += maxChars;
+		}
+		return out.filter((s) => s.trim().length > 0);
+	}
+
+	// Build denormalized room documents for better semantic retrieval
+	private async buildDenormalizedRoomDocs(): Promise<Array<Record<string, unknown>>> {
+		const sql = `
+		SELECT 
+		  r.id AS room_id,
+		  r.name AS room_name,
+		  r.description AS room_description,
+		  r.room_type,
+		  r.area_sqm,
+		  r.max_occupancy,
+		  r.is_active,
+		  r.is_verified,
+		  b.id AS building_id,
+		  b.name AS building_name,
+		  b.address_line_1,
+		  b.address_line_2,
+		  b.district_id,
+		  b.province_id,
+		  COALESCE(rp.base_price_monthly, 0) AS price_monthly,
+		  rp.currency,
+		  ARRAY(SELECT DISTINCT a.name_en FROM amenities a 
+		        JOIN room_amenities ra ON ra.amenity_id = a.id
+		        WHERE ra.room_id = r.id) AS amenities_en,
+		  ARRAY(SELECT DISTINCT rrt.name_en FROM room_rule_templates rrt 
+		        JOIN room_rules rr ON rr.rule_template_id = rrt.id
+		        WHERE rr.room_id = r.id) AS rules_en,
+		  ARRAY(SELECT DISTINCT img.alt_text FROM room_images img WHERE img.room_id = r.id AND img.alt_text IS NOT NULL) AS images_alt
+		FROM rooms r
+		JOIN buildings b ON b.id = r.building_id
+		LEFT JOIN room_pricing rp ON rp.room_id = r.id
+		WHERE r.is_active = true
+		ORDER BY r.updated_at DESC
+		LIMIT 5;
+		`;
+		const rows = (await this.prisma.$queryRawUnsafe(sql)) as Array<Record<string, unknown>>;
+		return rows.map((row) => {
+			return {
+				id: row['room_id'],
+				title: row['room_name'],
+				description: row['room_description'],
+				room_type: row['room_type'],
+				area_sqm: row['area_sqm'],
+				max_occupancy: row['max_occupancy'],
+				is_active: row['is_active'],
+				is_verified: row['is_verified'],
+				building: {
+					id: row['building_id'],
+					name: row['building_name'],
+					address_line_1: row['address_line_1'],
+					address_line_2: row['address_line_2'],
+					district_id: row['district_id'],
+					province_id: row['province_id'],
+				},
+				amenities: row['amenities_en'] || [],
+				rules: row['rules_en'] || [],
+				pricing: { base_price_monthly: row['price_monthly'], currency: row['currency'] },
+				imagesAlt: row['images_alt'] || [],
+				meta: {
+					province_id: row['province_id'],
+					district_id: row['district_id'],
+					room_type: row['room_type'],
+					is_active: row['is_active'],
+					is_verified: row['is_verified'],
+				},
+			};
+		});
+	}
+
+	// Build denormalized request/roommate documents
+	private async buildDenormalizedRequestDocs(): Promise<Array<Record<string, unknown>>> {
+		const sql = `
+		(SELECT 
+		  rr.id,
+		  rr.title,
+		  rr.description,
+		  rr.min_budget,
+		  rr.max_budget,
+		  rr.currency,
+		  rr.preferred_room_type::text AS preferred_room_type,
+		  rr.preferred_province_id,
+		  rr.preferred_district_id,
+		  rr.preferred_ward_id,
+		  rr.occupancy,
+		  rr.move_in_date,
+		  rr.status::text AS status
+		FROM room_requests rr
+		WHERE rr.status = 'active'
+		ORDER BY rr.created_at DESC
+		LIMIT 5)
+		UNION ALL
+		(SELECT 
+		  rsp.id,
+		  rsp.title,
+		  rsp.description,
+		  NULL::numeric AS min_budget,
+		  rsp.monthly_rent AS max_budget,
+		  rsp.currency,
+		  NULL::text AS preferred_room_type,
+		  rsp.external_province_id AS preferred_province_id,
+		  rsp.external_district_id AS preferred_district_id,
+		  rsp.external_ward_id AS preferred_ward_id,
+		  rsp.seeking_count AS occupancy,
+		  rsp.available_from_date AS move_in_date,
+		  rsp.status::text AS status
+		FROM roommate_seeking_posts rsp
+		WHERE rsp.status IN ('active','pending_approval')
+		ORDER BY rsp.created_at DESC
+		LIMIT 5);
+		`;
+		const rows = (await this.prisma.$queryRawUnsafe(sql)) as Array<Record<string, unknown>>;
+		return rows.map((row) => ({
+			id: row['id'],
+			title: row['title'],
+			description: row['description'],
+			budget: { min: row['min_budget'], max: row['max_budget'], currency: row['currency'] },
+			preferred_location: {
+				province_id: row['preferred_province_id'],
+				district_id: row['preferred_district_id'],
+				ward_id: row['preferred_ward_id'],
+			},
+			preferred_room_type: row['preferred_room_type'],
+			occupancy: row['occupancy'],
+			available_from_date: row['move_in_date'],
+			status: row['status'],
+		}));
+	}
+
 	private buildJsonTableDescription(
 		databaseName: string,
 		tableName: string,
@@ -467,8 +726,31 @@ export class SchemaIngestionService {
 			relationships,
 			constraints: constraints.map((c) => ({ name: c.constraint_name, type: c.constraint_type })),
 			sample_queries: sampleQueries,
-			business_context: '',
+			business_context: this.getBusinessContextForTable(tableName),
 		};
+	}
+
+	private getBusinessContextForTable(tableName: string): string {
+		switch (tableName) {
+			case 'rooms':
+				return 'Room archetypes with type, area, occupancy; linked to buildings, amenities, rules, pricing, costs, and images.';
+			case 'room_instances':
+				return 'Concrete rentable units of a room archetype; use status to determine availability.';
+			case 'buildings':
+				return 'Rental buildings with owner, address, geo, and verification flags.';
+			case 'amenities':
+				return 'Lookup of amenities; join via room_amenities to rooms.';
+			case 'room_rule_templates':
+				return 'Lookup of room rules; join via room_rules to rooms.';
+			case 'cost_type_templates':
+				return 'Lookup for recurring costs (utility/service); join via room_costs to rooms.';
+			case 'room_requests':
+				return 'Tenant posts seeking rooms with budget, location, and preferences.';
+			case 'roommate_seeking_posts':
+				return 'Posts seeking roommates; includes budget, slots, and requirements.';
+			default:
+				return '';
+		}
 	}
 
 	/**

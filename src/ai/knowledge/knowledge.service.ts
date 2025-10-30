@@ -50,6 +50,13 @@ export class KnowledgeService {
 	 * Splits schema document into logical chunks for better recall
 	 */
 	async ingestDatabaseSchema(): Promise<number[]> {
+		// Clear existing 'schema' collection before inserting new baseline provider schema
+		try {
+			await this.vectorStore.deleteChunksByCollection('schema' as AiChunkCollection);
+			this.logger.log('Cleared existing schema chunks before static provider ingestion');
+		} catch (err) {
+			this.logger.warn('Failed to clear existing schema chunks before provider ingestion', err);
+		}
 		const schema = SchemaProvider.getCompleteDatabaseSchema();
 		const chunks = this.splitSchemaIntoChunks(schema);
 

@@ -23,19 +23,35 @@ export class KnowledgeController {
 
 	@Post('ingest-schema-from-db')
 	@ApiOperation({
-		summary: 'Ingest database schema from information_schema into vector store',
+		summary: 'Ingest full RAG schema context from DB (JSON schema + reference lookups)',
 		description:
-			'Queries information_schema to extract actual table/column metadata and creates vector embeddings',
+			'Clears old schema chunks, ingests JSON-structured schema with samples, then ingests amenities/cost types/room rules for rich Vietnamese context',
 	})
 	async ingestSchemaFromDatabase(
 		@Body()
-		body: { tenantId?: string; dbKey?: string; schemaName?: string },
+		body?: { tenantId?: string; dbKey?: string; schemaName?: string },
 	) {
-		const tenantId = body.tenantId || '00000000-0000-0000-0000-000000000000';
-		const dbKey = body.dbKey || 'default';
-		const schemaName = body.schemaName || 'public';
-		const ids = await this.schemaIngestion.ingestSchemaFromDatabase(tenantId, dbKey, schemaName);
-		return { success: true, inserted: ids.length, ids, tenantId, dbKey, schemaName };
+		const payload = body || {};
+		const tenantId = payload.tenantId || '00000000-0000-0000-0000-000000000000';
+		const dbKey = payload.dbKey || 'default';
+		const schemaName = payload.schemaName || 'public';
+		// Build rich RAG context using JSON schema + reference lookup data
+		const jsonIds = await this.schemaIngestion.ingestSchemaJsonDescriptions(
+			tenantId,
+			dbKey,
+			schemaName,
+			'trustay_core',
+		);
+		const refIds = await this.schemaIngestion.ingestReferenceLookupData(tenantId, dbKey);
+		return {
+			success: true,
+			inserted: jsonIds.length + refIds.length,
+			jsonInserted: jsonIds.length,
+			refInserted: refIds.length,
+			tenantId,
+			dbKey,
+			schemaName,
+		};
 	}
 
 	@Post('confirm-golden-qa')
