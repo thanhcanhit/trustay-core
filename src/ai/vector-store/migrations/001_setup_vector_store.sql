@@ -50,6 +50,10 @@ ON sql_qa(tenant_id, db_key);
 CREATE INDEX IF NOT EXISTS sql_qa_question_idx 
 ON sql_qa USING GIN (to_tsvector('english', question));
 
+-- Enforce uniqueness per tenant/db on question to prevent duplicates
+CREATE UNIQUE INDEX IF NOT EXISTS sql_qa_unique_question_per_tenant_db
+ON sql_qa(tenant_id, db_key, question);
+
 -- ========================================
 -- FUNCTION: Match AI Chunks
 -- Search for similar chunks with tenant and collection filtering
@@ -61,12 +65,13 @@ CREATE OR REPLACE FUNCTION match_ai_chunks(
 	p_emb VECTOR(768),
 	p_top_k INT DEFAULT 8
 )
-RETURNS TABLE(content TEXT, score FLOAT4)
+RETURNS TABLE(id BIGINT, content TEXT, score FLOAT4)
 LANGUAGE SQL
 STABLE
 AS $$
-	SELECT 
-		ai_chunks.content,
+    SELECT 
+        ai_chunks.id,
+        ai_chunks.content,
 		1 - (ai_chunks.embedding <=> p_emb) AS score
 	FROM ai_chunks
 	WHERE ai_chunks.tenant_id = p_tenant_id 
@@ -86,12 +91,13 @@ CREATE OR REPLACE FUNCTION match_ai_chunks_any(
 	p_emb VECTOR(768),
 	p_top_k INT DEFAULT 8
 )
-RETURNS TABLE(content TEXT, collection TEXT, score FLOAT4)
+RETURNS TABLE(id BIGINT, content TEXT, collection TEXT, score FLOAT4)
 LANGUAGE SQL
 STABLE
 AS $$
-	SELECT 
-		ai_chunks.content,
+    SELECT 
+        ai_chunks.id,
+        ai_chunks.content,
 		ai_chunks.collection,
 		1 - (ai_chunks.embedding <=> p_emb) AS score
 	FROM ai_chunks
@@ -142,3 +148,12 @@ CREATE TRIGGER update_sql_qa_updated_at
 
 -- CREATE POLICY "Enable insert for authenticated users" ON sql_qa
 -- FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+-- Referencing SQL QA ID to ai_chunks table
+ALTER TABLE ai_chunks ADD COLUMN IF NOT EXISTS sql_qa_id BIGINT REFERENCES sql_qa(id);
+CREATE INDEX IF NOT EXISTS ai_chunks_sql_qa_id_idx ON ai_chunks(sql_qa_id);
+
+-- Link QA chunks directly to canonical for traceability
+ALTER TABLE ai_chunks
+  ADD COLUMN IF NOT EXISTS sql_qa_id BIGINT REFERENCES sql_qa(id);
+CREATE INDEX IF NOT EXISTS ai_chunks_sql_qa_id_idx ON ai_chunks(sql_qa_id);

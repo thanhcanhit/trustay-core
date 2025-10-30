@@ -9,6 +9,19 @@ import {
 } from '../vector-store/types/vector.types';
 
 /**
+ * Canonical SQL match thresholds:
+ *   - HARD: use existing canonical directly if score >= threshold
+ *   - SOFT: provide canonical as LLM context if threshold.soft <= score < threshold.hard
+ *   - Below SOFT: treat as new
+ */
+const CANONICAL_REUSE_THRESHOLDS: { hard: number; soft: number } = { hard: 0.92, soft: 0.8 };
+
+/**
+ * Maximum #lines per schema chunk for text-based ingestion
+ */
+const MAX_LINES_PER_SCHEMA_CHUNK: number = 60;
+
+/**
  * KnowledgeService
  * - Ingests DB schema into vector store for semantic retrieval
  * - Stores and retrieves Q&A interactions with SQL canonical for self-learning
@@ -49,6 +62,93 @@ export class KnowledgeService {
 	}
 
 	/**
+	 * Decide whether to reuse existing canonical SQL or provide it as a hint.
+	 */
+	async decideCanonicalReuse(
+		question: string,
+		thresholds: { hard: number; soft: number } = { hard: 0.92, soft: 0.8 },
+	): Promise<
+		| {
+				mode: 'reuse';
+				sql: string;
+				chunkId: number;
+				sqlQAId: number;
+				score: number;
+				question: string;
+		  }
+		| {
+				mode: 'hint';
+				sql: string;
+				chunkId: number;
+				sqlQAId: number;
+				score: number;
+				question: string;
+		  }
+		| { mode: 'new' }
+	> {
+		// Exact-first check against sql_qa
+		const normalized = this.normalizeQuestion(question);
+		const exact = await this.vectorStore.searchSqlQA(normalized, {
+			limit: 1,
+			tenantId: this.tenantId,
+			dbKey: this.dbKey,
+		});
+		const exactHit = exact.find((x) => this.normalizeQuestion(x.question) === normalized);
+		if (exactHit && exactHit.sqlCanonical) {
+			return {
+				mode: 'reuse',
+				sql: exactHit.sqlCanonical,
+				chunkId: 0,
+				sqlQAId: Number(exactHit.id),
+				score: 1,
+				question: exactHit.question,
+			};
+		}
+
+		// Vector similarity check
+		const results = await this.vectorStore.similaritySearch(question, 'qa', {
+			limit: 1,
+			tenantId: this.tenantId,
+			dbKey: this.dbKey,
+		});
+		const top = results[0];
+		if (!top || typeof top.score !== 'number') {
+			return { mode: 'new' };
+		}
+		const originalQuestion = this.extractQuestionFromContent(top.content);
+		const matchList = await this.vectorStore.searchSqlQA(originalQuestion, {
+			limit: 1,
+			tenantId: this.tenantId,
+			dbKey: this.dbKey,
+		});
+		const hit = matchList[0];
+		if (!hit || !hit.sqlCanonical) {
+			return { mode: 'new' };
+		}
+		if (top.score >= thresholds.hard) {
+			return {
+				mode: 'reuse',
+				sql: hit.sqlCanonical,
+				chunkId: Number(top.id),
+				sqlQAId: Number(hit.id),
+				score: top.score,
+				question: hit.question,
+			};
+		}
+		if (top.score >= thresholds.soft) {
+			return {
+				mode: 'hint',
+				sql: hit.sqlCanonical,
+				chunkId: Number(top.id),
+				sqlQAId: Number(hit.id),
+				score: top.score,
+				question: hit.question,
+			};
+		}
+		return { mode: 'new' };
+	}
+
+	/**
 	 * Save a Q&A interaction with SQL canonical to vector store for self-learning
 	 */
 	async saveQAInteraction(params: {
@@ -59,15 +159,23 @@ export class KnowledgeService {
 		userId?: string;
 		context?: Record<string, unknown>;
 	}): Promise<{ chunkId: number; sqlQAId: number }> {
-		const {
-			question,
-			answer,
-			sql,
-			// sessionId, userId, context
-		} = params;
+		const { question, answer, sql } = params;
+
+		// Exact-first check: reuse if identical question exists in sql_qa
+		const normalized = this.normalizeQuestion(question);
+		const exact = await this.vectorStore.searchSqlQA(normalized, {
+			limit: 1,
+			tenantId: this.tenantId,
+			dbKey: this.dbKey,
+		});
+		const exactHit = exact.find((x) => this.normalizeQuestion(x.question) === normalized);
+		if (exactHit) {
+			this.logger.debug(`Reusing existing QA (exact) - SQL QA ID: ${exactHit.id}`);
+			return { chunkId: 0, sqlQAId: Number(exactHit.id) };
+		}
 
 		// Reuse existing canonical SQL if a highly similar question already exists
-		const reuse = await this.findReusableCanonicalSql(question, 0.85);
+		const reuse = await this.findReusableCanonicalSql(question, 0.8);
 		if (reuse) {
 			this.logger.debug(
 				`Reusing existing QA - Chunk ID: ${reuse.chunkId}, SQL QA ID: ${reuse.sqlQAId}`,
@@ -76,16 +184,6 @@ export class KnowledgeService {
 		}
 
 		const qaContent = `Q: ${question}\nA: ${answer}`;
-		const chunkId = await this.vectorStore.addChunk(
-			{
-				tenantId: this.tenantId,
-				collection: 'qa',
-				dbKey: this.dbKey,
-				content: qaContent,
-			},
-			{ model: 'text-embedding-004' },
-		);
-
 		let sqlQAId: number | undefined;
 		if (sql) {
 			sqlQAId = await this.vectorStore.saveSqlQA({
@@ -95,6 +193,16 @@ export class KnowledgeService {
 				sqlCanonical: sql,
 			});
 		}
+		const chunkId = await this.vectorStore.addChunk(
+			{
+				tenantId: this.tenantId,
+				collection: 'qa',
+				dbKey: this.dbKey,
+				content: qaContent,
+				sqlQaId: sqlQAId,
+			},
+			{ model: 'text-embedding-004' },
+		);
 
 		this.logger.debug(
 			`Saved Q&A interaction - Chunk ID: ${chunkId}, SQL QA ID: ${sqlQAId || 'N/A'}`,
@@ -181,6 +289,10 @@ export class KnowledgeService {
 		return { chunkId: Number(top.id), sqlQAId: Number(hit.id) };
 	}
 
+	private normalizeQuestion(input: string): string {
+		return (input || '').toLowerCase().normalize('NFC').replace(/\s+/g, ' ').trim();
+	}
+
 	private extractQuestionFromContent(content: string): string {
 		const qPrefix = 'Q: ';
 		const start = content.indexOf(qPrefix);
@@ -206,9 +318,8 @@ export class KnowledgeService {
 	private splitSchemaIntoChunks(schema: string): string[] {
 		const lines = schema.split('\n');
 		const chunks: string[] = [];
-		const MAX_LINES_PER_CHUNK = 60;
-		for (let i = 0; i < lines.length; i += MAX_LINES_PER_CHUNK) {
-			chunks.push(lines.slice(i, i + MAX_LINES_PER_CHUNK).join('\n'));
+		for (let i = 0; i < lines.length; i += MAX_LINES_PER_SCHEMA_CHUNK) {
+			chunks.push(lines.slice(i, i + MAX_LINES_PER_SCHEMA_CHUNK).join('\n'));
 		}
 		return chunks.filter((c) => c.trim().length > 0);
 	}

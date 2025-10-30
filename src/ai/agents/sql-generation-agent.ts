@@ -55,8 +55,30 @@ export class SqlGenerationAgent {
 		}
 		// Step A: RAG Retrieval - Get relevant schema and QA chunks
 		let ragContext = '';
+		let canonicalDecision: any = null;
 		if (this.knowledgeService) {
 			try {
+				// Two-threshold canonical reuse/hint
+				canonicalDecision = await this.knowledgeService.decideCanonicalReuse(query, {
+					hard: 0.92,
+					soft: 0.8,
+				});
+				if (canonicalDecision?.mode === 'reuse') {
+					this.logger.debug(
+						`Canonical reuse (hard) score=${canonicalDecision.score} sqlQAId=${canonicalDecision.sqlQAId}`,
+					);
+					// Execute canonical SQL directly and return
+					const results = await prisma.$queryRawUnsafe(canonicalDecision.sql);
+					const serializedResults = Serializer.serializeBigInt(results);
+					return {
+						sql: canonicalDecision.sql,
+						results: serializedResults,
+						count: Array.isArray(serializedResults) ? serializedResults.length : 1,
+						attempts: 1,
+						userId: userId,
+						userRole: accessValidation.userRole,
+					};
+				}
 				const ragResults = await this.knowledgeService.retrieveContext(query, {
 					limit: 8,
 					threshold: 0.6,
@@ -70,6 +92,10 @@ export class SqlGenerationAgent {
 					? `RELEVANT SCHEMA CONTEXT (from vector search):\n${schemaContext}\n`
 					: '';
 				ragContext += qaContext ? `RELEVANT Q&A EXAMPLES:\n${qaContext}\n` : '';
+				if (canonicalDecision?.mode === 'hint') {
+					ragContext += `\nCANONICAL SQL HINT (score=${canonicalDecision.score.toFixed(2)}):\n`;
+					ragContext += `Question: ${canonicalDecision.question}\nSQL:\n${canonicalDecision.sql}\n`;
+				}
 				this.logger.debug(
 					`RAG retrieved ${ragResults.schema.length} schema chunks and ${ragResults.knowledge.length} QA chunks`,
 				);

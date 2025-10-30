@@ -108,7 +108,10 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 	 * @param options - Embedding generation options
 	 * @returns Created chunk ID
 	 */
-	async addChunk(chunk: AiChunkWithEmbedding, options?: EmbeddingOptions): Promise<number> {
+	async addChunk(
+		chunk: AiChunkWithEmbedding & { sqlQaId?: number },
+		options?: EmbeddingOptions,
+	): Promise<number> {
 		try {
 			let embedding = chunk.embedding;
 
@@ -124,6 +127,7 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 					db_key: chunk.dbKey || this.config.dbKey,
 					content: chunk.content,
 					embedding: embedding,
+					sql_qa_id: chunk.sqlQaId, // store link if present
 				})
 				.select('id')
 				.single();
@@ -146,7 +150,10 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 	 * @param options - Embedding generation options
 	 * @returns Array of created chunk IDs
 	 */
-	async addChunks(chunks: AiChunkWithEmbedding[], options?: EmbeddingOptions): Promise<number[]> {
+	async addChunks(
+		chunks: (AiChunkWithEmbedding & { sqlQaId?: number })[],
+		options?: EmbeddingOptions,
+	): Promise<number[]> {
 		try {
 			const texts = chunks.map((chunk) => chunk.content);
 			const embeddings = await this.generateEmbeddings(texts, options);
@@ -157,6 +164,7 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 				db_key: chunk.dbKey || this.config.dbKey,
 				content: chunk.content,
 				embedding: embeddings[index],
+				sql_qa_id: chunk.sqlQaId,
 			}));
 
 			const { data, error } = await this.supabaseClient
@@ -269,12 +277,15 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 		try {
 			const { data, error } = await this.supabaseClient
 				.from('sql_qa')
-				.insert({
-					tenant_id: entry.tenantId || this.config.tenantId,
-					db_key: entry.dbKey || this.config.dbKey,
-					question: entry.question,
-					sql_canonical: entry.sqlCanonical,
-				})
+				.upsert(
+					{
+						tenant_id: entry.tenantId || this.config.tenantId,
+						db_key: entry.dbKey || this.config.dbKey,
+						question: entry.question,
+						sql_canonical: entry.sqlCanonical,
+					},
+					{ onConflict: 'tenant_id,db_key,question' },
+				)
 				.select('id')
 				.single();
 

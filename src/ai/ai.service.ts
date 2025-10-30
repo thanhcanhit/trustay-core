@@ -45,6 +45,30 @@ export class AiService {
 	}
 
 	/**
+	 * Format step-based log message with a consistent, prominent tag
+	 */
+	private formatStep(step: string, message: string): string {
+		const tag = `[${step}@ai.service.ts]`;
+		return `${tag} ${message}`;
+	}
+
+	private logDebug(step: string, message: string): void {
+		this.logger.debug(this.formatStep(step, message));
+	}
+
+	private logInfo(step: string, message: string): void {
+		this.logger.log(this.formatStep(step, message));
+	}
+
+	private logWarn(step: string, message: string, err?: unknown): void {
+		this.logger.warn(this.formatStep(step, message), err as any);
+	}
+
+	private logError(step: string, message: string, err?: unknown): void {
+		this.logger.error(this.formatStep(step, message), err as any);
+	}
+
+	/**
 	 * Generate session ID based on user context - similar to rooms.service.ts cache key generation
 	 * @param userId - User ID if authenticated
 	 * @param clientIp - Client IP address
@@ -163,22 +187,24 @@ export class AiService {
 		this.addMessageToSession(session, 'user', query);
 
 		try {
-			this.logger.debug(`Processing chat query: "${query}" for session: ${session.sessionId}`);
+			this.logDebug('SESSION', `Processing chat query: "${query}" (session: ${session.sessionId})`);
 
 			// MULTI-AGENT FLOW:
 			// Agent 1: Conversational Agent - Always responds naturally
+			this.logInfo('CONVO_AGENT', 'Generating conversational response...');
 			const conversationalResponse = await this.conversationalAgent.process(
 				query,
 				session,
 				this.AI_CONFIG,
 			);
-			this.logger.debug(
-				`Conversational agent response: readyForSql=${conversationalResponse.readyForSql}`,
+			this.logDebug(
+				'CONVO_AGENT',
+				`Response received (readyForSql=${conversationalResponse.readyForSql})`,
 			);
 
 			// If conversational agent determines we have enough info for SQL
 			if (conversationalResponse.readyForSql) {
-				this.logger.debug('Generating SQL...');
+				this.logInfo('SQL_AGENT', 'Generating SQL...');
 				// Agent 2: SQL Generation Agent
 				const sqlResult = await this.sqlGenerationAgent.process(
 					query,
@@ -186,7 +212,7 @@ export class AiService {
 					this.prisma,
 					this.AI_CONFIG,
 				);
-				this.logger.debug(`SQL generated successfully, results count: ${sqlResult.count}`);
+				this.logInfo('SQL_AGENT', `SQL generated successfully (rows=${sqlResult.count})`);
 
 				// Generate final response combining conversation + SQL results
 				const finalResponse = await this.responseGenerator.generateFinalResponse(
@@ -198,6 +224,7 @@ export class AiService {
 
 				// Persist Q&A with SQL canonical for self-learning
 				try {
+					this.logDebug('PERSIST', 'Saving Q&A interaction (canonical + QA chunk if new)...');
 					await this.knowledge.saveQAInteraction({
 						question: query,
 						answer: finalResponse,
@@ -207,7 +234,7 @@ export class AiService {
 						context: { count: sqlResult.count },
 					});
 				} catch (persistErr) {
-					this.logger.warn('Failed to persist Q&A to knowledge store', persistErr);
+					this.logWarn('PERSIST', 'Failed to persist Q&A to knowledge store', persistErr);
 				}
 
 				this.addMessageToSession(session, 'assistant', finalResponse);
@@ -223,7 +250,7 @@ export class AiService {
 				};
 			} else {
 				// Agent 1 needs more info - return conversational response
-				this.logger.debug('Returning conversational response (not ready for SQL)');
+				this.logInfo('CONVO_AGENT', 'Returning conversational response (not ready for SQL)');
 				this.addMessageToSession(session, 'assistant', conversationalResponse.message);
 
 				return {
@@ -239,7 +266,7 @@ export class AiService {
 			}
 		} catch (error) {
 			// Log detailed error for debugging
-			this.logger.error(`Chat error for session ${session.sessionId}:`, error);
+			this.logError('ERROR', `Chat error (session ${session.sessionId})`, error);
 
 			// Generate user-friendly error message
 			const errorMessage = ErrorHandler.generateErrorResponse(error.message);
