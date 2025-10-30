@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { SchemaProvider } from '../utils/schema-provider';
 import { SupabaseVectorStoreService } from '../vector-store/supabase-vector-store.service';
 import {
@@ -19,7 +19,7 @@ export class KnowledgeService {
 	private readonly tenantId: string;
 	private readonly dbKey: string;
 
-	constructor(@Inject('VectorStore') private readonly vectorStore: SupabaseVectorStoreService) {
+	constructor(private readonly vectorStore: SupabaseVectorStoreService) {
 		// Get tenant_id and db_key from vector store config
 		// In a real app, these would come from the request context or config
 		const config = this.vectorStore.getConfig();
@@ -59,10 +59,23 @@ export class KnowledgeService {
 		userId?: string;
 		context?: Record<string, unknown>;
 	}): Promise<{ chunkId: number; sqlQAId: number }> {
-		const { question, answer, sql, sessionId, userId, context } = params;
-		const qaContent = `Q: ${question}\nA: ${answer}`;
+		const {
+			question,
+			answer,
+			sql,
+			// sessionId, userId, context
+		} = params;
 
-		// Save Q&A chunk to vector store
+		// Reuse existing canonical SQL if a highly similar question already exists
+		const reuse = await this.findReusableCanonicalSql(question, 0.85);
+		if (reuse) {
+			this.logger.debug(
+				`Reusing existing QA - Chunk ID: ${reuse.chunkId}, SQL QA ID: ${reuse.sqlQAId}`,
+			);
+			return { chunkId: reuse.chunkId, sqlQAId: reuse.sqlQAId };
+		}
+
+		const qaContent = `Q: ${question}\nA: ${answer}`;
 		const chunkId = await this.vectorStore.addChunk(
 			{
 				tenantId: this.tenantId,
@@ -70,14 +83,11 @@ export class KnowledgeService {
 				dbKey: this.dbKey,
 				content: qaContent,
 			},
-			{
-				model: 'text-embedding-004',
-			},
+			{ model: 'text-embedding-004' },
 		);
 
 		let sqlQAId: number | undefined;
 		if (sql) {
-			// Save SQL canonical to sql_qa table
 			sqlQAId = await this.vectorStore.saveSqlQA({
 				tenantId: this.tenantId,
 				dbKey: this.dbKey,
@@ -89,11 +99,7 @@ export class KnowledgeService {
 		this.logger.debug(
 			`Saved Q&A interaction - Chunk ID: ${chunkId}, SQL QA ID: ${sqlQAId || 'N/A'}`,
 		);
-
-		return {
-			chunkId,
-			sqlQAId: sqlQAId || 0,
-		};
+		return { chunkId, sqlQAId: sqlQAId || 0 };
 	}
 
 	/**
@@ -140,6 +146,50 @@ export class KnowledgeService {
 		]);
 
 		return { schema, knowledge };
+	}
+
+	/**
+	 * Find reusable canonical SQL by searching similar QA and mapping back to sql_qa.
+	 * Returns existing ids if a confident match is found.
+	 */
+	private async findReusableCanonicalSql(
+		question: string,
+		threshold: number = 0.85,
+	): Promise<{ chunkId: number; sqlQAId: number } | null> {
+		const results = await this.vectorStore.similaritySearch(question, 'qa', {
+			limit: 1,
+			tenantId: this.tenantId,
+			dbKey: this.dbKey,
+		});
+		const top = results[0];
+		if (!top || (typeof top.score === 'number' && top.score < threshold)) {
+			return null;
+		}
+		const originalQuestion = this.extractQuestionFromContent(top.content);
+		if (!originalQuestion) {
+			return null;
+		}
+		const matches = await this.vectorStore.searchSqlQA(originalQuestion, {
+			limit: 1,
+			tenantId: this.tenantId,
+			dbKey: this.dbKey,
+		});
+		const hit = matches[0];
+		if (!hit || !hit.sqlCanonical) {
+			return null;
+		}
+		return { chunkId: Number(top.id), sqlQAId: Number(hit.id) };
+	}
+
+	private extractQuestionFromContent(content: string): string {
+		const qPrefix = 'Q: ';
+		const start = content.indexOf(qPrefix);
+		if (start === -1) {
+			return '';
+		}
+		const rest = content.slice(start + qPrefix.length);
+		const end = rest.indexOf('\n');
+		return end === -1 ? rest.trim() : rest.slice(0, end).trim();
 	}
 
 	/**

@@ -23,7 +23,7 @@ export class AiService {
 
 	// AI Agents
 	private readonly conversationalAgent = new ConversationalAgent();
-	private readonly sqlGenerationAgent = new SqlGenerationAgent();
+	private sqlGenerationAgent: SqlGenerationAgent;
 	private readonly responseGenerator = new ResponseGenerator();
 
 	// Chat session management - similar to rooms.service.ts view cache pattern
@@ -36,6 +36,8 @@ export class AiService {
 		private readonly prisma: PrismaService,
 		private readonly knowledge: KnowledgeService,
 	) {
+		// Initialize SQL generation agent with knowledge service for RAG
+		this.sqlGenerationAgent = new SqlGenerationAgent(this.knowledge);
 		// Dọn dẹp session cũ định kỳ - similar to rooms.service.ts cleanup pattern
 		setInterval(() => {
 			this.cleanupExpiredSessions();

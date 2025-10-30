@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS ai_chunks (
 	collection TEXT NOT NULL CHECK (collection IN ('schema', 'qa')),
 	db_key TEXT NOT NULL,
 	content TEXT NOT NULL,
-	embedding VECTOR(768) NOT NULL, -- Adjust dimension based on your embedding model (text-embedding-004 uses 768)
+    embedding VECTOR(768) NOT NULL, -- text-embedding-004 currently returns 768 dimensions
 	created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 	updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

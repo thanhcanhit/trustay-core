@@ -2,6 +2,7 @@ import { google } from '@ai-sdk/google';
 import { ForbiddenException, Logger } from '@nestjs/common';
 import { generateText } from 'ai';
 import { PrismaService } from '../../prisma/prisma.service';
+import { KnowledgeService } from '../knowledge/knowledge.service';
 import { ChatSession, SqlGenerationResult } from '../types/chat.types';
 import { AiConfig, PromptBuilder } from '../utils/prompt-builder';
 import { QueryValidator } from '../utils/query-validator';
@@ -10,10 +11,12 @@ import { SecurityHelper } from '../utils/security-helper';
 import { Serializer } from '../utils/serializer';
 
 /**
- * Agent 2: SQL Generation Agent - Generates and executes SQL when ready
+ * Agent 2: SQL Generation Agent - Generates and executes SQL when ready with RAG context
  */
 export class SqlGenerationAgent {
 	private readonly logger = new Logger(SqlGenerationAgent.name);
+
+	constructor(private readonly knowledgeService?: KnowledgeService) {}
 
 	/**
 	 * Generate and execute SQL with conversation context, retry logic and security
@@ -50,7 +53,31 @@ export class SqlGenerationAgent {
 		if (!accessValidation.hasAccess) {
 			throw new ForbiddenException(accessValidation.restrictions.join('; '));
 		}
-		const dbSchema = SchemaProvider.getCompleteDatabaseSchema();
+		// Step A: RAG Retrieval - Get relevant schema and QA chunks
+		let ragContext = '';
+		if (this.knowledgeService) {
+			try {
+				const ragResults = await this.knowledgeService.retrieveContext(query, {
+					limit: 8,
+					threshold: 0.6,
+				});
+				const schemaContext = ragResults.schema.map((r) => r.content).join('\n');
+				const qaContext = ragResults.knowledge
+					.slice(0, 2)
+					.map((r) => r.content)
+					.join('\n');
+				ragContext = schemaContext
+					? `RELEVANT SCHEMA CONTEXT (from vector search):\n${schemaContext}\n`
+					: '';
+				ragContext += qaContext ? `RELEVANT Q&A EXAMPLES:\n${qaContext}\n` : '';
+				this.logger.debug(
+					`RAG retrieved ${ragResults.schema.length} schema chunks and ${ragResults.knowledge.length} QA chunks`,
+				);
+			} catch (ragError) {
+				this.logger.warn('RAG retrieval failed, using fallback schema', ragError);
+			}
+		}
+		const dbSchema = ragContext || SchemaProvider.getCompleteDatabaseSchema();
 		let lastError: string = '';
 		let attempts = 0;
 		const maxAttempts = 5;
@@ -59,21 +86,23 @@ export class SqlGenerationAgent {
 			try {
 				const contextualPrompt =
 					userId && accessValidation.userRole
-						? PromptBuilder.buildSecureContextualSqlPrompt(
+						? PromptBuilder.buildSecureContextualSqlPromptWithRAG(
 								query,
 								dbSchema,
 								recentMessages,
 								userId,
 								accessValidation.userRole,
 								aiConfig,
+								ragContext,
 								lastError,
 								attempts,
 							)
-						: PromptBuilder.buildContextualSqlPrompt(
+						: PromptBuilder.buildContextualSqlPromptWithRAG(
 								query,
 								dbSchema,
 								recentMessages,
 								aiConfig,
+								ragContext,
 								lastError,
 								attempts,
 							);
