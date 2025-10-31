@@ -11,8 +11,6 @@ import {
 	ChatResponse,
 	ChatSession,
 	DataPayload,
-	ListItem,
-	TableCell,
 	TableColumn,
 } from './types/chat.types';
 import {
@@ -22,7 +20,6 @@ import {
 	selectImportantColumns,
 	toListItems,
 	tryBuildChart,
-	toListItem as utilToListItem,
 } from './utils/data-utils';
 export { ChatResponse };
 
@@ -118,12 +115,14 @@ export class AiService {
 			return session;
 		}
 
-		// Tạo session mới
+		// Tạo session mới với system prompt tiếng Việt
 		const newSession: ChatSession = {
 			sessionId,
 			userId,
 			clientIp,
-			messages: [],
+			messages: [
+				{ role: 'system', content: VIETNAMESE_LOCALE_SYSTEM_PROMPT, timestamp: new Date() },
+			],
 			lastActivity: new Date(),
 			createdAt: new Date(),
 		};
@@ -187,10 +186,18 @@ export class AiService {
 	}
 
 	/**
-	 * Chat with AI for database queries - Multi-agent flow implementation
-	 * @param query - User query
-	 * @param context - User context (userId, clientIp)
-	 * @returns Chat response with conversation history
+	 * Chat với AI để truy vấn database - Flow đa agent
+	 *
+	 * Flow xử lý:
+	 * 1. Quản lý session: Lấy hoặc tạo session chat cho user
+	 * 2. Agent 1 (Conversational): Phân tích câu hỏi, xác định có đủ thông tin để tạo SQL không
+	 * 3. Agent 2 (SQL Generation): Nếu đủ thông tin, tạo và thực thi SQL query
+	 * 4. Agent 3 (Response Generator): Tạo câu trả lời thân thiện từ kết quả SQL
+	 * 5. Persist: Lưu Q&A vào knowledge store để học hỏi
+	 *
+	 * @param query - Câu hỏi của người dùng
+	 * @param context - Ngữ cảnh người dùng (userId, clientIp)
+	 * @returns Phản hồi chat với lịch sử hội thoại
 	 */
 	async chatWithAI(
 		query: string,
@@ -198,20 +205,25 @@ export class AiService {
 	): Promise<ChatResponse> {
 		const { userId, clientIp } = context;
 
-		// Step 1: Get or create chat session
+		// Bước 1: Quản lý session - Lấy hoặc tạo session chat
+		// Session tự động có system prompt tiếng Việt khi tạo mới
 		const session = this.getOrCreateSession(userId, clientIp);
 
-		// Add user message to session
+		// Lưu câu hỏi của người dùng vào session
 		this.addMessageToSession(session, 'user', query);
 
 		try {
-			this.logDebug('SESSION', `Processing chat query: "${query}" (session: ${session.sessionId})`);
+			this.logDebug('SESSION', `Đang xử lý câu hỏi: "${query}" (session: ${session.sessionId})`);
 
-			// MULTI-AGENT FLOW:
-			// Agent 1: Conversational Agent - Always responds naturally
-			this.logInfo('CONVO_AGENT', 'Generating conversational response...');
-			// Ensure system prompt for Vietnamese output
-			this.ensureVietnameseSystemPrompt(session);
+			// ========================================
+			// BƯỚC 2: Agent 1 - Conversational Agent
+			// ========================================
+			// Agent này có nhiệm vụ:
+			// - Trò chuyện tự nhiên với người dùng
+			// - Phân tích ý định người dùng (tìm kiếm, thống kê, hay cần làm rõ)
+			// - Xác định có đủ thông tin để tạo SQL query không
+			// - Gợi ý mode response (LIST/TABLE/CHART) dựa trên ý định
+			this.logInfo('CONVO_AGENT', 'Agent 1: Đang phân tích câu hỏi và ý định người dùng...');
 			const conversationalResponse = await this.conversationalAgent.process(
 				query,
 				session,
@@ -219,13 +231,15 @@ export class AiService {
 			);
 			this.logDebug(
 				'CONVO_AGENT',
-				`Response received (readyForSql=${conversationalResponse.readyForSql})`,
+				`Agent 1 hoàn thành (readyForSql=${conversationalResponse.readyForSql}, mode=${conversationalResponse.intentModeHint})`,
 			);
 
-			// Decide desired response mode (before SQL) based on conversation intent
-			// Agent determines mode via conversationalResponse.intentModeHint
+			// Xác định mode response dựa trên ý định người dùng (LIST/TABLE/CHART)
+			// Agent đã gợi ý mode qua intentModeHint, nếu không có thì mặc định là TABLE
 			const desiredMode: 'LIST' | 'TABLE' | 'CHART' =
 				conversationalResponse.intentModeHint ?? 'TABLE';
+
+			// Lưu hints từ agent vào session để agent SQL hiểu rõ hơn
 			if (conversationalResponse.entityHint) {
 				this.addMessageToSession(
 					session,
@@ -248,36 +262,57 @@ export class AiService {
 				this.addMessageToSession(session, 'system', '[INTENT] MODE=TABLE');
 			}
 
-			// If conversational agent determines we have enough info for SQL
+			// Kiểm tra: Agent 1 đã xác định đủ thông tin để tạo SQL chưa?
 			if (conversationalResponse.readyForSql) {
-				this.logInfo('SQL_AGENT', 'Generating SQL...');
-				// Agent 2: SQL Generation Agent
+				// ========================================
+				// BƯỚC 3: Agent 2 - SQL Generation Agent
+				// ========================================
+				// Agent này có nhiệm vụ:
+				// - Sử dụng RAG để lấy schema context liên quan
+				// - Tạo SQL query dựa trên câu hỏi và hints từ Agent 1
+				// - Thực thi SQL query an toàn (read-only)
+				// - Trả về kết quả đã được serialize
+				this.logInfo('SQL_AGENT', 'Agent 2: Đang tạo và thực thi SQL query...');
 				const sqlResult = await this.sqlGenerationAgent.process(
 					query,
 					session,
 					this.prisma,
 					this.AI_CONFIG,
 				);
-				this.logInfo('SQL_AGENT', `SQL generated successfully (rows=${sqlResult.count})`);
+				this.logInfo('SQL_AGENT', `Agent 2 hoàn thành (tìm thấy ${sqlResult.count} kết quả)`);
 
-				// Build Markdown-first envelope with DATA payload (LIST/TABLE/CHART)
+				// ========================================
+				// BƯỚC 4: Tạo structured payload cho UI
+				// ========================================
+				// Xây dựng payload theo mode (LIST/TABLE/CHART) để frontend render
 				const dataPayload: DataPayload | undefined = this.buildDataPayload(
 					sqlResult.results,
 					query,
 					desiredMode,
 				);
-				const messageText: string = this.buildMarkdownForData(
+
+				// ========================================
+				// BƯỚC 5: Agent 3 - Response Generator
+				// ========================================
+				// Agent này có nhiệm vụ:
+				// - Tạo câu trả lời thân thiện, tự nhiên bằng tiếng Việt
+				// - Kết hợp thông tin từ Agent 1 (conversational message) và kết quả SQL
+				// - Tạo Markdown message cho người dùng
+				const messageText: string = await this.responseGenerator.generateFinalResponse(
 					conversationalResponse.message,
-					sqlResult.results,
-					sqlResult.count,
-					dataPayload?.mode ?? desiredMode,
-					dataPayload?.mode === 'CHART' ? dataPayload.chart?.url : undefined,
-					true,
+					sqlResult,
+					session,
+					this.AI_CONFIG,
 				);
 
-				// Persist Q&A with SQL canonical for self-learning
+				// ========================================
+				// BƯỚC 6: Lưu Q&A vào knowledge store
+				// ========================================
+				// Lưu câu hỏi và SQL tương ứng để:
+				// - Học hỏi và tái sử dụng SQL đã được xác nhận (canonical)
+				// - Cải thiện chất lượng response cho các câu hỏi tương tự
 				try {
-					this.logDebug('PERSIST', 'Saving Q&A interaction (canonical + QA chunk if new)...');
+					this.logDebug('PERSIST', 'Đang lưu Q&A vào knowledge store...');
 					await this.knowledge.saveQAInteraction({
 						question: query,
 						sql: sqlResult.sql,
@@ -286,11 +321,13 @@ export class AiService {
 						context: { count: sqlResult.count },
 					});
 				} catch (persistErr) {
-					this.logWarn('PERSIST', 'Failed to persist Q&A to knowledge store', persistErr);
+					this.logWarn('PERSIST', 'Không thể lưu Q&A vào knowledge store', persistErr);
 				}
 
+				// Lưu câu trả lời vào session
 				this.addMessageToSession(session, 'assistant', messageText);
 
+				// Trả về response với payload structured cho UI
 				return {
 					kind: 'DATA',
 					sessionId: session.sessionId,
@@ -299,8 +336,12 @@ export class AiService {
 					payload: dataPayload,
 				};
 			} else {
-				// Agent 1 needs more info - return conversational response
-				this.logInfo('CONVO_AGENT', 'Returning conversational response (not ready for SQL)');
+				// ========================================
+				// Trường hợp: Chưa đủ thông tin
+				// ========================================
+				// Agent 1 xác định cần làm rõ thêm trước khi có thể tạo SQL
+				// Trả về response yêu cầu clarification
+				this.logInfo('CONVO_AGENT', 'Cần thêm thông tin - trả về response yêu cầu làm rõ');
 				const messageText: string = `Mình cần thêm chút thông tin để trả lời chính xác: ${conversationalResponse.message}`;
 				this.addMessageToSession(session, 'assistant', messageText);
 
@@ -313,10 +354,13 @@ export class AiService {
 				};
 			}
 		} catch (error) {
-			// Log detailed error for debugging
-			this.logError('ERROR', `Chat error (session ${session.sessionId})`, error);
+			// ========================================
+			// Xử lý lỗi
+			// ========================================
+			// Ghi log chi tiết để debug
+			this.logError('ERROR', `Lỗi xử lý chat (session ${session.sessionId})`, error);
 
-			// Generate user-friendly error message
+			// Tạo message lỗi thân thiện cho người dùng
 			const errorMessage = generateErrorResponse((error as Error).message);
 			const messageText: string = `Xin lỗi, đã xảy ra lỗi: ${errorMessage}`;
 			this.addMessageToSession(session, 'assistant', messageText);
@@ -331,48 +375,7 @@ export class AiService {
 		}
 	}
 
-	// Build Markdown for DATA responses (LIST or TABLE)
-	private buildMarkdownForData(
-		intro: string,
-		results: unknown,
-		_count: number | undefined, // Unused but kept for interface consistency
-		mode?: 'LIST' | 'TABLE' | 'CHART',
-		chartUrl?: string,
-		suppressBody: boolean = false,
-	): string {
-		const finalIntro = String(intro ?? '').trim();
-		if (
-			!Array.isArray(results) ||
-			results.length === 0 ||
-			typeof results[0] !== 'object' ||
-			suppressBody
-		) {
-			return `${finalIntro}`;
-		}
-		const rows = results as ReadonlyArray<Record<string, unknown>>;
-		if (mode === 'CHART' && chartUrl) {
-			return `${finalIntro}\n\n![Biểu đồ](${chartUrl})`;
-		}
-		if (mode === 'LIST' || isListLike(rows)) {
-			const items = toListItems(rows).slice(0, 10);
-			const lines = items.map((i) => {
-				const title = i.title;
-				const link = i.path || i.externalUrl || '';
-				const desc = i.description ? `  \n  ${i.description}` : '';
-				return link ? `- [${title}](${link})${desc}` : `- ${title}${desc}`;
-			});
-			return `${finalIntro}\n\n${lines.join('\n')}`;
-		}
-		const columns: TableColumn[] = inferColumns(rows);
-		const previewRows = normalizeRows(rows, columns).slice(0, 10);
-		const tableHeader = `| ${columns.map((c) => c.label).join(' | ')} |\n| ${columns.map(() => '---').join(' | ')} |`;
-		const tableBody = previewRows
-			.map((r) => `| ${columns.map((c) => String(r[c.key] ?? '')).join(' | ')} |`)
-			.join('\n');
-		return `${finalIntro}\n\n${tableHeader}\n${tableBody}`;
-	}
-
-	// removed sanitizeIntroForMode in favor of prompt-based control
+	// removed buildMarkdownForData in favor of ResponseGenerator prompt-based control
 
 	private buildDataPayload(
 		results: unknown,
@@ -420,136 +423,6 @@ export class AiService {
 				previewLimit: 50,
 			},
 		};
-	}
-
-	private selectImportantColumns(
-		columns: ReadonlyArray<TableColumn>,
-		rows: ReadonlyArray<Record<string, unknown>>,
-	): TableColumn[] {
-		const PRIORITY_KEYS = [
-			'id',
-			'name',
-			'title',
-			'price',
-			'area',
-			'count',
-			'total',
-			'created_at',
-			'createdAt',
-			'updated_at',
-			'updatedAt',
-			'room',
-			'post',
-			'url',
-			'link',
-			'href',
-		];
-		const MAX_COLUMNS = 8;
-		const isNonEmpty = (key: string): boolean =>
-			rows
-				.slice(0, 50)
-				.some((r) => r[key] !== null && r[key] !== undefined && String(r[key]).trim() !== '');
-		// Filter out columns with non-primitive objects by probing first row values
-		const primitiveColumns = columns.filter((c) => {
-			const v = rows[0]?.[c.key];
-			const t = typeof v;
-			return v === null || v === undefined || t === 'string' || t === 'number' || t === 'boolean';
-		});
-		const nonEmpty = primitiveColumns.filter((c) => isNonEmpty(c.key));
-		const prioritized = [
-			...nonEmpty.filter((c) => PRIORITY_KEYS.includes(c.key)),
-			...nonEmpty.filter((c) => !PRIORITY_KEYS.includes(c.key)),
-		];
-		return prioritized.slice(0, MAX_COLUMNS);
-	}
-
-	private tryBuildChart(
-		rows: ReadonlyArray<Record<string, unknown>>,
-	): { url: string; width: number; height: number } | null {
-		return tryBuildChart(rows);
-	}
-
-	private toListItems(rows: ReadonlyArray<Record<string, unknown>>): ListItem[] {
-		return toListItems(rows);
-	}
-
-	private toListItem(row: Record<string, unknown>): ListItem {
-		return utilToListItem(row);
-	}
-
-	private toLowerKeys(obj: Record<string, unknown>): Record<string, unknown> {
-		return Object.entries(obj).reduce<Record<string, unknown>>((acc, [k, v]) => {
-			acc[k.toLowerCase()] = v;
-			return acc;
-		}, {});
-	}
-
-	private ensureVietnameseSystemPrompt(session: ChatSession): void {
-		const exists = session.messages.some(
-			(m) => m.role === 'system' && m.content.includes('[LOCALE] vi-VN'),
-		);
-		if (exists) {
-			return;
-		}
-		this.addMessageToSession(session, 'system', VIETNAMESE_LOCALE_SYSTEM_PROMPT);
-	}
-
-	private inferColumns(rows: ReadonlyArray<Record<string, unknown>>): TableColumn[] {
-		const sample = rows[0] ?? {};
-		return Object.keys(sample).map((key) => {
-			const v = (sample as Record<string, unknown>)[key];
-			const type: TableColumn['type'] =
-				typeof v === 'number'
-					? 'number'
-					: v instanceof Date
-						? 'date'
-						: typeof v === 'boolean'
-							? 'boolean'
-							: /url|link|href/i.test(key)
-								? 'url'
-								: /image|thumbnail/i.test(key)
-									? 'image'
-									: 'string';
-			// Keep label as raw key; beautification/localization handled by LLM in message or frontend
-			return { key, label: key, type };
-		});
-	}
-
-	private normalizeRows(
-		rows: ReadonlyArray<Record<string, unknown>>,
-		columns: ReadonlyArray<TableColumn>,
-	): ReadonlyArray<Record<string, TableCell>> {
-		return rows.map((row) =>
-			columns.reduce<Record<string, TableCell>>((acc, c) => {
-				const v = row[c.key];
-				if (v === null || v === undefined) {
-					acc[c.key] = null;
-					return acc;
-				}
-				if (c.type === 'date') {
-					acc[c.key] = v instanceof Date ? v.toISOString() : String(v);
-					return acc;
-				}
-				if (c.type === 'number') {
-					acc[c.key] = Number(v);
-					return acc;
-				}
-				if (c.type === 'boolean') {
-					acc[c.key] = Boolean(v);
-					return acc;
-				}
-				acc[c.key] = String(v);
-				return acc;
-			}, {}),
-		);
-	}
-
-	private toLabel(key: string): string {
-		return key
-			.replace(/_/g, ' ')
-			.replace(/([a-z])([A-Z])/g, '$1 $2')
-			.replace(/\s+/g, ' ')
-			.replace(/^./, (s) => s.toUpperCase());
 	}
 
 	// removed toVietnameseLabel - LLM/front-end handles localization
