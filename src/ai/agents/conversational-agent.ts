@@ -55,6 +55,11 @@ NGUYÊN TẮC QUAN TRỌNG:
 - Với câu hỏi thống kê: "doanh thu", "thống kê" → có thể READY_FOR_SQL
 - CHỈ NEEDS_CLARIFICATION khi hoàn toàn không hiểu ý định
 
+PHÂN LOẠI Ý ĐỊNH & QUY ĐỔI NGHIỆP VỤ:
+- Nếu người dùng hỏi "có ai đang tìm phòng ...?" thì hiểu là tìm bài đăng tìm phòng (room seeking posts) từ phía chủ trọ, KHÔNG phải tìm danh sách phòng.
+- Nếu người dùng hỏi "tìm phòng ..." thì hiểu là tìm rooms.
+- Nếu người dùng hỏi "thống kê/hoá đơn/doanh thu..." thì hiểu là yêu cầu thống kê (aggregate). 
+
 HÃY PHÂN TÍCH VÀ TRẢ LỜI:
 
 1. PHÂN LOẠI TÌNH HUỐNG:
@@ -71,6 +76,9 @@ HÃY PHÂN TÍCH VÀ TRẢ LỜI:
 
 Trả về theo format:
 SITUATION: GREETING/READY_FOR_SQL/NEEDS_CLARIFICATION/GENERAL_CHAT
+MODE_HINT: LIST/TABLE/CHART
+ENTITY_HINT: room|post|room_seeking_post|none
+FILTERS_HINT: [mô tả ngắn gọn filter nếu có, ví dụ: quận="gò vấp", giá<3tr]
 RESPONSE: [câu trả lời tự nhiên của bạn]`;
 		try {
 			this.logger.debug(`Generating conversational response for query: "${query}"`);
@@ -85,6 +93,9 @@ RESPONSE: [câu trả lời tự nhiên của bạn]`;
 			const situationMatch = response.match(
 				/SITUATION: (GREETING|READY_FOR_SQL|NEEDS_CLARIFICATION|GENERAL_CHAT)/,
 			);
+			const modeMatch = response.match(/MODE_HINT: (LIST|TABLE|CHART)/);
+			const entityMatch = response.match(/ENTITY_HINT: (room|post|room_seeking_post|none)/);
+			const filtersMatch = response.match(/FILTERS_HINT: (.+)/);
 			const responseMatch = response.match(/RESPONSE: (.+)/s);
 			const situation = situationMatch ? situationMatch[1] : 'GENERAL_CHAT';
 			const message = responseMatch
@@ -98,6 +109,9 @@ RESPONSE: [câu trả lời tự nhiên của bạn]`;
 				readyForSql: situation === 'READY_FOR_SQL',
 				needsClarification: situation === 'NEEDS_CLARIFICATION',
 				needsIntroduction: situation === 'GREETING',
+				intentModeHint: modeMatch ? (modeMatch[1] as 'LIST' | 'TABLE' | 'CHART') : undefined,
+				entityHint: entityMatch && entityMatch[1] !== 'none' ? (entityMatch[1] as any) : undefined,
+				filtersHint: filtersMatch ? filtersMatch[1].trim() : undefined,
 			};
 		} catch (error) {
 			this.logger.error('Conversational agent error:', error);

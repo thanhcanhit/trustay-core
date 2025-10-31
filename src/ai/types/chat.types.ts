@@ -27,22 +27,9 @@ export type ChatResponse = ChatEnvelope;
 export interface ChatEnvelope {
 	kind: 'CONTENT' | 'DATA' | 'CONTROL';
 	sessionId: string;
-	markdown: string; // Markdown-first text for rendering
 	timestamp: string;
+	message: string; // Markdown-first text for rendering
 	meta?: Record<string, string | number | boolean>;
-	// Backward/diagnostic fields (optional)
-	message?: string; // legacy text
-	sql?: string;
-	results?: unknown;
-	count?: number;
-	validation?: {
-		isValid: boolean;
-		reason?: string;
-		needsClarification?: boolean;
-		needsIntroduction?: boolean;
-		clarificationQuestion?: string;
-	};
-	error?: string;
 	payload?: ContentPayload | DataPayload | ControlPayload;
 }
 
@@ -84,9 +71,8 @@ export interface DataPayload {
 		previewLimit?: number;
 	};
 	chart?: {
-		mimeType: 'image/png' | 'image/jpeg' | 'image/webp';
-		base64?: string;
-		url?: string; // optional direct URL (e.g., QuickChart)
+		mimeType: 'image/png';
+		url: string; // direct URL (e.g., QuickChart)
 		width: number;
 		height: number;
 		alt?: string;
@@ -142,6 +128,9 @@ export interface ConversationalAgentResponse {
 	readyForSql: boolean;
 	needsClarification?: boolean;
 	needsIntroduction?: boolean;
+	intentModeHint?: 'LIST' | 'TABLE' | 'CHART';
+	entityHint?: 'room' | 'post' | 'room_seeking_post';
+	filtersHint?: string; // natural language filters parsed (e.g., district:"gò vấp")
 }
 
 /**

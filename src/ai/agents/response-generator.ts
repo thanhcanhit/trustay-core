@@ -33,16 +33,17 @@ Bạn là AI assistant của Trustay. Hãy tạo câu trả lời cuối cùng k
 
 ${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
 
-Thông điệp từ Agent hội thoại: "${conversationalMessage}"
-Số kết quả tìm được: ${sqlResult.count}
-Dữ liệu kết quả: ${JSON.stringify(sqlResult.results).substring(0, 800)}...
+THÔNG ĐIỆP TỪ AGENT HỘI THOẠI: "${conversationalMessage}"
+SỐ KẾT QUẢ: ${sqlResult.count}
+DỮ LIỆU (rút gọn): ${JSON.stringify(sqlResult.results).substring(0, 800)}...
 
-Hãy tạo câu trả lời:
-1. Tự nhiên, như đang trò chuyện
-2. Tóm tắt kết quả một cách dễ hiểu
-3. Không hiển thị SQL query
-4. Sử dụng tiếng Việt và emoji phù hợp
-5. Nếu không có kết quả, đưa ra gợi ý hữu ích
+YÊU CẦU ĐỊNH DẠNG:
+- Viết bằng tiếng Việt tự nhiên, thân thiện, ấm áp (không cụt lủn).
+- Mở đầu bằng 1-2 câu ngắn gọn, hữu ích (không dùng các từ đơn như "Tuyệt vời", "OK").
+- Không dùng tiêu đề lớn hay ký tự #.
+- Không hiển thị SQL query.
+- Nếu không có kết quả, đưa ra gợi ý hữu ích.
+- Trả về nội dung ở dạng Markdown an toàn (không HTML).
 
 Câu trả lời cuối cùng:`;
 		try {
@@ -85,18 +86,18 @@ Bạn là AI assistant thân thiện cho ứng dụng Trustay. Hãy tạo câu t
 
 ${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
 
-Câu hỏi người dùng: "${query}"
-SQL đã thực thi: ${sqlResult.sql}
-Số kết quả: ${sqlResult.count}
-Dữ liệu kết quả: ${JSON.stringify(sqlResult.results).substring(0, 1000)}...
+CÂU HỎI NGƯỜI DÙNG: "${query}"
+SỐ KẾT QUẢ: ${sqlResult.count}
+DỮ LIỆU (rút gọn): ${JSON.stringify(sqlResult.results).substring(0, 1000)}...
 
-Hãy tạo câu trả lời:
-1. Thân thiện, dễ hiểu
-2. Tóm tắt kết quả chính
-3. Đề cập số lượng kết quả
-4. Không hiển thị SQL query
-5. Sử dụng tiếng Việt
-6. Nếu không có kết quả, đưa ra gợi ý hữu ích
+YÊU CẦU ĐỊNH DẠNG:
+- Viết bằng tiếng Việt tự nhiên, thân thiện, ấm áp (không cụt lủn).
+- Mở đầu bằng 1-2 câu ngắn gọn, hữu ích; tránh các từ đơn như "Tuyệt vời", "OK".
+- Không dùng tiêu đề lớn hay ký tự #.
+- Không hiển thị SQL query.
+- Nếu không có kết quả, đưa ra gợi ý hữu ích.
+- Trả về nội dung ở dạng Markdown an toàn (không HTML).
+- Tóm tắt mô tả về kết quả trả về, đưa ra các insights về kết quả trả về.
 
 Câu trả lời:`;
 		try {

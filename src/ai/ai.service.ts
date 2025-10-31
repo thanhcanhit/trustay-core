@@ -203,6 +203,8 @@ export class AiService {
 			// MULTI-AGENT FLOW:
 			// Agent 1: Conversational Agent - Always responds naturally
 			this.logInfo('CONVO_AGENT', 'Generating conversational response...');
+			// Ensure system prompt for Vietnamese output
+			this.ensureVietnameseSystemPrompt(session);
 			const conversationalResponse = await this.conversationalAgent.process(
 				query,
 				session,
@@ -213,8 +215,23 @@ export class AiService {
 				`Response received (readyForSql=${conversationalResponse.readyForSql})`,
 			);
 
-			// Decide desired response mode (before SQL) based on query intent
-			const desiredMode: 'LIST' | 'TABLE' | 'CHART' = this.resolveDesiredMode(query);
+			// Decide desired response mode (before SQL) based on conversation intent or fallback heuristics
+			const desiredMode: 'LIST' | 'TABLE' | 'CHART' =
+				conversationalResponse.intentModeHint ?? this.resolveDesiredMode(query);
+			if (conversationalResponse.entityHint) {
+				this.addMessageToSession(
+					session,
+					'system',
+					`[INTENT] ENTITY=${conversationalResponse.entityHint.toUpperCase()}`,
+				);
+			}
+			if (conversationalResponse.filtersHint) {
+				this.addMessageToSession(
+					session,
+					'system',
+					`[INTENT] FILTERS=${conversationalResponse.filtersHint}`,
+				);
+			}
 			if (desiredMode === 'CHART') {
 				this.addMessageToSession(session, 'system', '[INTENT] MODE=CHART');
 			} else if (desiredMode === 'LIST') {
@@ -241,7 +258,7 @@ export class AiService {
 					query,
 					desiredMode,
 				);
-				const markdown: string = this.buildMarkdownForData(
+				const messageText: string = this.buildMarkdownForData(
 					conversationalResponse.message,
 					sqlResult.results,
 					sqlResult.count,
@@ -264,37 +281,26 @@ export class AiService {
 					this.logWarn('PERSIST', 'Failed to persist Q&A to knowledge store', persistErr);
 				}
 
-				this.addMessageToSession(session, 'assistant', markdown);
+				this.addMessageToSession(session, 'assistant', messageText);
 
 				return {
 					kind: 'DATA',
 					sessionId: session.sessionId,
-					markdown,
 					timestamp: new Date().toISOString(),
-					message: conversationalResponse.message,
-					sql: sqlResult.sql,
-					results: sqlResult.results,
-					count: sqlResult.count,
-					validation: { isValid: true },
+					message: messageText,
 					payload: dataPayload,
 				};
 			} else {
 				// Agent 1 needs more info - return conversational response
 				this.logInfo('CONVO_AGENT', 'Returning conversational response (not ready for SQL)');
-				const markdown: string = `# Clarification\n\n${conversationalResponse.message}`;
-				this.addMessageToSession(session, 'assistant', markdown);
+				const messageText: string = `Mình cần thêm chút thông tin để trả lời chính xác: ${conversationalResponse.message}`;
+				this.addMessageToSession(session, 'assistant', messageText);
 
 				return {
 					kind: 'CONTROL',
 					sessionId: session.sessionId,
-					markdown,
 					timestamp: new Date().toISOString(),
-					message: conversationalResponse.message,
-					validation: {
-						isValid: false,
-						needsClarification: conversationalResponse.needsClarification,
-						needsIntroduction: conversationalResponse.needsIntroduction,
-					},
+					message: messageText,
 					payload: { mode: 'CLARIFY', questions: [] },
 				};
 			}
@@ -304,16 +310,14 @@ export class AiService {
 
 			// Generate user-friendly error message
 			const errorMessage = ErrorHandler.generateErrorResponse((error as Error).message);
-			const markdown: string = `# Error\n\n${errorMessage}`;
-			this.addMessageToSession(session, 'assistant', markdown);
+			const messageText: string = `Xin lỗi, đã xảy ra lỗi: ${errorMessage}`;
+			this.addMessageToSession(session, 'assistant', messageText);
 
 			return {
 				kind: 'CONTROL',
 				sessionId: session.sessionId,
-				markdown,
 				timestamp: new Date().toISOString(),
-				message: errorMessage,
-				error: (error as Error).message,
+				message: messageText,
 				payload: { mode: 'ERROR', details: (error as Error).message },
 			};
 		}
@@ -323,63 +327,44 @@ export class AiService {
 	private buildMarkdownForData(
 		intro: string,
 		results: unknown,
-		count: number | undefined,
+		_count: number | undefined,
 		mode?: 'LIST' | 'TABLE' | 'CHART',
 		chartUrl?: string,
 		suppressBody: boolean = false,
 	): string {
+		const finalIntro = String(intro ?? '').trim();
 		if (
 			!Array.isArray(results) ||
 			results.length === 0 ||
 			typeof results[0] !== 'object' ||
 			suppressBody
 		) {
-			return `# Summary\n\n${this.sanitizeIntroForMode(intro, mode)}`;
+			return `${finalIntro}`;
 		}
 		const rows = results as ReadonlyArray<Record<string, unknown>>;
 		if (mode === 'CHART' && chartUrl) {
-			const header = `# Chart (Top 10)${typeof count === 'number' ? ` (${count})` : ''}`;
-			return `${header}\n\n${this.sanitizeIntroForMode(intro, 'CHART')}\n\n![Chart](${chartUrl})`;
+			return `${finalIntro}\n\n![Biểu đồ](${chartUrl})`;
 		}
 		if (mode === 'LIST' || this.isListLike(rows)) {
 			const items = this.toListItems(rows).slice(0, 10);
-			const header = `# Results${typeof count === 'number' ? ` (${count})` : ''}`;
 			const lines = items.map((i) => {
 				const title = i.title;
 				const link = i.path || i.externalUrl || '';
 				const desc = i.description ? `  \n  ${i.description}` : '';
 				return link ? `- [${title}](${link})${desc}` : `- ${title}${desc}`;
 			});
-			return `${header}\n\n${this.sanitizeIntroForMode(intro, 'LIST')}\n\n${lines.join('\n')}`;
+			return `${finalIntro}\n\n${lines.join('\n')}`;
 		}
 		const columns: TableColumn[] = this.inferColumns(rows);
 		const previewRows = this.normalizeRows(rows, columns).slice(0, 10);
-		const header = `# Data Preview${typeof count === 'number' ? ` (${count} rows)` : ''}`;
 		const tableHeader = `| ${columns.map((c) => c.label).join(' | ')} |\n| ${columns.map(() => '---').join(' | ')} |`;
 		const tableBody = previewRows
 			.map((r) => `| ${columns.map((c) => String(r[c.key] ?? '')).join(' | ')} |`)
 			.join('\n');
-		return `${header}\n\n${this.sanitizeIntroForMode(intro, 'TABLE')}\n\n${tableHeader}\n${tableBody}`;
+		return `${finalIntro}\n\n${tableHeader}\n${tableBody}`;
 	}
 
-	private sanitizeIntroForMode(intro: string, mode?: 'LIST' | 'TABLE' | 'CHART'): string {
-		const text = String(intro ?? '').trim();
-		if (!text) {
-			return '';
-		}
-		// Take first sentence/line to avoid agent over-talking
-		const first = text.split(/\n|[.!?]\s/).filter(Boolean)[0] ?? text;
-		// Remove cross-references (e.g., mentioning both chart & table)
-		const removeChart = /biểu đồ|chart/;
-		const removeTable = /bảng|table/;
-		if (mode === 'CHART') {
-			return first.replace(removeTable, '').trim();
-		}
-		if (mode === 'TABLE' || mode === 'LIST') {
-			return first.replace(removeChart, '').trim();
-		}
-		return first;
-	}
+	// removed sanitizeIntroForMode in favor of prompt-based control
 
 	private buildDataPayload(
 		results: unknown,
@@ -416,7 +401,8 @@ export class AiService {
 				},
 			};
 		}
-		const columns: TableColumn[] = this.inferColumns(rows);
+		const inferred: TableColumn[] = this.inferColumns(rows);
+		const columns: TableColumn[] = this.selectImportantColumns(inferred, rows);
 		const normalized = this.normalizeRows(rows, columns);
 		return {
 			mode: 'TABLE',
@@ -426,6 +412,47 @@ export class AiService {
 				previewLimit: 50,
 			},
 		};
+	}
+
+	private selectImportantColumns(
+		columns: ReadonlyArray<TableColumn>,
+		rows: ReadonlyArray<Record<string, unknown>>,
+	): TableColumn[] {
+		const PRIORITY_KEYS = [
+			'id',
+			'name',
+			'title',
+			'price',
+			'area',
+			'count',
+			'total',
+			'created_at',
+			'createdAt',
+			'updated_at',
+			'updatedAt',
+			'room',
+			'post',
+			'url',
+			'link',
+			'href',
+		];
+		const MAX_COLUMNS = 8;
+		const isNonEmpty = (key: string): boolean =>
+			rows
+				.slice(0, 50)
+				.some((r) => r[key] !== null && r[key] !== undefined && String(r[key]).trim() !== '');
+		// Filter out columns with non-primitive objects by probing first row values
+		const primitiveColumns = columns.filter((c) => {
+			const v = rows[0]?.[c.key];
+			const t = typeof v;
+			return v === null || v === undefined || t === 'string' || t === 'number' || t === 'boolean';
+		});
+		const nonEmpty = primitiveColumns.filter((c) => isNonEmpty(c.key));
+		const prioritized = [
+			...nonEmpty.filter((c) => PRIORITY_KEYS.includes(c.key)),
+			...nonEmpty.filter((c) => !PRIORITY_KEYS.includes(c.key)),
+		];
+		return prioritized.slice(0, MAX_COLUMNS);
 	}
 
 	private isChartIntent(query: string): boolean {
@@ -451,12 +478,25 @@ export class AiService {
 			'theo quý',
 			'by month',
 			'by quarter',
+			'hóa đơn',
+			'hoá đơn',
+			'invoice',
+			'doanh thu',
+			'revenue',
+			'doanh số',
+			'thu chi',
+			'tổng',
+			'theo năm',
 		];
 		return keywords.some((k) => q.includes(k));
 	}
 
 	private resolveDesiredMode(query: string): 'LIST' | 'TABLE' | 'CHART' {
 		const q = (query || '').toLowerCase();
+		// Prioritize statistics/visualization
+		if (this.isChartIntent(q)) {
+			return 'CHART';
+		}
 		// Strong LIST intent (search/browse)
 		const listKeywords = [
 			'tìm',
@@ -473,9 +513,6 @@ export class AiService {
 		];
 		if (listKeywords.some((k) => q.includes(k))) {
 			return 'LIST';
-		}
-		if (this.isChartIntent(q)) {
-			return 'CHART';
 		}
 		return 'TABLE';
 	}
@@ -545,9 +582,11 @@ export class AiService {
 
 	private toListItem(row: Record<string, unknown>): ListItem {
 		const obj = this.toLowerKeys(row);
-		const id = String(obj.id ?? '');
-		const entity = (obj.entity as EntityType | undefined) ?? undefined;
-		const path = entity && id ? buildEntityPath(entity, id) : undefined;
+		const rawId = (obj.id as unknown) ?? (obj.slug as unknown) ?? (obj.uuid as unknown) ?? '';
+		const id = String(rawId ?? '').trim();
+		const entityExplicit = (obj.entity as EntityType | undefined) ?? undefined;
+		const inferredEntity: EntityType | undefined = entityExplicit ?? (id ? 'room' : undefined);
+		const path = inferredEntity && id ? buildEntityPath(inferredEntity, id) : undefined;
 		const extUrl =
 			(obj.url as string | undefined) ??
 			(obj.link as string | undefined) ??
@@ -565,7 +604,7 @@ export class AiService {
 			title: String(obj.title ?? obj.name ?? 'Untitled'),
 			description: obj.description ? String(obj.description) : undefined,
 			thumbnailUrl: imageUrl,
-			entity,
+			entity: inferredEntity,
 			path,
 			externalUrl: extUrl,
 		};
@@ -576,6 +615,26 @@ export class AiService {
 			acc[k.toLowerCase()] = v;
 			return acc;
 		}, {});
+	}
+
+	private ensureVietnameseSystemPrompt(session: ChatSession): void {
+		const exists = session.messages.some(
+			(m) => m.role === 'system' && m.content.includes('[LOCALE] vi-VN'),
+		);
+		if (exists) {
+			return;
+		}
+		const instruction =
+			'[LOCALE] vi-VN\n' +
+			'Hãy luôn trả lời bằng tiếng Việt tự nhiên, thân thiện, ấm áp, tránh cụt lủn. ' +
+			'Bắt đầu bằng 1-2 câu ngắn gọn, hữu ích (không dùng các từ đơn kiểu "Tuyệt vời", "OK"). ' +
+			'Tất cả nội dung hiển thị (tiêu đề, mô tả, số liệu, tên cột) phải ở tiếng Việt. ' +
+			'Không chèn HTML, chỉ sử dụng Markdown an toàn. ' +
+			'Nếu có tên trường/từ tiếng Anh, hãy chuyển sang tiếng Việt dễ hiểu. ' +
+			'Mẫu gợi ý: LIST → "Mình tìm được {count} kết quả phù hợp, bạn xem thử nhé:"; ' +
+			'TABLE → "Dưới đây là bản xem nhanh dữ liệu:"; ' +
+			'CHART → "Mình đã vẽ biểu đồ để bạn xem nhanh xu hướng:"';
+		this.addMessageToSession(session, 'system', instruction);
 	}
 
 	private inferColumns(rows: ReadonlyArray<Record<string, unknown>>): TableColumn[] {
@@ -594,7 +653,8 @@ export class AiService {
 								: /image|thumbnail/i.test(key)
 									? 'image'
 									: 'string';
-			return { key, label: this.toLabel(key), type };
+			// Keep label as raw key; beautification/localization handled by LLM in message or frontend
+			return { key, label: key, type };
 		});
 	}
 
@@ -634,6 +694,8 @@ export class AiService {
 			.replace(/\s+/g, ' ')
 			.replace(/^./, (s) => s.toUpperCase());
 	}
+
+	// removed toVietnameseLabel - LLM/front-end handles localization
 
 	/**
 	 * Get chat history for a session - For frontend to display conversation
