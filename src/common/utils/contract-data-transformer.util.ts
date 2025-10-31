@@ -263,7 +263,9 @@ function transformAmenities(amenities: Array<any>): string[] {
 		return [];
 	}
 
-	return amenities.map((amenity) => amenity.customValue || amenity.systemAmenity.name);
+	return amenities.map(
+		(amenity) => amenity.customValue || amenity.amenity?.name || 'Unknown amenity',
+	);
 }
 
 /**
@@ -275,8 +277,8 @@ function transformCosts(costs: Array<any>): Array<any> {
 	}
 
 	return costs.map((cost) => ({
-		name: cost.systemCostType.name,
-		nameEn: cost.systemCostType.nameEn,
+		name: cost.costTypeTemplate?.name || 'Unknown cost',
+		nameEn: cost.costTypeTemplate?.nameEn || 'Unknown cost',
 		baseRate: cost.baseRate,
 		unitPrice: cost.unitPrice,
 		fixedAmount: cost.fixedAmount,
