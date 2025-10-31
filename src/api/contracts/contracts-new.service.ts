@@ -407,6 +407,50 @@ export class ContractsNewService {
 	}
 
 	/**
+	 * Delete a contract (only allowed when status is draft)
+	 */
+	async deleteContract(
+		contractId: string,
+		userId: string,
+	): Promise<{ success: boolean; message: string }> {
+		const contract = await this.prisma.contract.findUnique({
+			where: { id: contractId },
+			select: {
+				id: true,
+				status: true,
+				landlordId: true,
+				tenantId: true,
+				contractCode: true,
+			},
+		});
+
+		if (!contract) {
+			throw new NotFoundException('Contract not found');
+		}
+
+		if (contract.landlordId !== userId && contract.tenantId !== userId) {
+			throw new ForbiddenException('Access denied');
+		}
+
+		if (contract.status !== ContractStatus.draft) {
+			throw new BadRequestException('Only draft contracts can be deleted');
+		}
+
+		// Log deletion intent
+		await this.createAuditLog(contract.id, userId, 'deleted', {
+			contractCode: contract.contractCode,
+		});
+
+		// Clean related signatures first (in case FK does not cascade)
+		await this.prisma.contractSignature.deleteMany({ where: { contractId: contract.id } });
+
+		// Delete the contract
+		await this.prisma.contract.delete({ where: { id: contract.id } });
+
+		return { success: true, message: 'Contract deleted successfully' };
+	}
+
+	/**
 	 * Kiểm tra và tạo contract cho rental nếu chưa có
 	 * Hữu ích cho việc migrate hoặc xử lý rental cũ
 	 */
