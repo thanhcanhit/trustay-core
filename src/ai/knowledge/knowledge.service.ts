@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
-import { businessDocument } from '../utils/business';
-import { SchemaProvider } from '../utils/schema-provider';
+import { BUSINESS_CONTEXT } from '../prompts/business-context';
+import { getCompleteDatabaseSchema } from '../utils/schema-provider';
 import { SupabaseVectorStoreService } from '../vector-store/supabase-vector-store.service';
 import {
 	AiChunkCollection,
@@ -57,7 +57,7 @@ export class KnowledgeService {
 		} catch (err) {
 			this.logger.warn('Failed to clear existing schema chunks before provider ingestion', err);
 		}
-		const schema = SchemaProvider.getCompleteDatabaseSchema();
+		const schema = getCompleteDatabaseSchema();
 		const chunks = this.splitSchemaIntoChunks(schema);
 
 		const aiChunks = chunks.map((content) => ({
@@ -129,7 +129,7 @@ export class KnowledgeService {
 	 * Ingest narrative business document (Vietnamese) into 'business' collection
 	 */
 	async ingestBusinessNarrative(): Promise<number[]> {
-		const chunks = this.splitBusinessIntoChunks(businessDocument);
+		const chunks = this.splitBusinessIntoChunks(BUSINESS_CONTEXT);
 		const aiChunks = chunks.map((content) => ({
 			tenantId: this.tenantId,
 			collection: 'business' as AiChunkCollection,

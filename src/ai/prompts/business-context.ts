@@ -1,8 +1,8 @@
 /**
- * Business narrative document (Vietnamese)
+ * Business context document for AI prompts (Vietnamese)
+ * This provides context about Trustay's business domain to AI agents
  */
-export const businessDocument: string = `
-
+export const BUSINESS_CONTEXT = `
 1. Giới thiệu và động lực
 1.1 Lý do chọn đề tài
 Trong bối cảnh đô thị hóa nhanh, nhu cầu thuê trọ tăng mạnh tại Việt Nam. Tuy nhiên hoạt động tìm kiếm và quản lý còn rời rạc, thiếu xác thực, tốn thời gian. Sự phát triển của AI mở ra cơ hội số hóa toàn bộ quy trình thuê trọ (tìm kiếm, liên hệ, ký hợp đồng, thanh toán).
@@ -60,7 +60,7 @@ Trong bối cảnh đô thị hóa nhanh, nhu cầu thuê trọ tăng mạnh t�
 - UC016: Xử lý lời mời thuê trọ (Người thuê)
 
 6. Ghi chú triển khai
-- AI Text2SQL hỗ trợ truy vấn tiếng Việt tự nhiên (ví dụ: “Phòng chưa thanh toán tháng này”).
+- AI Text2SQL hỗ trợ truy vấn tiếng Việt tự nhiên (ví dụ: "Phòng chưa thanh toán tháng này").
 - Zalo Mini App tăng khả năng tiếp cận cho sinh viên/người lao động.
 - Ưu tiên bảo mật, xác thực, phân quyền; tối ưu hiệu năng truy vấn.
 
@@ -95,5 +95,4 @@ Trong bối cảnh đô thị hóa nhanh, nhu cầu thuê trọ tăng mạnh t�
 - RoomBooking.roomId → Room.id; RoomInvitation.roomId → Room.id
 - Rental.roomInstanceId → RoomInstance.id; Rental.tenantId/ownerId → User.id
 - Bill.rentalId → Rental.id; Payment.rentalId → Rental.id; Payment.billId → Bill.id
-
 `;

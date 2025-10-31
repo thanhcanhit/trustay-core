@@ -1,22 +1,29 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConversationalAgent } from './agents/conversational-agent';
-import { ErrorHandler } from './agents/error-handler';
 import { ResponseGenerator } from './agents/response-generator';
 import { SqlGenerationAgent } from './agents/sql-generation-agent';
 import { KnowledgeService } from './knowledge/knowledge.service';
+import { VIETNAMESE_LOCALE_SYSTEM_PROMPT } from './prompts/system.prompt';
+import { generateErrorResponse } from './services/error-handler.service';
 import {
 	ChatMessage,
 	ChatResponse,
 	ChatSession,
 	DataPayload,
-	EntityType,
 	ListItem,
 	TableCell,
 	TableColumn,
 } from './types/chat.types';
-import { buildQuickChartUrl } from './utils/chart';
-import { buildEntityPath } from './utils/entity-route';
+import {
+	inferColumns,
+	isListLike,
+	normalizeRows,
+	selectImportantColumns,
+	toListItems,
+	tryBuildChart,
+	toListItem as utilToListItem,
+} from './utils/data-utils';
 export { ChatResponse };
 
 @Injectable()
@@ -215,9 +222,10 @@ export class AiService {
 				`Response received (readyForSql=${conversationalResponse.readyForSql})`,
 			);
 
-			// Decide desired response mode (before SQL) based on conversation intent or fallback heuristics
+			// Decide desired response mode (before SQL) based on conversation intent
+			// Agent determines mode via conversationalResponse.intentModeHint
 			const desiredMode: 'LIST' | 'TABLE' | 'CHART' =
-				conversationalResponse.intentModeHint ?? this.resolveDesiredMode(query);
+				conversationalResponse.intentModeHint ?? 'TABLE';
 			if (conversationalResponse.entityHint) {
 				this.addMessageToSession(
 					session,
@@ -309,7 +317,7 @@ export class AiService {
 			this.logError('ERROR', `Chat error (session ${session.sessionId})`, error);
 
 			// Generate user-friendly error message
-			const errorMessage = ErrorHandler.generateErrorResponse((error as Error).message);
+			const errorMessage = generateErrorResponse((error as Error).message);
 			const messageText: string = `Xin lỗi, đã xảy ra lỗi: ${errorMessage}`;
 			this.addMessageToSession(session, 'assistant', messageText);
 
@@ -327,7 +335,7 @@ export class AiService {
 	private buildMarkdownForData(
 		intro: string,
 		results: unknown,
-		_count: number | undefined,
+		_count: number | undefined, // Unused but kept for interface consistency
 		mode?: 'LIST' | 'TABLE' | 'CHART',
 		chartUrl?: string,
 		suppressBody: boolean = false,
@@ -345,8 +353,8 @@ export class AiService {
 		if (mode === 'CHART' && chartUrl) {
 			return `${finalIntro}\n\n![Biểu đồ](${chartUrl})`;
 		}
-		if (mode === 'LIST' || this.isListLike(rows)) {
-			const items = this.toListItems(rows).slice(0, 10);
+		if (mode === 'LIST' || isListLike(rows)) {
+			const items = toListItems(rows).slice(0, 10);
 			const lines = items.map((i) => {
 				const title = i.title;
 				const link = i.path || i.externalUrl || '';
@@ -355,8 +363,8 @@ export class AiService {
 			});
 			return `${finalIntro}\n\n${lines.join('\n')}`;
 		}
-		const columns: TableColumn[] = this.inferColumns(rows);
-		const previewRows = this.normalizeRows(rows, columns).slice(0, 10);
+		const columns: TableColumn[] = inferColumns(rows);
+		const previewRows = normalizeRows(rows, columns).slice(0, 10);
 		const tableHeader = `| ${columns.map((c) => c.label).join(' | ')} |\n| ${columns.map(() => '---').join(' | ')} |`;
 		const tableBody = previewRows
 			.map((r) => `| ${columns.map((c) => String(r[c.key] ?? '')).join(' | ')} |`)
@@ -376,8 +384,8 @@ export class AiService {
 		}
 		const rows = results as ReadonlyArray<Record<string, unknown>>;
 		// Prefer LIST (either intent or data shape)
-		if (desiredMode === 'LIST' || this.isListLike(rows)) {
-			const items = this.toListItems(rows);
+		if (desiredMode === 'LIST' || isListLike(rows)) {
+			const items = toListItems(rows);
 			return {
 				mode: 'LIST',
 				list: {
@@ -387,8 +395,8 @@ export class AiService {
 			};
 		}
 		// Then try CHART for aggregate/statistics-like data, only when intent matches
-		const chartIntent = desiredMode === 'CHART' || this.isChartIntent(query);
-		const chartData = chartIntent ? this.tryBuildChart(rows) : null;
+		const chartIntent = desiredMode === 'CHART';
+		const chartData = chartIntent ? tryBuildChart(rows) : null;
 		if (chartData) {
 			return {
 				mode: 'CHART',
@@ -401,9 +409,9 @@ export class AiService {
 				},
 			};
 		}
-		const inferred: TableColumn[] = this.inferColumns(rows);
-		const columns: TableColumn[] = this.selectImportantColumns(inferred, rows);
-		const normalized = this.normalizeRows(rows, columns);
+		const inferred: TableColumn[] = inferColumns(rows);
+		const columns: TableColumn[] = selectImportantColumns(inferred, rows);
+		const normalized = normalizeRows(rows, columns);
 		return {
 			mode: 'TABLE',
 			table: {
@@ -455,159 +463,18 @@ export class AiService {
 		return prioritized.slice(0, MAX_COLUMNS);
 	}
 
-	private isChartIntent(query: string): boolean {
-		const q = (query || '').toLowerCase();
-		// Vietnamese + English keywords for stats/visualization intent
-		const keywords = [
-			'biểu đồ',
-			'chart',
-			'thống kê',
-			'stat',
-			'statistics',
-			'so sánh',
-			'compare',
-			'top',
-			'tỷ lệ',
-			'ratio',
-			'phân bố',
-			'distribution',
-			'xu hướng',
-			'trend',
-			'trong 7 ngày',
-			'theo tháng',
-			'theo quý',
-			'by month',
-			'by quarter',
-			'hóa đơn',
-			'hoá đơn',
-			'invoice',
-			'doanh thu',
-			'revenue',
-			'doanh số',
-			'thu chi',
-			'tổng',
-			'theo năm',
-		];
-		return keywords.some((k) => q.includes(k));
-	}
-
-	private resolveDesiredMode(query: string): 'LIST' | 'TABLE' | 'CHART' {
-		const q = (query || '').toLowerCase();
-		// Prioritize statistics/visualization
-		if (this.isChartIntent(q)) {
-			return 'CHART';
-		}
-		// Strong LIST intent (search/browse)
-		const listKeywords = [
-			'tìm',
-			'tim',
-			'có phòng',
-			'phòng',
-			'room',
-			'bài đăng',
-			'post',
-			'ở',
-			'near',
-			'trong khu vực',
-			'gần',
-		];
-		if (listKeywords.some((k) => q.includes(k))) {
-			return 'LIST';
-		}
-		return 'TABLE';
-	}
-
-	private isListLike(rows: ReadonlyArray<Record<string, unknown>>): boolean {
-		const sample = rows[0] ?? {};
-		const keys = Object.keys(sample).map((k) => k.toLowerCase());
-		const hasTitle = keys.some((k) => ['title', 'name'].includes(k));
-		const hasUrlOrImage = keys.some((k) =>
-			['url', 'link', 'href', 'image', 'imageurl', 'thumbnail'].includes(k),
-		);
-		const hasEntityId = keys.includes('id') && keys.includes('entity');
-		return hasTitle && (hasUrlOrImage || hasEntityId);
-	}
-
 	private tryBuildChart(
 		rows: ReadonlyArray<Record<string, unknown>>,
 	): { url: string; width: number; height: number } | null {
-		if (rows.length === 0) {
-			return null;
-		}
-		const sample = rows[0];
-		const keys = Object.keys(sample);
-		const numericKeys = keys.filter(
-			(k) => typeof (sample as Record<string, unknown>)[k] === 'number',
-		);
-		if (numericKeys.length === 0) {
-			return null;
-		}
-		// Choose a label key: prefer name/title/category; else the first non-numeric
-		const labelKey =
-			keys.find((k) => /name|title|label|category/i.test(k)) ??
-			keys.find((k) => !numericKeys.includes(k));
-		if (!labelKey) {
-			return null;
-		}
-		const valueKey = numericKeys[0];
-		// Heuristic: aggregate/statistics-like detection
-		const statLike = keys.some((k) => /count|sum|avg|total|min|max/i.test(k));
-		const numericRatio = numericKeys.length / Math.max(keys.length, 1);
-		if (!statLike && numericRatio < 0.6) {
-			return null;
-		}
-		// Build pairs, sort desc, take top 10
-		const pairs = rows.map((r) => ({
-			label: String((r as Record<string, unknown>)[labelKey] ?? ''),
-			value: Number((r as Record<string, unknown>)[valueKey] ?? 0),
-		}));
-		pairs.sort((a, b) => b.value - a.value);
-		const top = pairs.slice(0, 10);
-		const labels: string[] = top.map((p) => p.label);
-		const data: number[] = top.map((p) => p.value);
-		const { url, width, height } = buildQuickChartUrl({
-			labels,
-			datasetLabel: this.toLabel(valueKey),
-			data,
-			type: 'bar',
-			width: 800,
-			height: 400,
-		});
-		return { url, width, height };
+		return tryBuildChart(rows);
 	}
 
 	private toListItems(rows: ReadonlyArray<Record<string, unknown>>): ListItem[] {
-		return rows.map((r) => this.toListItem(r));
+		return toListItems(rows);
 	}
 
 	private toListItem(row: Record<string, unknown>): ListItem {
-		const obj = this.toLowerKeys(row);
-		const rawId = (obj.id as unknown) ?? (obj.slug as unknown) ?? (obj.uuid as unknown) ?? '';
-		const id = String(rawId ?? '').trim();
-		const entityExplicit = (obj.entity as EntityType | undefined) ?? undefined;
-		const inferredEntity: EntityType | undefined = entityExplicit ?? (id ? 'room' : undefined);
-		const path = inferredEntity && id ? buildEntityPath(inferredEntity, id) : undefined;
-		const extUrl =
-			(obj.url as string | undefined) ??
-			(obj.link as string | undefined) ??
-			(obj.href as string | undefined);
-		const imageUrl =
-			(obj.imageurl as string | undefined) ??
-			(obj.image as string | undefined) ??
-			(obj.thumbnail as string | undefined);
-		return {
-			id:
-				id ||
-				(obj.uuid as string | undefined) ||
-				(obj.slug as string | undefined) ||
-				String(Math.random()).slice(2),
-			title: String(obj.title ?? obj.name ?? 'Untitled'),
-			description: obj.description ? String(obj.description) : undefined,
-			thumbnailUrl: imageUrl,
-			entity: inferredEntity,
-			path,
-			externalUrl: extUrl,
-		};
+		return utilToListItem(row);
 	}
 
 	private toLowerKeys(obj: Record<string, unknown>): Record<string, unknown> {
@@ -624,17 +491,7 @@ export class AiService {
 		if (exists) {
 			return;
 		}
-		const instruction =
-			'[LOCALE] vi-VN\n' +
-			'Hãy luôn trả lời bằng tiếng Việt tự nhiên, thân thiện, ấm áp, tránh cụt lủn. ' +
-			'Bắt đầu bằng 1-2 câu ngắn gọn, hữu ích (không dùng các từ đơn kiểu "Tuyệt vời", "OK"). ' +
-			'Tất cả nội dung hiển thị (tiêu đề, mô tả, số liệu, tên cột) phải ở tiếng Việt. ' +
-			'Không chèn HTML, chỉ sử dụng Markdown an toàn. ' +
-			'Nếu có tên trường/từ tiếng Anh, hãy chuyển sang tiếng Việt dễ hiểu. ' +
-			'Mẫu gợi ý: LIST → "Mình tìm được {count} kết quả phù hợp, bạn xem thử nhé:"; ' +
-			'TABLE → "Dưới đây là bản xem nhanh dữ liệu:"; ' +
-			'CHART → "Mình đã vẽ biểu đồ để bạn xem nhanh xu hướng:"';
-		this.addMessageToSession(session, 'system', instruction);
+		this.addMessageToSession(session, 'system', VIETNAMESE_LOCALE_SYSTEM_PROMPT);
 	}
 
 	private inferColumns(rows: ReadonlyArray<Record<string, unknown>>): TableColumn[] {

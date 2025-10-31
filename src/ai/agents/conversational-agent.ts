@@ -1,6 +1,11 @@
 import { google } from '@ai-sdk/google';
 import { Logger } from '@nestjs/common';
 import { generateText } from 'ai';
+import {
+	buildConversationalPrompt,
+	DEFAULT_GREETING_MESSAGE,
+	DEFAULT_SEARCH_MESSAGE,
+} from '../prompts/conversational-agent.prompt';
 import { ChatSession, ConversationalAgentResponse } from '../types/chat.types';
 
 /**
@@ -27,59 +32,11 @@ export class ConversationalAgent {
 			.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
 			.join('\n');
 		const isFirstMessage = session.messages.filter((m) => m.role === 'user').length <= 1;
-		const conversationalPrompt = `
-Bạn là AI Agent 1 - Conversational Agent của hệ thống Trustay. Nhiệm vụ của bạn là:
-1. Trò chuyện tự nhiên với người dùng
-2. Xác định xem có đủ thông tin để tạo SQL query không
-3. CHỈ hỏi thông tin THỰC SỰ CẦN THIẾT - không hỏi quá nhiều
-
-${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
-
-Câu hỏi hiện tại: "${query}"
-Là tin nhắn đầu tiên: ${isFirstMessage}
-
-DỮ LIỆU CÓ SẴN TRONG HỆ THỐNG:
-- users: thông tin người dùng (tenant/landlord, email, phone, tên, ngày tạo)
-- buildings: tòa nhà (tên, địa chỉ, chủ sở hữu)
-- rooms: phòng (tên, giá, diện tích, loại phòng, trạng thái)
-- rentals: hợp đồng thuê (tenant, owner, trạng thái, ngày bắt đầu/kết thúc)
-- bills: hóa đơn (số tiền, trạng thái thanh toán, hạn thanh toán)
-- payments: thanh toán (số tiền, phương thức, trạng thái)
-- room_bookings: đặt phòng (trạng thái: pending/approved/rejected)
-- notifications: thông báo (tiêu đề, nội dung, đã đọc)
-
-NGUYÊN TẮC QUAN TRỌNG:
-- ƯU TIÊN READY_FOR_SQL khi có thể suy đoán được ý định
-- CHỈ hỏi thêm khi THỰC SỰ CẦN THIẾT để tạo SQL
-- Với câu hỏi tìm phòng: "giá rẻ", "quận 1", "phòng trọ" → READY_FOR_SQL ngay
-- Với câu hỏi thống kê: "doanh thu", "thống kê" → có thể READY_FOR_SQL
-- CHỈ NEEDS_CLARIFICATION khi hoàn toàn không hiểu ý định
-
-PHÂN LOẠI Ý ĐỊNH & QUY ĐỔI NGHIỆP VỤ:
-- Nếu người dùng hỏi "có ai đang tìm phòng ...?" thì hiểu là tìm bài đăng tìm phòng (room seeking posts) từ phía chủ trọ, KHÔNG phải tìm danh sách phòng.
-- Nếu người dùng hỏi "tìm phòng ..." thì hiểu là tìm rooms.
-- Nếu người dùng hỏi "thống kê/hoá đơn/doanh thu..." thì hiểu là yêu cầu thống kê (aggregate). 
-
-HÃY PHÂN TÍCH VÀ TRẢ LỜI:
-
-1. PHÂN LOẠI TÌNH HUỐNG:
-   - GREETING: Lời chào, giới thiệu (chỉ tin nhắn đầu tiên)
-   - READY_FOR_SQL: Câu hỏi có thể tạo SQL ngay (ưu tiên cao)
-   - NEEDS_CLARIFICATION: Chỉ khi hoàn toàn không hiểu ý định
-   - GENERAL_CHAT: Trò chuyện chung, không liên quan dữ liệu
-
-2. TẠO CÂU TRẢ LỜI TỰ NHIÊN:
-   - Thân thiện, như đang trò chuyện
-   - Không cứng nhắc hay mang tính kỹ thuật
-   - Sử dụng emoji phù hợp
-   - CHỈ hỏi thêm khi THỰC SỰ CẦN THIẾT
-
-Trả về theo format:
-SITUATION: GREETING/READY_FOR_SQL/NEEDS_CLARIFICATION/GENERAL_CHAT
-MODE_HINT: LIST/TABLE/CHART
-ENTITY_HINT: room|post|room_seeking_post|none
-FILTERS_HINT: [mô tả ngắn gọn filter nếu có, ví dụ: quận="gò vấp", giá<3tr]
-RESPONSE: [câu trả lời tự nhiên của bạn]`;
+		const conversationalPrompt = buildConversationalPrompt({
+			recentMessages,
+			query,
+			isFirstMessage,
+		});
 		try {
 			this.logger.debug(`Generating conversational response for query: "${query}"`);
 			const { text } = await generateText({
@@ -130,13 +87,6 @@ RESPONSE: [câu trả lời tự nhiên của bạn]`;
 	 * @returns Default conversational response
 	 */
 	private getDefaultResponse(_query: string, isFirstMessage: boolean): string {
-		if (isFirstMessage) {
-			return `Xin chào! 👋 Tôi là AI Assistant của Trustay, rất vui được trò chuyện với bạn!
-
-Tôi có thể giúp bạn tìm hiểu về dữ liệu phòng trọ, thống kê doanh thu, thông tin người dùng và nhiều thứ khác.
-
-Bạn muốn tìm hiểu điều gì? 😊`;
-		}
-		return `Tôi sẽ tìm kiếm thông tin cho bạn ngay! 🔍`;
+		return isFirstMessage ? DEFAULT_GREETING_MESSAGE : DEFAULT_SEARCH_MESSAGE;
 	}
 }

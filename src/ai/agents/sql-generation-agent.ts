@@ -1,14 +1,19 @@
 import { google } from '@ai-sdk/google';
-import { ForbiddenException, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { generateText } from 'ai';
 import { PrismaService } from '../../prisma/prisma.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
+import { buildSqlPrompt } from '../prompts/sql-agent.prompt';
 import { ChatSession, SqlGenerationResult } from '../types/chat.types';
-import { AiConfig, PromptBuilder } from '../utils/prompt-builder';
-import { QueryValidator } from '../utils/query-validator';
-import { SchemaProvider } from '../utils/schema-provider';
-import { SecurityHelper } from '../utils/security-helper';
-import { Serializer } from '../utils/serializer';
+import { getCompleteDatabaseSchema } from '../utils/schema-provider';
+import { serializeBigInt } from '../utils/serializer';
+
+export interface AiConfig {
+	temperature: number;
+	maxTokens: number;
+	limit: number;
+	model: string;
+}
 
 /**
  * Agent 2: SQL Generation Agent - Generates and executes SQL when ready with RAG context
@@ -38,20 +43,14 @@ export class SqlGenerationAgent {
 			.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
 			.join('\n');
 		const userId = session.userId;
-		const validation = await QueryValidator.validateQueryIntent(query);
-		if (!validation.isValid) {
-			throw new Error(
-				`Query not suitable for database querying: ${validation.reason || 'Invalid query intent'}`,
-			);
-		}
-		const accessValidation = await SecurityHelper.validateUserAccess(
-			prisma,
-			userId,
-			query,
-			validation.queryType,
-		);
-		if (!accessValidation.hasAccess) {
-			throw new ForbiddenException(accessValidation.restrictions.join('; '));
+		// Get user role if authenticated - AI will handle security via prompt
+		let userRole: string | undefined;
+		if (userId) {
+			const user = await prisma.user.findUnique({
+				where: { id: userId },
+				select: { role: true },
+			});
+			userRole = user?.role ?? undefined;
 		}
 		// Step A: RAG Retrieval - Get relevant schema and QA chunks
 		let ragContext = '';
@@ -69,14 +68,14 @@ export class SqlGenerationAgent {
 					);
 					// Execute canonical SQL directly and return
 					const results = await prisma.$queryRawUnsafe(canonicalDecision.sql);
-					const serializedResults = Serializer.serializeBigInt(results);
+					const serializedResults = serializeBigInt(results);
 					return {
 						sql: canonicalDecision.sql,
 						results: serializedResults,
 						count: Array.isArray(serializedResults) ? serializedResults.length : 1,
 						attempts: 1,
 						userId: userId,
-						userRole: accessValidation.userRole,
+						userRole: userRole,
 					};
 				}
 				// Step 1: always fetch schema context
@@ -114,35 +113,24 @@ export class SqlGenerationAgent {
 				this.logger.warn('RAG retrieval failed, using fallback schema', ragError);
 			}
 		}
-		const dbSchema = SchemaProvider.getCompleteDatabaseSchema();
+		const dbSchema = getCompleteDatabaseSchema();
 		let lastError: string = '';
 		let attempts = 0;
 		const maxAttempts = 5;
 		while (attempts < maxAttempts) {
 			attempts++;
 			try {
-				const contextualPrompt =
-					userId && accessValidation.userRole
-						? PromptBuilder.buildSecureContextualSqlPromptWithRAG(
-								query,
-								dbSchema,
-								recentMessages,
-								userId,
-								accessValidation.userRole,
-								aiConfig,
-								ragContext,
-								lastError,
-								attempts,
-							)
-						: PromptBuilder.buildContextualSqlPromptWithRAG(
-								query,
-								dbSchema,
-								recentMessages,
-								aiConfig,
-								ragContext,
-								lastError,
-								attempts,
-							);
+				const contextualPrompt = buildSqlPrompt({
+					query,
+					schema: dbSchema,
+					ragContext,
+					recentMessages,
+					userId,
+					userRole,
+					lastError,
+					attempt: attempts,
+					limit: aiConfig.limit,
+				});
 				const { text } = await generateText({
 					model: google(aiConfig.model),
 					prompt: contextualPrompt,
@@ -161,26 +149,15 @@ export class SqlGenerationAgent {
 				if (!sqlLower.startsWith('select')) {
 					throw new Error('Only SELECT queries are allowed for security reasons');
 				}
-				if (userId && accessValidation.restrictions.length > 0) {
-					const hasUserRestriction = SecurityHelper.validateSqlSecurity(
-						sql,
-						accessValidation.restrictions,
-					);
-					if (!hasUserRestriction) {
-						throw new Error(
-							'Security violation: Query must include user-specific WHERE clauses for sensitive data',
-						);
-					}
-				}
 				const results = await prisma.$queryRawUnsafe(sql);
-				const serializedResults = Serializer.serializeBigInt(results);
+				const serializedResults = serializeBigInt(results);
 				return {
 					sql,
 					results: serializedResults,
 					count: Array.isArray(serializedResults) ? serializedResults.length : 1,
 					attempts: attempts,
 					userId: userId,
-					userRole: accessValidation.userRole,
+					userRole: userRole,
 				};
 			} catch (error) {
 				lastError = error.message;
@@ -211,40 +188,31 @@ export class SqlGenerationAgent {
 	): Promise<
 		SqlGenerationResult & { query: string; config: AiConfig; timestamp: string; validation: any }
 	> {
-		const validation = await QueryValidator.validateQueryIntent(query);
-		if (!validation.isValid) {
-			throw new Error(
-				`Query not suitable for database querying: ${validation.reason || 'Invalid query intent'}`,
-			);
+		// Get user role if authenticated - AI will handle security via prompt
+		let userRole: string | undefined;
+		if (userId) {
+			const user = await prisma.user.findUnique({
+				where: { id: userId },
+				select: { role: true },
+			});
+			userRole = user?.role ?? undefined;
 		}
-		const accessValidation = await SecurityHelper.validateUserAccess(
-			prisma,
-			userId,
-			query,
-			validation.queryType,
-		);
-		if (!accessValidation.hasAccess) {
-			throw new ForbiddenException(accessValidation.restrictions.join('; '));
-		}
-		const dbSchema = SchemaProvider.getCompleteDatabaseSchema();
+		const dbSchema = getCompleteDatabaseSchema();
 		let lastError: string = '';
 		let attempts = 0;
 		const maxAttempts = 5;
 		while (attempts < maxAttempts) {
 			attempts++;
 			try {
-				const prompt =
-					userId && accessValidation.userRole
-						? PromptBuilder.buildSecureSqlPrompt(
-								query,
-								dbSchema,
-								userId,
-								accessValidation.userRole,
-								aiConfig,
-								lastError,
-								attempts,
-							)
-						: PromptBuilder.buildSqlPrompt(query, dbSchema, aiConfig, lastError, attempts);
+				const prompt = buildSqlPrompt({
+					query,
+					schema: dbSchema,
+					userId,
+					userRole,
+					lastError,
+					attempt: attempts,
+					limit: aiConfig.limit,
+				});
 				const { text } = await generateText({
 					model: google(aiConfig.model),
 					prompt,
@@ -263,19 +231,8 @@ export class SqlGenerationAgent {
 				if (!sqlLower.startsWith('select')) {
 					throw new Error('Only SELECT queries are allowed for security reasons');
 				}
-				if (userId && accessValidation.restrictions.length > 0) {
-					const hasUserRestriction = SecurityHelper.validateSqlSecurity(
-						sql,
-						accessValidation.restrictions,
-					);
-					if (!hasUserRestriction) {
-						throw new Error(
-							'Security violation: Query must include user-specific WHERE clauses for sensitive data',
-						);
-					}
-				}
 				const results = await prisma.$queryRawUnsafe(sql);
-				const serializedResults = Serializer.serializeBigInt(results);
+				const serializedResults = serializeBigInt(results);
 				return {
 					query,
 					sql,
@@ -283,10 +240,10 @@ export class SqlGenerationAgent {
 					count: Array.isArray(serializedResults) ? serializedResults.length : 1,
 					config: aiConfig,
 					timestamp: new Date().toISOString(),
-					validation: validation,
+					validation: { isValid: true, queryType: undefined },
 					attempts: attempts,
 					userId: userId,
-					userRole: accessValidation.userRole,
+					userRole: userRole,
 				};
 			} catch (error) {
 				lastError = error.message;

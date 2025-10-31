@@ -14,13 +14,6 @@ export class KnowledgeController {
 		private readonly schemaIngestion: SchemaIngestionService,
 	) {}
 
-	@Post('ingest-schema')
-	@ApiOperation({ summary: 'Ingest database schema from static provider into vector store' })
-	async ingestSchema() {
-		const ids = await this.knowledge.ingestDatabaseSchema();
-		return { success: true, inserted: ids.length, ids };
-	}
-
 	@Post('ingest-schema-from-db')
 	@ApiOperation({
 		summary: 'Ingest full RAG schema context from DB (JSON schema + reference lookups)',

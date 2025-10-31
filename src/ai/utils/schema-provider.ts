@@ -1,13 +1,9 @@
 /**
- * Database schema provider for AI context
+ * Get complete database schema for AI context
+ * @returns Complete database schema string
  */
-export class SchemaProvider {
-	/**
-	 * Get complete database schema for AI context
-	 * @returns Complete database schema string
-	 */
-	static getCompleteDatabaseSchema(): string {
-		return `
+export function getCompleteDatabaseSchema(): string {
+	return `
 SCHEMA (PostgreSQL) - Tables, Columns, PK/FK, Relationships
 
 users(id PK, email, phone, password_hash, first_name, last_name, role, created_at, updated_at)
@@ -73,5 +69,4 @@ RELATIONSHIPS (FK):
 - districts.province_id -> provinces.id
 - wards.district_id -> districts.id
 	`;
-	}
 }
