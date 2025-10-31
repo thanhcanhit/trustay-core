@@ -5,7 +5,18 @@ import { ErrorHandler } from './agents/error-handler';
 import { ResponseGenerator } from './agents/response-generator';
 import { SqlGenerationAgent } from './agents/sql-generation-agent';
 import { KnowledgeService } from './knowledge/knowledge.service';
-import { ChatMessage, ChatResponse, ChatSession } from './types/chat.types';
+import {
+	ChatMessage,
+	ChatResponse,
+	ChatSession,
+	DataPayload,
+	EntityType,
+	ListItem,
+	TableCell,
+	TableColumn,
+} from './types/chat.types';
+import { buildQuickChartUrl } from './utils/chart';
+import { buildEntityPath } from './utils/entity-route';
 export { ChatResponse };
 
 @Injectable()
@@ -214,12 +225,13 @@ export class AiService {
 				);
 				this.logInfo('SQL_AGENT', `SQL generated successfully (rows=${sqlResult.count})`);
 
-				// Generate final response combining conversation + SQL results
-				const finalResponse = await this.responseGenerator.generateFinalResponse(
+				// Build Markdown-first envelope with DATA payload (LIST/TABLE/CHART)
+				const dataPayload: DataPayload | undefined = this.buildDataPayload(sqlResult.results);
+				const markdown: string = this.buildMarkdownForData(
 					conversationalResponse.message,
-					sqlResult,
-					session,
-					this.AI_CONFIG,
+					sqlResult.results,
+					sqlResult.count,
+					dataPayload?.mode === 'CHART' ? dataPayload.chart?.url : undefined,
 				);
 
 				// Persist Q&A with SQL canonical for self-learning
@@ -236,31 +248,38 @@ export class AiService {
 					this.logWarn('PERSIST', 'Failed to persist Q&A to knowledge store', persistErr);
 				}
 
-				this.addMessageToSession(session, 'assistant', finalResponse);
+				this.addMessageToSession(session, 'assistant', markdown);
 
 				return {
+					kind: 'DATA',
 					sessionId: session.sessionId,
-					message: finalResponse,
+					markdown,
+					timestamp: new Date().toISOString(),
+					message: conversationalResponse.message,
 					sql: sqlResult.sql,
 					results: sqlResult.results,
 					count: sqlResult.count,
-					timestamp: new Date().toISOString(),
 					validation: { isValid: true },
+					payload: dataPayload,
 				};
 			} else {
 				// Agent 1 needs more info - return conversational response
 				this.logInfo('CONVO_AGENT', 'Returning conversational response (not ready for SQL)');
-				this.addMessageToSession(session, 'assistant', conversationalResponse.message);
+				const markdown: string = `# Clarification\n\n${conversationalResponse.message}`;
+				this.addMessageToSession(session, 'assistant', markdown);
 
 				return {
+					kind: 'CONTROL',
 					sessionId: session.sessionId,
-					message: conversationalResponse.message,
+					markdown,
 					timestamp: new Date().toISOString(),
+					message: conversationalResponse.message,
 					validation: {
 						isValid: false,
 						needsClarification: conversationalResponse.needsClarification,
 						needsIntroduction: conversationalResponse.needsIntroduction,
 					},
+					payload: { mode: 'CLARIFY', questions: [] },
 				};
 			}
 		} catch (error) {
@@ -268,16 +287,241 @@ export class AiService {
 			this.logError('ERROR', `Chat error (session ${session.sessionId})`, error);
 
 			// Generate user-friendly error message
-			const errorMessage = ErrorHandler.generateErrorResponse(error.message);
-			this.addMessageToSession(session, 'assistant', errorMessage);
+			const errorMessage = ErrorHandler.generateErrorResponse((error as Error).message);
+			const markdown: string = `# Error\n\n${errorMessage}`;
+			this.addMessageToSession(session, 'assistant', markdown);
 
 			return {
+				kind: 'CONTROL',
 				sessionId: session.sessionId,
-				message: errorMessage,
+				markdown,
 				timestamp: new Date().toISOString(),
-				error: error.message, // Include error for debugging
+				message: errorMessage,
+				error: (error as Error).message,
+				payload: { mode: 'ERROR', details: (error as Error).message },
 			};
 		}
+	}
+
+	// Build Markdown for DATA responses (LIST or TABLE)
+	private buildMarkdownForData(
+		intro: string,
+		results: unknown,
+		count: number | undefined,
+		chartUrl?: string,
+	): string {
+		if (!Array.isArray(results) || results.length === 0 || typeof results[0] !== 'object') {
+			return `# Summary\n\n${intro}`;
+		}
+		const rows = results as ReadonlyArray<Record<string, unknown>>;
+		if (chartUrl) {
+			const header = `# Chart${typeof count === 'number' ? ` (${count})` : ''}`;
+			return `${header}\n\n${intro}\n\n![Chart](${chartUrl})`;
+		}
+		if (this.isListLike(rows)) {
+			const items = this.toListItems(rows).slice(0, 10);
+			const header = `# Results${typeof count === 'number' ? ` (${count})` : ''}`;
+			const lines = items.map((i) => {
+				const title = i.title;
+				const link = i.path || i.externalUrl || '';
+				const desc = i.description ? `  \n  ${i.description}` : '';
+				return link ? `- [${title}](${link})${desc}` : `- ${title}${desc}`;
+			});
+			return `${header}\n\n${intro}\n\n${lines.join('\n')}`;
+		}
+		const columns: TableColumn[] = this.inferColumns(rows);
+		const previewRows = this.normalizeRows(rows, columns).slice(0, 10);
+		const header = `# Data Preview${typeof count === 'number' ? ` (${count} rows)` : ''}`;
+		const tableHeader = `| ${columns.map((c) => c.label).join(' | ')} |\n| ${columns.map(() => '---').join(' | ')} |`;
+		const tableBody = previewRows
+			.map((r) => `| ${columns.map((c) => String(r[c.key] ?? '')).join(' | ')} |`)
+			.join('\n');
+		return `${header}\n\n${intro}\n\n${tableHeader}\n${tableBody}`;
+	}
+
+	private buildDataPayload(results: unknown): DataPayload | undefined {
+		if (!Array.isArray(results) || results.length === 0 || typeof results[0] !== 'object') {
+			return undefined;
+		}
+		const rows = results as ReadonlyArray<Record<string, unknown>>;
+		// Try CHART first if data shape matches (one label-like + one numeric column)
+		const chartData = this.tryBuildChart(rows);
+		if (chartData) {
+			return {
+				mode: 'CHART',
+				chart: {
+					mimeType: 'image/png',
+					url: chartData.url,
+					width: chartData.width,
+					height: chartData.height,
+					alt: 'Chart',
+				},
+			};
+		}
+		if (this.isListLike(rows)) {
+			const items = this.toListItems(rows);
+			return {
+				mode: 'LIST',
+				list: {
+					items: items.slice(0, 50),
+					total: items.length,
+				},
+			};
+		}
+		const columns: TableColumn[] = this.inferColumns(rows);
+		const normalized = this.normalizeRows(rows, columns);
+		return {
+			mode: 'TABLE',
+			table: {
+				columns,
+				rows: normalized.slice(0, 50),
+				previewLimit: 50,
+			},
+		};
+	}
+
+	private isListLike(rows: ReadonlyArray<Record<string, unknown>>): boolean {
+		const sample = rows[0] ?? {};
+		const keys = Object.keys(sample).map((k) => k.toLowerCase());
+		const hasTitle = keys.some((k) => ['title', 'name'].includes(k));
+		const hasUrlOrImage = keys.some((k) =>
+			['url', 'link', 'href', 'image', 'imageurl', 'thumbnail'].includes(k),
+		);
+		const hasEntityId = keys.includes('id') && keys.includes('entity');
+		return hasTitle && (hasUrlOrImage || hasEntityId);
+	}
+
+	private tryBuildChart(
+		rows: ReadonlyArray<Record<string, unknown>>,
+	): { url: string; width: number; height: number } | null {
+		if (rows.length === 0) {
+			return null;
+		}
+		const sample = rows[0];
+		const keys = Object.keys(sample);
+		const numericKeys = keys.filter(
+			(k) => typeof (sample as Record<string, unknown>)[k] === 'number',
+		);
+		if (numericKeys.length === 0) {
+			return null;
+		}
+		// Choose a label key: prefer name/title/category; else the first non-numeric
+		const labelKey =
+			keys.find((k) => /name|title|label|category/i.test(k)) ??
+			keys.find((k) => !numericKeys.includes(k));
+		if (!labelKey) {
+			return null;
+		}
+		const valueKey = numericKeys[0];
+		const labels: string[] = rows.map((r) =>
+			String((r as Record<string, unknown>)[labelKey] ?? ''),
+		);
+		const data: number[] = rows.map((r) => Number((r as Record<string, unknown>)[valueKey] ?? 0));
+		const { url, width, height } = buildQuickChartUrl({
+			labels,
+			datasetLabel: this.toLabel(valueKey),
+			data,
+			type: 'bar',
+			width: 800,
+			height: 400,
+		});
+		return { url, width, height };
+	}
+
+	private toListItems(rows: ReadonlyArray<Record<string, unknown>>): ListItem[] {
+		return rows.map((r) => this.toListItem(r));
+	}
+
+	private toListItem(row: Record<string, unknown>): ListItem {
+		const obj = this.toLowerKeys(row);
+		const id = String(obj.id ?? '');
+		const entity = (obj.entity as EntityType | undefined) ?? undefined;
+		const path = entity && id ? buildEntityPath(entity, id) : undefined;
+		const extUrl =
+			(obj.url as string | undefined) ??
+			(obj.link as string | undefined) ??
+			(obj.href as string | undefined);
+		const imageUrl =
+			(obj.imageurl as string | undefined) ??
+			(obj.image as string | undefined) ??
+			(obj.thumbnail as string | undefined);
+		return {
+			id:
+				id ||
+				(obj.uuid as string | undefined) ||
+				(obj.slug as string | undefined) ||
+				String(Math.random()).slice(2),
+			title: String(obj.title ?? obj.name ?? 'Untitled'),
+			description: obj.description ? String(obj.description) : undefined,
+			thumbnailUrl: imageUrl,
+			entity,
+			path,
+			externalUrl: extUrl,
+		};
+	}
+
+	private toLowerKeys(obj: Record<string, unknown>): Record<string, unknown> {
+		return Object.entries(obj).reduce<Record<string, unknown>>((acc, [k, v]) => {
+			acc[k.toLowerCase()] = v;
+			return acc;
+		}, {});
+	}
+
+	private inferColumns(rows: ReadonlyArray<Record<string, unknown>>): TableColumn[] {
+		const sample = rows[0] ?? {};
+		return Object.keys(sample).map((key) => {
+			const v = (sample as Record<string, unknown>)[key];
+			const type: TableColumn['type'] =
+				typeof v === 'number'
+					? 'number'
+					: v instanceof Date
+						? 'date'
+						: typeof v === 'boolean'
+							? 'boolean'
+							: /url|link|href/i.test(key)
+								? 'url'
+								: /image|thumbnail/i.test(key)
+									? 'image'
+									: 'string';
+			return { key, label: this.toLabel(key), type };
+		});
+	}
+
+	private normalizeRows(
+		rows: ReadonlyArray<Record<string, unknown>>,
+		columns: ReadonlyArray<TableColumn>,
+	): ReadonlyArray<Record<string, TableCell>> {
+		return rows.map((row) =>
+			columns.reduce<Record<string, TableCell>>((acc, c) => {
+				const v = row[c.key];
+				if (v === null || v === undefined) {
+					acc[c.key] = null;
+					return acc;
+				}
+				if (c.type === 'date') {
+					acc[c.key] = v instanceof Date ? v.toISOString() : String(v);
+					return acc;
+				}
+				if (c.type === 'number') {
+					acc[c.key] = Number(v);
+					return acc;
+				}
+				if (c.type === 'boolean') {
+					acc[c.key] = Boolean(v);
+					return acc;
+				}
+				acc[c.key] = String(v);
+				return acc;
+			}, {}),
+		);
+	}
+
+	private toLabel(key: string): string {
+		return key
+			.replace(/_/g, ' ')
+			.replace(/([a-z])([A-Z])/g, '$1 $2')
+			.replace(/\s+/g, ' ')
+			.replace(/^./, (s) => s.toUpperCase());
 	}
 
 	/**

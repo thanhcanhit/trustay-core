@@ -20,15 +20,21 @@ export interface ChatSession {
 }
 
 /**
- * Interface for chat response
+ * Unified envelope for chat response (Markdown-first). Backward fields kept for compatibility.
  */
-export interface ChatResponse {
+export type ChatResponse = ChatEnvelope;
+
+export interface ChatEnvelope {
+	kind: 'CONTENT' | 'DATA' | 'CONTROL';
 	sessionId: string;
-	message: string;
-	sql?: string;
-	results?: any;
-	count?: number;
+	markdown: string; // Markdown-first text for rendering
 	timestamp: string;
+	meta?: Record<string, string | number | boolean>;
+	// Backward/diagnostic fields (optional)
+	message?: string; // legacy text
+	sql?: string;
+	results?: unknown;
+	count?: number;
 	validation?: {
 		isValid: boolean;
 		reason?: string;
@@ -37,6 +43,61 @@ export interface ChatResponse {
 		clarificationQuestion?: string;
 	};
 	error?: string;
+	payload?: ContentPayload | DataPayload | ControlPayload;
+}
+
+export interface ContentPayload {
+	mode: 'CONTENT';
+	stats?: readonly { label: string; value: number; unit?: string }[];
+}
+
+export type EntityType = 'room' | 'post';
+
+export interface ListItem {
+	id: string;
+	title: string;
+	description?: string;
+	thumbnailUrl?: string;
+	entity?: EntityType;
+	path?: string; // app-relative if available
+	externalUrl?: string; // for external links
+	extra?: Record<string, string | number | boolean>;
+}
+
+export type TableCell = string | number | boolean | null;
+
+export interface TableColumn {
+	key: string;
+	label: string;
+	type: 'string' | 'number' | 'date' | 'boolean' | 'url' | 'image';
+}
+
+export interface DataPayload {
+	mode: 'LIST' | 'TABLE' | 'CHART';
+	list?: {
+		items: readonly ListItem[];
+		total: number;
+	};
+	table?: {
+		columns: readonly TableColumn[];
+		rows: readonly Record<string, TableCell>[];
+		previewLimit?: number;
+	};
+	chart?: {
+		mimeType: 'image/png' | 'image/jpeg' | 'image/webp';
+		base64?: string;
+		url?: string; // optional direct URL (e.g., QuickChart)
+		width: number;
+		height: number;
+		alt?: string;
+	};
+}
+
+export interface ControlPayload {
+	mode: 'CLARIFY' | 'ERROR';
+	questions?: readonly string[];
+	code?: string;
+	details?: string;
 }
 
 /**
