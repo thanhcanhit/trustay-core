@@ -408,6 +408,7 @@ export class RoomInvitationsService {
 			where: { id: invitationId },
 			data: {
 				status: RequestStatus.accepted, // Keep as accepted since rental will be created
+				isConfirmedBySender: true,
 				confirmedAt: new Date(),
 			},
 			include: {
