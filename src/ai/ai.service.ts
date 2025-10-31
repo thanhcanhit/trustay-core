@@ -213,6 +213,16 @@ export class AiService {
 				`Response received (readyForSql=${conversationalResponse.readyForSql})`,
 			);
 
+			// Decide desired response mode (before SQL) based on query intent
+			const desiredMode: 'LIST' | 'TABLE' | 'CHART' = this.resolveDesiredMode(query);
+			if (desiredMode === 'CHART') {
+				this.addMessageToSession(session, 'system', '[INTENT] MODE=CHART');
+			} else if (desiredMode === 'LIST') {
+				this.addMessageToSession(session, 'system', '[INTENT] MODE=LIST');
+			} else {
+				this.addMessageToSession(session, 'system', '[INTENT] MODE=TABLE');
+			}
+
 			// If conversational agent determines we have enough info for SQL
 			if (conversationalResponse.readyForSql) {
 				this.logInfo('SQL_AGENT', 'Generating SQL...');
@@ -226,12 +236,18 @@ export class AiService {
 				this.logInfo('SQL_AGENT', `SQL generated successfully (rows=${sqlResult.count})`);
 
 				// Build Markdown-first envelope with DATA payload (LIST/TABLE/CHART)
-				const dataPayload: DataPayload | undefined = this.buildDataPayload(sqlResult.results);
+				const dataPayload: DataPayload | undefined = this.buildDataPayload(
+					sqlResult.results,
+					query,
+					desiredMode,
+				);
 				const markdown: string = this.buildMarkdownForData(
 					conversationalResponse.message,
 					sqlResult.results,
 					sqlResult.count,
+					dataPayload?.mode ?? desiredMode,
 					dataPayload?.mode === 'CHART' ? dataPayload.chart?.url : undefined,
+					true,
 				);
 
 				// Persist Q&A with SQL canonical for self-learning
@@ -308,17 +324,24 @@ export class AiService {
 		intro: string,
 		results: unknown,
 		count: number | undefined,
+		mode?: 'LIST' | 'TABLE' | 'CHART',
 		chartUrl?: string,
+		suppressBody: boolean = false,
 	): string {
-		if (!Array.isArray(results) || results.length === 0 || typeof results[0] !== 'object') {
-			return `# Summary\n\n${intro}`;
+		if (
+			!Array.isArray(results) ||
+			results.length === 0 ||
+			typeof results[0] !== 'object' ||
+			suppressBody
+		) {
+			return `# Summary\n\n${this.sanitizeIntroForMode(intro, mode)}`;
 		}
 		const rows = results as ReadonlyArray<Record<string, unknown>>;
-		if (chartUrl) {
-			const header = `# Chart${typeof count === 'number' ? ` (${count})` : ''}`;
-			return `${header}\n\n${intro}\n\n![Chart](${chartUrl})`;
+		if (mode === 'CHART' && chartUrl) {
+			const header = `# Chart (Top 10)${typeof count === 'number' ? ` (${count})` : ''}`;
+			return `${header}\n\n${this.sanitizeIntroForMode(intro, 'CHART')}\n\n![Chart](${chartUrl})`;
 		}
-		if (this.isListLike(rows)) {
+		if (mode === 'LIST' || this.isListLike(rows)) {
 			const items = this.toListItems(rows).slice(0, 10);
 			const header = `# Results${typeof count === 'number' ? ` (${count})` : ''}`;
 			const lines = items.map((i) => {
@@ -327,7 +350,7 @@ export class AiService {
 				const desc = i.description ? `  \n  ${i.description}` : '';
 				return link ? `- [${title}](${link})${desc}` : `- ${title}${desc}`;
 			});
-			return `${header}\n\n${intro}\n\n${lines.join('\n')}`;
+			return `${header}\n\n${this.sanitizeIntroForMode(intro, 'LIST')}\n\n${lines.join('\n')}`;
 		}
 		const columns: TableColumn[] = this.inferColumns(rows);
 		const previewRows = this.normalizeRows(rows, columns).slice(0, 10);
@@ -336,16 +359,51 @@ export class AiService {
 		const tableBody = previewRows
 			.map((r) => `| ${columns.map((c) => String(r[c.key] ?? '')).join(' | ')} |`)
 			.join('\n');
-		return `${header}\n\n${intro}\n\n${tableHeader}\n${tableBody}`;
+		return `${header}\n\n${this.sanitizeIntroForMode(intro, 'TABLE')}\n\n${tableHeader}\n${tableBody}`;
 	}
 
-	private buildDataPayload(results: unknown): DataPayload | undefined {
+	private sanitizeIntroForMode(intro: string, mode?: 'LIST' | 'TABLE' | 'CHART'): string {
+		const text = String(intro ?? '').trim();
+		if (!text) {
+			return '';
+		}
+		// Take first sentence/line to avoid agent over-talking
+		const first = text.split(/\n|[.!?]\s/).filter(Boolean)[0] ?? text;
+		// Remove cross-references (e.g., mentioning both chart & table)
+		const removeChart = /biểu đồ|chart/;
+		const removeTable = /bảng|table/;
+		if (mode === 'CHART') {
+			return first.replace(removeTable, '').trim();
+		}
+		if (mode === 'TABLE' || mode === 'LIST') {
+			return first.replace(removeChart, '').trim();
+		}
+		return first;
+	}
+
+	private buildDataPayload(
+		results: unknown,
+		query: string,
+		desiredMode?: 'LIST' | 'TABLE' | 'CHART',
+	): DataPayload | undefined {
 		if (!Array.isArray(results) || results.length === 0 || typeof results[0] !== 'object') {
 			return undefined;
 		}
 		const rows = results as ReadonlyArray<Record<string, unknown>>;
-		// Try CHART first if data shape matches (one label-like + one numeric column)
-		const chartData = this.tryBuildChart(rows);
+		// Prefer LIST (either intent or data shape)
+		if (desiredMode === 'LIST' || this.isListLike(rows)) {
+			const items = this.toListItems(rows);
+			return {
+				mode: 'LIST',
+				list: {
+					items: items.slice(0, 50),
+					total: items.length,
+				},
+			};
+		}
+		// Then try CHART for aggregate/statistics-like data, only when intent matches
+		const chartIntent = desiredMode === 'CHART' || this.isChartIntent(query);
+		const chartData = chartIntent ? this.tryBuildChart(rows) : null;
 		if (chartData) {
 			return {
 				mode: 'CHART',
@@ -354,17 +412,7 @@ export class AiService {
 					url: chartData.url,
 					width: chartData.width,
 					height: chartData.height,
-					alt: 'Chart',
-				},
-			};
-		}
-		if (this.isListLike(rows)) {
-			const items = this.toListItems(rows);
-			return {
-				mode: 'LIST',
-				list: {
-					items: items.slice(0, 50),
-					total: items.length,
+					alt: 'Chart (Top 10)',
 				},
 			};
 		}
@@ -378,6 +426,58 @@ export class AiService {
 				previewLimit: 50,
 			},
 		};
+	}
+
+	private isChartIntent(query: string): boolean {
+		const q = (query || '').toLowerCase();
+		// Vietnamese + English keywords for stats/visualization intent
+		const keywords = [
+			'biểu đồ',
+			'chart',
+			'thống kê',
+			'stat',
+			'statistics',
+			'so sánh',
+			'compare',
+			'top',
+			'tỷ lệ',
+			'ratio',
+			'phân bố',
+			'distribution',
+			'xu hướng',
+			'trend',
+			'trong 7 ngày',
+			'theo tháng',
+			'theo quý',
+			'by month',
+			'by quarter',
+		];
+		return keywords.some((k) => q.includes(k));
+	}
+
+	private resolveDesiredMode(query: string): 'LIST' | 'TABLE' | 'CHART' {
+		const q = (query || '').toLowerCase();
+		// Strong LIST intent (search/browse)
+		const listKeywords = [
+			'tìm',
+			'tim',
+			'có phòng',
+			'phòng',
+			'room',
+			'bài đăng',
+			'post',
+			'ở',
+			'near',
+			'trong khu vực',
+			'gần',
+		];
+		if (listKeywords.some((k) => q.includes(k))) {
+			return 'LIST';
+		}
+		if (this.isChartIntent(q)) {
+			return 'CHART';
+		}
+		return 'TABLE';
 	}
 
 	private isListLike(rows: ReadonlyArray<Record<string, unknown>>): boolean {
@@ -413,10 +513,21 @@ export class AiService {
 			return null;
 		}
 		const valueKey = numericKeys[0];
-		const labels: string[] = rows.map((r) =>
-			String((r as Record<string, unknown>)[labelKey] ?? ''),
-		);
-		const data: number[] = rows.map((r) => Number((r as Record<string, unknown>)[valueKey] ?? 0));
+		// Heuristic: aggregate/statistics-like detection
+		const statLike = keys.some((k) => /count|sum|avg|total|min|max/i.test(k));
+		const numericRatio = numericKeys.length / Math.max(keys.length, 1);
+		if (!statLike && numericRatio < 0.6) {
+			return null;
+		}
+		// Build pairs, sort desc, take top 10
+		const pairs = rows.map((r) => ({
+			label: String((r as Record<string, unknown>)[labelKey] ?? ''),
+			value: Number((r as Record<string, unknown>)[valueKey] ?? 0),
+		}));
+		pairs.sort((a, b) => b.value - a.value);
+		const top = pairs.slice(0, 10);
+		const labels: string[] = top.map((p) => p.label);
+		const data: number[] = top.map((p) => p.value);
 		const { url, width, height } = buildQuickChartUrl({
 			labels,
 			datasetLabel: this.toLabel(valueKey),
