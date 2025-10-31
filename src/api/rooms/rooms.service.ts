@@ -380,8 +380,7 @@ export class RoomsService {
 						costType: cost.costType || 'fixed',
 						// Map value to appropriate field based on costType
 						fixedAmount: cost.costType === 'fixed' ? cost.value : null,
-						unitPrice: cost.costType === 'per_person' ? cost.value : null,
-						baseRate: ['metered', 'percentage', 'tiered'].includes(cost.costType || 'fixed')
+						unitPrice: ['per_person', 'metered'].includes(cost.costType || 'fixed')
 							? cost.value
 							: null,
 						unit: cost.unit,
@@ -661,11 +660,9 @@ export class RoomsService {
 		const cleanCosts =
 			room.costs?.map((cost: any) => ({
 				...cost,
-				baseRate: safeDecimal(cost.baseRate),
 				unitPrice: safeDecimal(cost.unitPrice),
 				fixedAmount: safeDecimal(cost.fixedAmount),
-				minimumCharge: safeDecimal(cost.minimumCharge),
-				maximumCharge: safeDecimal(cost.maximumCharge),
+				perPersonAmount: safeDecimal(cost.perPersonAmount),
 				meterReading: safeDecimal(cost.meterReading),
 				lastMeterReading: safeDecimal(cost.lastMeterReading),
 			})) || [];
@@ -1038,8 +1035,7 @@ export class RoomsService {
 							costType: cost.costType || 'fixed',
 							// Map value to appropriate field based on costType
 							fixedAmount: cost.costType === 'fixed' ? cost.value : null,
-							unitPrice: cost.costType === 'per_person' ? cost.value : null,
-							baseRate: ['metered', 'percentage', 'tiered'].includes(cost.costType || 'fixed')
+							unitPrice: ['per_person', 'metered'].includes(cost.costType || 'fixed')
 								? cost.value
 								: null,
 							unit: cost.unit,
