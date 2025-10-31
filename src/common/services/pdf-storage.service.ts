@@ -77,6 +77,8 @@ export class PDFStorageService {
 
 			// Store locally
 			const localPath = path.join(this.config.localPath, storagePath);
+			const directory = path.dirname(localPath);
+			await fs.promises.mkdir(directory, { recursive: true });
 			await fs.promises.writeFile(localPath, finalBuffer);
 
 			// Store in S3 if configured
