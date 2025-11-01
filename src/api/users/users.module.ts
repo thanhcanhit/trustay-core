@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
+import { AuthModule } from '../../auth/auth.module';
 import { UploadModule } from '../../common/upload/upload.module';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -11,6 +12,7 @@ import { UsersService } from './users.service';
 	imports: [
 		PrismaModule,
 		UploadModule,
+		AuthModule,
 		NotificationsModule,
 		RatingModule,
 		MulterModule.register({
