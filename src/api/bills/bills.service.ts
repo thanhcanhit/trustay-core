@@ -488,7 +488,7 @@ export class BillsService {
 				hasMeteredCosts && hasMeteredCostsWithoutReadings ? BillStatus.draft : BillStatus.pending;
 
 			// Create bill (ensure only 1 bill per period)
-			await this.prisma.bill.create({
+			const createdBill = await this.prisma.bill.create({
 				data: {
 					rentalId: activeRental.id,
 					roomInstanceId: roomInstance.id,
@@ -514,7 +514,39 @@ export class BillsService {
 						create: billItems,
 					},
 				},
+				include: {
+					rental: {
+						include: {
+							tenant: true,
+							roomInstance: {
+								include: {
+									room: true,
+								},
+							},
+						},
+					},
+				},
 			});
+
+			// Notify tenant if bill status is pending (no metered costs or all metered costs have readings)
+			if (billStatus === BillStatus.pending) {
+				try {
+					await this.notificationsService.notifyBill(activeRental.tenantId, {
+						month: billingMonth,
+						year: billingYear,
+						roomName: roomInstance.room.name,
+						amount: Number(totalAmount),
+						billId: createdBill.id,
+						dueDate: periodEnd,
+						landlordName:
+							`${building.owner.firstName} ${building.owner.lastName}`.trim() || 'Chủ nhà',
+					});
+				} catch (error) {
+					// Log error but don't fail the bill creation
+					// eslint-disable-next-line no-console
+					console.error('Failed to send bill notification:', error);
+				}
+			}
 
 			billsCreated++;
 		}
@@ -801,6 +833,10 @@ export class BillsService {
 				? BillStatus.pending
 				: bill.status;
 
+		// Check if status changed from draft to pending
+		const statusChangedToPending =
+			bill.status === BillStatus.draft && newStatus === BillStatus.pending;
+
 		// Update bill
 		const updatedBill = await this.prisma.bill.update({
 			where: { id: dto.billId },
@@ -818,6 +854,8 @@ export class BillsService {
 			include: {
 				rental: {
 					include: {
+						tenant: true,
+						owner: true,
 						roomInstance: {
 							include: {
 								room: {
@@ -837,6 +875,27 @@ export class BillsService {
 				billItems: true,
 			},
 		});
+
+		// Notify tenant if status changed to pending
+		if (statusChangedToPending) {
+			try {
+				await this.notificationsService.notifyBill(updatedBill.rental.tenantId, {
+					month: updatedBill.billingMonth,
+					year: updatedBill.billingYear,
+					roomName: updatedBill.rental.roomInstance.room.name,
+					amount: Number(updatedBill.totalAmount),
+					billId: updatedBill.id,
+					dueDate: updatedBill.dueDate,
+					landlordName:
+						`${updatedBill.rental.owner.firstName} ${updatedBill.rental.owner.lastName}`.trim() ||
+						'Chủ nhà',
+				});
+			} catch (error) {
+				// Log error but don't fail the bill update
+				// eslint-disable-next-line no-console
+				console.error('Failed to send bill notification:', error);
+			}
+		}
 
 		return this.transformToResponseDto(updatedBill);
 	}
@@ -1226,6 +1285,10 @@ export class BillsService {
 				? BillStatus.pending
 				: bill.status;
 
+		// Check if status changed from draft to pending
+		const statusChangedToPending =
+			bill.status === BillStatus.draft && newStatus === BillStatus.pending;
+
 		const updatedBill = await this.prisma.bill.update({
 			where: { id: billId },
 			data: {
@@ -1241,6 +1304,8 @@ export class BillsService {
 			include: {
 				rental: {
 					include: {
+						tenant: true,
+						owner: true,
 						roomInstance: {
 							include: {
 								room: {
@@ -1260,6 +1325,27 @@ export class BillsService {
 				billItems: true,
 			},
 		});
+
+		// Notify tenant if status changed to pending
+		if (statusChangedToPending) {
+			try {
+				await this.notificationsService.notifyBill(updatedBill.rental.tenantId, {
+					month: updatedBill.billingMonth,
+					year: updatedBill.billingYear,
+					roomName: updatedBill.rental.roomInstance.room.name,
+					amount: Number(updatedBill.totalAmount),
+					billId: updatedBill.id,
+					dueDate: updatedBill.dueDate,
+					landlordName:
+						`${updatedBill.rental.owner.firstName} ${updatedBill.rental.owner.lastName}`.trim() ||
+						'Chủ nhà',
+				});
+			} catch (error) {
+				// Log error but don't fail the bill update
+				// eslint-disable-next-line no-console
+				console.error('Failed to send bill notification:', error);
+			}
+		}
 
 		return this.transformToResponseDto(updatedBill);
 	}
