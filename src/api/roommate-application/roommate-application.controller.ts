@@ -125,6 +125,39 @@ export class RoommateApplicationController {
 		return this.roommateApplicationService.findApplicationsForMyPosts(query, user.id);
 	}
 
+	@Get('landlord/pending')
+	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
+	@ApiOperation({
+		summary: 'Landlord xem các đơn ứng tuyển cần duyệt',
+		description: 'Lấy danh sách các đơn ứng tuyển từ platform rooms thuộc landlord cần duyệt',
+	})
+	@ApiQuery({ name: 'page', required: false, type: Number, description: 'Số trang (default: 1)' })
+	@ApiQuery({
+		name: 'limit',
+		required: false,
+		type: Number,
+		description: 'Số items per page (default: 10, max: 100)',
+	})
+	@ApiQuery({
+		name: 'status',
+		required: false,
+		enum: ['pending', 'accepted', 'rejected', 'expired', 'cancelled', 'awaiting_confirmation'],
+		description: 'Lọc theo trạng thái (default: accepted)',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Lấy danh sách thành công',
+		type: PaginatedResponseDto<RoommateApplicationResponseDto>,
+	})
+	@ApiResponse({ status: 401, description: 'Chưa xác thực' })
+	async findApplicationsForLandlord(
+		@Query() query: QueryRoommateApplicationDto,
+		@CurrentUser() user: User,
+	): Promise<PaginatedResponseDto<RoommateApplicationResponseDto>> {
+		return this.roommateApplicationService.findApplicationsForLandlord(query, user.id);
+	}
+
 	@Get(':id')
 	@UseGuards(OptionalJwtAuthGuard)
 	@ApiOperation({ summary: 'Lấy chi tiết đơn ứng tuyển' })
@@ -169,8 +202,9 @@ export class RoommateApplicationController {
 	@UseGuards(JwtAuthGuard)
 	@ApiBearerAuth()
 	@ApiOperation({
-		summary: 'Phản hồi đơn ứng tuyển',
-		description: 'Tenant hoặc landlord phản hồi (phê duyệt/từ chối) đơn ứng tuyển',
+		summary: 'Tenant phản hồi đơn ứng tuyển',
+		description:
+			'Tenant phản hồi (phê duyệt/từ chối) đơn ứng tuyển. Platform room: sau khi tenant approve, landlord sẽ nhận thông báo. External room: sau khi tenant approve, applicant có thể confirm.',
 	})
 	@ApiParam({ name: 'id', description: 'ID của đơn ứng tuyển' })
 	@ApiResponse({
@@ -190,13 +224,71 @@ export class RoommateApplicationController {
 		return this.roommateApplicationService.respondToApplication(id, respondDto, user.id);
 	}
 
+	@Post(':id/landlord-approve')
+	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
+	@ApiOperation({
+		summary: 'Landlord phê duyệt đơn ứng tuyển',
+		description:
+			'Landlord phê duyệt đơn ứng tuyển đã được tenant phê duyệt. Chỉ áp dụng cho platform rooms.',
+	})
+	@ApiParam({ name: 'id', description: 'ID của đơn ứng tuyển' })
+	@ApiResponse({
+		status: 200,
+		description: 'Phê duyệt thành công',
+		type: RoommateApplicationResponseDto,
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Trạng thái không hợp lệ hoặc không phải platform room',
+	})
+	@ApiResponse({ status: 401, description: 'Chưa xác thực' })
+	@ApiResponse({ status: 403, description: 'Không có quyền phê duyệt' })
+	@ApiResponse({ status: 404, description: 'Không tìm thấy đơn ứng tuyển' })
+	async landlordApproveApplication(
+		@Param('id') id: string,
+		@Body() respondDto: RespondToApplicationDto,
+		@CurrentUser() user: User,
+	): Promise<RoommateApplicationResponseDto> {
+		return this.roommateApplicationService.landlordApproveApplication(id, respondDto, user.id);
+	}
+
+	@Post(':id/landlord-reject')
+	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
+	@ApiOperation({
+		summary: 'Landlord từ chối đơn ứng tuyển',
+		description:
+			'Landlord từ chối đơn ứng tuyển đã được tenant phê duyệt. Chỉ áp dụng cho platform rooms.',
+	})
+	@ApiParam({ name: 'id', description: 'ID của đơn ứng tuyển' })
+	@ApiResponse({
+		status: 200,
+		description: 'Từ chối thành công',
+		type: RoommateApplicationResponseDto,
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Trạng thái không hợp lệ hoặc không phải platform room',
+	})
+	@ApiResponse({ status: 401, description: 'Chưa xác thực' })
+	@ApiResponse({ status: 403, description: 'Không có quyền từ chối' })
+	@ApiResponse({ status: 404, description: 'Không tìm thấy đơn ứng tuyển' })
+	async landlordRejectApplication(
+		@Param('id') id: string,
+		@Body() respondDto: RespondToApplicationDto,
+		@CurrentUser() user: User,
+	): Promise<RoommateApplicationResponseDto> {
+		return this.roommateApplicationService.landlordRejectApplication(id, respondDto, user.id);
+	}
+
 	@Patch(':id/confirm')
 	@UseGuards(JwtAuthGuard)
 	@ApiBearerAuth()
 	@ApiOperation({
-		summary: 'Xác nhận đơn ứng tuyển',
+		summary: 'Applicant xác nhận đơn ứng tuyển',
 		description:
-			'Tenant hoặc landlord xác nhận đơn ứng tuyển. Sau khi cả 2 xác nhận, rental sẽ được tạo tự động.',
+			'Applicant xác nhận đơn ứng tuyển cuối cùng. Sau khi xác nhận, rental sẽ được tạo tự động. Platform room: sau khi tenant và landlord đã approve. External room: sau khi tenant đã approve.',
 	})
 	@ApiParam({ name: 'id', description: 'ID của đơn ứng tuyển' })
 	@ApiResponse({

@@ -313,7 +313,28 @@ export class RoommateApplicationService {
 	async findOne(id: string, userId?: string): Promise<RoommateApplicationResponseDto> {
 		const application = await this.prisma.roommateApplication.findUnique({
 			where: { id },
-			include: this.getIncludeOptions(),
+			include: {
+				...this.getIncludeOptions(),
+				roommateSeekingPost: {
+					select: {
+						...this.getIncludeOptions().roommateSeekingPost.select,
+						roomInstanceId: true,
+						roomInstance: {
+							select: {
+								room: {
+									select: {
+										building: {
+											select: {
+												ownerId: true,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		});
 
 		if (!application) {
@@ -321,12 +342,15 @@ export class RoommateApplicationService {
 		}
 
 		// Check if user has permission to view
-		if (
-			userId &&
-			application.applicantId !== userId &&
-			application.roommateSeekingPost.tenantId !== userId
-		) {
-			throw new ForbiddenException('Không có quyền xem đơn ứng tuyển này');
+		if (userId) {
+			const isApplicant = application.applicantId === userId;
+			const isTenant = application.roommateSeekingPost.tenantId === userId;
+			const isLandlord =
+				application.roommateSeekingPost.roomInstance?.room?.building?.ownerId === userId;
+
+			if (!isApplicant && !isTenant && !isLandlord) {
+				throw new ForbiddenException('Không có quyền xem đơn ứng tuyển này');
+			}
 		}
 
 		return this.mapToResponseDto(application);
@@ -378,16 +402,8 @@ export class RoommateApplicationService {
 						roomInstance: {
 							include: {
 								room: {
-									select: {
-										name: true,
-									},
-								},
-								rentals: {
-									where: {
-										status: 'active',
-									},
 									include: {
-										owner: true,
+										building: true,
 									},
 								},
 							},
@@ -401,29 +417,40 @@ export class RoommateApplicationService {
 			throw new NotFoundException('Không tìm thấy đơn ứng tuyển');
 		}
 
+		// Only tenant can respond via this endpoint
 		const isTenant = application.roommateSeekingPost.tenantId === userId;
-		const isLandlord =
-			application.roommateSeekingPost.roomInstance?.rentals?.[0]?.owner?.id === userId;
-
-		if (!isTenant && !isLandlord) {
-			throw new ForbiddenException('Không có quyền phản hồi đơn ứng tuyển này');
+		if (!isTenant) {
+			throw new ForbiddenException('Chỉ tenant có quyền phản hồi đơn ứng tuyển này');
 		}
 
-		// Validate status transitions
-		await this.validateStatusTransition(application, respondDto.status, isTenant, isLandlord);
+		if (application.status !== RequestStatus.pending) {
+			throw new BadRequestException('Chỉ có thể phản hồi đơn ứng tuyển đang chờ xử lý');
+		}
+
+		// Validate status transition
+		if (
+			respondDto.status !== RequestStatus.accepted &&
+			respondDto.status !== RequestStatus.rejected
+		) {
+			throw new BadRequestException('Tenant chỉ có thể approve hoặc reject đơn ứng tuyển');
+		}
+
+		const post = application.roommateSeekingPost;
+		const isPlatformRoom = !!post.roomInstanceId;
 
 		// Prepare update data
-		const updateData: any = {
-			status: respondDto.status,
-		};
+		// For external room: if accepted, set status to awaiting_confirmation (applicant can confirm)
+		// For platform room: if accepted, keep status as accepted (wait for landlord)
+		const finalStatus =
+			respondDto.status === RequestStatus.accepted && !isPlatformRoom
+				? RequestStatus.awaiting_confirmation
+				: respondDto.status;
 
-		if (isTenant) {
-			updateData.tenantResponse = respondDto.response;
-			updateData.tenantRespondedAt = new Date();
-		} else if (isLandlord) {
-			updateData.landlordResponse = respondDto.response;
-			updateData.landlordRespondedAt = new Date();
-		}
+		const updateData: any = {
+			status: finalStatus,
+			tenantResponse: respondDto.response,
+			tenantRespondedAt: new Date(),
+		};
 
 		// Update application
 		const updatedApplication = await this.prisma.roommateApplication.update({
@@ -433,23 +460,14 @@ export class RoommateApplicationService {
 		});
 
 		// Get room name for notifications
-		const post = application.roommateSeekingPost;
 		const roomName = post.roomInstance?.room?.name || 'phòng';
 
 		// Send notifications based on status
 		if (respondDto.status === RequestStatus.accepted) {
-			// Tenant approved - notify applicant
-			await this.notificationsService.notifyRoommateApplicationApproved(application.applicantId, {
-				roomName,
-				applicationId: application.id,
-			});
-
-			// Handle approved application (update post counts)
-			await this.handleApprovedApplication(application.roommateSeekingPostId);
-
-			// If platform room, also notify landlord
-			if (post.roomInstance) {
-				const landlordId = post.roomInstance.rentals?.[0]?.owner?.id;
+			// Tenant approved
+			if (isPlatformRoom) {
+				// Platform room: notify landlord for approval, notify applicant
+				const landlordId = post.roomInstance?.room?.building?.ownerId;
 				if (landlordId) {
 					await this.notificationsService.notifyRoommateApplicationReceived(landlordId, {
 						applicantName: application.fullName,
@@ -457,28 +475,24 @@ export class RoommateApplicationService {
 						applicationId: application.id,
 					});
 				}
+				await this.notificationsService.notifyRoommateApplicationApproved(application.applicantId, {
+					roomName,
+					applicationId: application.id,
+				});
+			} else {
+				// External room: notify applicant they can confirm
+				await this.notificationsService.notifyRoommateApplicationApproved(application.applicantId, {
+					roomName,
+					applicationId: application.id,
+				});
 			}
 		} else if (respondDto.status === RequestStatus.rejected) {
-			// Tenant or Landlord rejected - notify applicant
+			// Tenant rejected - notify applicant
 			await this.notificationsService.notifyRoommateApplicationRejected(application.applicantId, {
 				roomName,
 				reason: respondDto.response,
 				applicationId: application.id,
 			});
-		} else if (respondDto.status === RequestStatus.awaiting_confirmation) {
-			// Landlord approved - notify applicant and tenant
-			await this.notificationsService.notifyRoommateApplicationApproved(application.applicantId, {
-				roomName,
-				applicationId: application.id,
-			});
-
-			await this.notificationsService.notifyRoommateApplicationApproved(post.tenantId, {
-				roomName,
-				applicationId: application.id,
-			});
-
-			// Handle approved application (update post counts)
-			await this.handleApprovedApplication(application.roommateSeekingPostId);
 		}
 
 		return this.mapToResponseDto(updatedApplication);
@@ -526,11 +540,6 @@ export class RoommateApplicationService {
 										},
 									},
 								},
-								rentals: {
-									where: {
-										status: 'active',
-									},
-								},
 							},
 						},
 					},
@@ -542,69 +551,31 @@ export class RoommateApplicationService {
 			throw new NotFoundException('Không tìm thấy đơn ứng tuyển');
 		}
 
-		const post = application.roommateSeekingPost;
-		const isTenant = post.tenantId === userId;
-		const isLandlord = post.roomInstance?.room?.building?.ownerId === userId;
-
-		// Validate quyền confirm
-		if (!isTenant && !isLandlord) {
-			throw new ForbiddenException('Không có quyền xác nhận đơn ứng tuyển này');
+		// Only applicant can confirm
+		if (application.applicantId !== userId) {
+			throw new ForbiddenException('Chỉ applicant có quyền xác nhận đơn ứng tuyển này');
 		}
 
-		// Tenant confirm
-		if (isTenant) {
-			if (application.status === RequestStatus.awaiting_confirmation) {
-				throw new BadRequestException('Đơn ứng tuyển đã được tenant xác nhận');
-			}
+		const post = application.roommateSeekingPost;
+		const isPlatformRoom = !!post.roomInstanceId;
 
-			if (application.status !== RequestStatus.accepted) {
+		// Validate status based on room type
+		if (isPlatformRoom) {
+			// Platform room: status must be awaiting_confirmation (after landlord approval)
+			if (application.status !== RequestStatus.awaiting_confirmation) {
+				throw new BadRequestException(
+					'Chỉ có thể xác nhận đơn ứng tuyển đã được tenant và landlord phê duyệt',
+				);
+			}
+		} else {
+			// External room: status must be awaiting_confirmation (after tenant approval)
+			if (application.status !== RequestStatus.awaiting_confirmation) {
 				throw new BadRequestException('Chỉ có thể xác nhận đơn ứng tuyển đã được tenant phê duyệt');
 			}
-
-			// Nếu là platform room, cần landlord confirm nữa
-			if (post.roomInstanceId) {
-				await this.prisma.roommateApplication.update({
-					where: { id },
-					data: {
-						status: RequestStatus.awaiting_confirmation,
-					},
-				});
-
-				// Notify landlord
-				if (isLandlord) {
-					await this.notificationsService.notifyRoommateApplicationReceived(
-						post.roomInstance!.room.building.ownerId,
-						{
-							applicantName: application.fullName,
-							roomName: post.roomInstance!.room.name,
-							applicationId: application.id,
-						},
-					);
-				}
-
-				return this.mapToResponseDto(
-					await this.prisma.roommateApplication.findUnique({
-						where: { id },
-						include: this.getIncludeOptions(),
-					}),
-				);
-			} else {
-				// External room - chỉ cần tenant confirm -> tạo rental luôn
-				return this.createRentalForRoommate(application, post, true, false);
-			}
 		}
 
-		// Landlord confirm (for platform rooms only)
-		if (isLandlord) {
-			if (application.status !== RequestStatus.awaiting_confirmation) {
-				throw new BadRequestException('Tenant chưa xác nhận đơn ứng tuyển');
-			}
-
-			// Create rental for roommate
-			return this.createRentalForRoommate(application, post, false, true);
-		}
-
-		throw new ForbiddenException('Không có quyền xác nhận đơn ứng tuyển này');
+		// Create rental for roommate (this will handle all validations, updates including confirmedAt)
+		return this.createRentalForRoommate(application, post, false, false);
 	}
 
 	async bulkRespondToApplications(
@@ -635,6 +606,140 @@ export class RoommateApplicationService {
 		}
 
 		return result;
+	}
+
+	async findApplicationsForLandlord(
+		query: QueryRoommateApplicationDto,
+		landlordId: string,
+	): Promise<PaginatedResponseDto<RoommateApplicationResponseDto>> {
+		const {
+			page = 1,
+			limit = 10,
+			status,
+			search,
+			roommateSeekingPostId,
+			isUrgent,
+			sortBy = 'createdAt',
+			sortOrder = 'desc',
+		} = query;
+		const skip = (page - 1) * limit;
+
+		// Build where clause - only platform rooms owned by landlord
+		const where: any = {
+			roommateSeekingPost: {
+				roomInstance: {
+					room: {
+						building: {
+							ownerId: landlordId,
+						},
+					},
+				},
+			},
+		};
+
+		// Default filter to show applications awaiting landlord approval
+		if (!status) {
+			where.status = RequestStatus.accepted;
+		} else {
+			where.status = status;
+		}
+
+		if (roommateSeekingPostId) {
+			where.roommateSeekingPostId = roommateSeekingPostId;
+		}
+
+		if (isUrgent !== undefined) {
+			where.isUrgent = isUrgent;
+		}
+
+		if (search) {
+			where.OR = [
+				{ fullName: { contains: search, mode: 'insensitive' } },
+				{ occupation: { contains: search, mode: 'insensitive' } },
+				{ applicationMessage: { contains: search, mode: 'insensitive' } },
+			];
+		}
+
+		const [
+			applications,
+			total,
+			pendingCount,
+			approvedByTenantCount,
+			awaitingConfirmationCount,
+			rejectedCount,
+			cancelledCount,
+			expiredCount,
+		] = await Promise.all([
+			this.prisma.roommateApplication.findMany({
+				where,
+				include: this.getIncludeOptions(),
+				orderBy: { [sortBy]: sortOrder },
+				skip,
+				take: limit,
+			}),
+			this.prisma.roommateApplication.count({
+				where,
+			}),
+			this.prisma.roommateApplication.count({
+				where: {
+					...where,
+					status: RequestStatus.pending,
+				},
+			}),
+			this.prisma.roommateApplication.count({
+				where: {
+					...where,
+					status: RequestStatus.accepted,
+				},
+			}),
+			this.prisma.roommateApplication.count({
+				where: {
+					...where,
+					status: RequestStatus.awaiting_confirmation,
+				},
+			}),
+			this.prisma.roommateApplication.count({
+				where: {
+					...where,
+					status: RequestStatus.rejected,
+				},
+			}),
+			this.prisma.roommateApplication.count({
+				where: {
+					...where,
+					status: RequestStatus.cancelled,
+				},
+			}),
+			this.prisma.roommateApplication.count({
+				where: {
+					...where,
+					status: RequestStatus.expired,
+				},
+			}),
+		]);
+
+		return {
+			data: applications.map((app) => this.mapToResponseDto(app)),
+			meta: {
+				page,
+				limit,
+				total,
+				totalPages: Math.ceil(total / limit),
+				hasNext: page < Math.ceil(total / limit),
+				hasPrev: page > 1,
+				itemCount: applications.length,
+			},
+			counts: {
+				pending: pendingCount,
+				approvedByTenant: approvedByTenantCount,
+				rejectedByTenant: 0,
+				approvedByLandlord: awaitingConfirmationCount,
+				rejectedByLandlord: rejectedCount,
+				cancelled: cancelledCount,
+				expired: expiredCount,
+				total,
+			},
+		} as unknown as PaginatedResponseDto<RoommateApplicationResponseDto>;
 	}
 
 	async getApplicationStatistics(
@@ -720,6 +825,122 @@ export class RoommateApplicationService {
 		return stats;
 	}
 
+	private async validateLandlordAccess(applicationId: string, landlordId: string): Promise<any> {
+		const application = await this.prisma.roommateApplication.findUnique({
+			where: { id: applicationId },
+			include: {
+				roommateSeekingPost: {
+					include: {
+						roomInstance: {
+							include: {
+								room: {
+									include: {
+										building: true,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		});
+
+		if (!application) {
+			throw new NotFoundException('Không tìm thấy đơn ứng tuyển');
+		}
+
+		if (!application.roommateSeekingPost.roomInstanceId) {
+			throw new BadRequestException('Phòng ngoài hệ thống không cần phê duyệt từ chủ nhà');
+		}
+
+		const building = application.roommateSeekingPost.roomInstance?.room?.building;
+
+		if (!building || building.ownerId !== landlordId) {
+			throw new ForbiddenException('Không có quyền phê duyệt đơn ứng tuyển này');
+		}
+
+		return application;
+	}
+
+	async landlordApproveApplication(
+		id: string,
+		respondDto: RespondToApplicationDto,
+		landlordId: string,
+	): Promise<RoommateApplicationResponseDto> {
+		const application = await this.validateLandlordAccess(id, landlordId);
+
+		if (application.status !== RequestStatus.accepted) {
+			throw new BadRequestException('Chỉ có thể phê duyệt đơn ứng tuyển đã được tenant phê duyệt');
+		}
+
+		// Update application
+		const updatedApplication = await this.prisma.roommateApplication.update({
+			where: { id },
+			data: {
+				status: RequestStatus.awaiting_confirmation,
+				landlordResponse: respondDto.response,
+				landlordRespondedAt: new Date(),
+			},
+			include: this.getIncludeOptions(),
+		});
+
+		// Get room name for notifications
+		const post = application.roommateSeekingPost;
+		const roomName = post.roomInstance?.room?.name || 'phòng';
+
+		// Notify applicant and tenant
+		await this.notificationsService.notifyRoommateApplicationApproved(application.applicantId, {
+			roomName,
+			applicationId: application.id,
+		});
+
+		await this.notificationsService.notifyRoommateApplicationApproved(post.tenantId, {
+			roomName,
+			applicationId: application.id,
+		});
+
+		// Handle approved application (update post counts)
+		await this.handleApprovedApplication(application.roommateSeekingPostId);
+
+		return this.mapToResponseDto(updatedApplication);
+	}
+
+	async landlordRejectApplication(
+		id: string,
+		respondDto: RespondToApplicationDto,
+		landlordId: string,
+	): Promise<RoommateApplicationResponseDto> {
+		const application = await this.validateLandlordAccess(id, landlordId);
+
+		if (application.status !== RequestStatus.accepted) {
+			throw new BadRequestException('Chỉ có thể từ chối đơn ứng tuyển đã được tenant phê duyệt');
+		}
+
+		// Update application
+		const updatedApplication = await this.prisma.roommateApplication.update({
+			where: { id },
+			data: {
+				status: RequestStatus.rejected,
+				landlordResponse: respondDto.response || 'Đơn ứng tuyển bị từ chối bởi chủ nhà',
+				landlordRespondedAt: new Date(),
+			},
+			include: this.getIncludeOptions(),
+		});
+
+		// Get room name for notifications
+		const post = application.roommateSeekingPost;
+		const roomName = post.roomInstance?.room?.name || 'phòng';
+
+		// Notify applicant about rejection
+		await this.notificationsService.notifyRoommateApplicationRejected(application.applicantId, {
+			roomName,
+			reason: respondDto.response,
+			applicationId: application.id,
+		});
+
+		return this.mapToResponseDto(updatedApplication);
+	}
+
 	private processDailyStats(dailyStats: any[]): { date: string; count: number }[] {
 		const statsMap = new Map<string, number>();
 
@@ -742,39 +963,6 @@ export class RoommateApplicationService {
 		return Array.from(statsMap.entries()).map(([date, count]) => ({ date, count }));
 	}
 
-	private async validateStatusTransition(
-		application: any,
-		newStatus: RequestStatus,
-		isTenant: boolean,
-		isLandlord: boolean,
-	): Promise<void> {
-		const currentStatus = application.status;
-
-		// Only tenant can approve/reject first
-		if (
-			isTenant &&
-			(newStatus === RequestStatus.accepted || newStatus === RequestStatus.rejected)
-		) {
-			if (currentStatus !== RequestStatus.pending) {
-				throw new BadRequestException('Đơn ứng tuyển không ở trạng thái chờ xử lý');
-			}
-			return;
-		}
-
-		// Landlord can only respond after tenant approval for platform rooms
-		if (
-			isLandlord &&
-			(newStatus === RequestStatus.awaiting_confirmation || newStatus === RequestStatus.rejected)
-		) {
-			if (currentStatus !== RequestStatus.accepted) {
-				throw new BadRequestException('Chỉ có thể phản hồi sau khi tenant đã phê duyệt');
-			}
-			return;
-		}
-
-		throw new BadRequestException('Trạng thái chuyển đổi không hợp lệ');
-	}
-
 	private async handleApprovedApplication(roommateSeekingPostId: string): Promise<void> {
 		// Decrement remaining slots and increment approved count
 		await this.prisma.roommateSeekingPost.update({
@@ -790,7 +978,7 @@ export class RoommateApplicationService {
 			where: { id: roommateSeekingPostId },
 		});
 
-		if (post && post.remainingSlots <= 1) {
+		if (post && post.remainingSlots <= 0) {
 			await this.prisma.roommateSeekingPost.update({
 				where: { id: roommateSeekingPostId },
 				data: { status: RoommatePostStatus.closed },
@@ -835,14 +1023,59 @@ export class RoommateApplicationService {
 			throw new BadRequestException('Applicant đã có rental active cho phòng này');
 		}
 
+		// Kiểm tra applicant chưa có active rental nào khác (1 người chỉ ở 1 rental tại 1 thời điểm)
+		const existingTenantRental = await this.prisma.rental.findFirst({
+			where: {
+				tenantId: application.applicantId,
+				status: 'active',
+			},
+			include: {
+				roomInstance: {
+					include: {
+						room: true,
+					},
+				},
+			},
+		});
+
+		if (existingTenantRental) {
+			throw new BadRequestException(
+				`Applicant đã có rental active tại ${existingTenantRental.roomInstance.room.name} - ${existingTenantRental.roomInstance.roomNumber}`,
+			);
+		}
+
 		// Tạo rental và update application trong transaction
 		const rental = await this.prisma.$transaction(async (tx) => {
-			// Update application status to completed
+			// Check room occupancy
+			const activeRentalsCount = await tx.rental.count({
+				where: {
+					roomInstanceId: post.roomInstanceId,
+					status: 'active',
+				},
+			});
+
+			// Validate max occupancy
+			if (activeRentalsCount >= roomInstance.room.maxOccupancy) {
+				throw new BadRequestException(
+					`Phòng đã đạt tối đa ${roomInstance.room.maxOccupancy} người`,
+				);
+			}
+
+			// Update application status
 			await tx.roommateApplication.update({
 				where: { id: application.id },
 				data: {
 					status: RequestStatus.accepted, // Final status when rental is created
 					confirmedAt: new Date(),
+				},
+			});
+
+			// Update post counts (approvedCount++, remainingSlots--)
+			await tx.roommateSeekingPost.update({
+				where: { id: post.id },
+				data: {
+					approvedCount: { increment: 1 },
+					remainingSlots: { decrement: 1 },
 				},
 			});
 
@@ -864,6 +1097,15 @@ export class RoommateApplicationService {
 					status: 'active',
 				},
 			});
+
+			// Update room instance status to occupied if at max capacity
+			const updatedActiveCount = activeRentalsCount + 1;
+			if (updatedActiveCount >= roomInstance.room.maxOccupancy) {
+				await tx.roomInstance.update({
+					where: { id: roomInstance.id },
+					data: { status: 'occupied' },
+				});
+			}
 
 			return newRental;
 		});
@@ -891,7 +1133,7 @@ export class RoommateApplicationService {
 		});
 
 		// Notify landlord if platform room
-		if (_isLandlordConfirm) {
+		if (post.roomInstanceId) {
 			await this.notificationsService.notifyRentalCreated(roomInstance.room.building.ownerId, {
 				roomName,
 				rentalId: rental.id,
