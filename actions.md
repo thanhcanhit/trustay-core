@@ -92,6 +92,28 @@
 - **Endpoint**: `PATCH /users/profile`
 - **Description**: Cập nhật thông tin profile
 
+### Request Change Email
+- **Endpoint**: `POST /users/request-change-email`
+- **Description**: Yêu cầu đổi email - Bước 1: Gửi OTP đến email mới
+- **Payload**:
+```json
+{
+  "newEmail": "newemail@example.com",
+  "password": "CurrentPassword123!"
+}
+```
+
+### Confirm Change Email
+- **Endpoint**: `POST /users/confirm-change-email`
+- **Description**: Xác nhận đổi email - Bước 2: Xác thực OTP và cập nhật email
+- **Payload**:
+```json
+{
+  "newEmail": "newemail@example.com",
+  "verificationCode": "123456"
+}
+```
+
 ### Upload Avatar
 - **Endpoint**: `POST /users/avatar`
 - **Description**: Upload ảnh đại diện

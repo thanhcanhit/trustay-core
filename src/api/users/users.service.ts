@@ -12,10 +12,12 @@ import { UploadService } from '../../common/services/upload.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RatingService } from '../rating/rating.service';
+import { ConfirmChangeEmailDto } from './dto/confirm-change-email.dto';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { PaginatedUsersResponseDto } from './dto/paginated-users-response.dto';
 import { PublicUserResponseDto } from './dto/public-user-response.dto';
+import { RequestChangeEmailDto } from './dto/request-change-email.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UsersQueryDto } from './dto/users-query.dto';
@@ -803,6 +805,175 @@ export class UsersService {
 			ratingStats: stats,
 			recentRatings: recent,
 			recentGivenRatings: recentGiven,
+		};
+	}
+
+	/**
+	 * Request email change - sends verification code to new email
+	 */
+	async requestChangeEmail(userId: string, requestChangeEmailDto: RequestChangeEmailDto) {
+		const { newEmail, password } = requestChangeEmailDto;
+
+		// Get current user
+		const user = await this.prisma.user.findUnique({
+			where: { id: userId },
+			select: { id: true, email: true, passwordHash: true },
+		});
+
+		if (!user) {
+			throw new NotFoundException('User not found');
+		}
+
+		// Verify password
+		const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+		if (!isPasswordValid) {
+			throw new BadRequestException('Invalid password');
+		}
+
+		// Check if new email is same as current
+		if (newEmail.toLowerCase() === user.email.toLowerCase()) {
+			throw new BadRequestException('New email must be different from current email');
+		}
+
+		// Check if new email is already in use
+		const existingUser = await this.prisma.user.findUnique({
+			where: { email: newEmail.toLowerCase() },
+		});
+
+		if (existingUser) {
+			throw new ConflictException('Email is already in use');
+		}
+
+		// Generate 6-digit verification code
+		const code = Math.floor(100000 + Math.random() * 900000).toString();
+		const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+		// Store verification code in database
+		await this.prisma.verificationCode.create({
+			data: {
+				email: newEmail.toLowerCase(),
+				type: 'email',
+				code,
+				status: 'pending',
+				expiresAt,
+				attempts: 0,
+				maxAttempts: 5,
+			},
+		});
+
+		// TODO: Send email with verification code
+		// For development, code is logged to console
+		// In production, integrate with email service
+		// eslint-disable-next-line no-console
+		console.log(`[DEV] Verification code for ${newEmail}: ${code}`);
+
+		return {
+			message: 'Verification code sent to new email address',
+			newEmail,
+			expiresInMinutes: 10,
+		};
+	}
+
+	/**
+	 * Confirm email change with verification code
+	 */
+	async confirmChangeEmail(userId: string, confirmChangeEmailDto: ConfirmChangeEmailDto) {
+		const { newEmail, verificationCode } = confirmChangeEmailDto;
+
+		// Get current user
+		const user = await this.prisma.user.findUnique({
+			where: { id: userId },
+			select: { id: true, email: true },
+		});
+
+		if (!user) {
+			throw new NotFoundException('User not found');
+		}
+
+		// Find verification code
+		const verification = await this.prisma.verificationCode.findFirst({
+			where: {
+				email: newEmail.toLowerCase(),
+				type: 'email',
+				status: 'pending',
+				code: verificationCode,
+			},
+			orderBy: { createdAt: 'desc' },
+		});
+
+		if (!verification) {
+			throw new BadRequestException('Invalid verification code');
+		}
+
+		// Check if expired
+		if (new Date() > verification.expiresAt) {
+			await this.prisma.verificationCode.update({
+				where: { id: verification.id },
+				data: { status: 'expired' },
+			});
+			throw new BadRequestException('Verification code has expired');
+		}
+
+		// Check max attempts
+		if (verification.attempts >= verification.maxAttempts) {
+			await this.prisma.verificationCode.update({
+				where: { id: verification.id },
+				data: { status: 'failed' },
+			});
+			throw new BadRequestException('Maximum verification attempts exceeded');
+		}
+
+		// Verify code matches
+		if (verification.code !== verificationCode) {
+			await this.prisma.verificationCode.update({
+				where: { id: verification.id },
+				data: { attempts: verification.attempts + 1 },
+			});
+			throw new BadRequestException('Invalid verification code');
+		}
+
+		// Check if email is still available
+		const existingUser = await this.prisma.user.findUnique({
+			where: { email: newEmail.toLowerCase() },
+		});
+
+		if (existingUser && existingUser.id !== userId) {
+			throw new ConflictException('Email is already in use');
+		}
+
+		// Update user email
+		const updatedUser = await this.prisma.user.update({
+			where: { id: userId },
+			data: {
+				email: newEmail.toLowerCase(),
+				isVerifiedEmail: true,
+			},
+			select: {
+				id: true,
+				email: true,
+				firstName: true,
+				lastName: true,
+				isVerifiedEmail: true,
+			},
+		});
+
+		// Mark verification as verified
+		await this.prisma.verificationCode.update({
+			where: { id: verification.id },
+			data: { status: 'verified' },
+		});
+
+		// Send notification about email change
+		await this.notificationsService.createNotification({
+			userId: userId,
+			notificationType: 'system',
+			title: 'Email Changed',
+			message: `Your email has been successfully changed to ${newEmail}`,
+		});
+
+		return {
+			message: 'Email changed successfully',
+			user: updatedUser,
 		};
 	}
 }

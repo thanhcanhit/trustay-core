@@ -20,8 +20,10 @@ import {
 } from '@nestjs/swagger';
 import { Auth } from '../../auth/decorators/auth.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { ConfirmChangeEmailDto } from './dto/confirm-change-email.dto';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { PublicUserResponseDto } from './dto/public-user-response.dto';
+import { RequestChangeEmailDto } from './dto/request-change-email.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
@@ -230,5 +232,81 @@ export class UsersController {
 	})
 	async updateAvatar(@CurrentUser() user: any, @UploadedFile() file: Express.Multer.File) {
 		return this.usersService.updateAvatar(user.id, file);
+	}
+
+	@Post('request-change-email')
+	@Auth()
+	@ApiOperation({ summary: 'Request email change - Step 1: Send OTP to new email' })
+	@ApiResponse({
+		status: 200,
+		description: 'Verification code sent to new email address',
+		schema: {
+			type: 'object',
+			properties: {
+				message: { type: 'string', example: 'Verification code sent to new email address' },
+				newEmail: { type: 'string', example: 'newemail@example.com' },
+				expiresInMinutes: { type: 'number', example: 10 },
+			},
+		},
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Invalid password or new email same as current',
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'User not found',
+	})
+	@ApiResponse({
+		status: 409,
+		description: 'Email is already in use',
+	})
+	async requestChangeEmail(
+		@CurrentUser() user: any,
+		@Body() requestChangeEmailDto: RequestChangeEmailDto,
+	) {
+		return this.usersService.requestChangeEmail(user.id, requestChangeEmailDto);
+	}
+
+	@Post('confirm-change-email')
+	@Auth()
+	@ApiOperation({ summary: 'Confirm email change - Step 2: Verify OTP and update email' })
+	@ApiResponse({
+		status: 200,
+		description: 'Email changed successfully',
+		schema: {
+			type: 'object',
+			properties: {
+				message: { type: 'string', example: 'Email changed successfully' },
+				user: {
+					type: 'object',
+					properties: {
+						id: { type: 'string' },
+						email: { type: 'string' },
+						firstName: { type: 'string' },
+						lastName: { type: 'string' },
+						isVerifiedEmail: { type: 'boolean' },
+					},
+				},
+			},
+		},
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Invalid or expired verification code',
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'User not found',
+	})
+	@ApiResponse({
+		status: 409,
+		description: 'Email is already in use',
+	})
+	async confirmChangeEmail(
+		@CurrentUser() user: any,
+		@Body() confirmChangeEmailDto: ConfirmChangeEmailDto,
+	) {
+		return this.usersService.confirmChangeEmail(user.id, confirmChangeEmailDto);
 	}
 }
