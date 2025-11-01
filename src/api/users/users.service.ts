@@ -7,6 +7,7 @@ import {
 import { RatingTargetType } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { plainToInstance } from 'class-transformer';
+import { EmailService } from '../../auth/services/email.service';
 import { PersonPublicView } from '../../common/serialization/person.view';
 import { UploadService } from '../../common/services/upload.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -32,6 +33,7 @@ export class UsersService {
 		private readonly uploadService: UploadService,
 		private readonly notificationsService: NotificationsService,
 		private readonly ratingService: RatingService,
+		private readonly emailService: EmailService,
 	) {}
 
 	private transformUserResponse(user: any): any {
@@ -861,11 +863,16 @@ export class UsersService {
 			},
 		});
 
-		// TODO: Send email with verification code
-		// For development, code is logged to console
-		// In production, integrate with email service
-		// eslint-disable-next-line no-console
-		console.log(`[DEV] Verification code for ${newEmail}: ${code}`);
+		// Send verification code via email
+		try {
+			await this.emailService.sendChangeEmailVerification(newEmail.toLowerCase(), code);
+		} catch (error) {
+			// Log error but don't fail the request
+			// Code is still stored in database for verification
+			// eslint-disable-next-line no-console
+			console.error('Failed to send verification email:', error);
+			throw new BadRequestException('Failed to send verification email');
+		}
 
 		return {
 			message: 'Verification code sent to new email address',

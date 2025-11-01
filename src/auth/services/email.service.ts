@@ -21,6 +21,7 @@ export class EmailService {
 			const nodeEnv = this.configService.get<string>('NODE_ENV');
 
 			if (nodeEnv === 'development' || !this.resend) {
+				// eslint-disable-next-line no-console
 				console.log(`[Email Development] Verification code for ${email}: ${code}`);
 				return true;
 			}
@@ -34,6 +35,7 @@ export class EmailService {
 
 			return true;
 		} catch (error) {
+			// eslint-disable-next-line no-console
 			console.error('Failed to send verification email:', error);
 			return false;
 		}
@@ -47,6 +49,7 @@ export class EmailService {
 			const nodeEnv = this.configService.get<string>('NODE_ENV');
 
 			if (nodeEnv === 'development' || !this.resend) {
+				// eslint-disable-next-line no-console
 				console.log(`[Email Development] Welcome email sent to ${firstName} at ${email}`);
 				return true;
 			}
@@ -60,6 +63,7 @@ export class EmailService {
 
 			return true;
 		} catch (error) {
+			// eslint-disable-next-line no-console
 			console.error('Failed to send welcome email:', error);
 			return false;
 		}
@@ -73,6 +77,7 @@ export class EmailService {
 			const nodeEnv = this.configService.get<string>('NODE_ENV');
 
 			if (nodeEnv === 'development' || !this.resend) {
+				// eslint-disable-next-line no-console
 				console.log(`[Email Development] Password reset code for ${email}: ${code}`);
 				return true;
 			}
@@ -86,7 +91,36 @@ export class EmailService {
 
 			return true;
 		} catch (error) {
+			// eslint-disable-next-line no-console
 			console.error('Failed to send password reset email:', error);
+			return false;
+		}
+	}
+
+	/**
+	 * Send change email verification code
+	 */
+	async sendChangeEmailVerification(email: string, code: string): Promise<boolean> {
+		try {
+			const nodeEnv = this.configService.get<string>('NODE_ENV');
+
+			if (nodeEnv === 'development' || !this.resend) {
+				// eslint-disable-next-line no-console
+				console.log(`[Email Development] Change email verification code for ${email}: ${code}`);
+				return true;
+			}
+
+			await this.resend.emails.send({
+				from: 'noreply@trustay.life',
+				to: email,
+				subject: 'Xác nhận thay đổi email - Trustay',
+				html: this.getChangeEmailTemplate(code),
+			});
+
+			return true;
+		} catch (error) {
+			// eslint-disable-next-line no-console
+			console.error('Failed to send change email verification:', error);
 			return false;
 		}
 	}
@@ -247,6 +281,65 @@ export class EmailService {
 			</div>
 			
 			<p>Sau khi đặt lại mật khẩu thành công, hãy đảm bảo sử dụng mật khẩu mạnh để bảo vệ tài khoản của bạn.</p>
+		</div>
+		<div class="footer">
+			<p>© 2025 Trustay. Nền tảng cho thuê nhà trọ uy tín.</p>
+			<p>Email này được gửi tự động, vui lòng không phản hồi.</p>
+		</div>
+	</div>
+</body>
+</html>
+		`;
+	}
+
+	/**
+	 * Change email verification template
+	 */
+	private getChangeEmailTemplate(code: string): string {
+		return `
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>Xác nhận thay đổi email - Trustay</title>
+	<style>
+		body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
+		.container { max-width: 600px; margin: 0 auto; background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+		.header { background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; padding: 30px; text-align: center; }
+		.content { padding: 30px; }
+		.code { background-color: #ede9fe; border: 2px dashed #7c3aed; border-radius: 8px; font-size: 32px; font-weight: bold; text-align: center; padding: 20px; margin: 20px 0; letter-spacing: 3px; color: #6d28d9; }
+		.footer { background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 14px; color: #6c757d; }
+		.warning { background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 5px; padding: 15px; margin: 15px 0; color: #856404; }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div class="header">
+			<h1>📧 Xác nhận thay đổi Email</h1>
+			<p>Yêu cầu thay đổi địa chỉ email tài khoản Trustay</p>
+		</div>
+		<div class="content">
+			<h2>Xác thực email mới của bạn</h2>
+			<p>Bạn đã yêu cầu thay đổi email cho tài khoản Trustay. Để hoàn tất việc thay đổi, vui lòng nhập mã xác thực dưới đây:</p>
+			
+			<div class="code">${code}</div>
+			
+			<div class="warning">
+				<strong>⚠️ Lưu ý quan trọng:</strong>
+				<ul style="margin: 10px 0; padding-left: 20px;">
+					<li>Mã xác thực có hiệu lực trong <strong>10 phút</strong></li>
+					<li>Bạn có tối đa <strong>5 lần</strong> nhập mã</li>
+					<li>Không chia sẻ mã này với bất kỳ ai</li>
+					<li>Nếu bạn không yêu cầu thay đổi email, hãy bỏ qua email này và đổi mật khẩu ngay</li>
+				</ul>
+			</div>
+			
+			<p><strong>Sau khi xác thực thành công:</strong></p>
+			<ul>
+				<li>Email mới sẽ được cập nhật cho tài khoản của bạn</li>
+				<li>Email cũ sẽ không còn được sử dụng để đăng nhập</li>
+				<li>Bạn sẽ nhận được thông báo xác nhận tại cả hai địa chỉ email</li>
+			</ul>
 		</div>
 		<div class="footer">
 			<p>© 2025 Trustay. Nền tảng cho thuê nhà trọ uy tín.</p>
