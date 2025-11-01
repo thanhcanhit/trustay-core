@@ -229,6 +229,8 @@ export class AiService {
 			// - Đọc và hiểu business context từ RAG để nắm vững nghiệp vụ hệ thống
 			// - Quyết định xem có đủ thông tin để tạo SQL query không
 			// - Gợi ý mode response (LIST/TABLE/CHART) dựa trên ý định
+			// MVP: Basic telemetry - timing logs
+			const startTime = Date.now();
 			this.logInfo(
 				'ORCHESTRATOR',
 				'Agent 1: Đang phân tích câu hỏi, đánh nhãn user role và request type...',
@@ -238,9 +240,10 @@ export class AiService {
 				session,
 				this.AI_CONFIG,
 			);
+			const orchestratorTime = Date.now() - startTime;
 			this.logDebug(
 				'ORCHESTRATOR',
-				`Agent 1 hoàn thành (requestType=${orchestratorResponse.requestType}, userRole=${orchestratorResponse.userRole}, readyForSql=${orchestratorResponse.readyForSql})`,
+				`[STEP] Orchestrator → readyForSql=${orchestratorResponse.readyForSql}, took=${orchestratorTime}ms (requestType=${orchestratorResponse.requestType}, userRole=${orchestratorResponse.userRole})`,
 			);
 
 			// Xác định mode response dựa trên ý định người dùng (LIST/TABLE/CHART)
@@ -270,6 +273,31 @@ export class AiService {
 				this.addMessageToSession(session, 'system', '[INTENT] MODE=TABLE');
 			}
 
+			// MVP: Handle clarification when missingParams are present
+			if (
+				orchestratorResponse.requestType === RequestType.QUERY &&
+				orchestratorResponse.missingParams &&
+				orchestratorResponse.missingParams.length > 0
+			) {
+				// Return clarification response with missingParams
+				const clarificationMessage = this.formatClarificationMessage(
+					orchestratorResponse.message,
+					orchestratorResponse.missingParams,
+				);
+				return {
+					kind: 'CONTROL',
+					sessionId: session.sessionId,
+					timestamp: new Date().toISOString(),
+					message: clarificationMessage,
+					payload: {
+						mode: 'CLARIFY',
+						questions: orchestratorResponse.missingParams.map(
+							(p) => `${p.reason}${p.examples ? ` (ví dụ: ${p.examples.join(', ')})` : ''}`,
+						),
+					},
+				};
+			}
+
 			// Kiểm tra: Agent 1 đã xác định đủ thông tin để tạo SQL chưa?
 			if (
 				orchestratorResponse.requestType === RequestType.QUERY &&
@@ -284,6 +312,8 @@ export class AiService {
 				// - Tạo SQL query dựa trên câu hỏi, business context và hints từ Agent 1
 				// - Thực thi SQL query an toàn (read-only)
 				// - Trả về kết quả đã được serialize
+				// MVP: Basic telemetry - SQL generation timing
+				const sqlStartTime = Date.now();
 				this.logInfo('SQL_AGENT', 'Agent 2: Đang tạo và thực thi SQL query...');
 				const sqlResult = await this.sqlGenerationAgent.process(
 					query,
@@ -292,7 +322,11 @@ export class AiService {
 					this.AI_CONFIG,
 					orchestratorResponse.businessContext,
 				);
-				this.logInfo('SQL_AGENT', `Agent 2 hoàn thành (tìm thấy ${sqlResult.count} kết quả)`);
+				const sqlTime = Date.now() - sqlStartTime;
+				this.logInfo(
+					'SQL_AGENT',
+					`[STEP] SQL Generation → query=${sqlResult.sql.substring(0, 50)}..., results=${sqlResult.count}, took=${sqlTime}ms`,
+				);
 
 				// ========================================
 				// BƯỚC 4: Agent 3 - Response Generator
@@ -318,6 +352,8 @@ export class AiService {
 				// Agent này có nhiệm vụ:
 				// - Đánh giá xem SQL và kết quả có đáp ứng yêu cầu ban đầu không
 				// - Chỉ khi isValid === true mới persist vào knowledge store
+				// MVP: Basic telemetry - validation timing
+				const validationStartTime = Date.now();
 				this.logInfo('VALIDATOR', 'Agent 4: Đang đánh giá kết quả...');
 				const validation = await this.resultValidatorAgent.validateResult(
 					query,
@@ -325,6 +361,11 @@ export class AiService {
 					sqlResult.results,
 					orchestratorResponse.requestType,
 					this.AI_CONFIG,
+				);
+				const validationTime = Date.now() - validationStartTime;
+				this.logDebug(
+					'VALIDATOR',
+					`[STEP] Validator → isValid=${validation.isValid}, severity=${validation.severity || 'N/A'}, reason=${validation.reason || 'OK'}, took=${validationTime}ms`,
 				);
 
 				// Chỉ persist nếu valid
@@ -417,6 +458,28 @@ export class AiService {
 				payload: { mode: 'ERROR', details: (error as Error).message },
 			};
 		}
+	}
+
+	/**
+	 * Format clarification message with missingParams (MVP)
+	 * @param baseMessage - Base message from orchestrator
+	 * @param missingParams - Missing parameters
+	 * @returns Formatted clarification message
+	 */
+	private formatClarificationMessage(
+		baseMessage: string,
+		missingParams: Array<{ name: string; reason: string; examples?: string[] }>,
+	): string {
+		if (!missingParams || missingParams.length === 0) {
+			return baseMessage;
+		}
+		const paramsList = missingParams.map((param) => {
+			const examplesText =
+				param.examples && param.examples.length > 0 ? ` (ví dụ: ${param.examples.join(', ')})` : '';
+			return `• ${param.reason}${examplesText}`;
+		});
+		const paramsSection = paramsList.join('\n');
+		return `${baseMessage}\n\n**Thông tin cần bổ sung:**\n${paramsSection}`;
 	}
 
 	/**

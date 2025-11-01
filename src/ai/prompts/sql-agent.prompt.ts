@@ -100,7 +100,11 @@ QUY TẮC${userId ? ' BẢO MẬT' : ''}:
 4. Sử dụng JOIN khi cần thiết
 5. Thêm LIMIT ${limit} để tránh quá nhiều kết quả
 6. Sử dụng snake_case cho tên cột và bảng
-7. Kiểm tra kỹ tên cột trong schema trước khi sử dụng${userId ? '\n8. QUAN TRỌNG: Luôn bao gồm WHERE clauses để đảm bảo user chỉ truy cập dữ liệu của chính họ\n9. Đối với dữ liệu nhạy cảm (bills, payments, rentals), BẮT BUỘC phải có WHERE clauses theo user role' : ''}${recentMessages || ragContext ? '\n10. Xem xét ngữ cảnh hội thoại và RAG context để hiểu rõ ý định người dùng' : ''}
+7. KIỂM TRA KỸ TÊN CỘT TRONG SCHEMA TRƯỚC KHI SỬ DỤNG - QUAN TRỌNG:
+   * Table rooms có cột name (KHÔNG có title). Phải dùng r.name AS title khi cần.
+   * Table rooms có cột description (KHÔNG có content hay body).
+   * Table rooms KHÔNG có cột: title, pricing, meta, content, body.
+   * Chỉ dùng các cột có trong schema. Nếu cần alias (như title), phải alias từ cột thực tế (name).${userId ? '\n8. QUAN TRỌNG: Luôn bao gồm WHERE clauses để đảm bảo user chỉ truy cập dữ liệu của chính họ\n9. Đối với dữ liệu nhạy cảm (bills, payments, rentals), BẮT BUỘC phải có WHERE clauses theo user role' : ''}${recentMessages || ragContext ? '\n10. Xem xét ngữ cảnh hội thoại và RAG context để hiểu rõ ý định người dùng' : ''}
 
 QUY TẮC LIÊN KẾT (BẮT BUỘC):
 - Chỉ join qua cột FK được định nghĩa trong schema. KHÔNG join trực tiếp entity với bảng lookup theo name.
@@ -139,7 +143,10 @@ MẸO THỰC THI TRUY VẤN PHỔ BIẾN:
   --   AND r.is_active = true
   -- ORDER BY rp.base_price_monthly ASC NULLS LAST
   -- LIMIT ${limit};
-- Khi không chắc bảng/column tồn tại, chọn cột từ schema thực (rooms/buildings/room_pricing) và tránh cột không có như title, pricing, meta.
+- QUAN TRỌNG: Khi không chắc bảng/column tồn tại, chọn cột từ schema thực (rooms/buildings/room_pricing).
+- Table rooms có cột: id, name, description, slug, building_id, floor_number, room_type, area_sqm, max_occupancy, total_rooms, view_count, is_active, created_at, updated_at.
+- Table rooms KHÔNG có cột: title, pricing, meta, content, body.
+- Nếu cần "title", phải dùng r.name AS title (KHÔNG dùng r.title vì không tồn tại).
 
 YÊU CẦU TRUY VẤN DỮ LIỆU (BẮT BUỘC):
 1. Phân biệt loại câu hỏi:
@@ -153,11 +160,13 @@ YÊU CẦU TRUY VẤN DỮ LIỆU (BẮT BUỘC):
      * Ví dụ: SELECT DATE_TRUNC('month', created_at) AS label, SUM(amount) AS value FROM invoices GROUP BY label ORDER BY value DESC LIMIT 10;
    
    - TÌM KIẾM DANH SÁCH (từ khóa: tìm, phòng, room, bài đăng, post, ở, gần):
-     * Chỉ SELECT các trường gọn nhẹ: id, name/title AS title, thumbnail/image_url (nếu có), url/link (nếu có)
+     * QUAN TRỌNG: Trong schema, table rooms có cột name (KHÔNG phải title). Phải dùng r.name AS title.
+     * Chỉ SELECT các trường gọn nhẹ: id, name AS title (KHÔNG dùng title trực tiếp, phải alias), thumbnail_url/image_url (nếu có)
      * Bổ sung constant column: 'room' AS entity (cho rooms) hoặc 'post' AS entity (cho posts)
      * KHÔNG SELECT: description, content, body, hay bất kỳ trường text dài nào
      * LIMIT ${Math.max(1, Math.min(50, limit))}
-     * Ví dụ: SELECT r.id, r.name AS title, r.thumbnail_url, 'room' AS entity FROM rooms r WHERE ... LIMIT ${Math.max(1, Math.min(50, limit))};
+     * Ví dụ ĐÚNG: SELECT r.id, r.name AS title, ri.room_number, rp.base_price_monthly, 'room' AS entity FROM rooms r LEFT JOIN room_instances ri ON ri.room_id = r.id LEFT JOIN room_pricing rp ON rp.room_id = r.id WHERE r.is_active = true LIMIT ${Math.max(1, Math.min(50, limit))};
+     * Ví dụ SAI: SELECT r.id, r.title, ... (KHÔNG có column title trong rooms table!)
 
 2. Luôn dùng alias nhất quán: title cho tiêu đề, thumbnail cho ảnh, url cho liên kết, entity cho loại, label cho nhóm, value cho số liệu.
 

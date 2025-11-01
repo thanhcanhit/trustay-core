@@ -140,6 +140,15 @@ export enum UserRole {
 }
 
 /**
+ * Missing parameter for clarification
+ */
+export interface MissingParam {
+	name: string; // Parameter name (e.g., "location", "price_range")
+	reason: string; // Why this parameter is needed
+	examples?: string[]; // Example values (e.g., ["Quận 1", "Gò Vấp"])
+}
+
+/**
  * Orchestrator agent response (formerly ConversationalAgentResponse)
  */
 export interface OrchestratorAgentResponse {
@@ -154,6 +163,7 @@ export interface OrchestratorAgentResponse {
 	intentModeHint?: 'LIST' | 'TABLE' | 'CHART';
 	entityHint?: 'room' | 'post' | 'room_seeking_post';
 	filtersHint?: string; // natural language filters parsed (e.g., district:"gò vấp")
+	missingParams?: MissingParam[]; // MVP: Missing parameters for clarification
 }
 
 /**
@@ -183,9 +193,11 @@ export interface SqlGenerationResult {
 }
 
 /**
- * Result validator response
+ * Result validator response - Fail-closed design
  */
 export interface ResultValidationResponse {
 	isValid: boolean;
 	reason?: string;
+	violations?: string[]; // List of validation violations
+	severity?: 'ERROR' | 'WARN'; // Severity level: ERROR blocks persistence, WARN allows but logs
 }

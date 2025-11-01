@@ -44,12 +44,22 @@ YÊU CẦU ĐÁNH GIÁ:
    - Ví dụ: Yêu cầu thống kê nhưng kết quả là danh sách chi tiết → INVALID
    - Ví dụ: Yêu cầu tìm phòng nhưng kết quả là hóa đơn → INVALID
 
-3. QUYẾT ĐỊNH:
-   - isValid: true nếu SQL và kết quả đều đúng với yêu cầu
-   - isValid: false nếu SQL hoặc kết quả không đúng với yêu cầu
-   - reason: Giải thích ngắn gọn nếu invalid (ví dụ: "SQL query sai quận", "Kết quả không đúng loại dữ liệu")
+3. QUYẾT ĐỊNH (FAIL-CLOSED):
+   - isValid: true CHỈ KHI SQL và kết quả đều đúng với yêu cầu
+   - isValid: false nếu có BẤT KỲ vấn đề nào (SQL sai, kết quả không hợp lý, thiếu filter)
+   - severity: ERROR (chặn persist) hoặc WARN (cho phép nhưng log)
+   - violations: Danh sách các vi phạm (ví dụ: "SQL thiếu WHERE clause", "Kết quả sai quận")
+   - reason: Giải thích ngắn gọn (ví dụ: "SQL query sai quận", "Kết quả không đúng loại dữ liệu")
+
+QUY TẮC VALIDATION (BẮT BUỘC):
+1. Match intent: entity/loại dữ liệu SQL = intent Orchestrator → INVALID nếu không match
+2. Match filters: SQL có filter đúng như yêu cầu → INVALID nếu thiếu filter quan trọng
+3. Safety: SQL phải có LIMIT (trừ aggregate), không SELECT *, không bảng ngoài allow-list → ERROR nếu vi phạm
+4. Sanity: Kết quả hợp lý (ví dụ: tìm quận 1 mà kết quả là quận 2) → ERROR nếu không hợp lý
 
 Trả về theo format:
 IS_VALID: true/false
+SEVERITY: ERROR/WARN
+VIOLATIONS: [danh sách vi phạm, cách nhau bởi dấu phẩy]
 REASON: [lý do nếu invalid, hoặc "OK" nếu valid]`;
 }

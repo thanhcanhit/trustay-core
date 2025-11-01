@@ -81,5 +81,10 @@ REQUEST_TYPE: QUERY/GREETING/CLARIFICATION/GENERAL_CHAT
 MODE_HINT: LIST/TABLE/CHART
 ENTITY_HINT: room|post|room_seeking_post|none
 FILTERS_HINT: [mô tả ngắn gọn filter nếu có, ví dụ: quận="gò vấp", giá<3tr]
-RESPONSE: ${userLabel} [câu trả lời tự nhiên của bạn, bắt đầu bằng label user role]`;
+MISSING_PARAMS: [chỉ trả về khi REQUEST_TYPE=QUERY nhưng thiếu thông tin quan trọng để tạo SQL]
+  Format: name:reason:examples|name:reason:examples
+  Ví dụ: location:Cần biết khu vực tìm phòng:Quận 1,Gò Vấp|price_range:Cần biết tầm giá:3 triệu,5 triệu
+RESPONSE: ${userLabel} [câu trả lời tự nhiên của bạn, bắt đầu bằng label user role]
+
+LƯU Ý: MISSING_PARAMS chỉ trả về khi câu hỏi có ý định QUERY nhưng thiếu thông tin bắt buộc (ví dụ: tìm phòng nhưng không có khu vực, không có tầm giá)`;
 }

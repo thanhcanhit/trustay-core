@@ -53,29 +53,51 @@ export class ResultValidatorAgent {
 			const isValidMatch = response.match(/IS_VALID:\s*(true|false)/i);
 			const reasonMatch = response.match(/REASON:\s*(.+)/s);
 
+			// Fail-closed: Default to false if parsing fails
 			const isValid =
 				isValidMatch && isValidMatch[1].toLowerCase() === 'true'
 					? true
 					: isValidMatch && isValidMatch[1].toLowerCase() === 'false'
 						? false
-						: true; // Default to valid if parsing fails
+						: false; // Default to invalid if parsing fails (fail-closed)
 
 			const reason = reasonMatch ? reasonMatch[1].trim() : undefined;
 
+			// Parse violations if present
+			const violationsMatch = response.match(/VIOLATIONS:\s*(.+?)(?=\n|$)/s);
+			const violations = violationsMatch
+				? violationsMatch[1]
+						.split(',')
+						.map((v) => v.trim())
+						.filter((v) => v.length > 0)
+				: undefined;
+
+			// Parse severity if present
+			const severityMatch = response.match(/SEVERITY:\s*(ERROR|WARN)/i);
+			const severity = severityMatch
+				? (severityMatch[1].toUpperCase() as 'ERROR' | 'WARN')
+				: isValid
+					? undefined
+					: 'ERROR'; // Default to ERROR if invalid
+
 			this.logger.debug(
-				`Validation result: isValid=${isValid}${reason ? `, reason=${reason}` : ''}`,
+				`Validation result: isValid=${isValid}, severity=${severity}${reason ? `, reason=${reason}` : ''}${violations ? `, violations=[${violations.length}]` : ''}`,
 			);
 
 			return {
 				isValid,
 				reason,
+				violations,
+				severity,
 			};
 		} catch (error) {
 			this.logger.error('Result validator error:', error);
-			// Default to valid if validation fails (don't block persistence)
+			// Fail-closed: Default to invalid if validation fails
 			return {
-				isValid: true,
-				reason: 'Validation failed, defaulting to valid',
+				isValid: false,
+				reason: 'Validation failed due to error',
+				violations: ['Validator exception occurred'],
+				severity: 'ERROR',
 			};
 		}
 	}

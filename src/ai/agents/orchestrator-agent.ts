@@ -4,7 +4,13 @@ import { generateText } from 'ai';
 import { PrismaService } from '../../prisma/prisma.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import { buildOrchestratorPrompt } from '../prompts/orchestrator-agent.prompt';
-import { ChatSession, OrchestratorAgentResponse, RequestType, UserRole } from '../types/chat.types';
+import {
+	ChatSession,
+	MissingParam,
+	OrchestratorAgentResponse,
+	RequestType,
+	UserRole,
+} from '../types/chat.types';
 
 /**
  * Agent 1: Orchestrator Agent - Labels user requests, identifies user role, reads RAG business context
@@ -105,8 +111,39 @@ export class OrchestratorAgent {
 				? responseMatch[1].trim()
 				: this.getDefaultResponse(query, isFirstMessage);
 
+			// Parse MISSING_PARAMS for clarification (MVP)
+			const missingParamsMatch = response.match(/MISSING_PARAMS:\s*(.+?)(?=\n|$)/s);
+			let missingParams: MissingParam[] | undefined;
+			if (missingParamsMatch) {
+				const paramsStr = missingParamsMatch[1].trim();
+				if (paramsStr && paramsStr !== 'none' && paramsStr !== 'null') {
+					const params = paramsStr.split('|').map((param) => param.trim());
+					missingParams = params
+						.map((param): MissingParam | null => {
+							const parts = param.split(':');
+							if (parts.length >= 2) {
+								const name = parts[0].trim();
+								const reason = parts[1].trim();
+								const examples =
+									parts.length > 2 && parts[2].trim()
+										? parts[2]
+												.split(',')
+												.map((e) => e.trim())
+												.filter((e) => e.length > 0)
+										: undefined;
+								return { name, reason, examples };
+							}
+							return null;
+						})
+						.filter((p): p is MissingParam => p !== null);
+				}
+			}
+
+			const readyForSql =
+				requestType === RequestType.QUERY && (!missingParams || missingParams.length === 0);
+
 			this.logger.debug(
-				`Parsed requestType: ${requestType}, userRole: ${userRole}, readyForSql: ${requestType === RequestType.QUERY}`,
+				`Parsed requestType: ${requestType}, userRole: ${userRole}, readyForSql: ${readyForSql}${missingParams ? `, missingParams: [${missingParams.length}]` : ''}`,
 			);
 
 			return {
@@ -115,8 +152,10 @@ export class OrchestratorAgent {
 				userRole,
 				userId,
 				businessContext: businessContext || undefined,
-				readyForSql: requestType === RequestType.QUERY,
-				needsClarification: requestType === RequestType.CLARIFICATION,
+				readyForSql,
+				needsClarification:
+					requestType === RequestType.CLARIFICATION || (missingParams && missingParams.length > 0),
+				missingParams,
 				needsIntroduction: requestType === RequestType.GREETING,
 				intentModeHint: modeMatch ? (modeMatch[1] as 'LIST' | 'TABLE' | 'CHART') : undefined,
 				entityHint:

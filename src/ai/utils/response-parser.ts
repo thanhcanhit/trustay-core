@@ -10,12 +10,32 @@ export interface ParsedResponse {
 }
 
 /**
- * Parse response text according to ---END pattern
- * Format: message text ---END LIST: [] TABLE: {} CHART: {}
- * @param responseText - Full response text with ---END delimiter
+ * Parse response text - MVP: JSON envelope format with ---END fallback
+ * Format 1 (preferred): JSON envelope {message, payload: {list/table/chart}}
+ * Format 2 (fallback): message text ---END LIST: [] TABLE: {} CHART: {}
+ * @param responseText - Full response text (JSON or ---END format)
  * @returns Parsed response with message and structured data
  */
 export function parseResponseText(responseText: string): ParsedResponse {
+	// MVP: Try JSON envelope format first
+	try {
+		const jsonResponse = JSON.parse(responseText.trim());
+		if (jsonResponse.message && jsonResponse.payload) {
+			// Valid JSON envelope format
+			const payload = jsonResponse.payload || {};
+			const mode = payload.mode || 'LIST';
+			return {
+				message: jsonResponse.message || '',
+				list: mode === 'LIST' ? payload.list?.items || payload.list || null : null,
+				table: mode === 'TABLE' ? payload.table || null : null,
+				chart: mode === 'CHART' ? payload.chart || null : null,
+			};
+		}
+	} catch {
+		// Not JSON, fallback to ---END format
+	}
+
+	// Fallback: ---END delimiter format
 	const endIndex = responseText.indexOf('---END');
 	if (endIndex === -1) {
 		// No ---END delimiter found, return entire text as message

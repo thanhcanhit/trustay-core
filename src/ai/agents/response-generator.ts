@@ -66,7 +66,18 @@ export class ResponseGenerator {
 			});
 			const responseText = text.trim();
 
-			// Ensure ---END format is present, if not, append it
+			// Try to parse as JSON envelope first (MVP: JSON format)
+			try {
+				const jsonResponse = JSON.parse(responseText);
+				// If valid JSON, return as-is (AI returned JSON envelope)
+				if (jsonResponse.message && jsonResponse.payload) {
+					return responseText;
+				}
+			} catch {
+				// Not JSON, try ---END format (fallback)
+			}
+
+			// Fallback: Ensure ---END format is present, if not, append it
 			if (!responseText.includes('---END')) {
 				this.logger.warn('AI response missing ---END delimiter, appending structured data');
 				return `${responseText}\n---END\n${this.formatStructuredDataString(structuredData)}`;
@@ -77,7 +88,21 @@ export class ResponseGenerator {
 			this.logger.warn('Failed to generate final response, using fallback', error);
 			const messageText =
 				sqlResult.count === 0 ? getNoResultsMessage() : getSuccessMessage(sqlResult.count);
-			return `${messageText}\n---END\n${this.formatStructuredDataString(structuredData)}`;
+
+			// MVP: Try JSON envelope format first, fallback to ---END
+			try {
+				const jsonEnvelope = JSON.stringify({
+					message: messageText,
+					payload: structuredData,
+					meta: {
+						sessionId: session.sessionId,
+					},
+				});
+				return jsonEnvelope;
+			} catch {
+				// Fallback to ---END format
+				return `${messageText}\n---END\n${this.formatStructuredDataString(structuredData)}`;
+			}
 		}
 	}
 

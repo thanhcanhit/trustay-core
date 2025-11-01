@@ -7,6 +7,7 @@ import { buildSqlPrompt } from '../prompts/sql-agent.prompt';
 import { ChatSession, SqlGenerationResult } from '../types/chat.types';
 import { getCompleteDatabaseSchema } from '../utils/schema-provider';
 import { serializeBigInt } from '../utils/serializer';
+import { isAggregateQuery, validateSqlSafety } from '../utils/sql-safety';
 
 export interface AiConfig {
 	temperature: number;
@@ -152,10 +153,20 @@ export class SqlGenerationAgent {
 				if (!sqlLower.startsWith('select')) {
 					throw new Error('Only SELECT queries are allowed for security reasons');
 				}
-				const results = await prisma.$queryRawUnsafe(sql);
+
+				// SQL Safety Validation - MVP: enforce LIMIT and allow-list
+				const isAggregate = isAggregateQuery(sql);
+				const safetyCheck = validateSqlSafety(sql, isAggregate);
+				if (!safetyCheck.isValid) {
+					throw new Error(`SQL safety validation failed: ${safetyCheck.violations.join(', ')}`);
+				}
+				// Use enforced SQL if available (with LIMIT added)
+				const finalSql = safetyCheck.enforcedSql || sql;
+
+				const results = await prisma.$queryRawUnsafe(finalSql);
 				const serializedResults = serializeBigInt(results);
 				return {
-					sql,
+					sql: finalSql,
 					results: serializedResults,
 					count: Array.isArray(serializedResults) ? serializedResults.length : 1,
 					attempts: attempts,

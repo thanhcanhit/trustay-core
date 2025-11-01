@@ -46,19 +46,35 @@ YÊU CẦU ĐỊNH DẠNG (BẮT BUỘC):
 6. Trả về nội dung ở dạng Markdown an toàn (không HTML).
 
 7. SAU KHI VIẾT XONG CÂU TRẢ LỜI, BẮT BUỘC PHẢI:
-   - Xuống dòng và viết: ---END
-   - Xuống dòng tiếp theo và viết: LIST: ${structuredData?.list !== null ? JSON.stringify(structuredData.list) : 'null'}
-   - Xuống dòng tiếp theo và viết: TABLE: ${structuredData?.table !== null ? JSON.stringify(structuredData.table) : 'null'}
-   - Xuống dòng tiếp theo và viết: CHART: ${structuredData?.chart !== null ? JSON.stringify(structuredData.chart) : 'null'}
+   - ƯU TIÊN: Trả về JSON envelope format:
+   {
+     "message": "[TENANT] Đây là 5 phòng mới nhất ở gò vấp...",
+     "payload": {
+       "mode": "LIST",
+       "list": {"items": [...], "total": 5}
+     }
+   }
+   
+   - FALLBACK: Nếu không thể JSON, dùng format ---END:
+   Đây là 5 phòng mới nhất...
+   ---END
+   LIST: [{"id":"123","title":"...","path":"/rooms/123"}]
+   TABLE: null
+   CHART: null
 
-VÍ DỤ FORMAT ĐÚNG:
-Đây là 5 phòng mới nhất ở gò vấp, tôi thấy căn Phòng trọ Lan Anh là phù hợp nhất đó
----END
-LIST: [{"id":"123","title":"Phòng trọ Lan Anh","path":"/rooms/123",...}]
-TABLE: null
-CHART: null
+VÍ DỤ FORMAT ĐÚNG (JSON envelope - ưu tiên):
+{
+  "message": "[TENANT] Đây là 5 phòng mới nhất ở gò vấp, tôi thấy căn Phòng trọ Lan Anh là phù hợp nhất đó",
+  "payload": {
+    "mode": "LIST",
+    "list": {
+      "items": [{"id":"123","title":"Phòng trọ Lan Anh","path":"/rooms/123","entity":"room"}],
+      "total": 5
+    }
+  }
+}
 
-Câu trả lời cuối cùng (NHỚ THÊM ---END VÀ DỮ LIỆU CUỐI):`;
+Câu trả lời cuối cùng (ƯU TIÊN JSON ENVELOPE, hoặc ---END nếu không thể JSON):`;
 }
 
 export interface FriendlyResponsePromptParams {
