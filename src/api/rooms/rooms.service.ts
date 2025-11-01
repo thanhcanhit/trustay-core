@@ -696,6 +696,165 @@ export class RoomsService {
 		}
 	}
 
+	async getRoomById(
+		roomId: string,
+		clientIp?: string,
+		context: { isAuthenticated: boolean } = { isAuthenticated: false },
+	): Promise<RoomDetailWithMetaResponseDto> {
+		const { isAuthenticated } = context;
+		// Find room type by ID
+		const room = await this.prisma.room.findFirst({
+			where: {
+				id: roomId,
+				isActive: true,
+			},
+			include: {
+				building: {
+					include: {
+						province: { select: { id: true, name: true, code: true } },
+						district: { select: { id: true, name: true, code: true } },
+						ward: { select: { id: true, name: true, code: true } },
+						owner: {
+							select: {
+								id: true,
+								firstName: true,
+								lastName: true,
+								avatarUrl: true,
+								gender: true,
+								email: true,
+								phone: true,
+								isVerifiedPhone: true,
+								isVerifiedEmail: true,
+								isVerifiedIdentity: true,
+								isOnline: true,
+								lastActiveAt: true,
+								overallRating: true,
+								totalRatings: true,
+							},
+						},
+					},
+				},
+				roomInstances: {
+					select: {
+						id: true,
+						roomNumber: true,
+						status: true,
+						isActive: true,
+					},
+					where: { isActive: true },
+					orderBy: { roomNumber: 'asc' },
+				},
+				images: {
+					select: {
+						id: true,
+						imageUrl: true,
+						altText: true,
+						sortOrder: true,
+						isPrimary: true,
+					},
+					orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+				},
+				amenities: {
+					select: {
+						id: true,
+						customValue: true,
+						notes: true,
+						amenity: {
+							select: {
+								id: true,
+								name: true,
+								nameEn: true,
+								category: true,
+							},
+						},
+					},
+				},
+				costs: {
+					select: {
+						id: true,
+						fixedAmount: true,
+						currency: true,
+						notes: true,
+						costTypeTemplate: {
+							select: {
+								id: true,
+								name: true,
+								nameEn: true,
+								category: true,
+								defaultUnit: true,
+							},
+						},
+					},
+				},
+				pricing: {
+					select: {
+						id: true,
+						basePriceMonthly: true,
+						currency: true,
+						depositAmount: true,
+						depositMonths: true,
+						utilityIncluded: true,
+						utilityCostMonthly: true,
+						minimumStayMonths: true,
+						maximumStayMonths: true,
+						priceNegotiable: true,
+					},
+				},
+				rules: {
+					select: {
+						id: true,
+						customValue: true,
+						isEnforced: true,
+						notes: true,
+						ruleTemplate: {
+							select: {
+								id: true,
+								ruleType: true,
+								name: true,
+								nameEn: true,
+							},
+						},
+					},
+				},
+			},
+		});
+
+		if (!room) {
+			throw new NotFoundException('Room not found');
+		}
+
+		// Tăng view count với chiến lược chống spam
+		if (this.shouldIncrementView(room.id, clientIp)) {
+			await this.prisma.room.update({
+				where: { id: room.id },
+				data: { viewCount: { increment: 1 } },
+			});
+		}
+
+		// Get owner statistics
+		const ownerStats = await getOwnerStats(this.prisma, room.buildingId);
+
+		// Use the formatting utility function
+		const roomDetail = formatRoomDetail(room, isAuthenticated, ownerStats);
+
+		// Generate SEO and breadcrumb
+		const seo = await this.generateRoomDetailSeo(room);
+		const breadcrumb = await this.generateRoomDetailBreadcrumb(room);
+
+		// Get similar rooms
+		const similarRooms = await this.getSimilarRooms(room, 8, isAuthenticated);
+
+		return {
+			...roomDetail,
+			seo,
+			breadcrumb,
+			similarRooms,
+		};
+	}
+
+	/**
+	 * @deprecated Use getRoomById instead. This method will be removed in a future version.
+	 */
 	async getRoomBySlug(
 		slug: string,
 		clientIp?: string,
