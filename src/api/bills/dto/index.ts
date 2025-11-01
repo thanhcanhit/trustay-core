@@ -5,5 +5,6 @@ export * from './meter-data.dto';
 export * from './paginated-bill-response.dto';
 export * from './preview-building-bill.dto';
 export * from './query-bill.dto';
+export * from './query-bills-for-landlord.dto';
 export * from './update-bill.dto';
 export * from './update-bill-with-meter-data.dto';

@@ -1,22 +1,29 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { BillStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsDateString, IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class QueryBillDto {
-	@ApiPropertyOptional({ description: 'Trang', example: 1 })
+	@ApiPropertyOptional({ description: 'Trang', example: 1, default: 1, minimum: 1 })
 	@IsOptional()
 	@Type(() => Number)
-	@IsNumber()
+	@IsInt()
 	@Min(1)
-	page?: number;
+	page?: number = 1;
 
-	@ApiPropertyOptional({ description: 'Số lượng mỗi trang', example: 20 })
+	@ApiPropertyOptional({
+		description: 'Số lượng mỗi trang',
+		example: 20,
+		default: 20,
+		minimum: 1,
+		maximum: 100,
+	})
 	@IsOptional()
 	@Type(() => Number)
-	@IsNumber()
+	@IsInt()
 	@Min(1)
-	limit?: number;
+	@Max(100)
+	limit?: number = 20;
 
 	@ApiPropertyOptional({ description: 'ID của rental' })
 	@IsOptional()

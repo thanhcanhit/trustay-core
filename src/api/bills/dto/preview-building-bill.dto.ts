@@ -1,32 +1,47 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsDateString, IsNumber, IsString, Min } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { BillStatus } from '@prisma/client';
+import { Type } from 'class-transformer';
+import { IsDateString, IsEnum, IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class PreviewBuildingBillDto {
 	@ApiProperty({ description: 'ID của building' })
 	@IsString()
 	buildingId: string;
 
-	@ApiProperty({ description: 'Kỳ hóa đơn (format: YYYY-MM)', example: '2025-01' })
+	@ApiPropertyOptional({ description: 'Kỳ hóa đơn (format: YYYY-MM)', example: '2025-01' })
+	@IsOptional()
 	@IsString()
-	billingPeriod: string;
+	billingPeriod?: string;
 
-	@ApiProperty({ description: 'Tháng hóa đơn (1-12)', example: 1 })
+	@ApiPropertyOptional({ description: 'Tháng hóa đơn (1-12)', example: 1 })
+	@IsOptional()
+	@Type(() => Number)
 	@IsNumber()
 	@Min(1)
-	billingMonth: number;
+	billingMonth?: number;
 
-	@ApiProperty({ description: 'Năm hóa đơn', example: 2025 })
+	@ApiPropertyOptional({ description: 'Năm hóa đơn', example: 2025 })
+	@IsOptional()
+	@Type(() => Number)
 	@IsNumber()
 	@Min(2020)
-	billingYear: number;
+	billingYear?: number;
 
-	@ApiProperty({ description: 'Ngày bắt đầu kỳ', example: '2025-01-01' })
+	@ApiPropertyOptional({
+		description: 'Ngày bắt đầu kỳ (mặc định: đầu tháng trước)',
+		example: '2025-01-01',
+	})
+	@IsOptional()
 	@IsDateString()
-	periodStart: string;
+	periodStart?: string;
 
-	@ApiProperty({ description: 'Ngày kết thúc kỳ', example: '2025-01-31' })
+	@ApiPropertyOptional({
+		description: 'Ngày kết thúc kỳ (mặc định: ngày hiện tại)',
+		example: '2025-01-31',
+	})
+	@IsOptional()
 	@IsDateString()
-	periodEnd: string;
+	periodEnd?: string;
 }
 
 export class RoomBillPreviewDto {
