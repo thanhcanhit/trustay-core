@@ -17,15 +17,23 @@ export interface ParsedResponse {
  * @returns Parsed response with message and structured data
  */
 export function parseResponseText(responseText: string): ParsedResponse {
-	// MVP: Try JSON envelope format first
+	// MVP: Try JSON envelope format first (strip markdown code blocks if present)
+	const cleanedText = responseText.trim();
+
+	// Remove markdown code blocks if AI wrapped JSON in code blocks
+	const jsonMatch = cleanedText.match(/```json\s*([\s\S]*?)\s*```/);
+	const jsonText = jsonMatch ? jsonMatch[1].trim() : cleanedText;
+
+	// Try to parse as JSON envelope
 	try {
-		const jsonResponse = JSON.parse(responseText.trim());
+		const jsonResponse = JSON.parse(jsonText);
 		if (jsonResponse.message && jsonResponse.payload) {
-			// Valid JSON envelope format
+			// Valid JSON envelope format - strip any markdown from message
+			const message = (jsonResponse.message || '').replace(/```json[\s\S]*?```/g, '').trim();
 			const payload = jsonResponse.payload || {};
 			const mode = payload.mode || 'LIST';
 			return {
-				message: jsonResponse.message || '',
+				message,
 				list: mode === 'LIST' ? payload.list?.items || payload.list || null : null,
 				table: mode === 'TABLE' ? payload.table || null : null,
 				chart: mode === 'CHART' ? payload.chart || null : null,

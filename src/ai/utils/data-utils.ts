@@ -22,7 +22,19 @@ export function toListItem(row: Record<string, unknown>): ListItem {
 	const rawId = (obj.id as unknown) ?? (obj.slug as unknown) ?? (obj.uuid as unknown) ?? '';
 	const id = String(rawId ?? '').trim();
 	const entityExplicit = (obj.entity as EntityType | undefined) ?? undefined;
-	const inferredEntity: EntityType | undefined = entityExplicit ?? (id ? 'room' : undefined);
+	// MVP: Infer entity from id pattern or explicit entity
+	let inferredEntity: EntityType | undefined = entityExplicit;
+	if (!inferredEntity && id) {
+		// Infer entity from slug pattern or default to 'room'
+		if (id.includes('room-seeking') || id.includes('tìm-phòng')) {
+			inferredEntity = 'room_seeking_post';
+		} else if (id.includes('post') || id.includes('bài-đăng')) {
+			inferredEntity = 'post';
+		} else {
+			// Default to 'room' for most cases (rooms are most common)
+			inferredEntity = 'room';
+		}
+	}
 	const path = inferredEntity && id ? buildEntityPath(inferredEntity, id) : undefined;
 	const extUrl =
 		(obj.url as string | undefined) ??

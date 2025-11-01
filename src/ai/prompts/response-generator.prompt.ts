@@ -45,36 +45,23 @@ YÊU CẦU ĐỊNH DẠNG (BẮT BUỘC):
 5. Nếu không có kết quả, đưa ra gợi ý hữu ích.
 6. Trả về nội dung ở dạng Markdown an toàn (không HTML).
 
-7. SAU KHI VIẾT XONG CÂU TRẢ LỜI, BẮT BUỘC PHẢI:
-   - ƯU TIÊN: Trả về JSON envelope format:
-   {
-     "message": "[TENANT] Đây là 5 phòng mới nhất ở gò vấp...",
-     "payload": {
-       "mode": "LIST",
-       "list": {"items": [...], "total": 5}
-     }
-   }
+7. SAU KHI VIẾT XONG CÂU TRẢ LỜI (CHỈ TEXT MARKDOWN, KHÔNG CÓ JSON CODE BLOCK), BẮT BUỘC PHẢI:
+   - QUAN TRỌNG: Message chỉ là TEXT MARKDOWN, KHÔNG bao giờ chứa JSON code block.
+   - ƯU TIÊN: Trả về JSON envelope format (toàn bộ response là JSON hợp lệ, KHÔNG có markdown text trước):
+     Format: {"message":"[TENANT] Đây là 5 phòng...","payload":{"mode":"LIST","list":{"items":[...],"total":5}}}
    
    - FALLBACK: Nếu không thể JSON, dùng format ---END:
-   Đây là 5 phòng mới nhất...
-   ---END
-   LIST: [{"id":"123","title":"...","path":"/rooms/123"}]
-   TABLE: null
-   CHART: null
+     Format: Message text\n---END\nLIST: [...]\nTABLE: null\nCHART: null
+
+LƯU Ý QUAN TRỌNG:
+- Message KHÔNG BAO GIỜ chứa JSON code block (backtick backtick backtick json ...).
+- Message chỉ là TEXT MARKDOWN thuần túy, thân thiện, tự nhiên.
+- Nếu trả JSON envelope, toàn bộ response phải là JSON hợp lệ (không có text markdown trước JSON).
 
 VÍ DỤ FORMAT ĐÚNG (JSON envelope - ưu tiên):
-{
-  "message": "[TENANT] Đây là 5 phòng mới nhất ở gò vấp, tôi thấy căn Phòng trọ Lan Anh là phù hợp nhất đó",
-  "payload": {
-    "mode": "LIST",
-    "list": {
-      "items": [{"id":"123","title":"Phòng trọ Lan Anh","path":"/rooms/123","entity":"room"}],
-      "total": 5
-    }
-  }
-}
+Format JSON: {"message":"[TENANT] Đây là 5 phòng mới nhất...","payload":{"mode":"LIST","list":{"items":[{"id":"123","title":"Phòng trọ Lan Anh","path":"/rooms/123","entity":"room"}],"total":5}}}
 
-Câu trả lời cuối cùng (ƯU TIÊN JSON ENVELOPE, hoặc ---END nếu không thể JSON):`;
+Câu trả lời cuối cùng (ƯU TIÊN JSON ENVELOPE - toàn bộ response là JSON hợp lệ, hoặc ---END nếu không thể JSON):`;
 }
 
 export interface FriendlyResponsePromptParams {

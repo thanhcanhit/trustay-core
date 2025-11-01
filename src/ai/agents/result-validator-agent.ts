@@ -51,15 +51,31 @@ export class ResultValidatorAgent {
 
 			// Parse response to extract validation result
 			const isValidMatch = response.match(/IS_VALID:\s*(true|false)/i);
-			const reasonMatch = response.match(/REASON:\s*(.+)/s);
+			const reasonMatch = response.match(/REASON:\s*(.+?)(?=\n(?:SEVERITY|VIOLATIONS)|$)/s);
 
 			// Fail-closed: Default to false if parsing fails
-			const isValid =
-				isValidMatch && isValidMatch[1].toLowerCase() === 'true'
-					? true
-					: isValidMatch && isValidMatch[1].toLowerCase() === 'false'
-						? false
-						: false; // Default to invalid if parsing fails (fail-closed)
+			// But also check if AI explicitly says "valid" or "invalid" in text
+			const hasExplicitInvalid =
+				response.toLowerCase().includes('invalid') ||
+				response.toLowerCase().includes('không hợp lệ') ||
+				response.toLowerCase().includes('không đúng');
+			const hasExplicitValid =
+				response.toLowerCase().includes('valid') ||
+				response.toLowerCase().includes('hợp lệ') ||
+				response.toLowerCase().includes('đúng');
+
+			let isValid = false;
+			if (isValidMatch) {
+				isValid = isValidMatch[1].toLowerCase() === 'true';
+			} else if (hasExplicitInvalid) {
+				isValid = false;
+			} else if (hasExplicitValid && !hasExplicitInvalid) {
+				// MVP: If AI explicitly says valid but no IS_VALID field, allow it (relaxed for MVP)
+				isValid = true;
+			} else {
+				// Fail-closed: Default to invalid if cannot determine
+				isValid = false;
+			}
 
 			const reason = reasonMatch ? reasonMatch[1].trim() : undefined;
 

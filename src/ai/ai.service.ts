@@ -368,10 +368,14 @@ export class AiService {
 					`[STEP] Validator → isValid=${validation.isValid}, severity=${validation.severity || 'N/A'}, reason=${validation.reason || 'OK'}, took=${validationTime}ms`,
 				);
 
-				// Chỉ persist nếu valid
-				if (validation.isValid) {
+				// MVP: Persist Q&A - Chỉ skip nếu có ERROR severity
+				// WARN severity vẫn cho phép persist để có thể học hỏi
+				if (validation.isValid || validation.severity === 'WARN') {
 					try {
-						this.logDebug('PERSIST', 'Đang lưu Q&A vào knowledge store...');
+						this.logDebug(
+							'PERSIST',
+							`Đang lưu Q&A vào knowledge store (isValid=${validation.isValid}, severity=${validation.severity})...`,
+						);
 						await this.knowledge.saveQAInteraction({
 							question: query,
 							sql: sqlResult.sql,
@@ -379,13 +383,14 @@ export class AiService {
 							userId: session.userId,
 							context: { count: sqlResult.count },
 						});
+						this.logDebug('PERSIST', 'Đã lưu Q&A thành công vào knowledge store');
 					} catch (persistErr) {
 						this.logWarn('PERSIST', 'Không thể lưu Q&A vào knowledge store', persistErr);
 					}
 				} else {
 					this.logWarn(
 						'VALIDATOR',
-						`Kết quả không hợp lệ, không lưu vào knowledge store: ${validation.reason}`,
+						`Kết quả không hợp lệ (ERROR), không lưu vào knowledge store: ${validation.reason || 'Unknown error'}`,
 					);
 				}
 

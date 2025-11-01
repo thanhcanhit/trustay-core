@@ -16,6 +16,7 @@ import {
 	toListItems,
 	tryBuildChart,
 } from '../utils/data-utils';
+import { buildEntityPath } from '../utils/entity-route';
 
 /**
  * Response Generator - Generates human-friendly responses from SQL results with structured data
@@ -154,11 +155,30 @@ export class ResponseGenerator {
 		const inferred = inferColumns(rows);
 		const columns = selectImportantColumns(inferred, rows);
 		const normalized = normalizeRows(rows, columns).slice(0, 50);
+
+		// MVP: Add path to table rows if entity and id exist
+		const rowsWithPath = normalized.map((row) => {
+			const hasId = row.id && typeof row.id === 'string';
+			const hasEntity = row.entity && typeof row.entity === 'string';
+			const entityId = hasId ? String(row.id) : undefined;
+			const entity = hasEntity ? String(row.entity) : undefined;
+
+			if (
+				entityId &&
+				entity &&
+				(entity === 'room' || entity === 'post' || entity === 'room_seeking_post')
+			) {
+				const path = buildEntityPath(entity, entityId);
+				return { ...row, path };
+			}
+			return row;
+		});
+
 		return {
 			list: null,
 			table: {
 				columns,
-				rows: normalized,
+				rows: rowsWithPath,
 				previewLimit: 50,
 			},
 			chart: null,

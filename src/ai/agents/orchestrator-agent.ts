@@ -112,38 +112,78 @@ export class OrchestratorAgent {
 				: this.getDefaultResponse(query, isFirstMessage);
 
 			// Parse MISSING_PARAMS for clarification (MVP)
-			const missingParamsMatch = response.match(/MISSING_PARAMS:\s*(.+?)(?=\n|$)/s);
+			const missingParamsMatch = response.match(/MISSING_PARAMS:\s*(.+?)(?=\n(?:RESPONSE|$))/s);
 			let missingParams: MissingParam[] | undefined;
 			if (missingParamsMatch) {
 				const paramsStr = missingParamsMatch[1].trim();
-				if (paramsStr && paramsStr !== 'none' && paramsStr !== 'null') {
-					const params = paramsStr.split('|').map((param) => param.trim());
-					missingParams = params
-						.map((param): MissingParam | null => {
-							const parts = param.split(':');
-							if (parts.length >= 2) {
-								const name = parts[0].trim();
-								const reason = parts[1].trim();
-								const examples =
-									parts.length > 2 && parts[2].trim()
-										? parts[2]
-												.split(',')
-												.map((e) => e.trim())
-												.filter((e) => e.length > 0)
-										: undefined;
-								return { name, reason, examples };
-							}
-							return null;
-						})
-						.filter((p): p is MissingParam => p !== null);
+				// MVP: Validate - ignore if empty, "none", "null", or contains RESPONSE text (AI might have mixed up fields)
+				if (
+					paramsStr &&
+					paramsStr !== 'none' &&
+					paramsStr !== 'null' &&
+					!paramsStr.includes('RESPONSE:') &&
+					!paramsStr.includes('[LANDLORD]') &&
+					!paramsStr.includes('[TENANT]') &&
+					!paramsStr.includes('[GUEST]') &&
+					paramsStr.length > 0
+				) {
+					const params = paramsStr
+						.split('|')
+						.map((param) => param.trim())
+						.filter((p) => p.length > 0);
+					if (params.length > 0) {
+						missingParams = params
+							.map((param): MissingParam | null => {
+								const parts = param.split(':');
+								if (parts.length >= 2) {
+									const name = parts[0].trim();
+									const reason = parts[1].trim();
+									// MVP: Validate that name and reason are not empty or user labels
+									if (
+										!name ||
+										!reason ||
+										name === 'none' ||
+										reason === 'none' ||
+										name.includes('[LANDLORD]') ||
+										name.includes('[TENANT]') ||
+										name.includes('[GUEST]') ||
+										reason.includes('[LANDLORD]') ||
+										reason.includes('[TENANT]') ||
+										reason.includes('[GUEST]')
+									) {
+										return null;
+									}
+									const examples =
+										parts.length > 2 && parts[2].trim()
+											? parts[2]
+													.split(',')
+													.map((e) => e.trim())
+													.filter((e) => e.length > 0 && !e.includes('['))
+											: undefined;
+									return { name, reason, examples };
+								}
+								return null;
+							})
+							.filter((p): p is MissingParam => p !== null);
+						// MVP: If no valid params after filtering, set to undefined
+						if (missingParams.length === 0) {
+							missingParams = undefined;
+						}
+					}
 				}
 			}
 
+			// MVP: Only set missingParams if readyForSql is false
+			// If readyForSql is true, ignore missingParams (AI might have returned it incorrectly)
 			const readyForSql =
 				requestType === RequestType.QUERY && (!missingParams || missingParams.length === 0);
 
+			// Clear missingParams if readyForSql is true (contradiction - shouldn't happen)
+			const finalMissingParams =
+				readyForSql || requestType !== RequestType.QUERY ? undefined : missingParams;
+
 			this.logger.debug(
-				`Parsed requestType: ${requestType}, userRole: ${userRole}, readyForSql: ${readyForSql}${missingParams ? `, missingParams: [${missingParams.length}]` : ''}`,
+				`Parsed requestType: ${requestType}, userRole: ${userRole}, readyForSql: ${readyForSql}${finalMissingParams ? `, missingParams: [${finalMissingParams.length}]` : ''}`,
 			);
 
 			return {
@@ -154,8 +194,9 @@ export class OrchestratorAgent {
 				businessContext: businessContext || undefined,
 				readyForSql,
 				needsClarification:
-					requestType === RequestType.CLARIFICATION || (missingParams && missingParams.length > 0),
-				missingParams,
+					requestType === RequestType.CLARIFICATION ||
+					(finalMissingParams && finalMissingParams.length > 0),
+				missingParams: finalMissingParams,
 				needsIntroduction: requestType === RequestType.GREETING,
 				intentModeHint: modeMatch ? (modeMatch[1] as 'LIST' | 'TABLE' | 'CHART') : undefined,
 				entityHint:

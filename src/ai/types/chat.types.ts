@@ -38,7 +38,7 @@ export interface ContentPayload {
 	stats?: readonly { label: string; value: number; unit?: string }[];
 }
 
-export type EntityType = 'room' | 'post';
+export type EntityType = 'room' | 'post' | 'room_seeking_post';
 
 export interface ListItem {
 	id: string;

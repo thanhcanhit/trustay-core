@@ -162,7 +162,8 @@ YÊU CẦU TRUY VẤN DỮ LIỆU (BẮT BUỘC):
    - TÌM KIẾM DANH SÁCH (từ khóa: tìm, phòng, room, bài đăng, post, ở, gần):
      * QUAN TRỌNG: Trong schema, table rooms có cột name (KHÔNG phải title). Phải dùng r.name AS title.
      * Chỉ SELECT các trường gọn nhẹ: id, name AS title (KHÔNG dùng title trực tiếp, phải alias), thumbnail_url/image_url (nếu có)
-     * Bổ sung constant column: 'room' AS entity (cho rooms) hoặc 'post' AS entity (cho posts)
+     * BẮT BUỘC: Bổ sung constant column: 'room' AS entity (cho rooms), 'post' AS entity (cho posts), hoặc 'room_seeking_post' AS entity (cho room_seeking_posts)
+     * Path sẽ được backend tự động thêm từ entity + id. KHÔNG cần SELECT path.
      * KHÔNG SELECT: description, content, body, hay bất kỳ trường text dài nào
      * LIMIT ${Math.max(1, Math.min(50, limit))}
      * Ví dụ ĐÚNG: SELECT r.id, r.name AS title, ri.room_number, rp.base_price_monthly, 'room' AS entity FROM rooms r LEFT JOIN room_instances ri ON ri.room_id = r.id LEFT JOIN room_pricing rp ON rp.room_id = r.id WHERE r.is_active = true LIMIT ${Math.max(1, Math.min(50, limit))};

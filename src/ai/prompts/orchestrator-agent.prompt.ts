@@ -81,10 +81,15 @@ REQUEST_TYPE: QUERY/GREETING/CLARIFICATION/GENERAL_CHAT
 MODE_HINT: LIST/TABLE/CHART
 ENTITY_HINT: room|post|room_seeking_post|none
 FILTERS_HINT: [mô tả ngắn gọn filter nếu có, ví dụ: quận="gò vấp", giá<3tr]
-MISSING_PARAMS: [chỉ trả về khi REQUEST_TYPE=QUERY nhưng thiếu thông tin quan trọng để tạo SQL]
+MISSING_PARAMS: [CHỈ trả về khi REQUEST_TYPE=QUERY và THỰC SỰ THIẾU thông tin BẮT BUỘC để tạo SQL]
   Format: name:reason:examples|name:reason:examples
   Ví dụ: location:Cần biết khu vực tìm phòng:Quận 1,Gò Vấp|price_range:Cần biết tầm giá:3 triệu,5 triệu
+  KHÔNG trả về MISSING_PARAMS nếu có thể suy đoán được từ business context hoặc có thể query với giá trị mặc định
+  Nếu không có MISSING_PARAMS, để trống hoặc "none"
 RESPONSE: ${userLabel} [câu trả lời tự nhiên của bạn, bắt đầu bằng label user role]
 
-LƯU Ý: MISSING_PARAMS chỉ trả về khi câu hỏi có ý định QUERY nhưng thiếu thông tin bắt buộc (ví dụ: tìm phòng nhưng không có khu vực, không có tầm giá)`;
+LƯU Ý QUAN TRỌNG:
+- MISSING_PARAMS CHỈ trả về khi câu hỏi có ý định QUERY nhưng THIẾU THÔNG TIN BẮT BUỘC (ví dụ: tìm phòng nhưng không có khu vực, không có tầm giá)
+- Nếu có thể suy đoán từ business context hoặc có giá trị mặc định → KHÔNG trả về MISSING_PARAMS
+- Nếu không có MISSING_PARAMS → để trống hoặc "none"`;
 }
