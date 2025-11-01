@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ConversationalAgent } from './agents/conversational-agent';
+import { OrchestratorAgent } from './agents/orchestrator-agent';
 import { ResponseGenerator } from './agents/response-generator';
+import { ResultValidatorAgent } from './agents/result-validator-agent';
 import { SqlGenerationAgent } from './agents/sql-generation-agent';
 import { KnowledgeService } from './knowledge/knowledge.service';
 import { VIETNAMESE_LOCALE_SYSTEM_PROMPT } from './prompts/system.prompt';
@@ -11,6 +12,7 @@ import {
 	ChatResponse,
 	ChatSession,
 	DataPayload,
+	RequestType,
 	TableColumn,
 } from './types/chat.types';
 import {
@@ -21,6 +23,7 @@ import {
 	toListItems,
 	tryBuildChart,
 } from './utils/data-utils';
+import { parseResponseText } from './utils/response-parser';
 export { ChatResponse };
 
 @Injectable()
@@ -37,9 +40,10 @@ export class AiService {
 	private readonly logger = new Logger(AiService.name);
 
 	// AI Agents
-	private readonly conversationalAgent = new ConversationalAgent();
+	private orchestratorAgent: OrchestratorAgent;
 	private sqlGenerationAgent: SqlGenerationAgent;
 	private readonly responseGenerator = new ResponseGenerator();
+	private readonly resultValidatorAgent = new ResultValidatorAgent();
 
 	// Chat session management - similar to rooms.service.ts view cache pattern
 	private chatSessions = new Map<string, ChatSession>();
@@ -51,6 +55,8 @@ export class AiService {
 		private readonly prisma: PrismaService,
 		private readonly knowledge: KnowledgeService,
 	) {
+		// Initialize orchestrator agent with Prisma and KnowledgeService
+		this.orchestratorAgent = new OrchestratorAgent(this.prisma, this.knowledge);
 		// Initialize SQL generation agent with knowledge service for RAG
 		this.sqlGenerationAgent = new SqlGenerationAgent(this.knowledge);
 		// Dọn dẹp session cũ định kỳ - similar to rooms.service.ts cleanup pattern
@@ -216,42 +222,44 @@ export class AiService {
 			this.logDebug('SESSION', `Đang xử lý câu hỏi: "${query}" (session: ${session.sessionId})`);
 
 			// ========================================
-			// BƯỚC 2: Agent 1 - Conversational Agent
+			// BƯỚC 2: Agent 1 - Orchestrator Agent
 			// ========================================
 			// Agent này có nhiệm vụ:
-			// - Trò chuyện tự nhiên với người dùng
-			// - Phân tích ý định người dùng (tìm kiếm, thống kê, hay cần làm rõ)
-			// - Xác định có đủ thông tin để tạo SQL query không
+			// - Đánh nhãn user role và phân loại request type
+			// - Đọc và hiểu business context từ RAG để nắm vững nghiệp vụ hệ thống
+			// - Quyết định xem có đủ thông tin để tạo SQL query không
 			// - Gợi ý mode response (LIST/TABLE/CHART) dựa trên ý định
-			this.logInfo('CONVO_AGENT', 'Agent 1: Đang phân tích câu hỏi và ý định người dùng...');
-			const conversationalResponse = await this.conversationalAgent.process(
+			this.logInfo(
+				'ORCHESTRATOR',
+				'Agent 1: Đang phân tích câu hỏi, đánh nhãn user role và request type...',
+			);
+			const orchestratorResponse = await this.orchestratorAgent.process(
 				query,
 				session,
 				this.AI_CONFIG,
 			);
 			this.logDebug(
-				'CONVO_AGENT',
-				`Agent 1 hoàn thành (readyForSql=${conversationalResponse.readyForSql}, mode=${conversationalResponse.intentModeHint})`,
+				'ORCHESTRATOR',
+				`Agent 1 hoàn thành (requestType=${orchestratorResponse.requestType}, userRole=${orchestratorResponse.userRole}, readyForSql=${orchestratorResponse.readyForSql})`,
 			);
 
 			// Xác định mode response dựa trên ý định người dùng (LIST/TABLE/CHART)
-			// Agent đã gợi ý mode qua intentModeHint, nếu không có thì mặc định là TABLE
 			const desiredMode: 'LIST' | 'TABLE' | 'CHART' =
-				conversationalResponse.intentModeHint ?? 'TABLE';
+				orchestratorResponse.intentModeHint ?? 'TABLE';
 
 			// Lưu hints từ agent vào session để agent SQL hiểu rõ hơn
-			if (conversationalResponse.entityHint) {
+			if (orchestratorResponse.entityHint) {
 				this.addMessageToSession(
 					session,
 					'system',
-					`[INTENT] ENTITY=${conversationalResponse.entityHint.toUpperCase()}`,
+					`[INTENT] ENTITY=${orchestratorResponse.entityHint.toUpperCase()}`,
 				);
 			}
-			if (conversationalResponse.filtersHint) {
+			if (orchestratorResponse.filtersHint) {
 				this.addMessageToSession(
 					session,
 					'system',
-					`[INTENT] FILTERS=${conversationalResponse.filtersHint}`,
+					`[INTENT] FILTERS=${orchestratorResponse.filtersHint}`,
 				);
 			}
 			if (desiredMode === 'CHART') {
@@ -263,13 +271,17 @@ export class AiService {
 			}
 
 			// Kiểm tra: Agent 1 đã xác định đủ thông tin để tạo SQL chưa?
-			if (conversationalResponse.readyForSql) {
+			if (
+				orchestratorResponse.requestType === RequestType.QUERY &&
+				orchestratorResponse.readyForSql
+			) {
 				// ========================================
 				// BƯỚC 3: Agent 2 - SQL Generation Agent
 				// ========================================
 				// Agent này có nhiệm vụ:
+				// - Tái sử dụng canonical SQL nếu có, hoặc tạo SQL mới dựa trên context
 				// - Sử dụng RAG để lấy schema context liên quan
-				// - Tạo SQL query dựa trên câu hỏi và hints từ Agent 1
+				// - Tạo SQL query dựa trên câu hỏi, business context và hints từ Agent 1
 				// - Thực thi SQL query an toàn (read-only)
 				// - Trả về kết quả đã được serialize
 				this.logInfo('SQL_AGENT', 'Agent 2: Đang tạo và thực thi SQL query...');
@@ -278,80 +290,112 @@ export class AiService {
 					session,
 					this.prisma,
 					this.AI_CONFIG,
+					orchestratorResponse.businessContext,
 				);
 				this.logInfo('SQL_AGENT', `Agent 2 hoàn thành (tìm thấy ${sqlResult.count} kết quả)`);
 
 				// ========================================
-				// BƯỚC 4: Tạo structured payload cho UI
-				// ========================================
-				// Xây dựng payload theo mode (LIST/TABLE/CHART) để frontend render
-				const dataPayload: DataPayload | undefined = this.buildDataPayload(
-					sqlResult.results,
-					query,
-					desiredMode,
-				);
-
-				// ========================================
-				// BƯỚC 5: Agent 3 - Response Generator
+				// BƯỚC 4: Agent 3 - Response Generator
 				// ========================================
 				// Agent này có nhiệm vụ:
 				// - Tạo câu trả lời thân thiện, tự nhiên bằng tiếng Việt
-				// - Kết hợp thông tin từ Agent 1 (conversational message) và kết quả SQL
-				// - Tạo Markdown message cho người dùng
-				const messageText: string = await this.responseGenerator.generateFinalResponse(
-					conversationalResponse.message,
+				// - Kết hợp thông tin từ Agent 1 (orchestrator message) và kết quả SQL
+				// - Format output theo pattern ---END + LIST/TABLE/CHART
+				const responseText: string = await this.responseGenerator.generateFinalResponse(
+					orchestratorResponse.message,
 					sqlResult,
 					session,
 					this.AI_CONFIG,
+					desiredMode,
 				);
 
+				// Parse responseText để tách message và structured data
+				const parsedResponse = parseResponseText(responseText);
+
 				// ========================================
-				// BƯỚC 6: Lưu Q&A vào knowledge store
+				// BƯỚC 5: Agent 4 - Result Validator
 				// ========================================
-				// Lưu câu hỏi và SQL tương ứng để:
-				// - Học hỏi và tái sử dụng SQL đã được xác nhận (canonical)
-				// - Cải thiện chất lượng response cho các câu hỏi tương tự
-				try {
-					this.logDebug('PERSIST', 'Đang lưu Q&A vào knowledge store...');
-					await this.knowledge.saveQAInteraction({
-						question: query,
-						sql: sqlResult.sql,
-						sessionId: session.sessionId,
-						userId: session.userId,
-						context: { count: sqlResult.count },
-					});
-				} catch (persistErr) {
-					this.logWarn('PERSIST', 'Không thể lưu Q&A vào knowledge store', persistErr);
+				// Agent này có nhiệm vụ:
+				// - Đánh giá xem SQL và kết quả có đáp ứng yêu cầu ban đầu không
+				// - Chỉ khi isValid === true mới persist vào knowledge store
+				this.logInfo('VALIDATOR', 'Agent 4: Đang đánh giá kết quả...');
+				const validation = await this.resultValidatorAgent.validateResult(
+					query,
+					sqlResult.sql,
+					sqlResult.results,
+					orchestratorResponse.requestType,
+					this.AI_CONFIG,
+				);
+
+				// Chỉ persist nếu valid
+				if (validation.isValid) {
+					try {
+						this.logDebug('PERSIST', 'Đang lưu Q&A vào knowledge store...');
+						await this.knowledge.saveQAInteraction({
+							question: query,
+							sql: sqlResult.sql,
+							sessionId: session.sessionId,
+							userId: session.userId,
+							context: { count: sqlResult.count },
+						});
+					} catch (persistErr) {
+						this.logWarn('PERSIST', 'Không thể lưu Q&A vào knowledge store', persistErr);
+					}
+				} else {
+					this.logWarn(
+						'VALIDATOR',
+						`Kết quả không hợp lệ, không lưu vào knowledge store: ${validation.reason}`,
+					);
 				}
 
-				// Lưu câu trả lời vào session
-				this.addMessageToSession(session, 'assistant', messageText);
+				// Build data payload từ parsed structured data
+				const dataPayload: DataPayload | undefined = this.buildDataPayloadFromParsed(
+					parsedResponse,
+					desiredMode,
+				);
+
+				// Lưu câu trả lời vào session (chỉ phần message, không có structured data)
+				this.addMessageToSession(session, 'assistant', parsedResponse.message);
 
 				// Trả về response với payload structured cho UI
 				return {
 					kind: 'DATA',
 					sessionId: session.sessionId,
 					timestamp: new Date().toISOString(),
-					message: messageText,
+					message: parsedResponse.message,
 					payload: dataPayload,
 				};
 			} else {
 				// ========================================
-				// Trường hợp: Chưa đủ thông tin
+				// Trường hợp: Chưa đủ thông tin hoặc không phải QUERY
 				// ========================================
 				// Agent 1 xác định cần làm rõ thêm trước khi có thể tạo SQL
-				// Trả về response yêu cầu clarification
-				this.logInfo('CONVO_AGENT', 'Cần thêm thông tin - trả về response yêu cầu làm rõ');
-				const messageText: string = `Mình cần thêm chút thông tin để trả lời chính xác: ${conversationalResponse.message}`;
-				this.addMessageToSession(session, 'assistant', messageText);
+				// Trả về response yêu cầu clarification hoặc general chat
+				if (orchestratorResponse.requestType === RequestType.CLARIFICATION) {
+					this.logInfo('ORCHESTRATOR', 'Cần thêm thông tin - trả về response yêu cầu làm rõ');
+					const messageText: string = `Mình cần thêm chút thông tin để trả lời chính xác: ${orchestratorResponse.message}`;
+					this.addMessageToSession(session, 'assistant', messageText);
 
-				return {
-					kind: 'CONTROL',
-					sessionId: session.sessionId,
-					timestamp: new Date().toISOString(),
-					message: messageText,
-					payload: { mode: 'CLARIFY', questions: [] },
-				};
+					return {
+						kind: 'CONTROL',
+						sessionId: session.sessionId,
+						timestamp: new Date().toISOString(),
+						message: messageText,
+						payload: { mode: 'CLARIFY', questions: [] },
+					};
+				} else {
+					// General chat or greeting
+					this.logInfo('ORCHESTRATOR', `Request type: ${orchestratorResponse.requestType}`);
+					this.addMessageToSession(session, 'assistant', orchestratorResponse.message);
+
+					return {
+						kind: 'CONTENT',
+						sessionId: session.sessionId,
+						timestamp: new Date().toISOString(),
+						message: orchestratorResponse.message,
+						payload: { mode: 'CONTENT' },
+					};
+				}
 			}
 		} catch (error) {
 			// ========================================
@@ -375,11 +419,48 @@ export class AiService {
 		}
 	}
 
+	/**
+	 * Build data payload from parsed response (with LIST/TABLE/CHART)
+	 * @param parsedResponse - Parsed response from parseResponseText
+	 * @param desiredMode - Desired output mode
+	 * @returns Data payload for UI
+	 */
+	private buildDataPayloadFromParsed(
+		parsedResponse: { list: any[] | null; table: any | null; chart: any | null },
+		_desiredMode?: 'LIST' | 'TABLE' | 'CHART',
+	): DataPayload | undefined {
+		if (parsedResponse.list !== null && parsedResponse.list.length > 0) {
+			return {
+				mode: 'LIST',
+				list: {
+					items: parsedResponse.list,
+					total: parsedResponse.list.length,
+				},
+			};
+		}
+
+		if (parsedResponse.chart !== null) {
+			return {
+				mode: 'CHART',
+				chart: parsedResponse.chart,
+			};
+		}
+
+		if (parsedResponse.table !== null) {
+			return {
+				mode: 'TABLE',
+				table: parsedResponse.table,
+			};
+		}
+
+		return undefined;
+	}
+
 	// removed buildMarkdownForData in favor of ResponseGenerator prompt-based control
 
 	private buildDataPayload(
 		results: unknown,
-		query: string,
+		_query: string,
 		desiredMode?: 'LIST' | 'TABLE' | 'CHART',
 	): DataPayload | undefined {
 		if (!Array.isArray(results) || results.length === 0 || typeof results[0] !== 'object') {

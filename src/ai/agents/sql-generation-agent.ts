@@ -29,6 +29,7 @@ export class SqlGenerationAgent {
 	 * @param session - Chat session for context
 	 * @param prisma - Prisma service
 	 * @param aiConfig - AI configuration
+	 * @param businessContext - Business context from orchestrator agent
 	 * @returns SQL execution result
 	 */
 	async process(
@@ -36,6 +37,7 @@ export class SqlGenerationAgent {
 		session: ChatSession,
 		prisma: PrismaService,
 		aiConfig: AiConfig,
+		businessContext?: string,
 	): Promise<SqlGenerationResult> {
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
@@ -127,6 +129,7 @@ export class SqlGenerationAgent {
 					recentMessages,
 					userId,
 					userRole,
+					businessContext,
 					lastError,
 					attempt: attempts,
 					limit: aiConfig.limit,

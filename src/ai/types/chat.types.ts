@@ -28,7 +28,7 @@ export interface ChatEnvelope {
 	kind: 'CONTENT' | 'DATA' | 'CONTROL';
 	sessionId: string;
 	timestamp: string;
-	message: string; // Markdown-first text for rendering
+	message: string; // Text before ---END delimiter
 	meta?: Record<string, string | number | boolean>;
 	payload?: ContentPayload | DataPayload | ControlPayload;
 }
@@ -121,7 +121,44 @@ export interface UserAccessResult {
 }
 
 /**
- * Conversational agent response
+ * Request type classification
+ */
+export enum RequestType {
+	QUERY = 'QUERY',
+	GREETING = 'GREETING',
+	CLARIFICATION = 'CLARIFICATION',
+	GENERAL_CHAT = 'GENERAL_CHAT',
+}
+
+/**
+ * User role classification
+ */
+export enum UserRole {
+	GUEST = 'GUEST',
+	TENANT = 'TENANT',
+	LANDLORD = 'LANDLORD',
+}
+
+/**
+ * Orchestrator agent response (formerly ConversationalAgentResponse)
+ */
+export interface OrchestratorAgentResponse {
+	message: string;
+	requestType: RequestType;
+	userRole: UserRole;
+	userId?: string;
+	businessContext?: string; // RAG business context from KnowledgeService
+	readyForSql: boolean;
+	needsClarification?: boolean;
+	needsIntroduction?: boolean;
+	intentModeHint?: 'LIST' | 'TABLE' | 'CHART';
+	entityHint?: 'room' | 'post' | 'room_seeking_post';
+	filtersHint?: string; // natural language filters parsed (e.g., district:"gò vấp")
+}
+
+/**
+ * Conversational agent response (deprecated - use OrchestratorAgentResponse)
+ * @deprecated Use OrchestratorAgentResponse instead
  */
 export interface ConversationalAgentResponse {
 	message: string;
@@ -143,4 +180,12 @@ export interface SqlGenerationResult {
 	attempts?: number;
 	userId?: string;
 	userRole?: string;
+}
+
+/**
+ * Result validator response
+ */
+export interface ResultValidationResponse {
+	isValid: boolean;
+	reason?: string;
 }

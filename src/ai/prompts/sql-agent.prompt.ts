@@ -9,6 +9,7 @@ export interface SqlPromptParams {
 	recentMessages?: string;
 	userId?: string;
 	userRole?: string;
+	businessContext?: string;
 	lastError?: string;
 	attempt?: number;
 	limit: number;
@@ -26,6 +27,7 @@ export function buildSqlPrompt(params: SqlPromptParams): string {
 		recentMessages,
 		userId,
 		userRole,
+		businessContext,
 		lastError = '',
 		attempt = 1,
 		limit,
@@ -75,14 +77,19 @@ SECURITY REQUIREMENTS:
 	// Build schema section (RAG or fallback)
 	const schemaSection = ragContext ? `${ragContext}\n` : `COMPLETE DATABASE SCHEMA:\n${schema}\n\n`;
 
+	// Build business context section if provided
+	const businessContextSection = businessContext
+		? `NGỮ CẢNH NGHIỆP VỤ (từ Orchestrator Agent):\n${businessContext}\n\n`
+		: '';
+
 	// Build role based on security
 	const role = userId
-		? `Bạn là chuyên gia SQL PostgreSQL với trách nhiệm bảo mật cao. Dựa vào ${ragContext ? 'ngữ cảnh schema (từ vector search)' : 'schema database'}, ngữ cảnh hội thoại${userId ? ', ngữ cảnh người dùng' : ''} và câu hỏi, hãy tạo câu lệnh SQL chính xác và AN TOÀN.`
-		: `Bạn là chuyên gia SQL PostgreSQL. Dựa vào ${ragContext ? 'ngữ cảnh schema (từ vector search)' : 'schema database'}${recentMessages ? ', ngữ cảnh hội thoại' : ''} và câu hỏi của người dùng, hãy tạo câu lệnh SQL chính xác.`;
+		? `Bạn là chuyên gia SQL PostgreSQL với trách nhiệm bảo mật cao. Dựa vào ${ragContext ? 'ngữ cảnh schema (từ vector search)' : 'schema database'}, ngữ cảnh nghiệp vụ${businessContext ? ' (từ Orchestrator Agent)' : ''}, ngữ cảnh hội thoại${userId ? ', ngữ cảnh người dùng' : ''} và câu hỏi, hãy tạo câu lệnh SQL chính xác và AN TOÀN.`
+		: `Bạn là chuyên gia SQL PostgreSQL. Dựa vào ${ragContext ? 'ngữ cảnh schema (từ vector search)' : 'schema database'}, ngữ cảnh nghiệp vụ${businessContext ? ' (từ Orchestrator Agent)' : ''}${recentMessages ? ', ngữ cảnh hội thoại' : ''} và câu hỏi của người dùng, hãy tạo câu lệnh SQL chính xác.`;
 
 	return `${role}
 
-${schemaSection}${securityContext}${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
+${schemaSection}${businessContextSection}${securityContext}${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
 
 ${errorContext}Câu hỏi hiện tại: "${query}"
 
