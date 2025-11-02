@@ -1405,6 +1405,44 @@ export class BillsService {
 				unit: cost.unit,
 			}));
 
+		const convertDecimalToNumber = (value: any): number => {
+			if (value === null || value === undefined) {
+				return 0;
+			}
+			if (typeof value === 'number') {
+				return value;
+			}
+			if (typeof value === 'object') {
+				if ('toNumber' in value && typeof value.toNumber === 'function') {
+					return value.toNumber();
+				}
+				if ('d' in value && Array.isArray(value.d) && 'e' in value && 's' in value) {
+					const sign = value.s || 1;
+					const digits = value.d || [];
+					if (digits.length === 0) {
+						return 0;
+					}
+					if (digits.length === 1 && typeof digits[0] === 'number') {
+						return digits[0] * sign;
+					}
+					const numStr = digits.join('');
+					const num = parseFloat(numStr) || 0;
+					return num * sign;
+				}
+				if ('toString' in value && typeof value.toString === 'function') {
+					try {
+						const str = value.toString();
+						const num = Number(str);
+						return Number.isNaN(num) ? 0 : num;
+					} catch {
+						return 0;
+					}
+				}
+			}
+			const num = Number(value);
+			return Number.isNaN(num) ? 0 : num;
+		};
+
 		return {
 			id: bill.id,
 			rentalId: bill.rentalId,
@@ -1414,12 +1452,12 @@ export class BillsService {
 			billingYear: bill.billingYear,
 			periodStart: bill.periodStart,
 			periodEnd: bill.periodEnd,
-			subtotal: bill.subtotal,
-			discountAmount: bill.discountAmount,
-			taxAmount: bill.taxAmount,
-			totalAmount: bill.totalAmount,
-			paidAmount: bill.paidAmount,
-			remainingAmount: bill.remainingAmount,
+			subtotal: convertDecimalToNumber(bill.subtotal),
+			discountAmount: convertDecimalToNumber(bill.discountAmount),
+			taxAmount: convertDecimalToNumber(bill.taxAmount),
+			totalAmount: convertDecimalToNumber(bill.totalAmount),
+			paidAmount: convertDecimalToNumber(bill.paidAmount),
+			remainingAmount: convertDecimalToNumber(bill.remainingAmount),
 			status: bill.status,
 			dueDate: bill.dueDate,
 			paidDate: bill.paidDate,
@@ -1431,9 +1469,9 @@ export class BillsService {
 				itemType: item.itemType,
 				itemName: item.itemName,
 				description: item.description,
-				quantity: item.quantity,
-				unitPrice: item.unitPrice,
-				amount: item.amount,
+				quantity: convertDecimalToNumber(item.quantity),
+				unitPrice: convertDecimalToNumber(item.unitPrice),
+				amount: convertDecimalToNumber(item.amount),
 				currency: item.currency,
 				notes: item.notes,
 				createdAt: item.createdAt,
@@ -1441,7 +1479,7 @@ export class BillsService {
 			rental: bill.rental
 				? {
 						id: bill.rental.id,
-						monthlyRent: bill.rental.monthlyRent,
+						monthlyRent: convertDecimalToNumber(bill.rental.monthlyRent),
 						roomInstance: {
 							roomNumber: bill.rental.roomInstance.roomNumber,
 							room: {

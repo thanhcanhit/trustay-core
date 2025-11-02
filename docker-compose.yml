@@ -149,6 +149,9 @@ services:
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
       - RUN_SEED=false  # Set to true if you want to run seeding
       - FORCE_MIGRATION_BASELINE=false  # Set to true to force baseline resolution
+    volumes:
+      - uploads_data:/usr/src/app/uploads
+      - logs_data:/usr/src/app/logs
     depends_on:
       trustay-postgres:
         condition: service_healthy
@@ -175,6 +178,10 @@ volumes:
   redis_data:
     driver: local
   elasticsearch_data:
+    driver: local
+  uploads_data:
+    driver: local
+  logs_data:
     driver: local
 
 networks:

@@ -118,7 +118,7 @@ export class BillsController {
 		return this.billsService.getBillsForLandlordByMonth(userId, query);
 	}
 
-	@Post('update-with-meter-data')
+	@Patch('update-with-meter-data')
 	@Roles(UserRole.landlord)
 	@ApiOperation({ summary: 'Cập nhật bill với meter data và occupancy' })
 	@ApiResponse({
