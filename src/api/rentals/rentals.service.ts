@@ -226,12 +226,89 @@ export class RentalsService {
 			};
 		}
 
-		const [rentals, total] = await Promise.all([
-			this.prisma.rental.findMany({
-				where,
-				skip,
-				take: limit,
-				orderBy: { createdAt: 'desc' },
+		// Get all rentals first to group by room instance
+		const allRentals = await this.prisma.rental.findMany({
+			where,
+			orderBy: { createdAt: 'desc' },
+			include: {
+				tenant: {
+					select: {
+						id: true,
+						firstName: true,
+						lastName: true,
+						email: true,
+						phone: true,
+					},
+				},
+				roomInstance: {
+					include: {
+						room: {
+							include: {
+								building: {
+									select: {
+										id: true,
+										name: true,
+									},
+								},
+							},
+						},
+					},
+				},
+				roomBooking: {
+					select: {
+						id: true,
+						moveInDate: true,
+						moveOutDate: true,
+					},
+				},
+				invitation: {
+					select: {
+						id: true,
+						moveInDate: true,
+						message: true,
+					},
+				},
+			},
+		});
+
+		// Group rentals by roomInstanceId, keep only the first rental per room instance
+		const rentalsByRoomInstance = new Map<string, (typeof allRentals)[0]>();
+		for (const rental of allRentals) {
+			if (!rentalsByRoomInstance.has(rental.roomInstanceId)) {
+				rentalsByRoomInstance.set(rental.roomInstanceId, rental);
+			}
+		}
+
+		// Get paginated unique room instances
+		const uniqueRentals = Array.from(rentalsByRoomInstance.values());
+		const total = uniqueRentals.length;
+		const paginatedRentals = uniqueRentals.slice(skip, skip + limit);
+
+		// Get all room instance IDs for members lookup
+		const roomInstanceIds = paginatedRentals.map((rental) => rental.roomInstanceId);
+
+		// Fetch all active rentals for these room instances to get members
+		let allRentalsForRooms: Array<{
+			id: string;
+			tenantId: string;
+			roomInstanceId: string;
+			tenant: {
+				id: string;
+				firstName: string | null;
+				lastName: string | null;
+				email: string;
+				phone: string | null;
+				avatarUrl: string | null;
+			};
+		}> = [];
+
+		if (roomInstanceIds.length > 0) {
+			allRentalsForRooms = await this.prisma.rental.findMany({
+				where: {
+					roomInstanceId: { in: roomInstanceIds },
+					ownerId: ownerId,
+					status: { in: [RentalStatus.active, RentalStatus.pending_renewal] },
+				},
 				include: {
 					tenant: {
 						select: {
@@ -240,43 +317,60 @@ export class RentalsService {
 							lastName: true,
 							email: true,
 							phone: true,
-						},
-					},
-					roomInstance: {
-						include: {
-							room: {
-								include: {
-									building: {
-										select: {
-											id: true,
-											name: true,
-										},
-									},
-								},
-							},
-						},
-					},
-					roomBooking: {
-						select: {
-							id: true,
-							moveInDate: true,
-							moveOutDate: true,
-						},
-					},
-					invitation: {
-						select: {
-							id: true,
-							moveInDate: true,
-							message: true,
+							avatarUrl: true,
 						},
 					},
 				},
-			}),
-			this.prisma.rental.count({ where }),
-		]);
+			});
+		}
+
+		// Group rentals by roomInstanceId for members
+		const rentalsByRoomInstanceForMembers = allRentalsForRooms.reduce(
+			(acc, rental) => {
+				if (!acc[rental.roomInstanceId]) {
+					acc[rental.roomInstanceId] = [];
+				}
+				acc[rental.roomInstanceId].push(rental);
+				return acc;
+			},
+			{} as Record<
+				string,
+				Array<{
+					id: string;
+					tenantId: string;
+					roomInstanceId: string;
+					tenant: {
+						id: string;
+						firstName: string | null;
+						lastName: string | null;
+						email: string;
+						phone: string | null;
+						avatarUrl: string | null;
+					};
+				}>
+			>,
+		);
+
+		// Transform rentals with members
+		const transformedRentals = paginatedRentals.map((rental) => {
+			const transformed = this.transformToResponseDto(rental);
+			const roomMembers = rentalsByRoomInstanceForMembers[rental.roomInstanceId] || [];
+			transformed.members = roomMembers
+				.filter((memberRental) => memberRental.id !== rental.id)
+				.map((memberRental) => ({
+					tenantId: memberRental.tenantId,
+					firstName: memberRental.tenant.firstName || undefined,
+					lastName: memberRental.tenant.lastName || undefined,
+					email: memberRental.tenant.email || undefined,
+					phone: memberRental.tenant.phone || undefined,
+					avatarUrl: memberRental.tenant.avatarUrl || undefined,
+					rentalId: memberRental.id,
+				}));
+			return transformed;
+		});
 
 		return {
-			data: rentals.map((rental) => this.transformToResponseDto(rental)),
+			data: transformedRentals,
 			pagination: {
 				page,
 				limit,
@@ -295,77 +389,84 @@ export class RentalsService {
 			...(status && { status }),
 		};
 
-		const [rentals, total] = await Promise.all([
-			this.prisma.rental.findMany({
-				where,
-				skip,
-				take: limit,
-				orderBy: { createdAt: 'desc' },
-				include: {
-					owner: {
-						select: {
-							id: true,
-							firstName: true,
-							lastName: true,
-							email: true,
-							phone: true,
-						},
+		// Get all rentals first to group by room instance
+		const allRentals = await this.prisma.rental.findMany({
+			where,
+			orderBy: { createdAt: 'desc' },
+			include: {
+				owner: {
+					select: {
+						id: true,
+						firstName: true,
+						lastName: true,
+						email: true,
+						phone: true,
 					},
-					roomInstance: {
-						include: {
-							room: {
-								include: {
-									building: {
-										select: {
-											id: true,
-											name: true,
-										},
+				},
+				roomInstance: {
+					include: {
+						room: {
+							include: {
+								building: {
+									select: {
+										id: true,
+										name: true,
 									},
 								},
 							},
 						},
 					},
-					roomBooking: {
-						select: {
-							id: true,
-							moveInDate: true,
-							moveOutDate: true,
-						},
-					},
-					invitation: {
-						select: {
-							id: true,
-							moveInDate: true,
-							message: true,
-						},
+				},
+				roomBooking: {
+					select: {
+						id: true,
+						moveInDate: true,
+						moveOutDate: true,
 					},
 				},
-			}),
-			this.prisma.rental.count({ where }),
-		]);
+				invitation: {
+					select: {
+						id: true,
+						moveInDate: true,
+						message: true,
+					},
+				},
+			},
+		});
 
-		// Get unique room instance IDs
-		const roomInstanceIds = [...new Set(rentals.map((rental) => rental.roomInstanceId))];
+		// Group rentals by roomInstanceId, keep only the first rental per room instance
+		const rentalsByRoomInstance = new Map<string, (typeof allRentals)[0]>();
+		for (const rental of allRentals) {
+			if (!rentalsByRoomInstance.has(rental.roomInstanceId)) {
+				rentalsByRoomInstance.set(rental.roomInstanceId, rental);
+			}
+		}
+
+		// Get paginated unique room instances
+		const uniqueRentals = Array.from(rentalsByRoomInstance.values());
+		const total = uniqueRentals.length;
+		const paginatedRentals = uniqueRentals.slice(skip, skip + limit);
+
+		// Get all room instance IDs for members lookup
+		const roomInstanceIds = paginatedRentals.map((rental) => rental.roomInstanceId);
 
 		// Fetch all active rentals for these room instances to get members
-		let rentalsByRoomInstance: Record<
-			string,
-			Array<{
+		let allRentalsForRooms: Array<{
+			id: string;
+			tenantId: string;
+			roomInstanceId: string;
+			tenant: {
 				id: string;
-				tenantId: string;
-				roomInstanceId: string;
-				tenant: {
-					id: string;
-					firstName: string | null;
-					lastName: string | null;
-					email: string;
-					phone: string | null;
-					avatarUrl: string | null;
-				};
-			}>
-		> = {};
+				firstName: string | null;
+				lastName: string | null;
+				email: string;
+				phone: string | null;
+				avatarUrl: string | null;
+			};
+		}> = [];
+
 		if (roomInstanceIds.length > 0) {
-			const allRentalsForRooms = await this.prisma.rental.findMany({
+			allRentalsForRooms = await this.prisma.rental.findMany({
 				where: {
 					roomInstanceId: { in: roomInstanceIds },
 					status: { in: [RentalStatus.active, RentalStatus.pending_renewal] },
@@ -383,33 +484,50 @@ export class RentalsService {
 					},
 				},
 			});
-
-			// Group rentals by roomInstanceId
-			rentalsByRoomInstance = allRentalsForRooms.reduce(
-				(acc, rental) => {
-					if (!acc[rental.roomInstanceId]) {
-						acc[rental.roomInstanceId] = [];
-					}
-					acc[rental.roomInstanceId].push(rental);
-					return acc;
-				},
-				{} as typeof rentalsByRoomInstance,
-			);
 		}
 
-		// Transform rentals with members
-		const transformedRentals = rentals.map((rental) => {
+		// Group rentals by roomInstanceId for members
+		const rentalsByRoomInstanceForMembers = allRentalsForRooms.reduce(
+			(acc, rental) => {
+				if (!acc[rental.roomInstanceId]) {
+					acc[rental.roomInstanceId] = [];
+				}
+				acc[rental.roomInstanceId].push(rental);
+				return acc;
+			},
+			{} as Record<
+				string,
+				Array<{
+					id: string;
+					tenantId: string;
+					roomInstanceId: string;
+					tenant: {
+						id: string;
+						firstName: string | null;
+						lastName: string | null;
+						email: string;
+						phone: string | null;
+						avatarUrl: string | null;
+					};
+				}>
+			>,
+		);
+
+		// Transform rentals with members (exclude current user from members)
+		const transformedRentals = paginatedRentals.map((rental) => {
 			const transformed = this.transformToResponseDto(rental);
-			const roomMembers = rentalsByRoomInstance[rental.roomInstanceId] || [];
-			transformed.members = roomMembers.map((memberRental) => ({
-				tenantId: memberRental.tenantId,
-				firstName: memberRental.tenant.firstName || undefined,
-				lastName: memberRental.tenant.lastName || undefined,
-				email: memberRental.tenant.email || undefined,
-				phone: memberRental.tenant.phone || undefined,
-				avatarUrl: memberRental.tenant.avatarUrl || undefined,
-				rentalId: memberRental.id,
-			}));
+			const roomMembers = rentalsByRoomInstanceForMembers[rental.roomInstanceId] || [];
+			transformed.members = roomMembers
+				.filter((memberRental) => memberRental.tenantId !== tenantId)
+				.map((memberRental) => ({
+					tenantId: memberRental.tenantId,
+					firstName: memberRental.tenant.firstName || undefined,
+					lastName: memberRental.tenant.lastName || undefined,
+					email: memberRental.tenant.email || undefined,
+					phone: memberRental.tenant.phone || undefined,
+					avatarUrl: memberRental.tenant.avatarUrl || undefined,
+					rentalId: memberRental.id,
+				}));
 			return transformed;
 		});
 
@@ -490,7 +608,41 @@ export class RentalsService {
 			throw new ForbiddenException('Access denied');
 		}
 
-		return this.transformToResponseDto(rental);
+		// Fetch all active rentals for the same room instance to get members
+		const allRentalsForRoom = await this.prisma.rental.findMany({
+			where: {
+				roomInstanceId: rental.roomInstanceId,
+				status: { in: [RentalStatus.active, RentalStatus.pending_renewal] },
+			},
+			include: {
+				tenant: {
+					select: {
+						id: true,
+						firstName: true,
+						lastName: true,
+						email: true,
+						phone: true,
+						avatarUrl: true,
+					},
+				},
+			},
+		});
+
+		// Transform rental with members (exclude current rental from members)
+		const transformed = this.transformToResponseDto(rental);
+		transformed.members = allRentalsForRoom
+			.filter((memberRental) => memberRental.id !== rental.id)
+			.map((memberRental) => ({
+				tenantId: memberRental.tenantId,
+				firstName: memberRental.tenant.firstName || undefined,
+				lastName: memberRental.tenant.lastName || undefined,
+				email: memberRental.tenant.email || undefined,
+				phone: memberRental.tenant.phone || undefined,
+				avatarUrl: memberRental.tenant.avatarUrl || undefined,
+				rentalId: memberRental.id,
+			}));
+
+		return transformed;
 	}
 
 	async updateRental(rentalId: string, ownerId: string, dto: UpdateRentalDto) {

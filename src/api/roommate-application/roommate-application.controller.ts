@@ -167,7 +167,7 @@ export class RoommateApplicationController {
 	@ApiOperation({
 		summary: 'Thêm người trực tiếp vào phòng',
 		description:
-			'Tenant hoặc landlord có thể thêm trực tiếp một người vào phòng mà không cần qua quy trình ứng tuyển. Hệ thống sẽ tự động tìm hoặc tạo post ẩn từ rental của tenant. Có thể thêm bằng userId, email hoặc số điện thoại. Chỉ áp dụng cho platform rooms. Rental sẽ được tạo tự động.',
+			'Tenant hoặc landlord có thể thêm một người vào phòng. Nếu là tenant: tạo application và chờ landlord phê duyệt. Nếu là landlord: tạo rental trực tiếp. Hệ thống sẽ tự động tìm hoặc tạo post ẩn từ rental của tenant. Có thể thêm bằng userId, email hoặc số điện thoại. Chỉ áp dụng cho platform rooms.',
 	})
 	@ApiResponse({
 		status: 201,
@@ -376,7 +376,7 @@ export class RoommateApplicationController {
 	@ApiOperation({
 		summary: 'Chấp nhận invite từ token',
 		description:
-			'Chấp nhận invite từ token và tạo roommate application tự động. Hệ thống sẽ tự động tìm hoặc tạo post ẩn (không public) từ rental trong token. Chỉ áp dụng cho platform rooms.',
+			'Chấp nhận invite từ token và tạo roommate application tự động. Thông tin user (tên, số điện thoại) sẽ được lấy từ profile. Chỉ cần cung cấp token và tùy chọn moveInDate, intendedStayMonths. Hệ thống sẽ tự động tìm hoặc tạo post ẩn (không public) từ rental trong token. Chỉ áp dụng cho platform rooms.',
 	})
 	@ApiResponse({
 		status: 201,
