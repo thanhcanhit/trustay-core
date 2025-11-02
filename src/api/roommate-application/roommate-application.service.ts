@@ -866,8 +866,8 @@ export class RoommateApplicationService {
 			);
 		}
 
-		// Validate move-in date
-		const moveInDate = new Date(addDto.moveInDate);
+		// Validate move-in date (default to today if not provided)
+		const moveInDate = addDto.moveInDate ? new Date(addDto.moveInDate) : new Date();
 		if (moveInDate < new Date()) {
 			throw new BadRequestException('Ngày chuyển vào không thể trong quá khứ');
 		}
@@ -944,21 +944,28 @@ export class RoommateApplicationService {
 			// Send notifications
 			const roomName = roomInstance.room.name;
 
-			// Notify user being added
+			// Notify user being added - they were directly added (equivalent to approved without application)
+			// This makes it clear they were accepted/approved to join the room
+			await this.notificationsService.notifyRoommateApplicationApproved(userIdToAdd, {
+				roomName,
+				applicationId: newRental.id, // Use rental ID as identifier
+			});
+
+			// Also notify rental created so they know rental details
 			await this.notificationsService.notifyRentalCreated(userIdToAdd, {
 				roomName,
 				rentalId: newRental.id,
 				startDate: moveInDate.toISOString(),
 			});
 
-			// Notify tenant
+			// Notify tenant - they added someone to their room
 			await this.notificationsService.notifyRentalCreated(post.tenantId, {
 				roomName,
 				rentalId: newRental.id,
 				startDate: moveInDate.toISOString(),
 			});
 
-			// Notify landlord
+			// Notify landlord - someone was added to their property
 			await this.notificationsService.notifyRentalCreated(roomInstance.room.building.ownerId, {
 				roomName,
 				rentalId: newRental.id,
@@ -1120,7 +1127,31 @@ export class RoommateApplicationService {
 			postId = newPost.id;
 		}
 
-		// Create application
+		// Get post to check if it's platform room
+		const post = await this.prisma.roommateSeekingPost.findUnique({
+			where: { id: postId },
+			include: {
+				roomInstance: {
+					include: {
+						room: {
+							include: {
+								building: true,
+							},
+						},
+					},
+				},
+			},
+		});
+
+		const isPlatformRoom = !!post?.roomInstanceId;
+
+		// Since tenant created the invite link, auto-approve from tenant
+		// But still need landlord approval for platform rooms
+		const initialStatus = isPlatformRoom
+			? RequestStatus.accepted // Platform room: tenant auto-approved, wait for landlord
+			: RequestStatus.awaiting_confirmation; // External room: tenant auto-approved, applicant can confirm
+
+		// Create application with tenant auto-approved (since they created the invite)
 		const application = await this.prisma.roommateApplication.create({
 			data: {
 				roommateSeekingPostId: postId,
@@ -1132,6 +1163,9 @@ export class RoommateApplicationService {
 				intendedStayMonths: acceptDto.intendedStayMonths,
 				applicationMessage: acceptDto.applicationMessage,
 				isUrgent: acceptDto.isUrgent || false,
+				status: initialStatus,
+				tenantResponse: 'Tự động chấp nhận từ invite link',
+				tenantRespondedAt: new Date(),
 			},
 			include: this.getIncludeOptions(),
 		});
@@ -1142,13 +1176,31 @@ export class RoommateApplicationService {
 			data: { contactCount: { increment: 1 } },
 		});
 
-		// Notify tenant about new application
 		const roomName = rental.roomInstance?.room?.name || 'phòng';
-		await this.notificationsService.notifyRoommateApplicationReceived(tenantId, {
-			applicantName: acceptDto.fullName,
-			roomName,
-			applicationId: application.id,
-		});
+
+		// Notifications based on room type
+		if (isPlatformRoom) {
+			// Platform room: notify landlord for approval (tenant already approved by creating invite)
+			const landlordId = post.roomInstance?.room?.building?.ownerId;
+			if (landlordId) {
+				await this.notificationsService.notifyRoommateApplicationReceived(landlordId, {
+					applicantName: acceptDto.fullName,
+					roomName,
+					applicationId: application.id,
+				});
+			}
+			// Notify applicant that tenant approved
+			await this.notificationsService.notifyRoommateApplicationApproved(applicantId, {
+				roomName,
+				applicationId: application.id,
+			});
+		} else {
+			// External room: tenant auto-approved, applicant can confirm
+			await this.notificationsService.notifyRoommateApplicationApproved(applicantId, {
+				roomName,
+				applicationId: application.id,
+			});
+		}
 
 		return this.mapToResponseDto(application);
 	}

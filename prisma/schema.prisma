@@ -449,6 +449,7 @@ model RoomInstance {
   bills         Bill[]
   contracts            Contract[]
   roommateSeekingPosts RoommateSeekingPost[]
+  meterReadings        RoomInstanceMeterReading[]
 
   @@unique([roomId, roomNumber]) // Unique room number within same room type
   @@index([roomId])
@@ -616,11 +617,38 @@ model RoomCost {
   // Relations
   room           Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
   costTypeTemplate CostTypeTemplate @relation(fields: [costTypeTemplateId], references: [id], onDelete: Cascade)
+  instanceMeterReadings RoomInstanceMeterReading[]
 
   @@unique([roomId, costTypeTemplateId])
   @@index([roomId])
   @@index([isActive])
   @@map("room_costs")
+}
+
+// ========================================
+// ROOM INSTANCE METER READINGS
+// ========================================
+
+model RoomInstanceMeterReading {
+  id               String   @id @default(uuid())
+  roomInstanceId   String   @map("room_instance_id")
+  roomCostId       String   @map("room_cost_id")
+  
+  // Meter readings for this specific room instance
+  meterReading     Decimal? @map("meter_reading") @db.Decimal(15, 2) // Số đồng hồ hiện tại
+  lastMeterReading Decimal? @map("last_meter_reading") @db.Decimal(15, 2) // Số đồng hồ tháng trước
+  
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  roomInstance     RoomInstance @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
+  roomCost         RoomCost     @relation(fields: [roomCostId], references: [id], onDelete: Cascade)
+
+  @@unique([roomInstanceId, roomCostId])
+  @@index([roomInstanceId])
+  @@index([roomCostId])
+  @@map("room_instance_meter_readings")
 }
 
 // ========================================

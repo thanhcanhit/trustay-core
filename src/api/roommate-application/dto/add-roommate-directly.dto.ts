@@ -35,9 +35,12 @@ export class AddRoommateDirectlyDto {
 	@ValidateIf((o) => !o.userId && !o.email)
 	phone?: string;
 
-	@ApiProperty({ description: 'Ngày dự định chuyển vào' })
+	@ApiPropertyOptional({
+		description: 'Ngày dự định chuyển vào (mặc định là ngày hiện tại nếu không cung cấp)',
+	})
+	@IsOptional()
 	@IsDateString()
-	moveInDate: string;
+	moveInDate?: string;
 
 	@ApiPropertyOptional({ description: 'Số tháng dự định ở' })
 	@IsOptional()
