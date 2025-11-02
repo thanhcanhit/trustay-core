@@ -6,7 +6,8 @@ import { UploadModule } from './upload/upload.module';
 
 @Module({
 	imports: [UploadModule],
-	controllers: [StaticFilesController, SizedImagesController, WellKnownController],
+	// SizedImagesController must be registered before StaticFilesController for route priority
+	controllers: [SizedImagesController, StaticFilesController, WellKnownController],
 	exports: [UploadModule],
 })
 export class CommonModule {}

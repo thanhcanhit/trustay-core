@@ -708,8 +708,6 @@ export class UsersService {
 			},
 		});
 
-		await this.notificationsService.notifyProfileUpdated(userId);
-
 		return {
 			message: 'Avatar uploaded successfully',
 			user: updatedUser,

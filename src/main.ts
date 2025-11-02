@@ -31,16 +31,22 @@ async function bootstrap() {
 	});
 
 	// Set global prefix for API routes (excluding root, health, and images endpoints)
+	// Exclude patterns:
+	// - /images/(.*) - handles /images/{filename} and /images/{size}/{filename}
+	// - /{size}/images/(.*) - handles /128x128/images/{filename}, etc.
+	const validSizes = ['128x128', '256x256', '512x512', '1024x1024', '1920x1080'];
+	const imageExclusions = [
+		{ path: 'images/(.*)', method: RequestMethod.GET }, // Handles /images/{filename} and /images/{size}/{filename}
+	];
+	// Add exclusions for size-prefixed patterns: /{size}/images/{filename}
+	for (const size of validSizes) {
+		imageExclusions.push({ path: `${size}/images/(.*)`, method: RequestMethod.GET });
+	}
 	app.setGlobalPrefix('api', {
 		exclude: [
 			{ path: '', method: RequestMethod.GET },
 			{ path: 'health', method: RequestMethod.GET },
-			{ path: 'images/(.*)', method: RequestMethod.GET },
-			{ path: '128x128/images/(.*)', method: RequestMethod.GET },
-			{ path: '256x256/images/(.*)', method: RequestMethod.GET },
-			{ path: '512x512/images/(.*)', method: RequestMethod.GET },
-			{ path: '1024x1024/images/(.*)', method: RequestMethod.GET },
-			{ path: '1920x1080/images/(.*)', method: RequestMethod.GET },
+			...imageExclusions,
 		],
 	});
 
