@@ -1,6 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsNumber, IsString, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 
 export class MeterDataInputDto {
 	@ApiProperty({ description: 'ID của room cost (metered type)' })
@@ -23,10 +23,15 @@ export class UpdateBillWithMeterDataDto {
 	@IsString()
 	billId: string;
 
-	@ApiProperty({ description: 'Số người ở trong kỳ (cho per_person costs)', example: 2 })
+	@ApiPropertyOptional({
+		description:
+			'Số người ở trong kỳ (cho per_person costs). Nếu không có sẽ tự động query từ rental',
+		example: 2,
+	})
+	@IsOptional()
 	@IsNumber()
 	@Min(1)
-	occupancyCount: number;
+	occupancyCount?: number;
 
 	@ApiProperty({ description: 'Dữ liệu đồng hồ cho metered costs', type: [MeterDataInputDto] })
 	@IsArray()

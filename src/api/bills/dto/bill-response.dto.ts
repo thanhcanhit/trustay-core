@@ -170,29 +170,21 @@ export class BillResponseDto {
 		};
 	};
 
-	@ApiPropertyOptional({ description: 'Danh sách metered costs cần nhập data', type: [Object] })
-	@Expose()
-	@Transform(({ obj }) => {
-		const room = obj.rental?.roomInstance?.room || obj.roomInstance?.room;
-		if (!room?.costs) {
-			return undefined;
-		}
-		return room.costs
-			.filter(
-				(cost: any) =>
-					cost.costType === 'metered' &&
-					cost.isActive &&
-					(!cost.meterReading || !cost.lastMeterReading),
-			)
-			.map((cost: any) => ({
-				roomCostId: cost.id,
-				name: cost.costTypeTemplate?.name,
-				unit: cost.unit,
-			}));
+	@ApiProperty({
+		description: 'Danh sách metered costs (luôn trả về để frontend xử lý)',
+		type: [Object],
 	})
-	meteredCostsToInput?: Array<{
-		roomCostId: string; // ID để truyền lên khi update
-		name: string; // Tên cost (VD: "Điện", "Nước")
-		unit: string; // Đơn vị (VD: "kWh", "m³")
+	@Expose()
+	meteredCostsToInput: Array<{
+		roomCostId: string;
+		name: string;
+		unit: string;
+		unitPrice: number;
+		currency: string;
+		currentReading: number | null;
+		lastReading: number | null;
+		lastMonthReading: number | null;
+		requiresInput: boolean;
+		notes: string | null;
 	}>;
 }

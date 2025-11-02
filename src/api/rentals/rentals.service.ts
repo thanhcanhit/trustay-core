@@ -344,8 +344,77 @@ export class RentalsService {
 			this.prisma.rental.count({ where }),
 		]);
 
+		// Get unique room instance IDs
+		const roomInstanceIds = [...new Set(rentals.map((rental) => rental.roomInstanceId))];
+
+		// Fetch all active rentals for these room instances to get members
+		let rentalsByRoomInstance: Record<
+			string,
+			Array<{
+				id: string;
+				tenantId: string;
+				roomInstanceId: string;
+				tenant: {
+					id: string;
+					firstName: string | null;
+					lastName: string | null;
+					email: string;
+					phone: string | null;
+					avatarUrl: string | null;
+				};
+			}>
+		> = {};
+		if (roomInstanceIds.length > 0) {
+			const allRentalsForRooms = await this.prisma.rental.findMany({
+				where: {
+					roomInstanceId: { in: roomInstanceIds },
+					status: { in: [RentalStatus.active, RentalStatus.pending_renewal] },
+				},
+				include: {
+					tenant: {
+						select: {
+							id: true,
+							firstName: true,
+							lastName: true,
+							email: true,
+							phone: true,
+							avatarUrl: true,
+						},
+					},
+				},
+			});
+
+			// Group rentals by roomInstanceId
+			rentalsByRoomInstance = allRentalsForRooms.reduce(
+				(acc, rental) => {
+					if (!acc[rental.roomInstanceId]) {
+						acc[rental.roomInstanceId] = [];
+					}
+					acc[rental.roomInstanceId].push(rental);
+					return acc;
+				},
+				{} as typeof rentalsByRoomInstance,
+			);
+		}
+
+		// Transform rentals with members
+		const transformedRentals = rentals.map((rental) => {
+			const transformed = this.transformToResponseDto(rental);
+			const roomMembers = rentalsByRoomInstance[rental.roomInstanceId] || [];
+			transformed.members = roomMembers.map((memberRental) => ({
+				tenantId: memberRental.tenantId,
+				firstName: memberRental.tenant.firstName || undefined,
+				lastName: memberRental.tenant.lastName || undefined,
+				email: memberRental.tenant.email || undefined,
+				phone: memberRental.tenant.phone || undefined,
+				avatarUrl: memberRental.tenant.avatarUrl || undefined,
+				rentalId: memberRental.id,
+			}));
+			return transformed;
+		});
+
 		return {
-			data: rentals.map((rental) => this.transformToResponseDto(rental)),
+			data: transformedRentals,
 			pagination: {
 				page,
 				limit,
@@ -634,6 +703,21 @@ export class RentalsService {
 		});
 
 		return this.transformToResponseDto(updatedRental);
+	}
+
+	/**
+	 * Đếm số người ở trong một room instance (số active rentals)
+	 * @param roomInstanceId - ID của room instance
+	 * @returns Số lượng active rentals (số người ở)
+	 */
+	async getOccupancyCountByRoomInstance(roomInstanceId: string): Promise<number> {
+		const activeRentalsCount = await this.prisma.rental.count({
+			where: {
+				roomInstanceId: roomInstanceId,
+				status: { in: [RentalStatus.active, RentalStatus.pending_renewal] },
+			},
+		});
+		return activeRentalsCount || 1;
 	}
 
 	/**
