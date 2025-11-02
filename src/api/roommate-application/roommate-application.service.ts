@@ -814,16 +814,12 @@ export class RoommateApplicationService {
 			const monthlyRent = activeRental.monthlyRent;
 			const depositAmount = activeRental.depositPaid || 0;
 
-			// Check current occupancy
-			const activeRentalsCount = await this.prisma.rental.count({
-				where: {
-					roomInstanceId: activeRental.roomInstanceId,
-					status: 'active',
-				},
-			});
+			// Check current occupancy using rentals service
+			const currentOccupancy = await this.rentalsService.getOccupancyCountByRoomInstance(
+				activeRental.roomInstanceId,
+			);
 
 			const maxOccupancy = activeRental.roomInstance?.room?.maxOccupancy || 2;
-			const currentOccupancy = activeRentalsCount;
 			const seekingCount = maxOccupancy - currentOccupancy;
 
 			// Create hidden post (isActive: false - not public)
@@ -916,19 +912,6 @@ export class RoommateApplicationService {
 			throw new NotFoundException('Không tìm thấy room instance');
 		}
 
-		// Check if user already has active rental in this room
-		const existingRentalInRoom = await this.prisma.rental.findFirst({
-			where: {
-				roomInstanceId: post.roomInstanceId,
-				tenantId: userIdToAdd,
-				status: 'active',
-			},
-		});
-
-		if (existingRentalInRoom) {
-			throw new BadRequestException('User đã có rental active cho phòng này');
-		}
-
 		// Check if user already has active rental elsewhere
 		const existingRental = await this.prisma.rental.findFirst({
 			where: {
@@ -956,13 +939,77 @@ export class RoommateApplicationService {
 			throw new BadRequestException('Ngày chuyển vào không thể trong quá khứ');
 		}
 
+		// If tenant adds someone, create application that needs landlord approval
+		// Only landlord can add directly without approval
+		if (isTenant && !isLandlord) {
+			// Check if user already has application for this rental
+			const existingApplication = await this.prisma.roommateApplication.findFirst({
+				where: {
+					roommateSeekingPostId: post.id,
+					applicantId: userIdToAdd,
+					status: {
+						not: RequestStatus.cancelled,
+					},
+				},
+			});
+
+			if (existingApplication) {
+				throw new BadRequestException('User đã có đơn ứng tuyển cho phòng này rồi');
+			}
+
+			// Get user info for application
+			const fullName = `${userToAdd.firstName} ${userToAdd.lastName}`.trim();
+			const phoneNumber = userToAdd.phone || '';
+
+			// Create application with tenant auto-approved, waiting for landlord
+			const application = await this.prisma.roommateApplication.create({
+				data: {
+					roommateSeekingPostId: post.id,
+					applicantId: userIdToAdd,
+					fullName,
+					phoneNumber,
+					moveInDate,
+					intendedStayMonths: addDto.intendedStayMonths,
+					status: RequestStatus.accepted, // Tenant approved, wait for landlord
+					tenantResponse: 'Tenant đã chấp nhận trực tiếp',
+					tenantRespondedAt: new Date(),
+				},
+			});
+
+			// Increment contact count
+			await this.prisma.roommateSeekingPost.update({
+				where: { id: post.id },
+				data: { contactCount: { increment: 1 } },
+			});
+
+			// Notify landlord for approval
+			const landlordId = roomInstance.room.building.ownerId;
+			const roomName = roomInstance.room.name;
+			if (landlordId) {
+				await this.notificationsService.notifyRoommateApplicationReceived(landlordId, {
+					applicantName: fullName,
+					roomName,
+					applicationId: application.id,
+				});
+			}
+
+			// Notify applicant that tenant approved
+			await this.notificationsService.notifyRoommateApplicationApproved(userIdToAdd, {
+				roomName,
+				applicationId: application.id,
+			});
+
+			return; // Exit early, don't create rental yet
+		}
+
+		// Only landlord can add directly and create rental immediately
 		// Create rental and update post in transaction
 		await this.prisma.$transaction(async (tx) => {
-			// Check room occupancy
+			// Check room occupancy (using same logic as rentals service: active and pending_renewal)
 			const activeRentalsCount = await tx.rental.count({
 				where: {
 					roomInstanceId: post.roomInstanceId,
-					status: 'active',
+					status: { in: ['active', 'pending_renewal'] },
 				},
 			});
 
@@ -1081,6 +1128,23 @@ export class RoommateApplicationService {
 			throw new BadRequestException('Không thể ứng tuyển vào phòng của chính mình');
 		}
 
+		// Get user information for applicant (to get fullName, phoneNumber)
+		const applicant = await this.prisma.user.findUnique({
+			where: { id: applicantId },
+			select: {
+				firstName: true,
+				lastName: true,
+				phone: true,
+			},
+		});
+
+		if (!applicant) {
+			throw new NotFoundException('Không tìm thấy thông tin user');
+		}
+
+		const fullName = `${applicant.firstName} ${applicant.lastName}`.trim();
+		const phoneNumber = applicant.phone || '';
+
 		// Get rental information
 		const rental = await this.prisma.rental.findUnique({
 			where: { id: rentalId },
@@ -1162,16 +1226,11 @@ export class RoommateApplicationService {
 			const monthlyRent = rental.monthlyRent;
 			const depositAmount = rental.depositPaid || 0;
 
-			// Check current occupancy
-			const activeRentalsCount = await this.prisma.rental.count({
-				where: {
-					roomInstanceId,
-					status: 'active',
-				},
-			});
+			// Check current occupancy using rentals service
+			const currentOccupancy =
+				await this.rentalsService.getOccupancyCountByRoomInstance(roomInstanceId);
 
 			const maxOccupancy = rental.roomInstance?.room?.maxOccupancy || 2;
-			const currentOccupancy = activeRentalsCount;
 			const seekingCount = maxOccupancy - currentOccupancy;
 
 			roommateSeekingPost = await this.prisma.roommateSeekingPost.create({
@@ -1230,18 +1289,18 @@ export class RoommateApplicationService {
 			? RequestStatus.accepted // Platform room: tenant auto-approved, wait for landlord
 			: RequestStatus.awaiting_confirmation; // External room: tenant auto-approved, applicant can confirm
 
+		// Default moveInDate to today if not provided
+		const moveInDate = acceptDto.moveInDate ? new Date(acceptDto.moveInDate) : new Date();
+
 		// Create application with tenant auto-approved (since they created the invite)
 		const application = await this.prisma.roommateApplication.create({
 			data: {
 				roommateSeekingPostId: postId,
 				applicantId,
-				fullName: acceptDto.fullName,
-				occupation: acceptDto.occupation,
-				phoneNumber: acceptDto.phoneNumber,
-				moveInDate: new Date(acceptDto.moveInDate),
+				fullName,
+				phoneNumber,
+				moveInDate,
 				intendedStayMonths: acceptDto.intendedStayMonths,
-				applicationMessage: acceptDto.applicationMessage,
-				isUrgent: acceptDto.isUrgent || false,
 				status: initialStatus,
 				tenantResponse: 'Tự động chấp nhận từ invite link',
 				tenantRespondedAt: new Date(),
@@ -1263,7 +1322,7 @@ export class RoommateApplicationService {
 			const landlordId = post.roomInstance?.room?.building?.ownerId;
 			if (landlordId) {
 				await this.notificationsService.notifyRoommateApplicationReceived(landlordId, {
-					applicantName: acceptDto.fullName,
+					applicantName: fullName,
 					roomName,
 					applicationId: application.id,
 				});
@@ -1335,16 +1394,12 @@ export class RoommateApplicationService {
 			const monthlyRent = activeRental.monthlyRent;
 			const depositAmount = activeRental.depositPaid || 0;
 
-			// Check current occupancy
-			const activeRentalsCount = await this.prisma.rental.count({
-				where: {
-					roomInstanceId: activeRental.roomInstanceId,
-					status: 'active',
-				},
-			});
+			// Check current occupancy using rentals service
+			const currentOccupancy = await this.rentalsService.getOccupancyCountByRoomInstance(
+				activeRental.roomInstanceId,
+			);
 
 			const maxOccupancy = activeRental.roomInstance?.room?.maxOccupancy || 2;
-			const currentOccupancy = activeRentalsCount;
 			const seekingCount = maxOccupancy - currentOccupancy;
 
 			// Create hidden post (isActive: false - not public, only for direct invites)
@@ -1703,11 +1758,11 @@ export class RoommateApplicationService {
 
 		// Tạo rental và update application trong transaction
 		const rental = await this.prisma.$transaction(async (tx) => {
-			// Check room occupancy
+			// Check room occupancy (using same logic as rentals service: active and pending_renewal)
 			const activeRentalsCount = await tx.rental.count({
 				where: {
 					roomInstanceId: post.roomInstanceId,
-					status: 'active',
+					status: { in: ['active', 'pending_renewal'] },
 				},
 			});
 
