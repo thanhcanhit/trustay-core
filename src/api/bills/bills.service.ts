@@ -8,6 +8,7 @@ import { BillStatus, UserRole } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RentalsService } from '../rentals/rentals.service';
 import {
 	BillResponseDto,
 	CreateBillDto,
@@ -26,6 +27,7 @@ export class BillsService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly notificationsService: NotificationsService,
+		private readonly rentalsService: RentalsService,
 	) {}
 
 	async createBill(userId: string, dto: CreateBillDto): Promise<BillResponseDto> {
@@ -113,7 +115,7 @@ export class BillsService {
 			landlordName: `${rental.owner.firstName} ${rental.owner.lastName}`,
 		});
 
-		return this.transformToResponseDto(bill);
+		return await this.transformToResponseDto(bill);
 	}
 
 	async createBillForRoom(userId: string, dto: CreateBillForRoomDto): Promise<BillResponseDto> {
@@ -274,7 +276,7 @@ export class BillsService {
 			landlordName: `${rental.owner.firstName} ${rental.owner.lastName}`,
 		});
 
-		return this.transformToResponseDto(bill);
+		return await this.transformToResponseDto(bill);
 	}
 
 	/**
@@ -717,7 +719,7 @@ export class BillsService {
 			this.prisma.bill.count({ where: baseWhere }),
 		]);
 
-		const billDtos = bills.map((bill) => this.transformToResponseDto(bill));
+		const billDtos = await Promise.all(bills.map((bill) => this.transformToResponseDto(bill)));
 		return PaginatedResponseDto.create(billDtos, page, limit, total);
 	}
 
@@ -783,6 +785,14 @@ export class BillsService {
 			},
 		});
 
+		// Get occupancy count: from DTO or query from rental
+		let occupancyCount = dto.occupancyCount;
+		if (!occupancyCount) {
+			occupancyCount = await this.rentalsService.getOccupancyCountByRoomInstance(
+				bill.roomInstanceId,
+			);
+		}
+
 		// Calculate proration factor
 		const periodStart = bill.periodStart;
 		const periodEnd = bill.periodEnd;
@@ -803,7 +813,7 @@ export class BillsService {
 		// Recalculate bill items with updated occupancy and meter data
 		const newBillItems = await this.calculateBillItems(
 			updatedRoomCosts,
-			dto.occupancyCount,
+			occupancyCount,
 			prorationFactor,
 			bill.rental.roomInstance.room.pricing,
 		);
@@ -841,7 +851,7 @@ export class BillsService {
 		const updatedBill = await this.prisma.bill.update({
 			where: { id: dto.billId },
 			data: {
-				occupancyCount: dto.occupancyCount,
+				occupancyCount: occupancyCount,
 				subtotal,
 				totalAmount,
 				remainingAmount: totalAmount - Number(bill.paidAmount),
@@ -1062,7 +1072,7 @@ export class BillsService {
 			this.prisma.bill.count({ where: baseWhere }),
 		]);
 
-		const billDtos = bills.map((bill) => this.transformToResponseDto(bill));
+		const billDtos = await Promise.all(bills.map((bill) => this.transformToResponseDto(bill)));
 		return PaginatedResponseDto.create(billDtos, page, limit, total);
 	}
 
@@ -1101,7 +1111,7 @@ export class BillsService {
 			throw new ForbiddenException('Not authorized to view this bill');
 		}
 
-		return this.transformToResponseDto(bill);
+		return await this.transformToResponseDto(bill);
 	}
 
 	async updateBill(billId: string, userId: string, dto: UpdateBillDto): Promise<BillResponseDto> {
@@ -1390,58 +1400,146 @@ export class BillsService {
 		return this.transformToResponseDto(updatedBill);
 	}
 
-	private transformToResponseDto(bill: any): BillResponseDto {
-		const room = bill.rental?.roomInstance?.room || bill.roomInstance?.room;
-		const meteredCostsToInput = room?.costs
-			?.filter(
-				(cost: any) =>
-					cost.costType === 'metered' &&
-					cost.isActive &&
-					(!cost.meterReading || !cost.lastMeterReading),
-			)
-			.map((cost: any) => ({
-				roomCostId: cost.id,
-				name: cost.costTypeTemplate?.name,
-				unit: cost.unit,
-			}));
+	private convertDecimalToNumber(value: any): number {
+		if (value === null || value === undefined) {
+			return 0;
+		}
+		if (typeof value === 'number') {
+			return value;
+		}
+		if (typeof value === 'object') {
+			if ('toNumber' in value && typeof value.toNumber === 'function') {
+				return value.toNumber();
+			}
+			if ('d' in value && Array.isArray(value.d) && 'e' in value && 's' in value) {
+				const sign = value.s || 1;
+				const digits = value.d || [];
+				if (digits.length === 0) {
+					return 0;
+				}
+				if (digits.length === 1 && typeof digits[0] === 'number') {
+					return digits[0] * sign;
+				}
+				const numStr = digits.join('');
+				const num = parseFloat(numStr) || 0;
+				return num * sign;
+			}
+			if ('toString' in value && typeof value.toString === 'function') {
+				try {
+					const str = value.toString();
+					const num = Number(str);
+					return Number.isNaN(num) ? 0 : num;
+				} catch {
+					return 0;
+				}
+			}
+		}
+		const num = Number(value);
+		return Number.isNaN(num) ? 0 : num;
+	}
 
-		const convertDecimalToNumber = (value: any): number => {
-			if (value === null || value === undefined) {
-				return 0;
+	private async transformToResponseDto(bill: any): Promise<BillResponseDto> {
+		const room = bill.rental?.roomInstance?.room || bill.roomInstance?.room;
+		const meteredCosts =
+			room?.costs?.filter((cost: any) => cost.costType === 'metered' && cost.isActive) || [];
+
+		let lastMonthBill: any = null;
+		let lastMonthRoomCosts: any[] = [];
+		if (bill.rentalId && bill.billingPeriod) {
+			const [year, month] = bill.billingPeriod.split('-').map(Number);
+			let prevMonth = month - 1;
+			let prevYear = year;
+			if (prevMonth <= 0) {
+				prevMonth = 12;
+				prevYear -= 1;
 			}
-			if (typeof value === 'number') {
-				return value;
+			const prevBillingPeriod = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+
+			lastMonthBill = await this.prisma.bill.findUnique({
+				where: {
+					rentalId_billingPeriod: {
+						rentalId: bill.rentalId,
+						billingPeriod: prevBillingPeriod,
+					},
+				},
+				include: {
+					rental: {
+						include: {
+							roomInstance: {
+								include: {
+									room: {
+										include: {
+											costs: {
+												where: { isActive: true },
+												include: {
+													costTypeTemplate: true,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					billItems: true,
+				},
+			});
+
+			if (lastMonthBill?.rental?.roomInstance?.room?.costs) {
+				lastMonthRoomCosts = lastMonthBill.rental.roomInstance.room.costs;
 			}
-			if (typeof value === 'object') {
-				if ('toNumber' in value && typeof value.toNumber === 'function') {
-					return value.toNumber();
-				}
-				if ('d' in value && Array.isArray(value.d) && 'e' in value && 's' in value) {
-					const sign = value.s || 1;
-					const digits = value.d || [];
-					if (digits.length === 0) {
-						return 0;
+		}
+
+		const meteredCostsToInput = await Promise.all(
+			meteredCosts.map(async (cost: any) => {
+				let lastMonthReading: number | null = null;
+
+				if (lastMonthBill && lastMonthRoomCosts.length > 0) {
+					const lastMonthCost = lastMonthRoomCosts.find(
+						(rc: any) => rc.id === cost.id || rc.costTypeTemplateId === cost.costTypeTemplateId,
+					);
+
+					if (lastMonthCost?.meterReading) {
+						lastMonthReading = this.convertDecimalToNumber(lastMonthCost.meterReading);
+					} else if (lastMonthBill.billItems?.length > 0) {
+						const lastMonthBillItem = lastMonthBill.billItems.find(
+							(item: any) =>
+								item.itemType === cost.costTypeTemplate?.category &&
+								item.itemName?.includes(cost.costTypeTemplate?.name || ''),
+						);
+
+						if (lastMonthBillItem?.quantity) {
+							const lastMonthUsage = this.convertDecimalToNumber(lastMonthBillItem.quantity);
+							const currentReading = cost.meterReading
+								? this.convertDecimalToNumber(cost.meterReading)
+								: null;
+							if (currentReading !== null && currentReading >= lastMonthUsage) {
+								lastMonthReading = currentReading - lastMonthUsage;
+							}
+						}
 					}
-					if (digits.length === 1 && typeof digits[0] === 'number') {
-						return digits[0] * sign;
-					}
-					const numStr = digits.join('');
-					const num = parseFloat(numStr) || 0;
-					return num * sign;
 				}
-				if ('toString' in value && typeof value.toString === 'function') {
-					try {
-						const str = value.toString();
-						const num = Number(str);
-						return Number.isNaN(num) ? 0 : num;
-					} catch {
-						return 0;
-					}
+
+				if (lastMonthReading === null) {
+					lastMonthReading = cost.lastMeterReading
+						? this.convertDecimalToNumber(cost.lastMeterReading)
+						: null;
 				}
-			}
-			const num = Number(value);
-			return Number.isNaN(num) ? 0 : num;
-		};
+
+				return {
+					roomCostId: cost.id,
+					name: cost.costTypeTemplate?.name || 'Unknown',
+					unit: cost.unit || '',
+					unitPrice: this.convertDecimalToNumber(cost.unitPrice),
+					currency: cost.currency || 'VND',
+					currentReading: cost.meterReading ? this.convertDecimalToNumber(cost.meterReading) : null,
+					lastReading: lastMonthReading,
+					lastMonthReading: lastMonthReading,
+					requiresInput: !cost.meterReading || lastMonthReading === null,
+					notes: cost.notes || null,
+				};
+			}),
+		);
 
 		return {
 			id: bill.id,
@@ -1452,12 +1550,12 @@ export class BillsService {
 			billingYear: bill.billingYear,
 			periodStart: bill.periodStart,
 			periodEnd: bill.periodEnd,
-			subtotal: convertDecimalToNumber(bill.subtotal),
-			discountAmount: convertDecimalToNumber(bill.discountAmount),
-			taxAmount: convertDecimalToNumber(bill.taxAmount),
-			totalAmount: convertDecimalToNumber(bill.totalAmount),
-			paidAmount: convertDecimalToNumber(bill.paidAmount),
-			remainingAmount: convertDecimalToNumber(bill.remainingAmount),
+			subtotal: this.convertDecimalToNumber(bill.subtotal),
+			discountAmount: this.convertDecimalToNumber(bill.discountAmount),
+			taxAmount: this.convertDecimalToNumber(bill.taxAmount),
+			totalAmount: this.convertDecimalToNumber(bill.totalAmount),
+			paidAmount: this.convertDecimalToNumber(bill.paidAmount),
+			remainingAmount: this.convertDecimalToNumber(bill.remainingAmount),
 			status: bill.status,
 			dueDate: bill.dueDate,
 			paidDate: bill.paidDate,
@@ -1469,9 +1567,9 @@ export class BillsService {
 				itemType: item.itemType,
 				itemName: item.itemName,
 				description: item.description,
-				quantity: convertDecimalToNumber(item.quantity),
-				unitPrice: convertDecimalToNumber(item.unitPrice),
-				amount: convertDecimalToNumber(item.amount),
+				quantity: this.convertDecimalToNumber(item.quantity),
+				unitPrice: this.convertDecimalToNumber(item.unitPrice),
+				amount: this.convertDecimalToNumber(item.amount),
 				currency: item.currency,
 				notes: item.notes,
 				createdAt: item.createdAt,
@@ -1479,7 +1577,7 @@ export class BillsService {
 			rental: bill.rental
 				? {
 						id: bill.rental.id,
-						monthlyRent: convertDecimalToNumber(bill.rental.monthlyRent),
+						monthlyRent: this.convertDecimalToNumber(bill.rental.monthlyRent),
 						roomInstance: {
 							roomNumber: bill.rental.roomInstance.roomNumber,
 							room: {
@@ -1488,8 +1586,7 @@ export class BillsService {
 						},
 					}
 				: undefined,
-			meteredCostsToInput:
-				meteredCostsToInput && meteredCostsToInput.length > 0 ? meteredCostsToInput : undefined,
+			meteredCostsToInput: meteredCostsToInput.length > 0 ? meteredCostsToInput : [],
 		};
 	}
 }
