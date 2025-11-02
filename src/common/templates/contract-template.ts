@@ -88,26 +88,28 @@ export function generateContractHTML(
       margin-top: 50px;
       display: flex;
       justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
     }
     
     .signature-box {
-      width: 45%;
+      flex: 1;
       text-align: center;
+      min-width: 500px;
     }
     
     .signature-placeholder {
-      height: 100px;
-      margin: 20px 0;
-      border: 1px dashed #ccc;
+      width: 500px;
+      height: 200px;
+      margin: 20px auto;
       display: flex;
       align-items: center;
       justify-content: center;
-      background-color: #f9f9f9;
     }
     
     .signature-image {
-      max-width: 100%;
-      max-height: 100px;
+      width: 500px;
+      height: 200px;
       object-fit: contain;
     }
     

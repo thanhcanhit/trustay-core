@@ -492,7 +492,19 @@ export class ContractsNewService {
 	}> {
 		const contract = await this.prisma.contract.findUnique({
 			where: { id: contractId },
-			include: { landlord: true, tenant: true },
+			include: {
+				landlord: true,
+				tenant: true,
+				roomInstance: {
+					include: {
+						room: {
+							include: {
+								building: true,
+							},
+						},
+					},
+				},
+			},
 		});
 
 		if (!contract) {
@@ -519,7 +531,14 @@ export class ContractsNewService {
 		// Email-only OTP (SMS disabled)
 		let maskedEmail: string | undefined;
 		if (email) {
-			await this.emailService.sendVerificationEmail(email, code);
+			await this.emailService.sendContractSigningOtp(email, code, {
+				contractCode: contract.contractCode,
+				roomName: contract.roomInstance?.room?.name || undefined,
+				roomNumber: contract.roomInstance?.roomNumber || undefined,
+				buildingName: contract.roomInstance?.room?.building?.name || undefined,
+				signerName: `${signer.firstName} ${signer.lastName}`,
+				signerRole: isLandlord ? 'landlord' : 'tenant',
+			});
 			maskedEmail = this.maskEmail(email);
 		} else {
 			throw new BadRequestException('Signer has no email address');

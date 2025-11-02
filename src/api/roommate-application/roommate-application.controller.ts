@@ -24,10 +24,13 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../../auth/guards/optional-jwt-auth.guard';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import {
+	AcceptInviteDto,
+	AddRoommateDirectlyDto,
 	ApplicationStatisticsDto,
 	BulkRespondApplicationsDto,
 	BulkResponseResultDto,
 	CreateRoommateApplicationDto,
+	GenerateInviteLinkResponseDto,
 	QueryRoommateApplicationDto,
 	RespondToApplicationDto,
 	RoommateApplicationResponseDto,
@@ -156,6 +159,32 @@ export class RoommateApplicationController {
 		@CurrentUser() user: User,
 	): Promise<PaginatedResponseDto<RoommateApplicationResponseDto>> {
 		return this.roommateApplicationService.findApplicationsForLandlord(query, user.id);
+	}
+
+	@Post(':postId/add-roommate')
+	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
+	@ApiOperation({
+		summary: 'Thêm người trực tiếp vào phòng',
+		description:
+			'Tenant hoặc landlord có thể thêm trực tiếp một người vào phòng mà không cần qua quy trình ứng tuyển. Có thể thêm bằng userId, email hoặc số điện thoại. Chỉ áp dụng cho platform rooms. Rental sẽ được tạo tự động.',
+	})
+	@ApiParam({ name: 'postId', description: 'ID của bài đăng tìm người ở ghép' })
+	@ApiResponse({
+		status: 201,
+		description: 'Thêm người vào phòng thành công',
+	})
+	@ApiResponse({ status: 400, description: 'Dữ liệu không hợp lệ hoặc không thể thêm người' })
+	@ApiResponse({ status: 401, description: 'Chưa xác thực' })
+	@ApiResponse({ status: 403, description: 'Không có quyền thêm người vào phòng' })
+	@ApiResponse({ status: 404, description: 'Không tìm thấy bài đăng hoặc user' })
+	@HttpCode(HttpStatus.CREATED)
+	async addRoommateDirectly(
+		@Param('postId') postId: string,
+		@Body() addDto: AddRoommateDirectlyDto,
+		@CurrentUser() user: User,
+	): Promise<void> {
+		return this.roommateApplicationService.addRoommateDirectly(postId, addDto, user.id);
 	}
 
 	@Get(':id')
@@ -341,6 +370,50 @@ export class RoommateApplicationController {
 		@CurrentUser() user: User,
 	): Promise<BulkResponseResultDto> {
 		return this.roommateApplicationService.bulkRespondToApplications(bulkDto, user.id);
+	}
+
+	@Post('accept-invite')
+	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
+	@ApiOperation({
+		summary: 'Chấp nhận invite từ token',
+		description:
+			'Chấp nhận invite từ token và tạo roommate application tự động. Không cần tạo post trước, hệ thống sẽ tự động tạo post nếu chưa có.',
+	})
+	@ApiResponse({
+		status: 201,
+		description: 'Chấp nhận invite thành công',
+		type: RoommateApplicationResponseDto,
+	})
+	@ApiResponse({ status: 400, description: 'Dữ liệu không hợp lệ hoặc không thể chấp nhận invite' })
+	@ApiResponse({ status: 401, description: 'Token không hợp lệ hoặc chưa xác thực' })
+	@ApiResponse({ status: 404, description: 'Không tìm thấy rental' })
+	@HttpCode(HttpStatus.CREATED)
+	async acceptInvite(
+		@Body() acceptDto: AcceptInviteDto,
+		@CurrentUser() user: User,
+	): Promise<RoommateApplicationResponseDto> {
+		return this.roommateApplicationService.acceptInvite(acceptDto, user.id);
+	}
+
+	@Post('generate-invite-link')
+	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
+	@ApiOperation({
+		summary: 'Tạo link mời vào phòng hiện tại',
+		description:
+			'Tạo link mời để chia sẻ cho người khác vào phòng hiện tại của user. Link sẽ hết hạn sau 30 ngày.',
+	})
+	@ApiResponse({
+		status: 201,
+		description: 'Tạo link mời thành công',
+		type: GenerateInviteLinkResponseDto,
+	})
+	@ApiResponse({ status: 400, description: 'User chưa có phòng thuê active' })
+	@ApiResponse({ status: 401, description: 'Chưa xác thực' })
+	@HttpCode(HttpStatus.CREATED)
+	async generateInviteLink(@CurrentUser() user: User): Promise<GenerateInviteLinkResponseDto> {
+		return this.roommateApplicationService.generateInviteLink(user.id);
 	}
 
 	@Get('statistics/my-applications')
