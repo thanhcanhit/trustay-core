@@ -161,15 +161,14 @@ export class RoommateApplicationController {
 		return this.roommateApplicationService.findApplicationsForLandlord(query, user.id);
 	}
 
-	@Post(':postId/add-roommate')
+	@Post('add-roommate')
 	@UseGuards(JwtAuthGuard)
 	@ApiBearerAuth()
 	@ApiOperation({
 		summary: 'Thêm người trực tiếp vào phòng',
 		description:
-			'Tenant hoặc landlord có thể thêm trực tiếp một người vào phòng mà không cần qua quy trình ứng tuyển. Có thể thêm bằng userId, email hoặc số điện thoại. Chỉ áp dụng cho platform rooms. Rental sẽ được tạo tự động.',
+			'Tenant hoặc landlord có thể thêm trực tiếp một người vào phòng mà không cần qua quy trình ứng tuyển. Hệ thống sẽ tự động tìm hoặc tạo post ẩn từ rental của tenant. Có thể thêm bằng userId, email hoặc số điện thoại. Chỉ áp dụng cho platform rooms. Rental sẽ được tạo tự động.',
 	})
-	@ApiParam({ name: 'postId', description: 'ID của bài đăng tìm người ở ghép' })
 	@ApiResponse({
 		status: 201,
 		description: 'Thêm người vào phòng thành công',
@@ -177,14 +176,13 @@ export class RoommateApplicationController {
 	@ApiResponse({ status: 400, description: 'Dữ liệu không hợp lệ hoặc không thể thêm người' })
 	@ApiResponse({ status: 401, description: 'Chưa xác thực' })
 	@ApiResponse({ status: 403, description: 'Không có quyền thêm người vào phòng' })
-	@ApiResponse({ status: 404, description: 'Không tìm thấy bài đăng hoặc user' })
+	@ApiResponse({ status: 404, description: 'Không tìm thấy rental hoặc user' })
 	@HttpCode(HttpStatus.CREATED)
 	async addRoommateDirectly(
-		@Param('postId') postId: string,
 		@Body() addDto: AddRoommateDirectlyDto,
 		@CurrentUser() user: User,
 	): Promise<void> {
-		return this.roommateApplicationService.addRoommateDirectly(postId, addDto, user.id);
+		return this.roommateApplicationService.addRoommateDirectly(addDto, user.id);
 	}
 
 	@Get(':id')
@@ -378,7 +376,7 @@ export class RoommateApplicationController {
 	@ApiOperation({
 		summary: 'Chấp nhận invite từ token',
 		description:
-			'Chấp nhận invite từ token và tạo roommate application tự động. Không cần tạo post trước, hệ thống sẽ tự động tạo post nếu chưa có.',
+			'Chấp nhận invite từ token và tạo roommate application tự động. Hệ thống sẽ tự động tìm hoặc tạo post ẩn (không public) từ rental trong token. Chỉ áp dụng cho platform rooms.',
 	})
 	@ApiResponse({
 		status: 201,
@@ -402,7 +400,7 @@ export class RoommateApplicationController {
 	@ApiOperation({
 		summary: 'Tạo link mời vào phòng hiện tại',
 		description:
-			'Tạo link mời để chia sẻ cho người khác vào phòng hiện tại của user. Link sẽ hết hạn sau 30 ngày.',
+			'Tạo link mời để chia sẻ cho người khác vào phòng hiện tại của user. Nếu chưa có post, hệ thống sẽ tự động tạo post ẩn (không public). Link sẽ hết hạn sau 30 ngày. Chỉ áp dụng cho platform rooms.',
 	})
 	@ApiResponse({
 		status: 201,
