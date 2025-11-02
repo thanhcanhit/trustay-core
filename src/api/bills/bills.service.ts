@@ -763,6 +763,11 @@ export class BillsService {
 			throw new ForbiddenException('Not authorized to update this bill');
 		}
 
+		// Don't allow updating paid bills
+		if (bill.status === BillStatus.paid) {
+			throw new BadRequestException('Cannot update paid bills');
+		}
+
 		// Update meter readings for metered costs
 		for (const meterData of dto.meterData) {
 			await this.prisma.roomCost.update({
@@ -1222,6 +1227,11 @@ export class BillsService {
 		// Check if user has access to update meter data
 		if (bill.rental.ownerId !== userId) {
 			throw new ForbiddenException('Not authorized to update meter data for this bill');
+		}
+
+		// Don't allow updating paid bills
+		if (bill.status === BillStatus.paid) {
+			throw new BadRequestException('Cannot update paid bills');
 		}
 
 		// Update meter readings in room costs
