@@ -149,7 +149,7 @@ export interface MissingParam {
 }
 
 /**
- * Orchestrator agent response (formerly ConversationalAgentResponse)
+ * Orchestrator agent response
  */
 export interface OrchestratorAgentResponse {
 	message: string;
@@ -164,20 +164,6 @@ export interface OrchestratorAgentResponse {
 	entityHint?: 'room' | 'post' | 'room_seeking_post';
 	filtersHint?: string; // natural language filters parsed (e.g., district:"gò vấp")
 	missingParams?: MissingParam[]; // MVP: Missing parameters for clarification
-}
-
-/**
- * Conversational agent response (deprecated - use OrchestratorAgentResponse)
- * @deprecated Use OrchestratorAgentResponse instead
- */
-export interface ConversationalAgentResponse {
-	message: string;
-	readyForSql: boolean;
-	needsClarification?: boolean;
-	needsIntroduction?: boolean;
-	intentModeHint?: 'LIST' | 'TABLE' | 'CHART';
-	entityHint?: 'room' | 'post' | 'room_seeking_post';
-	filtersHint?: string; // natural language filters parsed (e.g., district:"gò vấp")
 }
 
 /**

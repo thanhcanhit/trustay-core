@@ -120,6 +120,8 @@ export class SqlGenerationAgent {
 		let lastError: string = '';
 		let attempts = 0;
 		const maxAttempts = 5;
+		// Vòng phản hồi tự sửa lỗi: Nếu SQL execution fails, truyền error vào prompt
+		// để AI tự động regenerate SQL với context của lỗi trước đó
 		while (attempts < maxAttempts) {
 			attempts++;
 			try {
@@ -131,7 +133,7 @@ export class SqlGenerationAgent {
 					userId,
 					userRole,
 					businessContext,
-					lastError,
+					lastError, // Error từ lần attempt trước → AI tự sửa lỗi
 					attempt: attempts,
 					limit: aiConfig.limit,
 				});
@@ -174,13 +176,18 @@ export class SqlGenerationAgent {
 					userRole: userRole,
 				};
 			} catch (error) {
+				// Vòng phản hồi tự sửa lỗi: Lưu error để truyền vào prompt lần sau
+				// AI sẽ tự động sửa SQL dựa trên error message này
 				lastError = error.message;
-				this.logger.warn(`Contextual SQL generation attempt ${attempts} failed: ${lastError}`);
+				this.logger.warn(
+					`[SQL Regeneration] Attempt ${attempts}/${maxAttempts} failed: ${lastError}. Regenerating SQL...`,
+				);
 				if (attempts >= maxAttempts) {
 					throw new Error(
 						`Failed to generate valid SQL after ${maxAttempts} attempts. Last error: ${lastError}`,
 					);
 				}
+				// Delay để tránh rate limiting
 				await new Promise((resolve) => setTimeout(resolve, 1000));
 			}
 		}

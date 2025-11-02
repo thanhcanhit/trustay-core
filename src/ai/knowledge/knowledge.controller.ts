@@ -16,9 +16,10 @@ export class KnowledgeController {
 
 	@Post('ingest-schema-from-db')
 	@ApiOperation({
-		summary: 'Ingest full RAG schema context from DB (JSON schema + reference lookups)',
+		summary:
+			'Ingest full RAG schema context from DB (JSON schema + reference lookups + denormalized docs)',
 		description:
-			'Clears old schema chunks, ingests JSON-structured schema with samples, then ingests amenities/cost types/room rules for rich Vietnamese context',
+			'Clears old schema chunks, ingests semantic JSON-structured schema chunks (table overview, column details, relationships), then ingests reference data (amenities/cost types/room rules) and denormalized documents (rooms, requests) for rich Vietnamese context',
 	})
 	async ingestSchemaFromDatabase(
 		@Body()
@@ -28,19 +29,25 @@ export class KnowledgeController {
 		const tenantId = payload.tenantId || '00000000-0000-0000-0000-000000000000';
 		const dbKey = payload.dbKey || 'default';
 		const schemaName = payload.schemaName || 'public';
-		// Build rich RAG context using JSON schema + reference lookup data
-		const jsonIds = await this.schemaIngestion.ingestSchemaJsonDescriptions(
-			tenantId,
-			dbKey,
-			schemaName,
-			'trustay_core',
-		);
-		const refIds = await this.schemaIngestion.ingestReferenceLookupData(tenantId, dbKey);
+		// Build rich RAG context using semantic JSON schema chunks + reference lookup data + denormalized docs
+		const [jsonIds, refIds, roomDocIds, requestDocIds] = await Promise.all([
+			this.schemaIngestion.ingestSchemaJsonDescriptions(
+				tenantId,
+				dbKey,
+				schemaName,
+				'trustay_core',
+			),
+			this.schemaIngestion.ingestReferenceLookupData(tenantId, dbKey),
+			this.schemaIngestion.ingestDenormalizedRoomDocs(tenantId, dbKey),
+			this.schemaIngestion.ingestDenormalizedRequestDocs(tenantId, dbKey),
+		]);
 		return {
 			success: true,
-			inserted: jsonIds.length + refIds.length,
-			jsonInserted: jsonIds.length,
-			refInserted: refIds.length,
+			inserted: jsonIds.length + refIds.length + roomDocIds.length + requestDocIds.length,
+			jsonSchemaChunks: jsonIds.length,
+			referenceDataChunks: refIds.length,
+			roomDocsChunks: roomDocIds.length,
+			requestDocsChunks: requestDocIds.length,
 			tenantId,
 			dbKey,
 			schemaName,

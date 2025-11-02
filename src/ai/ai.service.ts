@@ -329,44 +329,47 @@ export class AiService {
 				);
 
 				// ========================================
-				// BƯỚC 4: Agent 3 - Response Generator
+				// BƯỚC 4 & 5: Response Generator & Result Validator (PARALLEL)
 				// ========================================
-				// Agent này có nhiệm vụ:
-				// - Tạo câu trả lời thân thiện, tự nhiên bằng tiếng Việt
-				// - Kết hợp thông tin từ Agent 1 (orchestrator message) và kết quả SQL
-				// - Format output theo pattern ---END + LIST/TABLE/CHART
-				const responseText: string = await this.responseGenerator.generateFinalResponse(
-					orchestratorResponse.message,
-					sqlResult,
-					session,
-					this.AI_CONFIG,
-					desiredMode,
+				// Hai agent này chạy SONG SONG để tối ưu latency:
+				// - Agent 3 (Response Generator): Biến đổi Result thành phản hồi có cấu trúc
+				// - Agent 4 (Result Validator): Đánh giá tính hợp lệ của kết quả
+				// MVP: Parallel execution để giảm latency ~30-50%
+				this.logInfo(
+					'PARALLEL',
+					'Agent 3 & 4: Đang xử lý song song (Response Generator + Result Validator)...',
+				);
+				const parallelStartTime = Date.now();
+				const [responseText, validation] = await Promise.all([
+					// Agent 3: Response Generator - Tạo câu trả lời thân thiện với structured data
+					this.responseGenerator.generateFinalResponse(
+						orchestratorResponse.message,
+						sqlResult,
+						session,
+						this.AI_CONFIG,
+						desiredMode,
+					),
+					// Agent 4: Result Validator - Đánh giá tính hợp lệ của kết quả
+					this.resultValidatorAgent.validateResult(
+						query,
+						sqlResult.sql,
+						sqlResult.results,
+						orchestratorResponse.requestType,
+						this.AI_CONFIG,
+					),
+				]);
+				const parallelTime = Date.now() - parallelStartTime;
+				this.logInfo(
+					'PARALLEL',
+					`[STEP] Parallel execution → Response Generator & Validator completed in ${parallelTime}ms (vs sequential ~${Math.round(parallelTime * 1.5)}ms estimated)`,
+				);
+				this.logDebug(
+					'VALIDATOR',
+					`[STEP] Validator → isValid=${validation.isValid}, severity=${validation.severity || 'N/A'}, reason=${validation.reason || 'OK'}`,
 				);
 
 				// Parse responseText để tách message và structured data
 				const parsedResponse = parseResponseText(responseText);
-
-				// ========================================
-				// BƯỚC 5: Agent 4 - Result Validator
-				// ========================================
-				// Agent này có nhiệm vụ:
-				// - Đánh giá xem SQL và kết quả có đáp ứng yêu cầu ban đầu không
-				// - Chỉ khi isValid === true mới persist vào knowledge store
-				// MVP: Basic telemetry - validation timing
-				const validationStartTime = Date.now();
-				this.logInfo('VALIDATOR', 'Agent 4: Đang đánh giá kết quả...');
-				const validation = await this.resultValidatorAgent.validateResult(
-					query,
-					sqlResult.sql,
-					sqlResult.results,
-					orchestratorResponse.requestType,
-					this.AI_CONFIG,
-				);
-				const validationTime = Date.now() - validationStartTime;
-				this.logDebug(
-					'VALIDATOR',
-					`[STEP] Validator → isValid=${validation.isValid}, severity=${validation.severity || 'N/A'}, reason=${validation.reason || 'OK'}, took=${validationTime}ms`,
-				);
 
 				// MVP: Persist Q&A - Chỉ skip nếu có ERROR severity
 				// WARN severity vẫn cho phép persist để có thể học hỏi
