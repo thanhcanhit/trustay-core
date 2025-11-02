@@ -1259,10 +1259,6 @@ export class RoommateApplicationService {
 			throw new BadRequestException('Bài đăng không còn mở cho ứng tuyển');
 		}
 
-		if (roommateSeekingPost.remainingSlots <= 0) {
-			throw new BadRequestException('Bài đăng đã hết slot trống');
-		}
-
 		const postId = roommateSeekingPost.id;
 
 		// Get post to check if it's platform room
@@ -1281,7 +1277,23 @@ export class RoommateApplicationService {
 			},
 		});
 
-		const isPlatformRoom = !!post?.roomInstanceId;
+		if (!post || !post.roomInstanceId) {
+			throw new BadRequestException('Không tìm thấy thông tin phòng');
+		}
+
+		// Verify actual room capacity instead of relying on remainingSlots
+		// (remainingSlots might be inaccurate if there are approved applications not yet confirmed)
+		const currentOccupancy = await this.rentalsService.getOccupancyCountByRoomInstance(
+			post.roomInstanceId,
+		);
+		const maxOccupancy = post.roomInstance?.room?.maxOccupancy || 2;
+		const availableSlots = maxOccupancy - currentOccupancy;
+
+		if (availableSlots <= 0) {
+			throw new BadRequestException('Phòng đã đủ người, không còn chỗ trống');
+		}
+
+		const isPlatformRoom = !!post.roomInstanceId;
 
 		// Since tenant created the invite link, auto-approve from tenant
 		// But still need landlord approval for platform rooms
