@@ -36,6 +36,11 @@ async function bootstrap() {
 			{ path: '', method: RequestMethod.GET },
 			{ path: 'health', method: RequestMethod.GET },
 			{ path: 'images/(.*)', method: RequestMethod.GET },
+			{ path: '128x128/images/(.*)', method: RequestMethod.GET },
+			{ path: '256x256/images/(.*)', method: RequestMethod.GET },
+			{ path: '512x512/images/(.*)', method: RequestMethod.GET },
+			{ path: '1024x1024/images/(.*)', method: RequestMethod.GET },
+			{ path: '1920x1080/images/(.*)', method: RequestMethod.GET },
 		],
 	});
 
