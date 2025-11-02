@@ -751,14 +751,40 @@ export class RoommateApplicationService {
 		} as unknown as PaginatedResponseDto<RoommateApplicationResponseDto>;
 	}
 
-	async addRoommateDirectly(
-		postId: string,
-		addDto: AddRoommateDirectlyDto,
-		userId: string,
-	): Promise<void> {
-		// Validate post exists
-		const post = await this.prisma.roommateSeekingPost.findUnique({
-			where: { id: postId },
+	async addRoommateDirectly(addDto: AddRoommateDirectlyDto, userId: string): Promise<void> {
+		// Find active rental for current user (tenant)
+		const activeRental = await this.prisma.rental.findFirst({
+			where: {
+				tenantId: userId,
+				status: 'active',
+			},
+			include: {
+				roomInstance: {
+					include: {
+						room: {
+							include: {
+								building: true,
+							},
+						},
+					},
+				},
+			},
+		});
+
+		if (!activeRental) {
+			throw new NotFoundException('Bạn chưa có rental active');
+		}
+
+		if (!activeRental.roomInstanceId) {
+			throw new BadRequestException('Chỉ có thể thêm người vào phòng trong platform');
+		}
+
+		// Find or create hidden post for this rental
+		let post = await this.prisma.roommateSeekingPost.findFirst({
+			where: {
+				rentalId: activeRental.id,
+				status: RoommatePostStatus.active,
+			},
 			include: {
 				tenant: true,
 				roomInstance: {
@@ -773,15 +799,73 @@ export class RoommateApplicationService {
 			},
 		});
 
+		// If no post exists, create a hidden post automatically
 		if (!post) {
-			throw new NotFoundException('Không tìm thấy bài đăng');
+			const roomName = activeRental.roomInstance?.room?.name || 'Phòng';
+			const title = `Tìm người ở ghép - ${roomName}`;
+			const baseSlug = generateSlug(title);
+			const slug = await generateUniqueSlug(baseSlug, async (slug: string) => {
+				const existing = await this.prisma.roommateSeekingPost.findUnique({
+					where: { slug },
+				});
+				return existing !== null;
+			});
+
+			const monthlyRent = activeRental.monthlyRent;
+			const depositAmount = activeRental.depositPaid || 0;
+
+			// Check current occupancy
+			const activeRentalsCount = await this.prisma.rental.count({
+				where: {
+					roomInstanceId: activeRental.roomInstanceId,
+					status: 'active',
+				},
+			});
+
+			const maxOccupancy = activeRental.roomInstance?.room?.maxOccupancy || 2;
+			const currentOccupancy = activeRentalsCount;
+			const seekingCount = maxOccupancy - currentOccupancy;
+
+			// Create hidden post (isActive: false - not public)
+			post = await this.prisma.roommateSeekingPost.create({
+				data: {
+					title,
+					slug,
+					description: 'Bài đăng tự động tạo cho việc thêm roommate trực tiếp',
+					tenantId: userId,
+					rentalId: activeRental.id,
+					roomInstanceId: activeRental.roomInstanceId,
+					monthlyRent,
+					depositAmount,
+					seekingCount,
+					remainingSlots: seekingCount,
+					maxOccupancy,
+					currentOccupancy,
+					availableFromDate: new Date(),
+					status: RoommatePostStatus.active,
+					isActive: false, // Hidden post, not public
+				},
+				include: {
+					tenant: true,
+					roomInstance: {
+						include: {
+							room: {
+								include: {
+									building: true,
+								},
+							},
+						},
+					},
+				},
+			});
 		}
 
+		// Validate post has available slots
 		if (post.remainingSlots <= 0) {
-			throw new BadRequestException('Bài đăng đã hết slot trống');
+			throw new BadRequestException('Phòng đã hết slot trống');
 		}
 
-		// Validate user permission - tenant hoặc landlord (nếu platform room)
+		// Validate user permission - tenant hoặc landlord
 		const isTenant = post.tenantId === userId;
 		const isLandlord = post.roomInstanceId
 			? post.roomInstance?.room?.building?.ownerId === userId
@@ -986,7 +1070,7 @@ export class RoommateApplicationService {
 			throw new UnauthorizedException('Token không hợp lệ hoặc đã hết hạn');
 		}
 
-		const { rentalId, roomInstanceId, tenantId, roommateSeekingPostId } = inviteData;
+		const { rentalId, roomInstanceId, tenantId } = inviteData;
 
 		if (!rentalId || !tenantId) {
 			throw new BadRequestException('Token không chứa đủ thông tin cần thiết');
@@ -1051,33 +1135,20 @@ export class RoommateApplicationService {
 			throw new BadRequestException('Bạn đã có rental active khác');
 		}
 
-		// Find or create roommate seeking post
-		let postId: string;
-		if (roommateSeekingPostId) {
-			// Use existing post
-			const existingPost = await this.prisma.roommateSeekingPost.findUnique({
-				where: { id: roommateSeekingPostId },
-			});
+		// Find or create hidden post for this rental
+		if (!roomInstanceId) {
+			throw new BadRequestException('Chỉ có thể accept invite cho platform rooms');
+		}
 
-			if (!existingPost) {
-				throw new NotFoundException('Không tìm thấy bài đăng');
-			}
+		let roommateSeekingPost = await this.prisma.roommateSeekingPost.findFirst({
+			where: {
+				rentalId,
+				status: RoommatePostStatus.active,
+			},
+		});
 
-			if (existingPost.status !== RoommatePostStatus.active) {
-				throw new BadRequestException('Bài đăng không còn mở cho ứng tuyển');
-			}
-
-			if (existingPost.remainingSlots <= 0) {
-				throw new BadRequestException('Bài đăng đã hết slot trống');
-			}
-
-			postId = roommateSeekingPostId;
-		} else {
-			// Create a new post automatically (non-public, for direct invites)
-			if (!roomInstanceId) {
-				throw new BadRequestException('Chỉ có thể accept invite cho platform rooms');
-			}
-
+		// If no post exists, create a hidden post automatically
+		if (!roommateSeekingPost) {
 			const roomName = rental.roomInstance?.room?.name || 'Phòng';
 			const title = `Tìm người ở ghép - ${roomName}`;
 			const baseSlug = generateSlug(title);
@@ -1088,7 +1159,6 @@ export class RoommateApplicationService {
 				return existing !== null;
 			});
 
-			// Get room details for post
 			const monthlyRent = rental.monthlyRent;
 			const depositAmount = rental.depositPaid || 0;
 
@@ -1104,7 +1174,7 @@ export class RoommateApplicationService {
 			const currentOccupancy = activeRentalsCount;
 			const seekingCount = maxOccupancy - currentOccupancy;
 
-			const newPost = await this.prisma.roommateSeekingPost.create({
+			roommateSeekingPost = await this.prisma.roommateSeekingPost.create({
 				data: {
 					title,
 					slug,
@@ -1120,12 +1190,21 @@ export class RoommateApplicationService {
 					currentOccupancy,
 					availableFromDate: new Date(),
 					status: RoommatePostStatus.active,
-					isActive: false, // Not public, only for direct invites
+					isActive: false, // Hidden post, not public
 				},
 			});
-
-			postId = newPost.id;
 		}
+
+		// Validate post status and slots
+		if (roommateSeekingPost.status !== RoommatePostStatus.active) {
+			throw new BadRequestException('Bài đăng không còn mở cho ứng tuyển');
+		}
+
+		if (roommateSeekingPost.remainingSlots <= 0) {
+			throw new BadRequestException('Bài đăng đã hết slot trống');
+		}
+
+		const postId = roommateSeekingPost.id;
 
 		// Get post to check if it's platform room
 		const post = await this.prisma.roommateSeekingPost.findUnique({
@@ -1229,20 +1308,72 @@ export class RoommateApplicationService {
 			throw new BadRequestException('Bạn chưa có phòng thuê active để tạo link mời');
 		}
 
-		// Find or get roommate seeking post related to this rental
-		const roommateSeekingPost = await this.prisma.roommateSeekingPost.findFirst({
+		if (!activeRental.roomInstanceId) {
+			throw new BadRequestException('Chỉ có thể tạo link mời cho platform rooms');
+		}
+
+		// Find or create hidden post for this rental
+		let roommateSeekingPost = await this.prisma.roommateSeekingPost.findFirst({
 			where: {
 				rentalId: activeRental.id,
 				status: RoommatePostStatus.active,
 			},
 		});
 
-		// If no post exists, we'll use rentalId only
+		// If no post exists, create a hidden post automatically
+		if (!roommateSeekingPost) {
+			const roomName = activeRental.roomInstance?.room?.name || 'Phòng';
+			const title = `Tìm người ở ghép - ${roomName}`;
+			const baseSlug = generateSlug(title);
+			const slug = await generateUniqueSlug(baseSlug, async (slug: string) => {
+				const existing = await this.prisma.roommateSeekingPost.findUnique({
+					where: { slug },
+				});
+				return existing !== null;
+			});
+
+			const monthlyRent = activeRental.monthlyRent;
+			const depositAmount = activeRental.depositPaid || 0;
+
+			// Check current occupancy
+			const activeRentalsCount = await this.prisma.rental.count({
+				where: {
+					roomInstanceId: activeRental.roomInstanceId,
+					status: 'active',
+				},
+			});
+
+			const maxOccupancy = activeRental.roomInstance?.room?.maxOccupancy || 2;
+			const currentOccupancy = activeRentalsCount;
+			const seekingCount = maxOccupancy - currentOccupancy;
+
+			// Create hidden post (isActive: false - not public, only for direct invites)
+			roommateSeekingPost = await this.prisma.roommateSeekingPost.create({
+				data: {
+					title,
+					slug,
+					description: 'Bài đăng tự động tạo từ invite link',
+					tenantId: userId,
+					rentalId: activeRental.id,
+					roomInstanceId: activeRental.roomInstanceId,
+					monthlyRent,
+					depositAmount,
+					seekingCount,
+					remainingSlots: seekingCount,
+					maxOccupancy,
+					currentOccupancy,
+					availableFromDate: new Date(),
+					status: RoommatePostStatus.active,
+					isActive: false, // Hidden post, not public
+				},
+			});
+		}
+
+		// Token chỉ cần rentalId, post sẽ được tự động tạo hoặc tìm từ rental
 		const inviteData = {
 			rentalId: activeRental.id,
 			roomInstanceId: activeRental.roomInstanceId,
 			tenantId: userId,
-			roommateSeekingPostId: roommateSeekingPost?.id || null,
 		};
 
 		// Generate JWT token with invite data (expires in 30 days)
@@ -1263,7 +1394,7 @@ export class RoommateApplicationService {
 			inviteLink,
 			token,
 			rentalId: activeRental.id,
-			roommateSeekingPostId: roommateSeekingPost?.id,
+			roommateSeekingPostId: roommateSeekingPost.id,
 			expiresAt: expiresAt.toISOString(),
 		};
 	}
