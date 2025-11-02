@@ -177,7 +177,7 @@ export class BillsService {
 
 		// Update meter readings for metered costs (lưu theo room instance)
 		for (const meterReading of dto.meterReadings) {
-			await this.prisma.roomInstanceMeterReading.upsert({
+			await (this.prisma as any).roomInstanceMeterReading.upsert({
 				where: {
 					roomInstanceId_roomCostId: {
 						roomInstanceId: roomInstance.id,
@@ -209,7 +209,7 @@ export class BillsService {
 		});
 
 		// Get meter readings for this room instance
-		const meterReadings = await this.prisma.roomInstanceMeterReading.findMany({
+		const meterReadings = await (this.prisma as any).roomInstanceMeterReading.findMany({
 			where: {
 				roomInstanceId: roomInstance.id,
 			},
@@ -218,13 +218,13 @@ export class BillsService {
 		// Map readings to costs
 		const meterReadingsMap = new Map(meterReadings.map((mr) => [mr.roomCostId, mr]));
 
-		// Merge readings into costs
+		// Merge readings into costs: ưu tiên RoomInstanceMeterReading, fallback về RoomCost
 		const costsWithReadings = updatedRoomCosts.map((cost) => {
-			const reading = meterReadingsMap.get(cost.id);
+			const instanceReading = meterReadingsMap.get(cost.id) as any;
 			return {
 				...cost,
-				meterReading: reading?.meterReading ?? cost.meterReading,
-				lastMeterReading: reading?.lastMeterReading ?? cost.lastMeterReading,
+				meterReading: instanceReading?.meterReading ?? cost.meterReading,
+				lastMeterReading: instanceReading?.lastMeterReading ?? cost.lastMeterReading,
 			};
 		});
 
@@ -245,10 +245,15 @@ export class BillsService {
 			) + 1;
 		const prorationFactor = rentalDaysInPeriod / totalDaysInPeriod;
 
+		// Get occupancy count: query from rental
+		const occupancyCount = await this.rentalsService.getOccupancyCountByRoomInstance(
+			roomInstance.id,
+		);
+
 		// Calculate bill items
 		const billItems = await this.calculateBillItems(
-			updatedRoomCosts,
-			dto.occupancyCount,
+			costsWithReadings,
+			occupancyCount,
 			prorationFactor,
 			roomInstance.room.pricing,
 		);
@@ -486,7 +491,7 @@ export class BillsService {
 			const prorationFactor = rentalDaysInPeriod / totalDaysInPeriod;
 
 			// Get meter readings for this room instance
-			const meterReadings = await this.prisma.roomInstanceMeterReading.findMany({
+			const meterReadings = await (this.prisma as any).roomInstanceMeterReading.findMany({
 				where: {
 					roomInstanceId: roomInstance.id,
 				},
@@ -494,17 +499,13 @@ export class BillsService {
 
 			const meterReadingsMap = new Map(meterReadings.map((mr) => [mr.roomCostId, mr]));
 
-			// Merge readings into costs
+			// Merge readings into costs: ưu tiên RoomInstanceMeterReading, fallback về RoomCost
 			const costsWithReadings = roomInstance.room.costs.map((cost) => {
-				const reading = meterReadingsMap.get(cost.id);
+				const instanceReading = meterReadingsMap.get(cost.id) as any;
 				return {
 					...cost,
-					meterReading:
-						reading && reading.meterReading !== null ? reading.meterReading : cost.meterReading,
-					lastMeterReading:
-						reading && reading.lastMeterReading !== null
-							? reading.lastMeterReading
-							: cost.lastMeterReading,
+					meterReading: instanceReading?.meterReading ?? cost.meterReading,
+					lastMeterReading: instanceReading?.lastMeterReading ?? cost.lastMeterReading,
 				};
 			});
 
@@ -824,7 +825,7 @@ export class BillsService {
 
 		// Update meter readings for metered costs (lưu theo room instance)
 		for (const meterData of dto.meterData) {
-			await this.prisma.roomInstanceMeterReading.upsert({
+			await (this.prisma as any).roomInstanceMeterReading.upsert({
 				where: {
 					roomInstanceId_roomCostId: {
 						roomInstanceId: bill.roomInstanceId,
@@ -856,7 +857,7 @@ export class BillsService {
 		});
 
 		// Get meter readings for this room instance
-		const meterReadings = await this.prisma.roomInstanceMeterReading.findMany({
+		const meterReadings = await (this.prisma as any).roomInstanceMeterReading.findMany({
 			where: {
 				roomInstanceId: bill.roomInstanceId,
 			},
@@ -864,17 +865,13 @@ export class BillsService {
 
 		const meterReadingsMap = new Map(meterReadings.map((mr) => [mr.roomCostId, mr]));
 
-		// Merge readings into costs
+		// Merge readings into costs: ưu tiên RoomInstanceMeterReading, fallback về RoomCost
 		const costsWithReadings = updatedRoomCosts.map((cost) => {
-			const reading = meterReadingsMap.get(cost.id);
+			const instanceReading = meterReadingsMap.get(cost.id) as any;
 			return {
 				...cost,
-				meterReading:
-					reading && reading.meterReading !== null ? reading.meterReading : cost.meterReading,
-				lastMeterReading:
-					reading && reading.lastMeterReading !== null
-						? reading.lastMeterReading
-						: cost.lastMeterReading,
+				meterReading: instanceReading?.meterReading ?? cost.meterReading,
+				lastMeterReading: instanceReading?.lastMeterReading ?? cost.lastMeterReading,
 			};
 		});
 
@@ -1324,7 +1321,7 @@ export class BillsService {
 
 		// Update meter readings in room costs (lưu theo room instance)
 		for (const meter of meterData) {
-			await this.prisma.roomInstanceMeterReading.upsert({
+			await (this.prisma as any).roomInstanceMeterReading.upsert({
 				where: {
 					roomInstanceId_roomCostId: {
 						roomInstanceId: bill.roomInstanceId,
@@ -1356,7 +1353,7 @@ export class BillsService {
 		});
 
 		// Get meter readings for this room instance
-		const meterReadings = await this.prisma.roomInstanceMeterReading.findMany({
+		const meterReadings = await (this.prisma as any).roomInstanceMeterReading.findMany({
 			where: {
 				roomInstanceId: bill.roomInstanceId,
 			},
@@ -1364,17 +1361,13 @@ export class BillsService {
 
 		const meterReadingsMap = new Map(meterReadings.map((mr) => [mr.roomCostId, mr]));
 
-		// Merge readings into costs
+		// Merge readings into costs: ưu tiên RoomInstanceMeterReading, fallback về RoomCost
 		const costsWithReadings = updatedRoomCosts.map((cost) => {
-			const reading = meterReadingsMap.get(cost.id);
+			const instanceReading = meterReadingsMap.get(cost.id) as any;
 			return {
 				...cost,
-				meterReading:
-					reading && reading.meterReading !== null ? reading.meterReading : cost.meterReading,
-				lastMeterReading:
-					reading && reading.lastMeterReading !== null
-						? reading.lastMeterReading
-						: cost.lastMeterReading,
+				meterReading: instanceReading?.meterReading ?? cost.meterReading,
+				lastMeterReading: instanceReading?.lastMeterReading ?? cost.lastMeterReading,
 			};
 		});
 
@@ -1577,7 +1570,7 @@ export class BillsService {
 			room?.costs?.filter((cost: any) => cost.costType === 'metered' && cost.isActive) || [];
 
 		// Get meter readings for this room instance
-		const meterReadings = await this.prisma.roomInstanceMeterReading.findMany({
+		const meterReadings = await (this.prisma as any).roomInstanceMeterReading.findMany({
 			where: {
 				roomInstanceId: roomInstanceId,
 			},
@@ -1585,19 +1578,13 @@ export class BillsService {
 
 		const meterReadingsMap = new Map(meterReadings.map((mr) => [mr.roomCostId, mr]));
 
-		// Merge readings into costs
+		// Merge readings into costs: ưu tiên RoomInstanceMeterReading, fallback về RoomCost
 		const costsWithReadings = meteredCosts.map((cost: any) => {
-			const reading = meterReadingsMap.get(cost.id);
+			const instanceReading = meterReadingsMap.get(cost.id) as any;
 			return {
 				...cost,
-				meterReading:
-					reading && reading.meterReading !== null
-						? (reading.meterReading as any)
-						: cost.meterReading,
-				lastMeterReading:
-					reading && reading.lastMeterReading !== null
-						? (reading.lastMeterReading as any)
-						: cost.lastMeterReading,
+				meterReading: instanceReading?.meterReading ?? cost.meterReading,
+				lastMeterReading: instanceReading?.lastMeterReading ?? cost.lastMeterReading,
 			};
 		});
 
@@ -1626,7 +1613,7 @@ export class BillsService {
 			});
 
 			if (lastMonthBill) {
-				lastMonthMeterReadings = await this.prisma.roomInstanceMeterReading.findMany({
+				lastMonthMeterReadings = await (this.prisma as any).roomInstanceMeterReading.findMany({
 					where: {
 						roomInstanceId: roomInstanceId,
 					},
