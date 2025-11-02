@@ -1199,11 +1199,30 @@ export class RoommateApplicationService {
 			throw new BadRequestException('Bạn đã có rental active khác');
 		}
 
-		// Find or create hidden post for this rental
-		if (!roomInstanceId) {
+		// Validate room instance from rental (tính trực tiếp từ room instance, không từ post)
+		// Post chỉ là thực thể phụ để lưu trữ, không dùng để validate capacity
+		const rentalRoomInstanceId = rental.roomInstanceId || roomInstanceId;
+		if (!rentalRoomInstanceId) {
 			throw new BadRequestException('Chỉ có thể accept invite cho platform rooms');
 		}
 
+		if (!rental.roomInstance || !rental.roomInstance.room) {
+			throw new NotFoundException('Không tìm thấy thông tin phòng');
+		}
+
+		// Verify actual room capacity directly from room instance (not from post)
+		const currentOccupancy =
+			await this.rentalsService.getOccupancyCountByRoomInstance(rentalRoomInstanceId);
+		const maxOccupancy = rental.roomInstance.room.maxOccupancy || 2;
+		const availableSlots = maxOccupancy - currentOccupancy;
+
+		if (availableSlots <= 0) {
+			throw new BadRequestException('Phòng đã đủ người, không còn chỗ trống');
+		}
+
+		const isPlatformRoom = !!rentalRoomInstanceId;
+
+		// Find or create hidden post for this rental (post chỉ để lưu trữ thông tin)
 		let roommateSeekingPost = await this.prisma.roommateSeekingPost.findFirst({
 			where: {
 				rentalId,
@@ -1211,7 +1230,7 @@ export class RoommateApplicationService {
 			},
 		});
 
-		// If no post exists, create a hidden post automatically
+		// If no post exists, create a hidden post automatically (for storage only)
 		if (!roommateSeekingPost) {
 			const roomName = rental.roomInstance?.room?.name || 'Phòng';
 			const title = `Tìm người ở ghép - ${roomName}`;
@@ -1226,13 +1245,6 @@ export class RoommateApplicationService {
 			const monthlyRent = rental.monthlyRent;
 			const depositAmount = rental.depositPaid || 0;
 
-			// Check current occupancy using rentals service
-			const currentOccupancy =
-				await this.rentalsService.getOccupancyCountByRoomInstance(roomInstanceId);
-
-			const maxOccupancy = rental.roomInstance?.room?.maxOccupancy || 2;
-			const seekingCount = maxOccupancy - currentOccupancy;
-
 			roommateSeekingPost = await this.prisma.roommateSeekingPost.create({
 				data: {
 					title,
@@ -1240,11 +1252,11 @@ export class RoommateApplicationService {
 					description: 'Bài đăng tự động tạo từ invite link',
 					tenantId,
 					rentalId,
-					roomInstanceId,
+					roomInstanceId: rentalRoomInstanceId,
 					monthlyRent,
 					depositAmount,
-					seekingCount,
-					remainingSlots: seekingCount,
+					seekingCount: availableSlots,
+					remainingSlots: availableSlots,
 					maxOccupancy,
 					currentOccupancy,
 					availableFromDate: new Date(),
@@ -1254,46 +1266,12 @@ export class RoommateApplicationService {
 			});
 		}
 
-		// Validate post status and slots
+		// Validate post status (post chỉ để lưu trữ, không dùng để validate capacity)
 		if (roommateSeekingPost.status !== RoommatePostStatus.active) {
 			throw new BadRequestException('Bài đăng không còn mở cho ứng tuyển');
 		}
 
 		const postId = roommateSeekingPost.id;
-
-		// Get post to check if it's platform room
-		const post = await this.prisma.roommateSeekingPost.findUnique({
-			where: { id: postId },
-			include: {
-				roomInstance: {
-					include: {
-						room: {
-							include: {
-								building: true,
-							},
-						},
-					},
-				},
-			},
-		});
-
-		if (!post || !post.roomInstanceId) {
-			throw new BadRequestException('Không tìm thấy thông tin phòng');
-		}
-
-		// Verify actual room capacity instead of relying on remainingSlots
-		// (remainingSlots might be inaccurate if there are approved applications not yet confirmed)
-		const currentOccupancy = await this.rentalsService.getOccupancyCountByRoomInstance(
-			post.roomInstanceId,
-		);
-		const maxOccupancy = post.roomInstance?.room?.maxOccupancy || 2;
-		const availableSlots = maxOccupancy - currentOccupancy;
-
-		if (availableSlots <= 0) {
-			throw new BadRequestException('Phòng đã đủ người, không còn chỗ trống');
-		}
-
-		const isPlatformRoom = !!post.roomInstanceId;
 
 		// Since tenant created the invite link, auto-approve from tenant
 		// But still need landlord approval for platform rooms
@@ -1331,7 +1309,7 @@ export class RoommateApplicationService {
 		// Notifications based on room type
 		if (isPlatformRoom) {
 			// Platform room: notify landlord for approval (tenant already approved by creating invite)
-			const landlordId = post.roomInstance?.room?.building?.ownerId;
+			const landlordId = rental.roomInstance?.room?.building?.ownerId;
 			if (landlordId) {
 				await this.notificationsService.notifyRoommateApplicationReceived(landlordId, {
 					applicantName: fullName,
