@@ -97,11 +97,11 @@ export class OrchestratorAgent {
 
 			// Parse response to extract structured information
 			const requestTypeMatch = response.match(
-				/REQUEST_TYPE: (QUERY|GREETING|CLARIFICATION|GENERAL_CHAT)/,
+				/REQUEST_TYPE:\s*(QUERY|GREETING|CLARIFICATION|GENERAL_CHAT)/i,
 			);
-			const modeMatch = response.match(/MODE_HINT: (LIST|TABLE|CHART)/);
-			const entityMatch = response.match(/ENTITY_HINT: (room|post|room_seeking_post|none)/);
-			const filtersMatch = response.match(/FILTERS_HINT: (.+)/);
+			const modeMatch = response.match(/MODE_HINT:\s*(LIST|TABLE|CHART)/i);
+			const entityMatch = response.match(/ENTITY_HINT:\s*(room|post|room_seeking_post|none)/i);
+			const filtersMatch = response.match(/FILTERS_HINT:\s*(.+)/i);
 			const responseMatch = response.match(/RESPONSE: (.+)/s);
 
 			const requestType = requestTypeMatch
