@@ -44,13 +44,14 @@ YÊU CẦU ĐỊNH DẠNG (BẮT BUỘC):
 4. Không hiển thị SQL query.
 5. Nếu không có kết quả, đưa ra gợi ý hữu ích.
 6. Trả về nội dung ở dạng Markdown an toàn (không HTML).
-	7. QUAN TRỌNG (PATH CLICKABLE): Khi cấu trúc dữ liệu có trường "id" và biết thực thể (entity), hãy thêm trường "path" theo quy tắc:
-	   - room → "/rooms/:id"
-	   - post → "/posts/:id"
-	   - room_seeking_post → "/room-seeking-posts/:id"
-	   (Thay ":id" bằng giá trị id thực tế). Nếu không biết entity, bỏ qua path.
+7. QUAN TRỌNG (PATH CLICKABLE): Khi cấu trúc dữ liệu có trường "id" và biết thực thể (entity), hãy thêm trường "path" theo quy tắc:
+   - room → "/rooms/:id"
+   - post → "/posts/:id"
+   - room_seeking_post → "/room-seeking-posts/:id"
+   (Thay ":id" bằng giá trị id thực tế). Nếu không biết entity, bỏ qua path.
+8. ƯU TIÊN CHART: Nếu structured data có thể dựng biểu đồ và ý định là thống kê/vẽ/biểu đồ → ưu tiên payload CHART; chỉ dùng TABLE khi không có số liệu phù hợp.
 
-	8. SAU KHI VIẾT XONG CÂU TRẢ LỜI (CHỈ TEXT MARKDOWN, KHÔNG CÓ JSON CODE BLOCK), BẮT BUỘC PHẢI:
+9. SAU KHI VIẾT XONG CÂU TRẢ LỜI (CHỈ TEXT MARKDOWN, KHÔNG CÓ JSON CODE BLOCK), BẮT BUỘC PHẢI:
    - QUAN TRỌNG: Message chỉ là TEXT MARKDOWN, KHÔNG bao giờ chứa JSON code block.
    - ƯU TIÊN: Trả về JSON envelope format (toàn bộ response là JSON hợp lệ, KHÔNG có markdown text trước):
      Format: {"message":"[TENANT] Đây là 5 phòng...","payload":{"mode":"LIST","list":{"items":[...],"total":5}}}
