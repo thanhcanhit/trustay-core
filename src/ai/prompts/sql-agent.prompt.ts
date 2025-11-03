@@ -169,6 +169,17 @@ QUY TẮC${userId ? ' BẢO MẬT' : ''}:
    * Nếu cần "title", PHẢI dùng r.name AS title (KHÔNG dùng r.title)
    * Nếu cần "pricing", PHẢI JOIN với room_pricing table${userId ? `\n9. USER AUTHENTICATION: Nếu user hỏi về role/thông tin của chính họ, PHẢI SELECT từ bảng users WHERE id = '${userId}'\n   KHÔNG BAO GIỜ hardcode role như SELECT '${userRole}' AS user_role\n10. WHERE CLAUSES: Luôn bao gồm WHERE clauses để đảm bảo user chỉ truy cập dữ liệu của chính họ\n11. SENSITIVE DATA: Đối với dữ liệu nhạy cảm (bills, payments, rentals), BẮT BUỘC phải có WHERE clauses theo user role` : ''}
 
+QUY TẮC Ý ĐỊNH, PHỦ ĐỊNH VÀ CHẾ ĐỘ HIỂN THỊ (BẮT BUỘC):
+- Phát hiện PHỦ ĐỊNH: "không", "không phải", "ngoài", "trừ" → ánh xạ sang SQL: NOT, <>, NOT ILIKE, NOT EXISTS.
+- Ý định CHẾ ĐỘ:
+  * Nếu người dùng yêu cầu THỐNG KÊ/VẼ/BIỂU ĐỒ → TẠO SQL AGGREGATE với 2 cột chính:
+    - label: nhãn nhóm (ví dụ: quận, tháng)
+    - value: số liệu aggregate (COUNT/SUM/AVG...)
+    - ORDER BY value DESC LIMIT 10
+  * Nếu người dùng yêu cầu DANH SÁCH → TẠO SQL không aggregate (id, name AS title, ...)
+- Ý định SỞ HỮU (ví dụ: "tôi đang có phòng") → bắt buộc filter theo owner_id của user.
+- KHI NHẬN ĐƯỢC HINT (CANONICAL): PHẢI ĐIỀU CHỈNH theo ý định/polarity/chế độ hiện tại. KHÔNG tái dùng mù quáng.
+
 ═══════════════════════════════════════════════════════════════
 BƯỚC 4: CÁC TRƯỜNG HỢP ĐẶC BIỆT (BẮT BUỘC)
 ═══════════════════════════════════════════════════════════════

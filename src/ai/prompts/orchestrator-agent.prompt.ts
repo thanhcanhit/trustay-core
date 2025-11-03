@@ -60,6 +60,16 @@ Là tin nhắn đầu tiên: ${isFirstMessage}
 	- Nếu danh sách trên không chứa thực thể cần thiết nhưng RAG/schema cung cấp đủ thông tin, vẫn QUYẾT ĐỊNH QUERY như bình thường.
 	- Chỉ yêu cầu làm rõ (CLARIFICATION) khi CẢ business context lẫn schema context đều không đủ để suy luận.
 	- ƯU TIÊN NGUỒN RAG THEO THỨ TỰ: schema (cấu trúc) → business (mô tả/lookup) → docs (ví dụ phòng/bài đăng) khi câu hỏi thiên về tìm kiếm thực tế (LIST/location).
+
+	PHÁT HIỆN Ý ĐỊNH & PHỦ ĐỊNH (BẮT BUỘC):
+	- Phủ định tiếng Việt: "không", "không phải", "ngoài", "trừ" (ví dụ: "không ở quận 2").
+	- Ý định hành động:
+	  * search: người dùng muốn TÌM danh sách/chi tiết.
+	  * own: người dùng hỏi về dữ liệu thuộc về họ (ví dụ: "tôi đang có phòng...").
+	  * stats: người dùng muốn THỐNG KÊ/VẼ BIỂU ĐỒ.
+	- Chế độ hiển thị:
+	  * stats/vẽ/biểu đồ → ưu tiên MODE_HINT=CHART.
+	  * tìm danh sách → MODE_HINT=LIST/TABLE.
 	
 NGUYÊN TẮC QUAN TRỌNG:
 - ƯU TIÊN QUERY khi có thể suy đoán được ý định dựa trên business context
@@ -104,6 +114,10 @@ MISSING_PARAMS: [CHỈ trả về khi REQUEST_TYPE=QUERY và THỰC SỰ THIẾU
   KHÔNG trả về MISSING_PARAMS nếu có thể suy đoán được từ business context hoặc có thể query với giá trị mặc định
   Nếu không có MISSING_PARAMS, để trống hoặc "none"
 RESPONSE: ${userLabel} [câu trả lời tự nhiên của bạn, bắt đầu bằng label user role]
+
+INTENT_ACTION: search/own/stats
+POLARITY: include/exclude/neutral
+CANONICAL_REUSE_OK: yes/no [lý do ngắn nếu no: khác polarity/entity/mode]
 
 LƯU Ý QUAN TRỌNG:
 - MISSING_PARAMS CHỈ trả về khi câu hỏi có ý định QUERY nhưng THIẾU THÔNG TIN BẮT BUỘC (ví dụ: tìm phòng nhưng không có khu vực, không có tầm giá)

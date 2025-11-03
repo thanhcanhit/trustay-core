@@ -361,6 +361,17 @@ export class AiService {
 					`END | sqlPreview=${sqlResult.sql.substring(0, 50)}... | results=${sqlResult.count} | took=${sqlTime}ms`,
 				);
 
+				// Full SQL banner for debugging
+				try {
+					const top = '-------------------- GENERATED SQL (BEGIN) --------------------';
+					const bottom = '--------------------- GENERATED SQL (END) ---------------------';
+					this.logger.log(this.formatStep('SQL_AGENT', top));
+					this.logger.log(this.formatStep('SQL_AGENT', sqlResult.sql));
+					this.logger.log(this.formatStep('SQL_AGENT', bottom));
+				} catch (e) {
+					this.logWarn('SQL_AGENT', 'Failed to log full generated SQL', e);
+				}
+
 				// ========================================
 				// BƯỚC 4 & 5: Response Generator & Result Validator (PARALLEL)
 				// ========================================
