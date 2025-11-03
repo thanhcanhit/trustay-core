@@ -90,6 +90,29 @@ export class AiService {
 	}
 
 	/**
+	 * Structured pipeline banners for easier tracing across a full question lifecycle
+	 */
+	private logPipelineStart(question: string, sessionId: string): number {
+		const bannerTop = '==================== START PIPELINE ====================';
+		const bannerBottom = '========================================================';
+		const header = `PIPELINE@ai.service.ts | session=${sessionId}`;
+		this.logger.log(`${bannerTop}`);
+		this.logger.log(`[${header}] question: "${question}"`);
+		this.logger.log(`${bannerBottom}`);
+		return Date.now();
+	}
+
+	private logPipelineEnd(sessionId: string, outcome: string, startedAtMs: number): void {
+		const tookMs = Date.now() - startedAtMs;
+		const bannerTop = '===================== END PIPELINE =====================';
+		const bannerBottom = '========================================================';
+		const header = `PIPELINE@ai.service.ts | session=${sessionId}`;
+		this.logger.log(`${bannerTop}`);
+		this.logger.log(`[${header}] outcome=${outcome} took=${tookMs}ms`);
+		this.logger.log(`${bannerBottom}`);
+	}
+
+	/**
 	 * Generate session ID based on user context - similar to rooms.service.ts cache key generation
 	 * @param userId - User ID if authenticated
 	 * @param clientIp - Client IP address
@@ -214,26 +237,26 @@ export class AiService {
 		// Bước 1: Quản lý session - Lấy hoặc tạo session chat
 		// Session tự động có system prompt tiếng Việt khi tạo mới
 		const session = this.getOrCreateSession(userId, clientIp);
+		const pipelineStartAt = this.logPipelineStart(query, session.sessionId);
 
 		// Lưu câu hỏi của người dùng vào session
 		this.addMessageToSession(session, 'user', query);
 
 		try {
-			this.logDebug('SESSION', `Đang xử lý câu hỏi: "${query}" (session: ${session.sessionId})`);
+			this.logDebug('SESSION', `BẮT ĐẦU XỬ LÝ | session=${session.sessionId}`);
 
 			// ========================================
 			// BƯỚC 2: Agent 1 - Orchestrator Agent
 			// ========================================
-			// Agent này có nhiệm vụ:
-			// - Đánh nhãn user role và phân loại request type
-			// - Đọc và hiểu business context từ RAG để nắm vững nghiệp vụ hệ thống
-			// - Quyết định xem có đủ thông tin để tạo SQL query không
-			// - Gợi ý mode response (LIST/TABLE/CHART) dựa trên ý định
-			// MVP: Basic telemetry - timing logs
+			// ORCHESTRATOR features:
+			// - Classify user role & request type
+			// - Read business context via RAG (limit=8, threshold=0.6)
+			// - Decide readiness for SQL
+			// - Derive intent hints: ENTITY/FILTERS/MODE
 			const startTime = Date.now();
 			this.logInfo(
 				'ORCHESTRATOR',
-				'Agent 1: Đang phân tích câu hỏi, đánh nhãn user role và request type...',
+				'START | classify role & type | read business RAG | derive intents',
 			);
 			const orchestratorResponse = await this.orchestratorAgent.process(
 				query,
@@ -241,9 +264,9 @@ export class AiService {
 				this.AI_CONFIG,
 			);
 			const orchestratorTime = Date.now() - startTime;
-			this.logDebug(
+			this.logInfo(
 				'ORCHESTRATOR',
-				`[STEP] Orchestrator → readyForSql=${orchestratorResponse.readyForSql}, took=${orchestratorTime}ms (requestType=${orchestratorResponse.requestType}, userRole=${orchestratorResponse.userRole})`,
+				`END | readyForSql=${orchestratorResponse.readyForSql} | requestType=${orchestratorResponse.requestType} | userRole=${orchestratorResponse.userRole} | took=${orchestratorTime}ms`,
 			);
 
 			// Xác định mode response dựa trên ý định người dùng (LIST/TABLE/CHART)
@@ -306,15 +329,16 @@ export class AiService {
 				// ========================================
 				// BƯỚC 3: Agent 2 - SQL Generation Agent
 				// ========================================
-				// Agent này có nhiệm vụ:
-				// - Tái sử dụng canonical SQL nếu có, hoặc tạo SQL mới dựa trên context
-				// - Sử dụng RAG để lấy schema context liên quan
-				// - Tạo SQL query dựa trên câu hỏi, business context và hints từ Agent 1
-				// - Thực thi SQL query an toàn (read-only)
-				// - Trả về kết quả đã được serialize
-				// MVP: Basic telemetry - SQL generation timing
+				// SQL_AGENT features:
+				// - Canonical reuse decision (hard=0.92, soft=0.8)
+				// - Retrieve schema context via RAG (limit=8, threshold=0.6)
+				// - Generate SQL (use business + intent hints)
+				// - Execute read-only & serialize results
 				const sqlStartTime = Date.now();
-				this.logInfo('SQL_AGENT', 'Agent 2: Đang tạo và thực thi SQL query...');
+				this.logInfo(
+					'SQL_AGENT',
+					'START | canonical decision | schema RAG | generate SQL | execute',
+				);
 				const sqlResult = await this.sqlGenerationAgent.process(
 					query,
 					session,
@@ -325,20 +349,16 @@ export class AiService {
 				const sqlTime = Date.now() - sqlStartTime;
 				this.logInfo(
 					'SQL_AGENT',
-					`[STEP] SQL Generation → query=${sqlResult.sql.substring(0, 50)}..., results=${sqlResult.count}, took=${sqlTime}ms`,
+					`END | sqlPreview=${sqlResult.sql.substring(0, 50)}... | results=${sqlResult.count} | took=${sqlTime}ms`,
 				);
 
 				// ========================================
 				// BƯỚC 4 & 5: Response Generator & Result Validator (PARALLEL)
 				// ========================================
-				// Hai agent này chạy SONG SONG để tối ưu latency:
-				// - Agent 3 (Response Generator): Biến đổi Result thành phản hồi có cấu trúc
-				// - Agent 4 (Result Validator): Đánh giá tính hợp lệ của kết quả
-				// MVP: Parallel execution để giảm latency ~30-50%
-				this.logInfo(
-					'PARALLEL',
-					'Agent 3 & 4: Đang xử lý song song (Response Generator + Result Validator)...',
-				);
+				// PARALLEL features:
+				// - RESPONSE_GENERATOR: build final natural response with structured payloads
+				// - VALIDATOR: evaluate result validity & severity
+				this.logInfo('PARALLEL', 'START | response-generator + validator');
 				const parallelStartTime = Date.now();
 				const [responseText, validation] = await Promise.all([
 					// Agent 3: Response Generator - Tạo câu trả lời thân thiện với structured data
@@ -361,7 +381,7 @@ export class AiService {
 				const parallelTime = Date.now() - parallelStartTime;
 				this.logInfo(
 					'PARALLEL',
-					`[STEP] Parallel execution → Response Generator & Validator completed in ${parallelTime}ms (vs sequential ~${Math.round(parallelTime * 1.5)}ms estimated)`,
+					`END | completed in ${parallelTime}ms | validator.isValid=${validation.isValid} | severity=${validation.severity || 'N/A'}`,
 				);
 				this.logDebug(
 					'VALIDATOR',
@@ -407,13 +427,15 @@ export class AiService {
 				this.addMessageToSession(session, 'assistant', parsedResponse.message);
 
 				// Trả về response với payload structured cho UI
-				return {
+				const response: ChatResponse = {
 					kind: 'DATA',
 					sessionId: session.sessionId,
 					timestamp: new Date().toISOString(),
 					message: parsedResponse.message,
 					payload: dataPayload,
 				};
+				this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt);
+				return response;
 			} else {
 				// ========================================
 				// Trường hợp: Chưa đủ thông tin hoặc không phải QUERY
@@ -421,29 +443,31 @@ export class AiService {
 				// Agent 1 xác định cần làm rõ thêm trước khi có thể tạo SQL
 				// Trả về response yêu cầu clarification hoặc general chat
 				if (orchestratorResponse.requestType === RequestType.CLARIFICATION) {
-					this.logInfo('ORCHESTRATOR', 'Cần thêm thông tin - trả về response yêu cầu làm rõ');
+					this.logInfo('ORCHESTRATOR', 'END | need clarification');
 					const messageText: string = `Mình cần thêm chút thông tin để trả lời chính xác: ${orchestratorResponse.message}`;
 					this.addMessageToSession(session, 'assistant', messageText);
-
-					return {
+					const response: ChatResponse = {
 						kind: 'CONTROL',
 						sessionId: session.sessionId,
 						timestamp: new Date().toISOString(),
 						message: messageText,
 						payload: { mode: 'CLARIFY', questions: [] },
 					};
+					this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt);
+					return response;
 				} else {
 					// General chat or greeting
 					this.logInfo('ORCHESTRATOR', `Request type: ${orchestratorResponse.requestType}`);
 					this.addMessageToSession(session, 'assistant', orchestratorResponse.message);
-
-					return {
+					const response: ChatResponse = {
 						kind: 'CONTENT',
 						sessionId: session.sessionId,
 						timestamp: new Date().toISOString(),
 						message: orchestratorResponse.message,
 						payload: { mode: 'CONTENT' },
 					};
+					this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt);
+					return response;
 				}
 			}
 		} catch (error) {
@@ -457,14 +481,15 @@ export class AiService {
 			const errorMessage = generateErrorResponse((error as Error).message);
 			const messageText: string = `Xin lỗi, đã xảy ra lỗi: ${errorMessage}`;
 			this.addMessageToSession(session, 'assistant', messageText);
-
-			return {
+			const response: ChatResponse = {
 				kind: 'CONTROL',
 				sessionId: session.sessionId,
 				timestamp: new Date().toISOString(),
 				message: messageText,
 				payload: { mode: 'ERROR', details: (error as Error).message },
 			};
+			this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt);
+			return response;
 		}
 	}
 

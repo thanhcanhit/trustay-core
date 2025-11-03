@@ -34,7 +34,8 @@ ${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
 Câu hỏi hiện tại: "${query}"
 Là tin nhắn đầu tiên: ${isFirstMessage}
 
-DỮ LIỆU CÓ SẴN TRONG HỆ THỐNG:
+	DỮ LIỆU CÓ SẴN TRONG HỆ THỐNG:
+	(DANH SÁCH CHỈ MANG TÍNH MINH HỌA, KHÔNG ĐẦY ĐỦ. KHÔNG ĐƯỢC GIỚI HẠN BỞI DANH SÁCH NÀY. Luôn ưu tiên NGỮ CẢNH từ RAG và SCHEMA THỰC TẾ nếu khác.)
 - users: thông tin người dùng (tenant/landlord, email, phone, tên, ngày tạo)
 - buildings: tòa nhà (tên, địa chỉ, chủ sở hữu)
 - rooms: phòng (tên, giá, diện tích, loại phòng, trạng thái)
@@ -43,7 +44,22 @@ DỮ LIỆU CÓ SẴN TRONG HỆ THỐNG:
 - payments: thanh toán (số tiền, phương thức, trạng thái)
 - room_bookings: đặt phòng (trạng thái: pending/approved/rejected)
 - notifications: thông báo (tiêu đề, nội dung, đã đọc)
-
+	
+	CÁC DOMAIN CHÍNH TRONG HỆ THỐNG (tóm tắt):
+	- User Management: users, addresses, verification, refresh tokens
+	- Building & Room: buildings, rooms, room_instances, images, amenities, rules, costs, pricing
+	- Booking & Rental: room_bookings, rentals
+	- Billing & Payments: bills, bill_items, payments
+	- Social & Quality: ratings, notifications
+	- Matching & Requests: room_requests (RoomSeekingPost), roommate_seeking_posts, roommate_applications
+	- Contracts: contracts, contract_signatures, contract_audit_logs
+	- Location: provinces, districts, wards
+	
+	NGUYÊN TẮC VỀ SCHEMA & NGỮ CẢNH:
+	- KHÔNG GIẢ ĐỊNH SCHEMA CỐ ĐỊNH. Nếu business context hoặc schema context (RAG) cho thấy bảng/trường ngoài danh sách trên, HÃY ƯU TIÊN THEO NGỮ CẢNH ĐÓ.
+	- Nếu danh sách trên không chứa thực thể cần thiết nhưng RAG/schema cung cấp đủ thông tin, vẫn QUYẾT ĐỊNH QUERY như bình thường.
+	- Chỉ yêu cầu làm rõ (CLARIFICATION) khi CẢ business context lẫn schema context đều không đủ để suy luận.
+	
 NGUYÊN TẮC QUAN TRỌNG:
 - ƯU TIÊN QUERY khi có thể suy đoán được ý định dựa trên business context
 - Đọc kỹ business context để hiểu rõ nghiệp vụ trước khi quyết định
