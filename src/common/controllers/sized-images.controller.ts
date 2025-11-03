@@ -5,16 +5,12 @@ import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 
 /**
- * Controller to handle static file requests with proper 404 responses
- * Handles patterns:
- * - /images/{size}/{filename} - uses specified size
- * - /images/{filename} - uses default size 512x512
- * This replaces the default static file serving to return 404 instead of 500
+ * Controller to handle size-prefixed image requests
+ * Handles routes like /128x128/images/filename.png
  */
-@Controller('images')
-export class StaticFilesController {
-	private readonly logger = new Logger(StaticFilesController.name);
-	private readonly defaultSize = '512x512';
+@Controller()
+export class SizedImagesController {
+	private readonly logger = new Logger(SizedImagesController.name);
 	private readonly validSizes = ['128x128', '256x256', '512x512', '1024x1024', '1920x1080'];
 	private readonly uploadDir: string;
 
@@ -22,11 +18,26 @@ export class StaticFilesController {
 		this.uploadDir = this.configService.get<string>('UPLOAD_DIR') || './uploads/images';
 	}
 
-	@Get('*path')
-	async serveImage(
+	@Get(':size/images/*path')
+	async serveSizedImage(
+		@Param('size') size: string,
 		@Param('path') imagePathParam: string | string[],
 		@Res() res: Response,
 	): Promise<void> {
+		this.logger.debug(
+			`SizedImagesController called: size=${size}, path=${JSON.stringify(imagePathParam)}`,
+		);
+
+		// Validate size parameter
+		if (!this.validSizes.includes(size)) {
+			res.status(400).json({
+				statusCode: 400,
+				message: `Invalid image size. Valid sizes: ${this.validSizes.join(', ')}`,
+				error: 'Bad Request',
+			});
+			return;
+		}
+
 		// Handle both string and array (NestJS wildcard can return array)
 		const imagePath = Array.isArray(imagePathParam) ? imagePathParam.join('/') : imagePathParam;
 
@@ -40,31 +51,16 @@ export class StaticFilesController {
 			return;
 		}
 
-		// Check if path starts with a valid size (e.g., "128x128/filename.png")
-		const pathParts = imagePath.split('/');
-		let size: string;
-		let filename: string;
-
-		if (pathParts.length >= 2 && this.validSizes.includes(pathParts[0])) {
-			// Pattern: /images/128x128/filename.png
-			size = pathParts[0];
-			filename = pathParts.slice(1).join('/');
-		} else {
-			// Pattern: /images/filename.png (use default size)
-			size = this.defaultSize;
-			filename = imagePath;
-		}
-
 		// Construct the full path to the image file using the same uploadDir as UploadService
-		const relativePath = join(this.uploadDir, size, filename);
+		const relativePath = join(this.uploadDir, size, imagePath);
 		// Resolve to absolute path (required by res.sendFile)
 		const fullPath = resolve(relativePath);
 
-		this.logger.debug(`Serving image: ${fullPath} (size: ${size}, filename: ${filename})`);
+		this.logger.debug(`Serving sized image: ${fullPath} (size: ${size}, path: ${imagePath})`);
 
 		// Check if the file exists
 		if (!existsSync(fullPath)) {
-			this.logger.warn(`Image not found: ${fullPath}`);
+			this.logger.warn(`Sized image not found: ${fullPath}`);
 			res.status(404).json({
 				statusCode: 404,
 				message: 'Image not found',

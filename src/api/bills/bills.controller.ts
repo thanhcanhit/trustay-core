@@ -18,13 +18,13 @@ import { RolesGuard } from '../../auth/guards/roles.guard';
 import { BillsService } from './bills.service';
 import {
 	BillResponseDto,
-	BuildingBillPreviewDto,
 	CreateBillDto,
 	CreateBillForRoomDto,
 	MeterDataDto,
 	PaginatedBillResponseDto,
 	PreviewBuildingBillDto,
 	QueryBillDto,
+	QueryBillsForLandlordDto,
 	UpdateBillDto,
 	UpdateBillWithMeterDataDto,
 } from './dto';
@@ -69,22 +69,59 @@ export class BillsController {
 		return this.billsService.createBillForRoom(userId, createBillDto);
 	}
 
-	@Post('preview-for-building')
+	@Post('generate-monthly-bills-for-building')
 	@Roles(UserRole.landlord)
-	@ApiOperation({ summary: 'Preview hóa đơn cho toàn bộ building' })
+	@ApiOperation({ summary: 'Tổng kết và tạo hóa đơn tháng cho toàn bộ building' })
 	@ApiResponse({
 		status: 200,
-		description: 'Preview hóa đơn và danh sách costs cần nhập',
-		type: BuildingBillPreviewDto,
+		description: 'Tổng kết và tạo hóa đơn thành công',
+		schema: {
+			type: 'object',
+			properties: {
+				message: { type: 'string' },
+				billsCreated: { type: 'number' },
+				billsExisted: { type: 'number' },
+			},
+		},
 	})
-	async previewBillForBuilding(
+	async generateMonthlyBillsForBuilding(
 		@CurrentUser('id') userId: string,
 		@Body() previewDto: PreviewBuildingBillDto,
-	): Promise<BuildingBillPreviewDto> {
-		return this.billsService.previewBillForBuilding(userId, previewDto);
+	): Promise<{ message: string; billsCreated: number; billsExisted: number }> {
+		return this.billsService.generateMonthlyBillsForBuilding(userId, previewDto);
 	}
 
-	@Post('update-with-meter-data')
+	@Get('tenant/my-bills')
+	@Roles(UserRole.tenant)
+	@ApiOperation({ summary: 'Lấy danh sách hóa đơn của tenant' })
+	@ApiResponse({
+		status: 200,
+		description: 'Danh sách hóa đơn của tenant',
+		type: PaginatedBillResponseDto,
+	})
+	async getBillsForTenant(
+		@CurrentUser('id') userId: string,
+		@Query() query: QueryBillDto,
+	): Promise<PaginatedBillResponseDto> {
+		return this.billsService.getBillsForTenant(userId, query);
+	}
+
+	@Get('landlord/by-month')
+	@Roles(UserRole.landlord)
+	@ApiOperation({ summary: 'Lấy danh sách hóa đơn tháng này để xử lý (landlord)' })
+	@ApiResponse({
+		status: 200,
+		description: 'Danh sách hóa đơn tháng này',
+		type: PaginatedBillResponseDto,
+	})
+	async getBillsForLandlordByMonth(
+		@CurrentUser('id') userId: string,
+		@Query() query: QueryBillsForLandlordDto,
+	): Promise<PaginatedBillResponseDto> {
+		return this.billsService.getBillsForLandlordByMonth(userId, query);
+	}
+
+	@Patch('update-with-meter-data')
 	@Roles(UserRole.landlord)
 	@ApiOperation({ summary: 'Cập nhật bill với meter data và occupancy' })
 	@ApiResponse({

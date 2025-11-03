@@ -8,16 +8,16 @@ import { BillStatus, UserRole } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RentalsService } from '../rentals/rentals.service';
 import {
 	BillResponseDto,
-	BuildingBillPreviewDto,
 	CreateBillDto,
 	CreateBillForRoomDto,
 	MeterDataDto,
 	PaginatedBillResponseDto,
 	PreviewBuildingBillDto,
 	QueryBillDto,
-	RoomBillPreviewDto,
+	QueryBillsForLandlordDto,
 	UpdateBillDto,
 	UpdateBillWithMeterDataDto,
 } from './dto';
@@ -27,6 +27,7 @@ export class BillsService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly notificationsService: NotificationsService,
+		private readonly rentalsService: RentalsService,
 	) {}
 
 	async createBill(userId: string, dto: CreateBillDto): Promise<BillResponseDto> {
@@ -114,7 +115,7 @@ export class BillsService {
 			landlordName: `${rental.owner.firstName} ${rental.owner.lastName}`,
 		});
 
-		return this.transformToResponseDto(bill);
+		return await this.transformToResponseDto(bill);
 	}
 
 	async createBillForRoom(userId: string, dto: CreateBillForRoomDto): Promise<BillResponseDto> {
@@ -174,11 +175,22 @@ export class BillsService {
 			throw new BadRequestException('Bill already exists for this period');
 		}
 
-		// Update meter readings for metered costs
+		// Update meter readings for metered costs (lưu theo room instance)
 		for (const meterReading of dto.meterReadings) {
-			await this.prisma.roomCost.update({
-				where: { id: meterReading.roomCostId },
-				data: {
+			await (this.prisma as any).roomInstanceMeterReading.upsert({
+				where: {
+					roomInstanceId_roomCostId: {
+						roomInstanceId: roomInstance.id,
+						roomCostId: meterReading.roomCostId,
+					},
+				},
+				update: {
+					meterReading: meterReading.currentReading,
+					lastMeterReading: meterReading.lastReading,
+				},
+				create: {
+					roomInstanceId: roomInstance.id,
+					roomCostId: meterReading.roomCostId,
 					meterReading: meterReading.currentReading,
 					lastMeterReading: meterReading.lastReading,
 				},
@@ -194,6 +206,26 @@ export class BillsService {
 			include: {
 				costTypeTemplate: true,
 			},
+		});
+
+		// Get meter readings for this room instance
+		const meterReadings = await (this.prisma as any).roomInstanceMeterReading.findMany({
+			where: {
+				roomInstanceId: roomInstance.id,
+			},
+		});
+
+		// Map readings to costs
+		const meterReadingsMap = new Map(meterReadings.map((mr) => [mr.roomCostId, mr]));
+
+		// Merge readings into costs: ưu tiên RoomInstanceMeterReading, fallback về RoomCost
+		const costsWithReadings = updatedRoomCosts.map((cost) => {
+			const instanceReading = meterReadingsMap.get(cost.id) as any;
+			return {
+				...cost,
+				meterReading: instanceReading?.meterReading ?? cost.meterReading,
+				lastMeterReading: instanceReading?.lastMeterReading ?? cost.lastMeterReading,
+			};
 		});
 
 		// Calculate proration factor
@@ -213,10 +245,15 @@ export class BillsService {
 			) + 1;
 		const prorationFactor = rentalDaysInPeriod / totalDaysInPeriod;
 
+		// Get occupancy count: query from rental
+		const occupancyCount = await this.rentalsService.getOccupancyCountByRoomInstance(
+			roomInstance.id,
+		);
+
 		// Calculate bill items
 		const billItems = await this.calculateBillItems(
-			updatedRoomCosts,
-			dto.occupancyCount,
+			costsWithReadings,
+			occupancyCount,
 			prorationFactor,
 			roomInstance.room.pricing,
 		);
@@ -275,13 +312,34 @@ export class BillsService {
 			landlordName: `${rental.owner.firstName} ${rental.owner.lastName}`,
 		});
 
-		return this.transformToResponseDto(bill);
+		return await this.transformToResponseDto(bill);
 	}
 
-	async previewBillForBuilding(
+	/**
+	 * Check if rental is active and overlaps with billing period
+	 */
+	private isRentalActiveForPeriod(
+		rental: { status: string; contractStartDate: Date; contractEndDate: Date | null },
+		periodStart: Date,
+		periodEnd: Date,
+	): boolean {
+		if (rental.status !== 'active') {
+			return false;
+		}
+
+		// Rental must have started before or on period end
+		const rentalStarted = rental.contractStartDate <= periodEnd;
+
+		// Rental must not have ended before period start (or have no end date)
+		const rentalNotEnded = !rental.contractEndDate || rental.contractEndDate >= periodStart;
+
+		return rentalStarted && rentalNotEnded;
+	}
+
+	async generateMonthlyBillsForBuilding(
 		userId: string,
 		dto: PreviewBuildingBillDto,
-	): Promise<BuildingBillPreviewDto> {
+	): Promise<{ message: string; billsCreated: number; billsExisted: number }> {
 		// Verify building exists and user has access
 		const building = await this.prisma.building.findUnique({
 			where: { id: dto.buildingId },
@@ -299,7 +357,41 @@ export class BillsService {
 			throw new ForbiddenException('Not authorized to preview bills for this building');
 		}
 
+		// Calculate default period: start of previous month to current date
+		const now = new Date();
+		const periodEnd = dto.periodEnd
+			? new Date(dto.periodEnd)
+			: new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+		let periodStart: Date;
+		if (dto.periodStart) {
+			periodStart = new Date(dto.periodStart);
+		} else {
+			// Start of previous month
+			const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+			periodStart = new Date(previousMonth.getFullYear(), previousMonth.getMonth(), 1);
+		}
+
+		// Calculate billing period if not provided
+		let billingPeriod: string;
+		let billingMonth: number;
+		let billingYear: number;
+
+		if (dto.billingPeriod) {
+			billingPeriod = dto.billingPeriod;
+			const [year, month] = dto.billingPeriod.split('-').map(Number);
+			billingYear = dto.billingYear || year;
+			billingMonth = dto.billingMonth || month;
+		} else {
+			// Use previous month for billing period
+			const previousMonth = new Date(periodStart.getFullYear(), periodStart.getMonth(), 1);
+			billingYear = previousMonth.getFullYear();
+			billingMonth = previousMonth.getMonth() + 1;
+			billingPeriod = `${billingYear}-${String(billingMonth).padStart(2, '0')}`;
+		}
+
 		// Get all active room instances in this building with their rentals
+		// We'll filter for active rentals in the period after fetching
 		const roomInstances = await this.prisma.roomInstance.findMany({
 			where: {
 				room: {
@@ -333,22 +425,59 @@ export class BillsService {
 			},
 		});
 
-		// Filter only room instances with active rentals
-		const activeRoomInstances = roomInstances.filter((ri) => ri.rentals.length > 0);
+		// Filter only room instances with active rentals that overlap with billing period
+		const activeRoomInstances = roomInstances.filter((ri) => {
+			if (!ri.rentals || ri.rentals.length === 0) {
+				return false;
+			}
 
-		const roomBills: RoomBillPreviewDto[] = [];
-		let totalBuildingAmount = 0;
-		let roomsNeedingMeterData = 0;
+			// Check if any rental is active and overlaps with period
+			return ri.rentals.some((rental) =>
+				this.isRentalActiveForPeriod(rental, periodStart, periodEnd),
+			);
+		});
 
-		const periodStart = new Date(dto.periodStart);
-		const periodEnd = new Date(dto.periodEnd);
+		if (activeRoomInstances.length === 0) {
+			return {
+				message: 'No active rentals found for this billing period',
+				billsCreated: 0,
+				billsExisted: 0,
+			};
+		}
+
+		// Create or get bills for each room instance
+		let billsCreated = 0;
+		let billsExisted = 0;
 
 		for (const roomInstance of activeRoomInstances) {
-			const rental = roomInstance.rentals[0]; // Get first active rental
+			// Get active rental that overlaps with period
+			const activeRental = roomInstance.rentals.find((rental) =>
+				this.isRentalActiveForPeriod(rental, periodStart, periodEnd),
+			);
+
+			if (!activeRental) {
+				continue;
+			}
+
+			// Check if bill already exists for this period (ensure only 1 bill per period)
+			const existingBill = await this.prisma.bill.findUnique({
+				where: {
+					rentalId_billingPeriod: {
+						rentalId: activeRental.id,
+						billingPeriod: billingPeriod,
+					},
+				},
+			});
+
+			if (existingBill) {
+				// Bill already exists, skip
+				billsExisted++;
+				continue;
+			}
 
 			// Calculate proration factor
-			const rentalStart = rental.contractStartDate;
-			const rentalEnd = rental.contractEndDate;
+			const rentalStart = activeRental.contractStartDate;
+			const rentalEnd = activeRental.contractEndDate;
 
 			const effectiveRentalStart = rentalStart > periodStart ? rentalStart : periodStart;
 			const effectiveRentalEnd = rentalEnd && rentalEnd < periodEnd ? rentalEnd : periodEnd;
@@ -361,108 +490,292 @@ export class BillsService {
 				) + 1;
 			const prorationFactor = rentalDaysInPeriod / totalDaysInPeriod;
 
-			// Calculate bill items (only fixed and per_person costs)
-			const calculatedItems = [];
-			const meterCostsToInput = [];
-			let calculatedTotal = 0;
-
-			// Add rent
-			if (roomInstance.room.pricing) {
-				const rentAmount = Number(roomInstance.room.pricing.basePriceMonthly) * prorationFactor;
-				if (rentAmount > 0) {
-					calculatedItems.push({
-						itemType: 'rent',
-						itemName: 'Tiền thuê phòng',
-						description: `Tiền thuê phòng (${Math.round(prorationFactor * 100)}% tháng)`,
-						quantity: 1,
-						unitPrice: rentAmount,
-						amount: rentAmount,
-						currency: roomInstance.room.pricing.currency || 'VND',
-					});
-					calculatedTotal += rentAmount;
-				}
-			}
-
-			// Process room costs
-			for (const cost of roomInstance.room.costs) {
-				let amount = 0;
-				let quantity = 1;
-				let itemName = cost.costTypeTemplate.name;
-				let description = cost.notes;
-
-				switch (cost.costType) {
-					case 'fixed':
-						// Fixed costs are prorated
-						amount = Number(cost.fixedAmount || 0) * prorationFactor;
-						description =
-							`${cost.notes || ''} (${Math.round(prorationFactor * 100)}% tháng)`.trim();
-						break;
-
-					case 'per_person':
-						// Per person costs are prorated and multiplied by occupancy
-						amount = Number(cost.perPersonAmount || 0) * 1 * prorationFactor; // Default occupancy = 1
-						quantity = 1;
-						itemName += ` (1 người)`;
-						description =
-							`${cost.notes || ''} (${Math.round(prorationFactor * 100)}% tháng)`.trim();
-						break;
-
-					case 'metered':
-						// Metered costs need manual input
-						meterCostsToInput.push({
-							roomCostId: cost.id,
-							costName: cost.costTypeTemplate.name,
-							unit: cost.unit,
-							unitPrice: cost.unitPrice,
-							currentReading: cost.meterReading,
-							lastReading: cost.lastMeterReading,
-							notes: cost.notes,
-						});
-						continue; // Skip adding to calculated items
-				}
-
-				if (amount > 0) {
-					calculatedItems.push({
-						itemType: cost.costTypeTemplate.category,
-						itemName,
-						description,
-						quantity,
-						unitPrice: amount / quantity,
-						amount,
-						currency: cost.currency,
-						notes: cost.notes,
-					});
-					calculatedTotal += amount;
-				}
-			}
-
-			roomBills.push({
-				roomInstanceId: roomInstance.id,
-				roomNumber: roomInstance.roomNumber,
-				roomName: roomInstance.room.name,
-				rentalId: rental.id,
-				tenantName: `${rental.tenant.firstName} ${rental.tenant.lastName}`,
-				occupancyCount: 1, // Default, will be updated when creating actual bill
-				calculatedItems,
-				calculatedTotal,
-				meterCostsToInput,
+			// Get meter readings for this room instance
+			const meterReadings = await (this.prisma as any).roomInstanceMeterReading.findMany({
+				where: {
+					roomInstanceId: roomInstance.id,
+				},
 			});
 
-			totalBuildingAmount += calculatedTotal;
-			if (meterCostsToInput.length > 0) {
-				roomsNeedingMeterData++;
+			const meterReadingsMap = new Map(meterReadings.map((mr) => [mr.roomCostId, mr]));
+
+			// Merge readings into costs: ưu tiên RoomInstanceMeterReading, fallback về RoomCost
+			const costsWithReadings = roomInstance.room.costs.map((cost) => {
+				const instanceReading = meterReadingsMap.get(cost.id) as any;
+				return {
+					...cost,
+					meterReading: instanceReading?.meterReading ?? cost.meterReading,
+					lastMeterReading: instanceReading?.lastMeterReading ?? cost.lastMeterReading,
+				};
+			});
+
+			// Get room costs (only fixed and per_person, skip metered without readings)
+			const roomCostsForCalculation = costsWithReadings.filter(
+				(cost) =>
+					cost.costType !== 'metered' ||
+					(cost.meterReading !== null && cost.lastMeterReading !== null),
+			);
+
+			// Calculate bill items (default occupancy = 1)
+			const billItems = await this.calculateBillItems(
+				roomCostsForCalculation,
+				1, // Default occupancy
+				prorationFactor,
+				roomInstance.room.pricing,
+			);
+
+			// Calculate totals
+			const subtotal = billItems.reduce((sum, item) => sum + Number(item.amount), 0);
+			const totalAmount = subtotal;
+
+			// Check if metered costs exist
+			const hasMeteredCosts = costsWithReadings.some((cost) => cost.costType === 'metered');
+
+			// Check if metered costs exist without readings
+			const hasMeteredCostsWithoutReadings = costsWithReadings.some(
+				(cost) =>
+					cost.costType === 'metered' &&
+					(cost.meterReading === null || cost.lastMeterReading === null),
+			);
+
+			// Status logic:
+			// - Nếu không có metered costs hoặc đã có đủ readings: status = pending (hoàn tất)
+			// - Nếu có metered costs nhưng chưa có readings: status = draft (cần nhập data)
+			const billStatus =
+				hasMeteredCosts && hasMeteredCostsWithoutReadings ? BillStatus.draft : BillStatus.pending;
+
+			// Create bill (ensure only 1 bill per period)
+			const createdBill = await this.prisma.bill.create({
+				data: {
+					rentalId: activeRental.id,
+					roomInstanceId: roomInstance.id,
+					billingPeriod: billingPeriod,
+					billingMonth: billingMonth,
+					billingYear: billingYear,
+					periodStart,
+					periodEnd,
+					rentalStartDate: effectiveRentalStart,
+					rentalEndDate: effectiveRentalEnd,
+					occupancyCount: 1, // Default, should be updated later
+					subtotal,
+					discountAmount: 0,
+					taxAmount: 0,
+					totalAmount,
+					remainingAmount: totalAmount,
+					dueDate: periodEnd,
+					status: billStatus,
+					notes: `Auto-generated bill for ${billingPeriod}`,
+					isAutoGenerated: true,
+					requiresMeterData: hasMeteredCostsWithoutReadings,
+					billItems: {
+						create: billItems,
+					},
+				},
+				include: {
+					rental: {
+						include: {
+							tenant: true,
+							roomInstance: {
+								include: {
+									room: true,
+								},
+							},
+						},
+					},
+				},
+			});
+
+			// Notify tenant if bill status is pending (no metered costs or all metered costs have readings)
+			if (billStatus === BillStatus.pending) {
+				try {
+					await this.notificationsService.notifyBill(activeRental.tenantId, {
+						month: billingMonth,
+						year: billingYear,
+						roomName: roomInstance.room.name,
+						amount: Number(totalAmount),
+						billId: createdBill.id,
+						dueDate: periodEnd,
+						landlordName:
+							`${building.owner.firstName} ${building.owner.lastName}`.trim() || 'Chủ nhà',
+					});
+				} catch (error) {
+					// Log error but don't fail the bill creation
+					// eslint-disable-next-line no-console
+					console.error('Failed to send bill notification:', error);
+				}
 			}
+
+			billsCreated++;
 		}
 
 		return {
-			buildingId: dto.buildingId,
-			buildingName: building.name,
-			billingPeriod: dto.billingPeriod,
-			roomBills,
-			totalBuildingAmount,
-			totalRooms: roomBills.length,
-			roomsNeedingMeterData,
+			message: `Successfully created ${billsCreated} bill(s) and found ${billsExisted} existing bill(s) for billing period ${billingPeriod}`,
+			billsCreated,
+			billsExisted,
 		};
+	}
+
+	async getBillsForTenant(userId: string, query: QueryBillDto): Promise<PaginatedBillResponseDto> {
+		// Tenant can only see their own bills
+		return this.getBills(userId, UserRole.tenant, query);
+	}
+
+	async getBillsForLandlordByMonth(
+		userId: string,
+		query: QueryBillsForLandlordDto,
+	): Promise<PaginatedBillResponseDto> {
+		const {
+			page = 1,
+			limit = 20,
+			buildingId,
+			roomInstanceId,
+			billingPeriod,
+			billingMonth,
+			billingYear,
+			status,
+			search,
+			sortBy = 'roomName',
+			sortOrder = 'asc',
+		} = query;
+		const skip = (page - 1) * limit;
+
+		// Base where condition - landlord can only see bills for their own rentals
+		const baseWhere: any = {
+			rental: {
+				ownerId: userId,
+			},
+		};
+
+		// Add roomInstanceId filter if provided (highest priority - specific room)
+		if (roomInstanceId) {
+			baseWhere.roomInstanceId = roomInstanceId;
+		}
+
+		// Add building filter if provided (and no roomInstanceId)
+		if (buildingId && !roomInstanceId) {
+			baseWhere.rental.roomInstance = {
+				room: {
+					buildingId: buildingId,
+				},
+			};
+		}
+
+		// Add billing period filter
+		if (billingPeriod) {
+			baseWhere.billingPeriod = billingPeriod;
+		} else if (billingMonth && billingYear) {
+			const period = `${billingYear}-${String(billingMonth).padStart(2, '0')}`;
+			baseWhere.billingPeriod = period;
+		} else {
+			// Default to current month
+			const now = new Date();
+			const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+			baseWhere.billingPeriod = currentPeriod;
+		}
+
+		// Add status filter
+		if (status) {
+			baseWhere.status = status;
+		}
+
+		// Add search filter (room name or room number)
+		if (search) {
+			const searchConditions = {
+				OR: [
+					{
+						room: {
+							name: { contains: search, mode: 'insensitive' },
+						},
+					},
+					{
+						roomNumber: { contains: search, mode: 'insensitive' },
+					},
+				],
+			};
+
+			if (baseWhere.rental.roomInstance) {
+				// If building filter exists, combine with search using AND
+				const existingRoomInstanceFilter = baseWhere.rental.roomInstance;
+				baseWhere.rental.roomInstance = {
+					AND: [existingRoomInstanceFilter, searchConditions],
+				};
+			} else {
+				// No building filter, add search directly
+				baseWhere.rental.roomInstance = searchConditions;
+			}
+		}
+
+		// Build orderBy
+		let orderBy: any = {};
+		switch (sortBy) {
+			case 'roomName':
+				orderBy = {
+					rental: {
+						roomInstance: {
+							room: {
+								name: sortOrder,
+							},
+						},
+					},
+				};
+				break;
+			case 'status':
+				orderBy = { status: sortOrder };
+				break;
+			case 'totalAmount':
+				orderBy = { totalAmount: sortOrder };
+				break;
+			case 'createdAt':
+				orderBy = { createdAt: sortOrder };
+				break;
+			case 'dueDate':
+				orderBy = { dueDate: sortOrder };
+				break;
+			default:
+				orderBy = {
+					rental: {
+						roomInstance: {
+							room: {
+								name: 'asc',
+							},
+						},
+					},
+				};
+		}
+
+		const [bills, total] = await Promise.all([
+			this.prisma.bill.findMany({
+				where: baseWhere,
+				include: {
+					rental: {
+						include: {
+							roomInstance: {
+								include: {
+									room: {
+										include: {
+											costs: {
+												where: { isActive: true },
+												include: {
+													costTypeTemplate: true,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					billItems: true,
+				},
+				skip,
+				take: limit,
+				orderBy,
+			}),
+			this.prisma.bill.count({ where: baseWhere }),
+		]);
+
+		const billDtos = await Promise.all(bills.map((bill) => this.transformToResponseDto(bill)));
+		return PaginatedResponseDto.create(billDtos, page, limit, total);
 	}
 
 	async updateBillWithMeterData(
@@ -505,11 +818,27 @@ export class BillsService {
 			throw new ForbiddenException('Not authorized to update this bill');
 		}
 
-		// Update meter readings for metered costs
+		// Don't allow updating paid bills
+		if (bill.status === BillStatus.paid) {
+			throw new BadRequestException('Cannot update paid bills');
+		}
+
+		// Update meter readings for metered costs (lưu theo room instance)
 		for (const meterData of dto.meterData) {
-			await this.prisma.roomCost.update({
-				where: { id: meterData.roomCostId },
-				data: {
+			await (this.prisma as any).roomInstanceMeterReading.upsert({
+				where: {
+					roomInstanceId_roomCostId: {
+						roomInstanceId: bill.roomInstanceId,
+						roomCostId: meterData.roomCostId,
+					},
+				},
+				update: {
+					meterReading: meterData.currentReading,
+					lastMeterReading: meterData.lastReading,
+				},
+				create: {
+					roomInstanceId: bill.roomInstanceId,
+					roomCostId: meterData.roomCostId,
 					meterReading: meterData.currentReading,
 					lastMeterReading: meterData.lastReading,
 				},
@@ -526,6 +855,33 @@ export class BillsService {
 				costTypeTemplate: true,
 			},
 		});
+
+		// Get meter readings for this room instance
+		const meterReadings = await (this.prisma as any).roomInstanceMeterReading.findMany({
+			where: {
+				roomInstanceId: bill.roomInstanceId,
+			},
+		});
+
+		const meterReadingsMap = new Map(meterReadings.map((mr) => [mr.roomCostId, mr]));
+
+		// Merge readings into costs: ưu tiên RoomInstanceMeterReading, fallback về RoomCost
+		const costsWithReadings = updatedRoomCosts.map((cost) => {
+			const instanceReading = meterReadingsMap.get(cost.id) as any;
+			return {
+				...cost,
+				meterReading: instanceReading?.meterReading ?? cost.meterReading,
+				lastMeterReading: instanceReading?.lastMeterReading ?? cost.lastMeterReading,
+			};
+		});
+
+		// Get occupancy count: from DTO or query from rental
+		let occupancyCount = dto.occupancyCount;
+		if (!occupancyCount) {
+			occupancyCount = await this.rentalsService.getOccupancyCountByRoomInstance(
+				bill.roomInstanceId,
+			);
+		}
 
 		// Calculate proration factor
 		const periodStart = bill.periodStart;
@@ -546,8 +902,8 @@ export class BillsService {
 
 		// Recalculate bill items with updated occupancy and meter data
 		const newBillItems = await this.calculateBillItems(
-			updatedRoomCosts,
-			dto.occupancyCount,
+			costsWithReadings,
+			occupancyCount,
 			prorationFactor,
 			bill.rental.roomInstance.room.pricing,
 		);
@@ -561,15 +917,36 @@ export class BillsService {
 		const subtotal = newBillItems.reduce((sum, item) => sum + Number(item.amount), 0);
 		const totalAmount = subtotal;
 
+		// Check if room has metered costs
+		const hasMeteredCosts = costsWithReadings.some((cost) => cost.costType === 'metered');
+
+		// Check if all metered costs have readings
+		const allMeteredCostsHaveReadings = costsWithReadings
+			.filter((cost) => cost.costType === 'metered')
+			.every((cost) => cost.meterReading !== null && cost.lastMeterReading !== null);
+
+		// Update status:
+		// - Nếu có metered costs và đã nhập đủ readings: draft -> pending
+		// - Nếu không có metered costs: giữ nguyên status (đã là pending từ khi tạo)
+		const newStatus =
+			hasMeteredCosts && allMeteredCostsHaveReadings && bill.status === BillStatus.draft
+				? BillStatus.pending
+				: bill.status;
+
+		// Check if status changed from draft to pending
+		const statusChangedToPending =
+			bill.status === BillStatus.draft && newStatus === BillStatus.pending;
+
 		// Update bill
 		const updatedBill = await this.prisma.bill.update({
 			where: { id: dto.billId },
 			data: {
-				occupancyCount: dto.occupancyCount,
+				occupancyCount: occupancyCount,
 				subtotal,
 				totalAmount,
 				remainingAmount: totalAmount - Number(bill.paidAmount),
 				requiresMeterData: false,
+				status: newStatus,
 				billItems: {
 					create: newBillItems,
 				},
@@ -577,9 +954,20 @@ export class BillsService {
 			include: {
 				rental: {
 					include: {
+						tenant: true,
+						owner: true,
 						roomInstance: {
 							include: {
-								room: true,
+								room: {
+									include: {
+										costs: {
+											where: { isActive: true },
+											include: {
+												costTypeTemplate: true,
+											},
+										},
+									},
+								},
 							},
 						},
 					},
@@ -587,6 +975,27 @@ export class BillsService {
 				billItems: true,
 			},
 		});
+
+		// Notify tenant if status changed to pending
+		if (statusChangedToPending) {
+			try {
+				await this.notificationsService.notifyBill(updatedBill.rental.tenantId, {
+					month: updatedBill.billingMonth,
+					year: updatedBill.billingYear,
+					roomName: updatedBill.rental.roomInstance.room.name,
+					amount: Number(updatedBill.totalAmount),
+					billId: updatedBill.id,
+					dueDate: updatedBill.dueDate,
+					landlordName:
+						`${updatedBill.rental.owner.firstName} ${updatedBill.rental.owner.lastName}`.trim() ||
+						'Chủ nhà',
+				});
+			} catch (error) {
+				// Log error but don't fail the bill update
+				// eslint-disable-next-line no-console
+				console.error('Failed to send bill notification:', error);
+			}
+		}
 
 		return this.transformToResponseDto(updatedBill);
 	}
@@ -730,7 +1139,16 @@ export class BillsService {
 						include: {
 							roomInstance: {
 								include: {
-									room: true,
+									room: {
+										include: {
+											costs: {
+												where: { isActive: true },
+												include: {
+													costTypeTemplate: true,
+												},
+											},
+										},
+									},
 								},
 							},
 						},
@@ -744,7 +1162,7 @@ export class BillsService {
 			this.prisma.bill.count({ where: baseWhere }),
 		]);
 
-		const billDtos = bills.map((bill) => this.transformToResponseDto(bill));
+		const billDtos = await Promise.all(bills.map((bill) => this.transformToResponseDto(bill)));
 		return PaginatedResponseDto.create(billDtos, page, limit, total);
 	}
 
@@ -756,7 +1174,16 @@ export class BillsService {
 					include: {
 						roomInstance: {
 							include: {
-								room: true,
+								room: {
+									include: {
+										costs: {
+											where: { isActive: true },
+											include: {
+												costTypeTemplate: true,
+											},
+										},
+									},
+								},
 							},
 						},
 					},
@@ -774,7 +1201,7 @@ export class BillsService {
 			throw new ForbiddenException('Not authorized to view this bill');
 		}
 
-		return this.transformToResponseDto(bill);
+		return await this.transformToResponseDto(bill);
 	}
 
 	async updateBill(billId: string, userId: string, dto: UpdateBillDto): Promise<BillResponseDto> {
@@ -887,11 +1314,27 @@ export class BillsService {
 			throw new ForbiddenException('Not authorized to update meter data for this bill');
 		}
 
-		// Update meter readings in room costs
+		// Don't allow updating paid bills
+		if (bill.status === BillStatus.paid) {
+			throw new BadRequestException('Cannot update paid bills');
+		}
+
+		// Update meter readings in room costs (lưu theo room instance)
 		for (const meter of meterData) {
-			await this.prisma.roomCost.update({
-				where: { id: meter.roomCostId },
-				data: {
+			await (this.prisma as any).roomInstanceMeterReading.upsert({
+				where: {
+					roomInstanceId_roomCostId: {
+						roomInstanceId: bill.roomInstanceId,
+						roomCostId: meter.roomCostId,
+					},
+				},
+				update: {
+					meterReading: meter.currentReading,
+					lastMeterReading: meter.lastReading,
+				},
+				create: {
+					roomInstanceId: bill.roomInstanceId,
+					roomCostId: meter.roomCostId,
 					meterReading: meter.currentReading,
 					lastMeterReading: meter.lastReading,
 				},
@@ -907,6 +1350,25 @@ export class BillsService {
 			include: {
 				costTypeTemplate: true,
 			},
+		});
+
+		// Get meter readings for this room instance
+		const meterReadings = await (this.prisma as any).roomInstanceMeterReading.findMany({
+			where: {
+				roomInstanceId: bill.roomInstanceId,
+			},
+		});
+
+		const meterReadingsMap = new Map(meterReadings.map((mr) => [mr.roomCostId, mr]));
+
+		// Merge readings into costs: ưu tiên RoomInstanceMeterReading, fallback về RoomCost
+		const costsWithReadings = updatedRoomCosts.map((cost) => {
+			const instanceReading = meterReadingsMap.get(cost.id) as any;
+			return {
+				...cost,
+				meterReading: instanceReading?.meterReading ?? cost.meterReading,
+				lastMeterReading: instanceReading?.lastMeterReading ?? cost.lastMeterReading,
+			};
 		});
 
 		// Calculate proration factor
@@ -928,7 +1390,7 @@ export class BillsService {
 
 		// Recalculate bill items
 		const newBillItems = await this.calculateBillItems(
-			updatedRoomCosts,
+			costsWithReadings,
 			bill.occupancyCount || 1,
 			prorationFactor,
 			bill.roomInstance.room.pricing,
@@ -940,14 +1402,36 @@ export class BillsService {
 		});
 
 		const subtotal = newBillItems.reduce((sum, item) => sum + Number(item.amount), 0);
+		const totalAmount = subtotal;
+
+		// Check if room has metered costs
+		const hasMeteredCosts = costsWithReadings.some((cost) => cost.costType === 'metered');
+
+		// Check if all metered costs have readings
+		const allMeteredCostsHaveReadings = costsWithReadings
+			.filter((cost) => cost.costType === 'metered')
+			.every((cost) => cost.meterReading !== null && cost.lastMeterReading !== null);
+
+		// Update status:
+		// - Nếu có metered costs và đã nhập đủ readings: draft -> pending
+		// - Nếu không có metered costs: giữ nguyên status (đã là pending từ khi tạo)
+		const newStatus =
+			hasMeteredCosts && allMeteredCostsHaveReadings && bill.status === BillStatus.draft
+				? BillStatus.pending
+				: bill.status;
+
+		// Check if status changed from draft to pending
+		const statusChangedToPending =
+			bill.status === BillStatus.draft && newStatus === BillStatus.pending;
 
 		const updatedBill = await this.prisma.bill.update({
 			where: { id: billId },
 			data: {
 				subtotal,
-				totalAmount: subtotal,
-				remainingAmount: subtotal - Number(bill.paidAmount),
+				totalAmount,
+				remainingAmount: totalAmount - Number(bill.paidAmount),
 				requiresMeterData: false,
+				status: newStatus,
 				billItems: {
 					create: newBillItems,
 				},
@@ -955,9 +1439,20 @@ export class BillsService {
 			include: {
 				rental: {
 					include: {
+						tenant: true,
+						owner: true,
 						roomInstance: {
 							include: {
-								room: true,
+								room: {
+									include: {
+										costs: {
+											where: { isActive: true },
+											include: {
+												costTypeTemplate: true,
+											},
+										},
+									},
+								},
 							},
 						},
 					},
@@ -965,6 +1460,27 @@ export class BillsService {
 				billItems: true,
 			},
 		});
+
+		// Notify tenant if status changed to pending
+		if (statusChangedToPending) {
+			try {
+				await this.notificationsService.notifyBill(updatedBill.rental.tenantId, {
+					month: updatedBill.billingMonth,
+					year: updatedBill.billingYear,
+					roomName: updatedBill.rental.roomInstance.room.name,
+					amount: Number(updatedBill.totalAmount),
+					billId: updatedBill.id,
+					dueDate: updatedBill.dueDate,
+					landlordName:
+						`${updatedBill.rental.owner.firstName} ${updatedBill.rental.owner.lastName}`.trim() ||
+						'Chủ nhà',
+				});
+			} catch (error) {
+				// Log error but don't fail the bill update
+				// eslint-disable-next-line no-console
+				console.error('Failed to send bill notification:', error);
+			}
+		}
 
 		return this.transformToResponseDto(updatedBill);
 	}
@@ -1009,7 +1525,153 @@ export class BillsService {
 		return this.transformToResponseDto(updatedBill);
 	}
 
-	private transformToResponseDto(bill: any): BillResponseDto {
+	private convertDecimalToNumber(value: any): number {
+		if (value === null || value === undefined) {
+			return 0;
+		}
+		if (typeof value === 'number') {
+			return value;
+		}
+		if (typeof value === 'object') {
+			if ('toNumber' in value && typeof value.toNumber === 'function') {
+				return value.toNumber();
+			}
+			if ('d' in value && Array.isArray(value.d) && 'e' in value && 's' in value) {
+				const sign = value.s || 1;
+				const digits = value.d || [];
+				if (digits.length === 0) {
+					return 0;
+				}
+				if (digits.length === 1 && typeof digits[0] === 'number') {
+					return digits[0] * sign;
+				}
+				const numStr = digits.join('');
+				const num = parseFloat(numStr) || 0;
+				return num * sign;
+			}
+			if ('toString' in value && typeof value.toString === 'function') {
+				try {
+					const str = value.toString();
+					const num = Number(str);
+					return Number.isNaN(num) ? 0 : num;
+				} catch {
+					return 0;
+				}
+			}
+		}
+		const num = Number(value);
+		return Number.isNaN(num) ? 0 : num;
+	}
+
+	private async transformToResponseDto(bill: any): Promise<BillResponseDto> {
+		const room = bill.rental?.roomInstance?.room || bill.roomInstance?.room;
+		const roomInstanceId = bill.rental?.roomInstance?.id || bill.roomInstanceId;
+		const meteredCosts =
+			room?.costs?.filter((cost: any) => cost.costType === 'metered' && cost.isActive) || [];
+
+		// Get meter readings for this room instance
+		const meterReadings = await (this.prisma as any).roomInstanceMeterReading.findMany({
+			where: {
+				roomInstanceId: roomInstanceId,
+			},
+		});
+
+		const meterReadingsMap = new Map(meterReadings.map((mr) => [mr.roomCostId, mr]));
+
+		// Merge readings into costs: ưu tiên RoomInstanceMeterReading, fallback về RoomCost
+		const costsWithReadings = meteredCosts.map((cost: any) => {
+			const instanceReading = meterReadingsMap.get(cost.id) as any;
+			return {
+				...cost,
+				meterReading: instanceReading?.meterReading ?? cost.meterReading,
+				lastMeterReading: instanceReading?.lastMeterReading ?? cost.lastMeterReading,
+			};
+		});
+
+		let lastMonthBill: any = null;
+		let lastMonthMeterReadings: any[] = [];
+		if (bill.rentalId && bill.billingPeriod && roomInstanceId) {
+			const [year, month] = bill.billingPeriod.split('-').map(Number);
+			let prevMonth = month - 1;
+			let prevYear = year;
+			if (prevMonth <= 0) {
+				prevMonth = 12;
+				prevYear -= 1;
+			}
+			const prevBillingPeriod = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+
+			lastMonthBill = await this.prisma.bill.findUnique({
+				where: {
+					rentalId_billingPeriod: {
+						rentalId: bill.rentalId,
+						billingPeriod: prevBillingPeriod,
+					},
+				},
+				include: {
+					billItems: true,
+				},
+			});
+
+			if (lastMonthBill) {
+				lastMonthMeterReadings = await (this.prisma as any).roomInstanceMeterReading.findMany({
+					where: {
+						roomInstanceId: roomInstanceId,
+					},
+				});
+			}
+		}
+
+		const lastMonthReadingsMap = new Map(lastMonthMeterReadings.map((mr) => [mr.roomCostId, mr]));
+
+		const meteredCostsToInput = await Promise.all(
+			costsWithReadings.map(async (cost: any) => {
+				let lastMonthReading: number | null = null;
+
+				if (lastMonthBill && lastMonthMeterReadings.length > 0) {
+					const lastMonthReadingRecord = lastMonthReadingsMap.get(cost.id);
+
+					if (lastMonthReadingRecord?.meterReading) {
+						lastMonthReading = this.convertDecimalToNumber(lastMonthReadingRecord.meterReading);
+					} else if (lastMonthBill.billItems?.length > 0) {
+						const lastMonthBillItem = lastMonthBill.billItems.find(
+							(item: any) =>
+								item.itemType === cost.costTypeTemplate?.category &&
+								item.itemName?.includes(cost.costTypeTemplate?.name || ''),
+						);
+
+						if (lastMonthBillItem?.quantity) {
+							const lastMonthUsage = this.convertDecimalToNumber(lastMonthBillItem.quantity);
+							const currentReading = cost.meterReading
+								? this.convertDecimalToNumber(cost.meterReading)
+								: null;
+							if (currentReading !== null && currentReading >= lastMonthUsage) {
+								lastMonthReading = currentReading - lastMonthUsage;
+							}
+						}
+					}
+				}
+
+				if (lastMonthReading === null) {
+					lastMonthReading = cost.lastMeterReading
+						? this.convertDecimalToNumber(cost.lastMeterReading)
+						: null;
+				}
+
+				return {
+					roomCostId: cost.id,
+					name: cost.costTypeTemplate?.name || 'Unknown',
+					unit: cost.unit || '',
+					unitPrice: this.convertDecimalToNumber(cost.unitPrice),
+					currency: cost.currency || 'VND',
+					currentReading: cost.meterReading ? this.convertDecimalToNumber(cost.meterReading) : null,
+					lastReading: lastMonthReading,
+					lastMonthReading: lastMonthReading,
+					requiresInput: !cost.meterReading || lastMonthReading === null,
+					notes: cost.notes || null,
+				};
+			}),
+		);
+
 		return {
 			id: bill.id,
 			rentalId: bill.rentalId,
@@ -1019,12 +1681,12 @@ export class BillsService {
 			billingYear: bill.billingYear,
 			periodStart: bill.periodStart,
 			periodEnd: bill.periodEnd,
-			subtotal: bill.subtotal,
-			discountAmount: bill.discountAmount,
-			taxAmount: bill.taxAmount,
-			totalAmount: bill.totalAmount,
-			paidAmount: bill.paidAmount,
-			remainingAmount: bill.remainingAmount,
+			subtotal: this.convertDecimalToNumber(bill.subtotal),
+			discountAmount: this.convertDecimalToNumber(bill.discountAmount),
+			taxAmount: this.convertDecimalToNumber(bill.taxAmount),
+			totalAmount: this.convertDecimalToNumber(bill.totalAmount),
+			paidAmount: this.convertDecimalToNumber(bill.paidAmount),
+			remainingAmount: this.convertDecimalToNumber(bill.remainingAmount),
 			status: bill.status,
 			dueDate: bill.dueDate,
 			paidDate: bill.paidDate,
@@ -1036,9 +1698,9 @@ export class BillsService {
 				itemType: item.itemType,
 				itemName: item.itemName,
 				description: item.description,
-				quantity: item.quantity,
-				unitPrice: item.unitPrice,
-				amount: item.amount,
+				quantity: this.convertDecimalToNumber(item.quantity),
+				unitPrice: this.convertDecimalToNumber(item.unitPrice),
+				amount: this.convertDecimalToNumber(item.amount),
 				currency: item.currency,
 				notes: item.notes,
 				createdAt: item.createdAt,
@@ -1046,7 +1708,7 @@ export class BillsService {
 			rental: bill.rental
 				? {
 						id: bill.rental.id,
-						monthlyRent: bill.rental.monthlyRent,
+						monthlyRent: this.convertDecimalToNumber(bill.rental.monthlyRent),
 						roomInstance: {
 							roomNumber: bill.rental.roomInstance.roomNumber,
 							room: {
@@ -1055,6 +1717,7 @@ export class BillsService {
 						},
 					}
 				: undefined,
+			meteredCostsToInput: meteredCostsToInput.length > 0 ? meteredCostsToInput : [],
 		};
 	}
 }

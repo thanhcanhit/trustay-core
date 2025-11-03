@@ -140,6 +140,20 @@ export class RentalResponseDto {
 		moveInDate: Date;
 		message?: string;
 	};
+
+	@ApiPropertyOptional({
+		description: 'Danh sách thành viên trong cùng phòng',
+		type: [Object],
+	})
+	members?: Array<{
+		tenantId: string;
+		firstName?: string;
+		lastName?: string;
+		email?: string;
+		phone?: string;
+		avatarUrl?: string;
+		rentalId: string;
+	}>;
 }
 
 export class PaginatedRentalResponseDto {

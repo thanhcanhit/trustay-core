@@ -2,6 +2,7 @@ import {
 	BadRequestException,
 	Body,
 	Controller,
+	Delete,
 	Get,
 	HttpException,
 	HttpStatus,
@@ -273,6 +274,24 @@ export class ContractsController {
 	): Promise<ContractStatusResponseDto> {
 		this.logger.log(`Getting status for contract ${id}`);
 		return this.contractsNewService.getContractStatus(id, req.user.id);
+	}
+
+	/**
+	 * Delete a contract (only when status is draft)
+	 */
+	@Delete(':id')
+	@ApiOperation({
+		summary: 'Delete draft contract',
+		description: 'Delete a contract only if its status is draft. Landlord or tenant only.',
+	})
+	@ApiParam({ name: 'id', description: 'Contract ID' })
+	@ApiResponse({ status: 200, description: 'Contract deleted successfully' })
+	@ApiResponse({ status: 400, description: 'Only draft contracts can be deleted' })
+	@ApiResponse({ status: 403, description: 'Access denied' })
+	@ApiResponse({ status: 404, description: 'Contract not found' })
+	async deleteContract(@Param('id') id: string, @Req() req: any) {
+		this.logger.log(`Deleting contract ${id} by user ${req.user.id}`);
+		return this.contractsNewService.deleteContract(id, req.user.id);
 	}
 
 	/**

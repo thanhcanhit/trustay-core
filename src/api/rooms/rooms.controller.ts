@@ -250,16 +250,52 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		return ApiResponseDto.success(room, 'Room retrieved successfully');
 	}
 
+	@Get('public/id/:roomId')
+	@UseGuards(OptionalJwtAuthGuard)
+	@ApiOperation({
+		summary: 'Get room details by ID (Public API)',
+		description:
+			'Public endpoint for users to browse room details without authentication. Returns comprehensive room information including pricing, amenities, and availability. Use this endpoint instead of the slug-based endpoint.',
+	})
+	@ApiParam({
+		name: 'roomId',
+		description: 'Room ID identifier',
+		example: 'uuid-room-id',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Room details retrieved successfully',
+		type: RoomDetailWithMetaResponseDto,
+	})
+	@ApiResponse({
+		status: 404,
+		description: 'Room not found',
+	})
+	async getRoomById(
+		@Param('roomId') roomId: string,
+		@Req() req: Request,
+	): Promise<RoomDetailWithMetaResponseDto> {
+		const clientIp =
+			req.ip || req.connection?.remoteAddress || (req.headers['x-forwarded-for'] as string);
+		const isAuthenticated = Boolean((req as any).user);
+		return this.roomsService.getRoomById(roomId, clientIp, { isAuthenticated });
+	}
+
+	/**
+	 * @deprecated Use GET /rooms/public/id/:roomId instead. This endpoint will be removed in a future version.
+	 */
 	@Get('public/:slug')
 	@UseGuards(OptionalJwtAuthGuard)
 	@ApiOperation({
-		summary: 'Get room details by slug (Public API)',
+		summary: 'Get room details by slug (Public API) - DEPRECATED',
 		description:
+			'⚠️ **DEPRECATED**: This endpoint is deprecated and will be removed in a future version. Please use GET /rooms/public/id/:roomId instead.\n\n' +
 			'Public endpoint for users to browse room details without authentication. Returns comprehensive room information including pricing, amenities, and availability.',
+		deprecated: true,
 	})
 	@ApiParam({
 		name: 'slug',
-		description: 'Room slug identifier',
+		description: 'Room slug identifier (deprecated - use roomId instead)',
 		example: 'nhu-quynhquan-go-vap-phong-ap2653',
 	})
 	@ApiResponse({

@@ -169,4 +169,22 @@ export class BillResponseDto {
 			};
 		};
 	};
+
+	@ApiProperty({
+		description: 'Danh sách metered costs (luôn trả về để frontend xử lý)',
+		type: [Object],
+	})
+	@Expose()
+	meteredCostsToInput: Array<{
+		roomCostId: string;
+		name: string;
+		unit: string;
+		unitPrice: number;
+		currency: string;
+		currentReading: number | null;
+		lastReading: number | null;
+		lastMonthReading: number | null;
+		requiresInput: boolean;
+		notes: string | null;
+	}>;
 }
