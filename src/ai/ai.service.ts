@@ -23,6 +23,7 @@ import {
 	toListItems,
 	tryBuildChart,
 } from './utils/data-utils';
+import { buildEntityPath } from './utils/entity-route';
 import { parseResponseText } from './utils/response-parser';
 export { ChatResponse };
 
@@ -170,11 +171,19 @@ export class AiService {
 		session: ChatSession,
 		role: 'user' | 'assistant' | 'system',
 		content: string,
+		envelope?: {
+			kind?: 'CONTENT' | 'DATA' | 'CONTROL';
+			payload?: any;
+			meta?: Record<string, unknown>;
+		},
 	): void {
 		const message: ChatMessage = {
 			role,
 			content,
 			timestamp: new Date(),
+			kind: envelope?.kind,
+			payload: envelope?.payload as any,
+			meta: envelope?.meta as Record<string, string | number | boolean> | undefined,
 		};
 
 		session.messages.push(message);
@@ -391,6 +400,37 @@ export class AiService {
 				// Parse responseText để tách message và structured data
 				const parsedResponse = parseResponseText(responseText);
 
+				// Enrich TABLE rows with clickable path using entity-route map
+				try {
+					if (
+						parsedResponse?.table &&
+						Array.isArray(parsedResponse.table.rows) &&
+						Array.isArray(parsedResponse.table.columns)
+					) {
+						const entity = orchestratorResponse.entityHint;
+						if (entity) {
+							const hasPathColumn = parsedResponse.table.columns.some(
+								(c: { key: string }) => c.key === 'path',
+							);
+							if (!hasPathColumn) {
+								parsedResponse.table.columns.push({ key: 'path', label: 'path', type: 'string' });
+							}
+							parsedResponse.table.rows = parsedResponse.table.rows.map(
+								(row: Record<string, unknown>) => {
+									const id = String(row.id || '');
+									if (id) {
+										const path = buildEntityPath(entity as any, id);
+										return path ? { ...row, path } : row;
+									}
+									return row;
+								},
+							);
+						}
+					}
+				} catch (error) {
+					this.logError('ERROR', 'Error building entity path', error);
+				}
+
 				// MVP: Persist Q&A - Chỉ skip nếu có ERROR severity
 				// WARN severity vẫn cho phép persist để có thể học hỏi
 				if (validation.isValid || validation.severity === 'WARN') {
@@ -423,8 +463,11 @@ export class AiService {
 					desiredMode,
 				);
 
-				// Lưu câu trả lời vào session (chỉ phần message, không có structured data)
-				this.addMessageToSession(session, 'assistant', parsedResponse.message);
+				// Lưu câu trả lời vào session (kèm envelope structured)
+				this.addMessageToSession(session, 'assistant', parsedResponse.message, {
+					kind: 'DATA',
+					payload: dataPayload,
+				});
 
 				// Trả về response với payload structured cho UI
 				const response: ChatResponse = {
@@ -445,7 +488,10 @@ export class AiService {
 				if (orchestratorResponse.requestType === RequestType.CLARIFICATION) {
 					this.logInfo('ORCHESTRATOR', 'END | need clarification');
 					const messageText: string = `Mình cần thêm chút thông tin để trả lời chính xác: ${orchestratorResponse.message}`;
-					this.addMessageToSession(session, 'assistant', messageText);
+					this.addMessageToSession(session, 'assistant', messageText, {
+						kind: 'CONTROL',
+						payload: { mode: 'CLARIFY', questions: [] },
+					});
 					const response: ChatResponse = {
 						kind: 'CONTROL',
 						sessionId: session.sessionId,
@@ -458,7 +504,10 @@ export class AiService {
 				} else {
 					// General chat or greeting
 					this.logInfo('ORCHESTRATOR', `Request type: ${orchestratorResponse.requestType}`);
-					this.addMessageToSession(session, 'assistant', orchestratorResponse.message);
+					this.addMessageToSession(session, 'assistant', orchestratorResponse.message, {
+						kind: 'CONTENT',
+						payload: { mode: 'CONTENT' },
+					});
 					const response: ChatResponse = {
 						kind: 'CONTENT',
 						sessionId: session.sessionId,
@@ -480,7 +529,10 @@ export class AiService {
 			// Tạo message lỗi thân thiện cho người dùng
 			const errorMessage = generateErrorResponse((error as Error).message);
 			const messageText: string = `Xin lỗi, đã xảy ra lỗi: ${errorMessage}`;
-			this.addMessageToSession(session, 'assistant', messageText);
+			this.addMessageToSession(session, 'assistant', messageText, {
+				kind: 'CONTROL',
+				payload: { mode: 'ERROR', details: (error as Error).message },
+			});
 			const response: ChatResponse = {
 				kind: 'CONTROL',
 				sessionId: session.sessionId,
@@ -616,6 +668,8 @@ export class AiService {
 			role: 'user' | 'assistant';
 			content: string;
 			timestamp: string;
+			kind?: 'CONTENT' | 'DATA' | 'CONTROL';
+			payload?: any;
 		}>;
 	}> {
 		const { userId, clientIp } = context;
@@ -630,6 +684,8 @@ export class AiService {
 					role: message.role as 'user' | 'assistant',
 					content: message.content,
 					timestamp: message.timestamp.toISOString(),
+					kind: message.kind as 'CONTENT' | 'DATA' | 'CONTROL' | undefined,
+					payload: message.payload,
 				})),
 		};
 	}

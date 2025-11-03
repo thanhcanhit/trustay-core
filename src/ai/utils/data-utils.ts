@@ -171,9 +171,15 @@ export function tryBuildChart(
 	}
 	const sample = rows[0];
 	const keys = Object.keys(sample);
-	const numericKeys = keys.filter(
-		(k) => typeof (sample as Record<string, unknown>)[k] === 'number',
-	);
+	const isNumericLike = (v: unknown): boolean => {
+		if (typeof v === 'number') return true;
+		if (typeof v === 'string') {
+			const n = Number(v);
+			return Number.isFinite(n);
+		}
+		return false;
+	};
+	const numericKeys = keys.filter((k) => isNumericLike((sample as Record<string, unknown>)[k]));
 	if (numericKeys.length === 0) {
 		return null;
 	}
@@ -189,10 +195,14 @@ export function tryBuildChart(
 	if (!statLike && numericRatio < 0.6) {
 		return null;
 	}
-	const pairs = rows.map((r) => ({
-		label: String((r as Record<string, unknown>)[labelKey] ?? ''),
-		value: Number((r as Record<string, unknown>)[valueKey] ?? 0),
-	}));
+	const pairs = rows.map((r) => {
+		const raw = (r as Record<string, unknown>)[valueKey];
+		const num = typeof raw === 'number' ? raw : Number(raw);
+		return {
+			label: String((r as Record<string, unknown>)[labelKey] ?? ''),
+			value: Number.isFinite(num) ? num : 0,
+		};
+	});
 	pairs.sort((a, b) => b.value - a.value);
 	const top = pairs.slice(0, 10);
 	const labels: string[] = top.map((p) => p.label);

@@ -44,8 +44,13 @@ YÊU CẦU ĐỊNH DẠNG (BẮT BUỘC):
 4. Không hiển thị SQL query.
 5. Nếu không có kết quả, đưa ra gợi ý hữu ích.
 6. Trả về nội dung ở dạng Markdown an toàn (không HTML).
+	7. QUAN TRỌNG (PATH CLICKABLE): Khi cấu trúc dữ liệu có trường "id" và biết thực thể (entity), hãy thêm trường "path" theo quy tắc:
+	   - room → "/rooms/:id"
+	   - post → "/posts/:id"
+	   - room_seeking_post → "/room-seeking-posts/:id"
+	   (Thay ":id" bằng giá trị id thực tế). Nếu không biết entity, bỏ qua path.
 
-7. SAU KHI VIẾT XONG CÂU TRẢ LỜI (CHỈ TEXT MARKDOWN, KHÔNG CÓ JSON CODE BLOCK), BẮT BUỘC PHẢI:
+	8. SAU KHI VIẾT XONG CÂU TRẢ LỜI (CHỈ TEXT MARKDOWN, KHÔNG CÓ JSON CODE BLOCK), BẮT BUỘC PHẢI:
    - QUAN TRỌNG: Message chỉ là TEXT MARKDOWN, KHÔNG bao giờ chứa JSON code block.
    - ƯU TIÊN: Trả về JSON envelope format (toàn bộ response là JSON hợp lệ, KHÔNG có markdown text trước):
      Format: {"message":"[TENANT] Đây là 5 phòng...","payload":{"mode":"LIST","list":{"items":[...],"total":5}}}
@@ -59,7 +64,7 @@ LƯU Ý QUAN TRỌNG:
 - Nếu trả JSON envelope, toàn bộ response phải là JSON hợp lệ (không có text markdown trước JSON).
 
 VÍ DỤ FORMAT ĐÚNG (JSON envelope - ưu tiên):
-Format JSON: {"message":"[TENANT] Đây là 5 phòng mới nhất...","payload":{"mode":"LIST","list":{"items":[{"id":"123","title":"Phòng trọ Lan Anh","path":"/rooms/123","entity":"room"}],"total":5}}}
+	Format JSON: {"message":"[TENANT] Đây là 5 phòng mới nhất...","payload":{"mode":"LIST","list":{"items":[{"id":"123","title":"Phòng trọ Lan Anh","path":"/rooms/123","entity":"room"}],"total":5}}}
 
 Câu trả lời cuối cùng (ƯU TIÊN JSON ENVELOPE - toàn bộ response là JSON hợp lệ, hoặc ---END nếu không thể JSON):`;
 }

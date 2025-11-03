@@ -5,6 +5,9 @@ export interface ChatMessage {
 	role: 'user' | 'assistant' | 'system';
 	content: string;
 	timestamp: Date;
+	kind?: 'CONTENT' | 'DATA' | 'CONTROL';
+	payload?: ContentPayload | DataPayload | ControlPayload;
+	meta?: Record<string, string | number | boolean>;
 }
 
 /**
