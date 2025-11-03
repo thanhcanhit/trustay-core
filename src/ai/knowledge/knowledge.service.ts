@@ -114,7 +114,7 @@ export class KnowledgeService {
 		const chunks = this.splitSchemaIntoChunks(businessDoc);
 		const aiChunks = chunks.map((content) => ({
 			tenantId: this.tenantId,
-			collection: 'schema' as AiChunkCollection,
+			collection: 'business' as AiChunkCollection,
 			dbKey: this.dbKey,
 			content,
 		}));
@@ -383,6 +383,20 @@ export class KnowledgeService {
 		options: VectorSearchOptions = { limit: 5 },
 	): Promise<VectorSearchResult[]> {
 		return await this.vectorStore.similaritySearch(query, 'business', {
+			...options,
+			tenantId: this.tenantId,
+			dbKey: this.dbKey,
+		});
+	}
+
+	/**
+	 * Retrieve denormalized sample docs (rooms/requests) for keyword grounding
+	 */
+	async retrieveDocsContext(
+		query: string,
+		options: VectorSearchOptions = { limit: 5 },
+	): Promise<VectorSearchResult[]> {
+		return await this.vectorStore.similaritySearch(query, 'docs', {
 			...options,
 			tenantId: this.tenantId,
 			dbKey: this.dbKey,

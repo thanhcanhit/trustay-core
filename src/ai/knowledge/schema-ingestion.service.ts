@@ -349,21 +349,27 @@ export class SchemaIngestionService {
 	private getBusinessContextForTable(tableName: string): string {
 		switch (tableName) {
 			case 'rooms':
-				return 'Room archetypes with type, area, occupancy; linked to buildings, amenities, rules, pricing, costs, and images.';
+				return 'Room archetypes with type, area, occupancy; linked to buildings, amenities, rules, pricing, costs, and images. (phòng)';
 			case 'room_instances':
-				return 'Concrete rentable units of a room archetype; use status to determine availability.';
+				return 'Concrete rentable units of a room archetype; use status to determine availability. (số phòng, phòng trống)';
 			case 'buildings':
-				return 'Rental buildings with owner, address, geo, and verification flags.';
+				return 'Rental buildings with owner, address, geo, and verification flags. (tòa nhà, quận, tỉnh)';
 			case 'amenities':
-				return 'Lookup of amenities; join via room_amenities to rooms.';
+				return 'Lookup of amenities; join via room_amenities to rooms. (tiện ích)';
 			case 'room_rule_templates':
-				return 'Lookup of room rules; join via room_rules to rooms.';
+				return 'Lookup of room rules; join via room_rules to rooms. (nội quy)';
 			case 'cost_type_templates':
-				return 'Lookup for recurring costs (utility/service); join via room_costs to rooms.';
+				return 'Lookup for recurring costs (utility/service); join via room_costs to rooms. (chi phí)';
 			case 'room_requests':
-				return 'Tenant posts seeking rooms with budget, location, and preferences.';
+				return 'Tenant posts seeking rooms with budget, location, and preferences. (bài tìm phòng)';
 			case 'roommate_seeking_posts':
-				return 'Posts seeking roommates; includes budget, slots, and requirements.';
+				return 'Posts seeking roommates; includes budget, slots, and requirements. (tìm bạn ở ghép)';
+			case 'districts':
+				return 'Administrative districts; join from buildings; used for filtering by district. (quận)';
+			case 'wards':
+				return 'Administrative wards; join from buildings; used for finer location filtering. (phường/xã)';
+			case 'provinces':
+				return 'Administrative provinces; join from buildings; used for province-level filtering. (tỉnh/thành phố)';
 			default:
 				return '';
 		}
@@ -468,7 +474,7 @@ export class SchemaIngestionService {
 		for (const amenity of amenities) {
 			aiChunks.push({
 				tenantId,
-				collection: 'schema' as AiChunkCollection,
+				collection: 'business' as AiChunkCollection,
 				dbKey,
 				content: `amenities | id=${amenity.id} | name=${amenity.name} | name_en=${amenity.nameEn} | category=${amenity.category} | description=${mapNull(
 					amenity.description,
@@ -480,7 +486,7 @@ export class SchemaIngestionService {
 		for (const costType of costTypes) {
 			aiChunks.push({
 				tenantId,
-				collection: 'schema' as AiChunkCollection,
+				collection: 'business' as AiChunkCollection,
 				dbKey,
 				content: `cost_type_templates | id=${costType.id} | name=${costType.name} | name_en=${costType.nameEn} | category=${costType.category} | default_unit=${mapNull(
 					costType.defaultUnit,
@@ -492,7 +498,7 @@ export class SchemaIngestionService {
 		for (const roomRule of roomRules) {
 			aiChunks.push({
 				tenantId,
-				collection: 'schema' as AiChunkCollection,
+				collection: 'business' as AiChunkCollection,
 				dbKey,
 				content: `room_rule_templates | id=${roomRule.id} | name=${roomRule.name} | name_en=${roomRule.nameEn} | category=${roomRule.category} | rule_type=${roomRule.ruleType} | description=${mapNull(
 					roomRule.description,
@@ -523,7 +529,7 @@ export class SchemaIngestionService {
 			const roomDocs = await this.buildDenormalizedRoomDocs();
 			const aiChunks = roomDocs.map((doc) => ({
 				tenantId,
-				collection: 'schema' as AiChunkCollection,
+				collection: 'docs' as AiChunkCollection,
 				dbKey,
 				content: JSON.stringify({ docType: 'room', ...doc }, null, 2),
 			}));
@@ -553,7 +559,7 @@ export class SchemaIngestionService {
 			const requestDocs = await this.buildDenormalizedRequestDocs();
 			const aiChunks = requestDocs.map((doc) => ({
 				tenantId,
-				collection: 'schema' as AiChunkCollection,
+				collection: 'docs' as AiChunkCollection,
 				dbKey,
 				content: JSON.stringify({ docType: 'request', ...doc }, null, 2),
 			}));

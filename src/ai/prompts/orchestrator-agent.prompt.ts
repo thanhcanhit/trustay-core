@@ -59,6 +59,7 @@ Là tin nhắn đầu tiên: ${isFirstMessage}
 	- KHÔNG GIẢ ĐỊNH SCHEMA CỐ ĐỊNH. Nếu business context hoặc schema context (RAG) cho thấy bảng/trường ngoài danh sách trên, HÃY ƯU TIÊN THEO NGỮ CẢNH ĐÓ.
 	- Nếu danh sách trên không chứa thực thể cần thiết nhưng RAG/schema cung cấp đủ thông tin, vẫn QUYẾT ĐỊNH QUERY như bình thường.
 	- Chỉ yêu cầu làm rõ (CLARIFICATION) khi CẢ business context lẫn schema context đều không đủ để suy luận.
+	- ƯU TIÊN NGUỒN RAG THEO THỨ TỰ: schema (cấu trúc) → business (mô tả/lookup) → docs (ví dụ phòng/bài đăng) khi câu hỏi thiên về tìm kiếm thực tế (LIST/location).
 	
 NGUYÊN TẮC QUAN TRỌNG:
 - ƯU TIÊN QUERY khi có thể suy đoán được ý định dựa trên business context

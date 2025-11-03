@@ -64,6 +64,53 @@ Format JSON: {"message":"[TENANT] Đây là 5 phòng mới nhất...","payload":
 Câu trả lời cuối cùng (ƯU TIÊN JSON ENVELOPE - toàn bộ response là JSON hợp lệ, hoặc ---END nếu không thể JSON):`;
 }
 
+export interface FinalMessagePromptParams {
+	recentMessages?: string;
+	conversationalMessage: string;
+	count: number;
+	dataPreview: string;
+	structuredData?: {
+		list: any[] | null;
+		table: any | null;
+		chart: any | null;
+	};
+}
+
+export function buildFinalMessagePrompt(params: FinalMessagePromptParams): string {
+	const { recentMessages, conversationalMessage, count, dataPreview, structuredData } = params;
+
+	const structuredDataSection = structuredData
+		? `
+DỮ LIỆU ĐÃ ĐƯỢC XỬ LÝ:
+- LIST: ${structuredData.list !== null ? `${structuredData.list.length} items` : 'null'}
+- TABLE: ${structuredData.table !== null ? 'có dữ liệu' : 'null'}
+- CHART: ${structuredData.chart !== null ? 'có dữ liệu' : 'null'}
+
+`
+		: '';
+
+	return `
+Bạn là AI assistant của Trustay. Hãy viết CHỈ MỘT thông điệp thân thiện cho người dùng, kết hợp ngữ cảnh hội thoại và kết quả truy vấn.
+
+${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
+
+THÔNG ĐIỆP TỪ ORCHESTRATOR AGENT: "${conversationalMessage}"
+SỐ KẾT QUẢ: ${count}
+DỮ LIỆU (rút gọn): ${dataPreview}
+${structuredDataSection}
+
+YÊU CẦU ĐỊNH DẠNG (BẮT BUỘC):
+1. Trả về DUY NHẤT phần nội dung tin nhắn (text markdown), KHÔNG bao gồm JSON.
+2. Viết bằng tiếng Việt tự nhiên, ấm áp, súc tích (không cụt lủn).
+3. Mở đầu bằng 1-2 câu hữu ích; tránh các từ đơn như "Tuyệt vời", "OK".
+4. Không dùng tiêu đề lớn hay ký tự #.
+5. Không hiển thị SQL query.
+6. Nếu không có kết quả, đưa ra gợi ý hữu ích.
+7. Nội dung phải là Markdown an toàn (không HTML, không khối code dạng \`\`\`json ...\`\`\`).
+
+CHỈ TRẢ VỀ NỘI DUNG TIN NHẮN (KHÔNG JSON, KHÔNG GIẢI THÍCH THÊM):`;
+}
+
 export interface FriendlyResponsePromptParams {
 	recentMessages?: string;
 	query: string;

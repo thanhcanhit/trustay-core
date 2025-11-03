@@ -5,7 +5,7 @@
 export const BUSINESS_CONTEXT = `
 1. Giới thiệu và động lực
 1.1 Lý do chọn đề tài
-Trong bối cảnh đô thị hóa nhanh, nhu cầu thuê trọ tăng mạnh tại Việt Nam. Tuy nhiên hoạt động tìm kiếm và quản lý còn rời rạc, thiếu xác thực, tốn thời gian. Sự phát triển của AI mở ra cơ hội số hóa toàn bộ quy trình thuê trọ (tìm kiếm, liên hệ, ký hợp đồng, thanh toán).
+Trong bối cảnh đô thị hóa nhanh, nhu cầu thuê trọ tăng mạnh tại Việt Nam. Tuy nhiên hoạt động tìm kiếm và quản lý còn rời rạc, thiếu xác thực, tốn thời gian. Sự phát triển của AI mở ra cơ hội số hóa toàn bộ quy trình thuê trọ (tìm kiếm, liên hệ, ký hợp đ  ồng, thanh toán).
 1.2 Mục tiêu
 - Xây dựng nền tảng quản lý và tìm kiếm phòng trọ thông minh (Trustay).
 - Tối ưu tìm kiếm bằng AI Text2SQL và Elasticsearch.

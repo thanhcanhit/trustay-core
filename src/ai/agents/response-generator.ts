@@ -2,7 +2,7 @@ import { google } from '@ai-sdk/google';
 import { Logger } from '@nestjs/common';
 import { generateText } from 'ai';
 import {
-	buildFinalResponsePrompt,
+	buildFinalMessagePrompt,
 	buildFriendlyResponsePrompt,
 	getNoResultsMessage,
 	getSuccessMessage,
@@ -50,7 +50,8 @@ export class ResponseGenerator {
 		// Build structured data payload
 		const structuredData = this.buildStructuredData(sqlResult.results, desiredMode);
 
-		const finalPrompt = buildFinalResponsePrompt({
+		// Build message-only prompt for the LLM
+		const finalPrompt = buildFinalMessagePrompt({
 			recentMessages,
 			conversationalMessage,
 			count: sqlResult.count,
@@ -65,45 +66,50 @@ export class ResponseGenerator {
 				temperature: 0.3,
 				maxOutputTokens: 500,
 			});
-			const responseText = text.trim();
+			const messageText = text.trim();
+			const mode: 'LIST' | 'TABLE' | 'CHART' | 'NONE' = structuredData.list
+				? 'LIST'
+				: structuredData.chart
+					? 'CHART'
+					: structuredData.table
+						? 'TABLE'
+						: 'NONE';
 
-			// Try to parse as JSON envelope first (MVP: JSON format)
-			try {
-				const jsonResponse = JSON.parse(responseText);
-				// If valid JSON, return as-is (AI returned JSON envelope)
-				if (jsonResponse.message && jsonResponse.payload) {
-					return responseText;
-				}
-			} catch {
-				// Not JSON, try ---END format (fallback)
-			}
-
-			// Fallback: Ensure ---END format is present, if not, append it
-			if (!responseText.includes('---END')) {
-				this.logger.warn('AI response missing ---END delimiter, appending structured data');
-				return `${responseText}\n---END\n${this.formatStructuredDataString(structuredData)}`;
-			}
-
-			return responseText;
+			return JSON.stringify({
+				message: messageText,
+				payload: {
+					mode,
+					list: structuredData.list,
+					table: structuredData.table,
+					chart: structuredData.chart,
+				},
+				meta: {
+					sessionId: session.sessionId,
+				},
+			});
 		} catch (error) {
 			this.logger.warn('Failed to generate final response, using fallback', error);
 			const messageText =
 				sqlResult.count === 0 ? getNoResultsMessage() : getSuccessMessage(sqlResult.count);
-
-			// MVP: Try JSON envelope format first, fallback to ---END
-			try {
-				const jsonEnvelope = JSON.stringify({
-					message: messageText,
-					payload: structuredData,
-					meta: {
-						sessionId: session.sessionId,
-					},
-				});
-				return jsonEnvelope;
-			} catch {
-				// Fallback to ---END format
-				return `${messageText}\n---END\n${this.formatStructuredDataString(structuredData)}`;
-			}
+			const mode: 'LIST' | 'TABLE' | 'CHART' | 'NONE' = structuredData.list
+				? 'LIST'
+				: structuredData.chart
+					? 'CHART'
+					: structuredData.table
+						? 'TABLE'
+						: 'NONE';
+			return JSON.stringify({
+				message: messageText,
+				payload: {
+					mode,
+					list: structuredData.list,
+					table: structuredData.table,
+					chart: structuredData.chart,
+				},
+				meta: {
+					sessionId: session.sessionId,
+				},
+			});
 		}
 	}
 
@@ -185,34 +191,7 @@ export class ResponseGenerator {
 		};
 	}
 
-	/**
-	 * Format structured data as string for appending after ---END
-	 * @param structuredData - Structured data object
-	 * @returns Formatted string
-	 */
-	private formatStructuredDataString(structuredData: {
-		list: any[] | null;
-		table: any | null;
-		chart: any | null;
-	}): string {
-		const parts: string[] = [];
-		if (structuredData.list !== null) {
-			parts.push(`LIST: ${JSON.stringify(structuredData.list)}`);
-		} else {
-			parts.push('LIST: null');
-		}
-		if (structuredData.table !== null) {
-			parts.push(`TABLE: ${JSON.stringify(structuredData.table)}`);
-		} else {
-			parts.push('TABLE: null');
-		}
-		if (structuredData.chart !== null) {
-			parts.push(`CHART: ${JSON.stringify(structuredData.chart)}`);
-		} else {
-			parts.push('CHART: null');
-		}
-		return parts.join('\n');
-	}
+	// Removed ---END fallback formatting; responses are always returned as JSON envelope
 
 	/**
 	 * Generate friendly response from SQL results
