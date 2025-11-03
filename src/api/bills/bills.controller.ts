@@ -30,6 +30,9 @@ import {
 } from './dto';
 
 @ApiTags('Bills')
+
+// preview => list table => building , list meter coset =>  [dien, nuoc, ]
+
 @Controller('bills')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
