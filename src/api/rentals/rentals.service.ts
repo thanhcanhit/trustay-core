@@ -869,7 +869,7 @@ export class RentalsService {
 				status: { in: [RentalStatus.active, RentalStatus.pending_renewal] },
 			},
 		});
-		return activeRentalsCount || 1;
+		return activeRentalsCount;
 	}
 
 	/**

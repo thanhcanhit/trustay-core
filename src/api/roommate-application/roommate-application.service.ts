@@ -1005,13 +1005,10 @@ export class RoommateApplicationService {
 		// Only landlord can add directly and create rental immediately
 		// Create rental and update post in transaction
 		await this.prisma.$transaction(async (tx) => {
-			// Check room occupancy (using same logic as rentals service: active and pending_renewal)
-			const activeRentalsCount = await tx.rental.count({
-				where: {
-					roomInstanceId: post.roomInstanceId,
-					status: { in: ['active', 'pending_renewal'] },
-				},
-			});
+			// Check room occupancy using rentals service
+			const activeRentalsCount = await this.rentalsService.getOccupancyCountByRoomInstance(
+				post.roomInstanceId,
+			);
 
 			// Validate max occupancy
 			if (activeRentalsCount >= roomInstance.room.maxOccupancy) {
@@ -1264,9 +1261,19 @@ export class RoommateApplicationService {
 					isActive: false, // Hidden post, not public
 				},
 			});
+		} else {
+			// Update existing post with current occupancy data (bypass remainingSlots check for invite links)
+			await this.prisma.roommateSeekingPost.update({
+				where: { id: roommateSeekingPost.id },
+				data: {
+					seekingCount: availableSlots,
+					remainingSlots: availableSlots,
+					currentOccupancy,
+				},
+			});
 		}
 
-		// Validate post status (post chỉ để lưu trữ, không dùng để validate capacity)
+		// Validate post status only (bypass remainingSlots check for invite links)
 		if (roommateSeekingPost.status !== RoommatePostStatus.active) {
 			throw new BadRequestException('Bài đăng không còn mở cho ứng tuyển');
 		}
@@ -1369,6 +1376,14 @@ export class RoommateApplicationService {
 			},
 		});
 
+		// Check current occupancy using rentals service
+		const currentOccupancy = await this.rentalsService.getOccupancyCountByRoomInstance(
+			activeRental.roomInstanceId,
+		);
+
+		const maxOccupancy = activeRental.roomInstance?.room?.maxOccupancy || 2;
+		const seekingCount = maxOccupancy - currentOccupancy;
+
 		// If no post exists, create a hidden post automatically
 		if (!roommateSeekingPost) {
 			const roomName = activeRental.roomInstance?.room?.name || 'Phòng';
@@ -1383,14 +1398,6 @@ export class RoommateApplicationService {
 
 			const monthlyRent = activeRental.monthlyRent;
 			const depositAmount = activeRental.depositPaid || 0;
-
-			// Check current occupancy using rentals service
-			const currentOccupancy = await this.rentalsService.getOccupancyCountByRoomInstance(
-				activeRental.roomInstanceId,
-			);
-
-			const maxOccupancy = activeRental.roomInstance?.room?.maxOccupancy || 2;
-			const seekingCount = maxOccupancy - currentOccupancy;
 
 			// Create hidden post (isActive: false - not public, only for direct invites)
 			roommateSeekingPost = await this.prisma.roommateSeekingPost.create({
@@ -1410,6 +1417,16 @@ export class RoommateApplicationService {
 					availableFromDate: new Date(),
 					status: RoommatePostStatus.active,
 					isActive: false, // Hidden post, not public
+				},
+			});
+		} else {
+			// Update existing post with current occupancy data (số người tìm bằng với số người tìm phòng hiện tại)
+			await this.prisma.roommateSeekingPost.update({
+				where: { id: roommateSeekingPost.id },
+				data: {
+					seekingCount,
+					remainingSlots: seekingCount,
+					currentOccupancy,
 				},
 			});
 		}
@@ -1748,13 +1765,10 @@ export class RoommateApplicationService {
 
 		// Tạo rental và update application trong transaction
 		const rental = await this.prisma.$transaction(async (tx) => {
-			// Check room occupancy (using same logic as rentals service: active and pending_renewal)
-			const activeRentalsCount = await tx.rental.count({
-				where: {
-					roomInstanceId: post.roomInstanceId,
-					status: { in: ['active', 'pending_renewal'] },
-				},
-			});
+			// Check room occupancy using rentals service
+			const activeRentalsCount = await this.rentalsService.getOccupancyCountByRoomInstance(
+				post.roomInstanceId,
+			);
 
 			// Validate max occupancy
 			if (activeRentalsCount >= roomInstance.room.maxOccupancy) {
