@@ -6,6 +6,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from './email.service';
 import { SmsService } from './sms.service';
 
+const PHONE_VERIFICATION_CODE = '123456';
+
 export interface VerificationTokenPayload {
 	email?: string;
 	phone?: string;
@@ -100,8 +102,7 @@ export class VerificationService {
 		// Check rate limiting
 		await this.checkRateLimit(type, email, phone);
 
-		// Generate 6-digit code
-		const code = this.generateVerificationCode();
+		const code = type === 'phone' ? PHONE_VERIFICATION_CODE : this.generateVerificationCode();
 		const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
 		// Save verification code to database

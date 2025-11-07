@@ -103,7 +103,7 @@ export class AuthController {
 	}
 
 	@Post('login')
-	@ApiOperation({ summary: 'Login user' })
+	@ApiOperation({ summary: 'Login user with email or phone identifier' })
 	@ApiResponse({
 		status: 200,
 		description: 'User logged in successfully',
