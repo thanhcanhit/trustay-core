@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { TEXT2SQL_PROMPT } from '../system-prompt-example/text2sql.prompt';
 
 @ApiTags('Health Check')
 @Controller()
@@ -53,5 +54,15 @@ export class AppController {
 				redis: { status: 'up' },
 			},
 		};
+	}
+
+	/**
+	 * Minimal Vietnamese Text-to-SQL system prompt (imported from minified prompt file)
+	 */
+	@Get('ai/text2sql/prompt-mini')
+	@ApiOperation({ summary: 'Prompt Text-to-SQL tối giản (tiếng Việt, chỉ bảng)' })
+	@ApiResponse({ status: 200, description: 'Trả về prompt dạng text để test Text-to-SQL' })
+	getMiniText2SqlPrompt(): { prompt: string } {
+		return { prompt: TEXT2SQL_PROMPT };
 	}
 }
