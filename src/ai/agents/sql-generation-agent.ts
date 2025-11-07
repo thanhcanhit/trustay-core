@@ -308,7 +308,7 @@ export class SqlGenerationAgent {
 					userRole: userRole,
 				};
 			} catch (error) {
-				lastError = error.message;
+				lastError = this.extractPrismaErrorMessage(error);
 				this.logger.warn(`SQL generation attempt ${attempts} failed: ${lastError}`);
 				if (attempts >= maxAttempts) {
 					throw new Error(

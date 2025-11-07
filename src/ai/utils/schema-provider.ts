@@ -50,6 +50,8 @@ districts(id PK, district_code, district_name, district_name_en, province_id FK-
 
 wards(id PK, ward_code, ward_name, ward_name_en, ward_level, district_id FK->districts.id, created_at, updated_at)
 
+room_requests(id PK, slug, requester_id FK->users.id, title, description, preferred_district_id FK->districts.id, preferred_ward_id FK->wards.id, preferred_province_id FK->provinces.id, min_budget, max_budget, currency, preferred_room_type, occupancy, move_in_date, status, is_public, expires_at, view_count, contact_count, created_at, updated_at)
+
 RELATIONSHIPS (FK):
 - buildings.owner_id -> users.id
 - rooms.building_id -> buildings.id
@@ -68,5 +70,9 @@ RELATIONSHIPS (FK):
 - room_rules.room_id -> rooms.id; room_rules.rule_template_id -> room_rule_templates.id
 - districts.province_id -> provinces.id
 - wards.district_id -> districts.id
+- room_requests.requester_id -> users.id
+- room_requests.preferred_district_id -> districts.id
+- room_requests.preferred_ward_id -> wards.id
+- room_requests.preferred_province_id -> provinces.id
 	`;
 }

@@ -7,6 +7,7 @@ import {
 import { PaginatedResponseDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { RoommatePostStatus } from '../../common/enums/roommate-post-status.enum';
 import { generateSlug, generateUniqueSlug } from '../../common/utils';
+import { maskPhone, maskText } from '../../common/utils/mask.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ElasticsearchQueueService } from '../../queue/services/elasticsearch-queue.service';
 import {
@@ -114,7 +115,7 @@ export class RoommateSeekingPostService {
 		// Queue Elasticsearch indexing (async, best-effort)
 		void this.elasticsearchQueueService.queueIndexRoommateSeeking(post.id);
 
-		return this.mapToResponseDto(post);
+		return this.mapToResponseDto(post, true);
 	}
 
 	async findMyPosts(
@@ -138,7 +139,7 @@ export class RoommateSeekingPostService {
 		]);
 
 		return PaginatedResponseDto.create(
-			posts.map((post) => this.mapToResponseDto(post)),
+			posts.map((post) => this.mapToResponseDto(post, true)),
 			page,
 			limit,
 			total,
@@ -148,7 +149,7 @@ export class RoommateSeekingPostService {
 	async findOne(
 		id: string,
 		clientIp?: string,
-		_options?: { isAuthenticated?: boolean },
+		options: { isAuthenticated?: boolean } = { isAuthenticated: false },
 	): Promise<RoommateSeekingDetailWithMetaResponseDto> {
 		const post = await this.prisma.roommateSeekingPost.findUnique({
 			where: { id },
@@ -182,7 +183,8 @@ export class RoommateSeekingPostService {
 			post.viewCount += 1;
 		}
 
-		const responseDto = this.mapToResponseDto(post);
+		const isAuthenticated = options.isAuthenticated ?? false;
+		const responseDto = this.mapToResponseDto(post, isAuthenticated);
 
 		return {
 			...responseDto,
@@ -232,7 +234,7 @@ export class RoommateSeekingPostService {
 		// Queue Elasticsearch re-indexing (async, best-effort)
 		void this.elasticsearchQueueService.queueIndexRoommateSeeking(updatedPost.id);
 
-		return this.mapToResponseDto(updatedPost);
+		return this.mapToResponseDto(updatedPost, true);
 	}
 
 	async remove(id: string, tenantId: string): Promise<void> {
@@ -279,7 +281,7 @@ export class RoommateSeekingPostService {
 		// Queue Elasticsearch re-indexing (async, best-effort)
 		void this.elasticsearchQueueService.queueIndexRoommateSeeking(updatedPost.id);
 
-		return this.mapToResponseDto(updatedPost);
+		return this.mapToResponseDto(updatedPost, true);
 	}
 
 	private async validatePlatformRoomConstraints(
@@ -365,7 +367,7 @@ export class RoommateSeekingPostService {
 		};
 	}
 
-	private mapToResponseDto(post: any): RoommateSeekingPostResponseDto {
+	private mapToResponseDto(post: any, isAuthenticated: boolean): RoommateSeekingPostResponseDto {
 		return {
 			id: post.id,
 			title: post.title,
@@ -374,7 +376,11 @@ export class RoommateSeekingPostService {
 			tenantId: post.tenantId,
 			roomInstanceId: post.roomInstanceId,
 			rentalId: post.rentalId,
-			externalAddress: post.externalAddress,
+			externalAddress: isAuthenticated
+				? post.externalAddress
+				: post.externalAddress
+					? maskText(post.externalAddress, 2, 2)
+					: undefined,
 			externalProvinceId: post.externalProvinceId,
 			externalDistrictId: post.externalDistrictId,
 			externalWardId: post.externalWardId,
@@ -404,31 +410,100 @@ export class RoommateSeekingPostService {
 			contactCount: post.contactCount,
 			createdAt: post.createdAt.toISOString(),
 			updatedAt: post.updatedAt.toISOString(),
-			tenant: post.tenant
-				? {
-						...post.tenant,
-						phoneNumber: post.tenant.phone, // Map phone to phoneNumber for response
-					}
-				: undefined,
-			roomInstance: post.roomInstance
-				? {
-						...post.roomInstance,
-						room: post.roomInstance.room
-							? {
-									...post.roomInstance.room,
-									building: post.roomInstance.room.building
-										? {
-												...post.roomInstance.room.building,
-												address: post.roomInstance.room.building.addressLine1, // Map addressLine1 to address
-											}
-										: undefined,
-								}
-							: undefined,
-					}
-				: undefined,
+			tenant: this.mapTenant(post.tenant, isAuthenticated),
+			roomInstance: this.mapRoomInstance(post.roomInstance, isAuthenticated),
 			externalProvince: post.externalProvince,
 			externalDistrict: post.externalDistrict,
 			externalWard: post.externalWard,
+		};
+	}
+
+	private mapTenant(
+		tenant: any,
+		isAuthenticated: boolean,
+	):
+		| {
+				id: string;
+				firstName: string;
+				lastName: string;
+				avatarUrl?: string;
+				phoneNumber?: string;
+		  }
+		| undefined {
+		if (!tenant) {
+			return undefined;
+		}
+
+		const maskName = (value: string | null | undefined): string => {
+			if (!value) {
+				return '';
+			}
+			const visibleStart = Math.min(1, value.length);
+			return maskText(value, visibleStart, 0);
+		};
+
+		return {
+			id: tenant.id,
+			firstName: isAuthenticated ? tenant.firstName : maskName(tenant.firstName),
+			lastName: isAuthenticated ? tenant.lastName : maskName(tenant.lastName),
+			avatarUrl: tenant.avatarUrl || undefined,
+			phoneNumber: tenant.phone
+				? isAuthenticated
+					? tenant.phone
+					: maskPhone(tenant.phone)
+				: undefined,
+		};
+	}
+
+	private mapRoomInstance(
+		roomInstance: any,
+		isAuthenticated: boolean,
+	):
+		| {
+				id: string;
+				roomNumber: string;
+				room: {
+					id: string;
+					name: string;
+					building: {
+						id: string;
+						name: string;
+						address: string;
+					};
+				};
+		  }
+		| undefined {
+		if (!roomInstance) {
+			return undefined;
+		}
+
+		if (!roomInstance.room || !roomInstance.room.building) {
+			return undefined;
+		}
+
+		const addressLine1: string = roomInstance.room.building.addressLine1 || '';
+		const maskedAddress = isAuthenticated
+			? addressLine1
+			: addressLine1
+				? maskText(
+						addressLine1,
+						Math.min(2, addressLine1.length),
+						Math.min(2, addressLine1.length > 2 ? 2 : 0),
+					)
+				: '';
+
+		return {
+			id: roomInstance.id,
+			roomNumber: roomInstance.roomNumber,
+			room: {
+				id: roomInstance.room.id,
+				name: roomInstance.room.name,
+				building: {
+					id: roomInstance.room.building.id,
+					name: roomInstance.room.building.name,
+					address: maskedAddress,
+				},
+			},
 		};
 	}
 }

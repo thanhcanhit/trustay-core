@@ -103,11 +103,19 @@ export class AuthController {
 	}
 
 	@Post('login')
-	@ApiOperation({ summary: 'Login user' })
+	@ApiOperation({
+		summary: 'Login user with identifier or email',
+		description:
+			'Login using either identifier (email/phone) or email. Identifier takes priority if both are provided.',
+	})
 	@ApiResponse({
 		status: 200,
 		description: 'User logged in successfully',
 		type: AuthResponseDto,
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Either identifier or email must be provided',
 	})
 	@ApiResponse({
 		status: 401,

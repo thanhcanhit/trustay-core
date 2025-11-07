@@ -443,12 +443,18 @@ export class RoomsService {
 		void this.elasticsearchQueueService.queueIndexRoom(result);
 
 		// Return created room with full details
-		return this.findOne(result);
+		return this.findOne(result, { isAuthenticated: true });
 	}
 
-	async findOne(roomId: string): Promise<RoomDetailOutputDto> {
-		const room = await this.prisma.room.findUnique({
-			where: { id: roomId },
+	async findOne(
+		roomId: string,
+		context: { isAuthenticated: boolean } = { isAuthenticated: false },
+	): Promise<RoomDetailOutputDto> {
+		const room = await this.prisma.room.findFirst({
+			where: {
+				OR: [{ id: roomId }, { slug: roomId }],
+				isActive: true,
+			},
 			include: {
 				building: {
 					include: {
@@ -569,7 +575,7 @@ export class RoomsService {
 
 		// Use the same format utility as public endpoint
 		// For admin, always show full info (authenticated = true)
-		return formatRoomDetail(room, true, ownerStats);
+		return formatRoomDetail(room, context.isAuthenticated, ownerStats);
 	}
 
 	private async validateSystemReferences(createRoomDto: CreateRoomDto): Promise<void> {
@@ -1256,7 +1262,7 @@ export class RoomsService {
 		void this.elasticsearchQueueService.queueIndexRoom(roomId);
 
 		// Return updated room with full details
-		return this.findOne(roomId);
+		return this.findOne(roomId, { isAuthenticated: true });
 	}
 
 	async remove(userId: string, roomId: string): Promise<void> {
