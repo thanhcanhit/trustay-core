@@ -103,4 +103,3 @@ model Payment {
   payment_date DateTime? @map("payment_date")
   created_at DateTime @map("created_at")
 }`;
-
