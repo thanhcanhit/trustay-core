@@ -230,4 +230,43 @@ export class AiController {
 			};
 		}
 	}
+
+	/**
+	 * Simple one-for-all endpoint for model evaluation
+	 * No session, no history, no agents - just direct SQL generation
+	 */
+	@Post('simple-text2sql')
+	@ApiOperation({ summary: 'Tạo SQL đơn giản - endpoint tạm thời để đánh giá mô hình' })
+	@ApiQuery({
+		name: 'query',
+		description: 'Câu hỏi hoặc yêu cầu của người dùng',
+		example: 'Tìm phòng trọ giá rẻ ở quận 1',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Tạo và thực thi SQL thành công',
+		schema: {
+			type: 'object',
+			properties: {
+				success: { type: 'boolean', example: true },
+				sql: { type: 'string', example: 'SELECT * FROM rooms WHERE...' },
+				results: { type: 'array', items: { type: 'object' } },
+				count: { type: 'number', example: 5 },
+			},
+		},
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Lỗi tạo hoặc thực thi SQL',
+		schema: {
+			type: 'object',
+			properties: {
+				success: { type: 'boolean', example: false },
+				error: { type: 'string', example: 'Failed to generate or execute SQL' },
+			},
+		},
+	})
+	async simpleText2Sql(@Query('query') query: string) {
+		return await this.aiService.simpleText2Sql(query);
+	}
 }
