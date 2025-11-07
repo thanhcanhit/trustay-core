@@ -25,6 +25,31 @@ export class SqlGenerationAgent {
 	constructor(private readonly knowledgeService?: KnowledgeService) {}
 
 	/**
+	 * Extract and format Prisma error message for better AI understanding
+	 * Prisma errors have format: Invalid `prisma.$queryRawUnsafe()` invocation: Raw query failed. Code: `42P01`. Message: `relation "table_name" does not exist`
+	 * @param error - Error object from Prisma
+	 * @returns Formatted error message
+	 */
+	private extractPrismaErrorMessage(error: unknown): string {
+		if (!(error instanceof Error)) {
+			return String(error);
+		}
+		const errorMessage = error.message;
+		// Extract PostgreSQL error code and message from Prisma error format
+		// Format: Invalid `prisma.$queryRawUnsafe()` invocation: Raw query failed. Code: `42P01`. Message: `relation "table_name" does not exist`
+		const codeMatch = errorMessage.match(/Code:\s*`([^`]+)`/);
+		const messageMatch = errorMessage.match(/Message:\s*`([^`]+)`/);
+		if (codeMatch && messageMatch) {
+			const code = codeMatch[1];
+			const message = messageMatch[1];
+			// Format error for AI: include code and clear message
+			return `PostgreSQL Error ${code}: ${message}`;
+		}
+		// Fallback: return original message
+		return errorMessage;
+	}
+
+	/**
 	 * Generate and execute SQL with conversation context, retry logic and security
 	 * @param query - User query
 	 * @param session - Chat session for context
@@ -118,6 +143,7 @@ export class SqlGenerationAgent {
 		}
 		const dbSchema = getCompleteDatabaseSchema();
 		let lastError: string = '';
+		let lastSql: string = '';
 		let attempts = 0;
 		const maxAttempts = 5;
 		// Vòng phản hồi tự sửa lỗi: Nếu SQL execution fails, truyền error vào prompt
@@ -134,6 +160,7 @@ export class SqlGenerationAgent {
 					userRole,
 					businessContext,
 					lastError, // Error từ lần attempt trước → AI tự sửa lỗi
+					lastSql, // SQL cũ để AI biết cần sửa gì
 					attempt: attempts,
 					limit: aiConfig.limit,
 				});
@@ -165,6 +192,14 @@ export class SqlGenerationAgent {
 				// Use enforced SQL if available (with LIMIT added)
 				const finalSql = safetyCheck.enforcedSql || sql;
 
+				// Log SQL được generate để debug
+				this.logger.debug(
+					`[SQL Generation] Attempt ${attempts}/${maxAttempts} - Generated SQL: ${finalSql.substring(0, 200)}${finalSql.length > 200 ? '...' : ''}`,
+				);
+
+				// Lưu SQL để nếu fail thì có thể truyền vào prompt lần sau
+				lastSql = finalSql;
+
 				const results = await prisma.$queryRawUnsafe(finalSql);
 				const serializedResults = serializeBigInt(results);
 				return {
@@ -176,9 +211,15 @@ export class SqlGenerationAgent {
 					userRole: userRole,
 				};
 			} catch (error) {
-				// Vòng phản hồi tự sửa lỗi: Lưu error để truyền vào prompt lần sau
-				// AI sẽ tự động sửa SQL dựa trên error message này
-				lastError = error.message;
+				// Vòng phản hồi tự sửa lỗi: Lưu error và SQL cũ để truyền vào prompt lần sau
+				// AI sẽ tự động sửa SQL dựa trên error message và SQL cũ này
+				lastError = this.extractPrismaErrorMessage(error);
+				// Log SQL cũ để debug
+				if (lastSql) {
+					this.logger.warn(
+						`[SQL Regeneration] Attempt ${attempts}/${maxAttempts} failed. Previous SQL: ${lastSql.substring(0, 200)}${lastSql.length > 200 ? '...' : ''}`,
+					);
+				}
 				this.logger.warn(
 					`[SQL Regeneration] Attempt ${attempts}/${maxAttempts} failed: ${lastError}. Regenerating SQL...`,
 				);

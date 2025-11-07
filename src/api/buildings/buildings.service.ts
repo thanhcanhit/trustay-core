@@ -5,7 +5,7 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import { plainToClass } from 'class-transformer';
+import { plainToInstance } from 'class-transformer';
 import { generateBuildingSlug, generateUniqueSlug } from '@/common/utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
@@ -448,8 +448,21 @@ export class BuildingsService {
 			}
 		};
 
+		// Build owner object manually to avoid Decimal issues
+		const owner = building.owner
+			? {
+					id: building.owner.id,
+					firstName: building.owner.firstName,
+					lastName: building.owner.lastName,
+					avatarUrl: building.owner.avatarUrl,
+					isVerifiedIdentity: building.owner.isVerifiedIdentity,
+				}
+			: undefined;
+
 		// Safely handle undefined values for Decimal fields and exclude rooms array
-		const safeBuilding = {
+		const latitudeValue = safeDecimalToNumber(building.latitude);
+		const longitudeValue = safeDecimalToNumber(building.longitude);
+		const safeBuilding: any = {
 			id: building.id,
 			slug: building.slug,
 			ownerId: building.ownerId,
@@ -461,16 +474,11 @@ export class BuildingsService {
 			districtId: building.districtId,
 			provinceId: building.provinceId,
 			country: building.country,
-			latitude: safeDecimalToNumber(building.latitude),
-			longitude: safeDecimalToNumber(building.longitude),
 			isActive: building.isActive,
 			isVerified: building.isVerified,
 			createdAt: building.createdAt,
 			updatedAt: building.updatedAt,
-			owner: building.owner,
-			ward: building.ward,
-			district: building.district,
-			province: building.province,
+			owner,
 			location: {
 				wardName: building.ward?.name,
 				districtName: building.district?.name,
@@ -479,8 +487,15 @@ export class BuildingsService {
 			roomCount,
 			availableRoomCount,
 		};
+		// Only include latitude/longitude if they have values
+		if (latitudeValue !== undefined) {
+			safeBuilding.latitude = latitudeValue;
+		}
+		if (longitudeValue !== undefined) {
+			safeBuilding.longitude = longitudeValue;
+		}
 
-		const response = plainToClass(BuildingResponseDto, safeBuilding);
+		const response = plainToInstance(BuildingResponseDto, safeBuilding);
 
 		return response;
 	}

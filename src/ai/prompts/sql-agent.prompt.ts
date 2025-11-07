@@ -11,6 +11,7 @@ export interface SqlPromptParams {
 	userRole?: string;
 	businessContext?: string;
 	lastError?: string;
+	lastSql?: string;
 	attempt?: number;
 	limit: number;
 }
@@ -29,6 +30,7 @@ export function buildSqlPrompt(params: SqlPromptParams): string {
 		userRole,
 		businessContext,
 		lastError = '',
+		lastSql = '',
 		attempt = 1,
 		limit,
 	} = params;
@@ -36,15 +38,49 @@ export function buildSqlPrompt(params: SqlPromptParams): string {
 	// Build error context
 	const errorContext = lastError
 		? `
-PREVIOUS ERROR (Attempt ${attempt - 1}):
-${lastError}
+═══════════════════════════════════════════════════════════════
+LỖI TRƯỚC ĐÓ (Attempt ${attempt - 1}):
+═══════════════════════════════════════════════════════════════
+${lastError}${lastSql ? `\n\nSQL CŨ (CÓ LỖI - CẦN SỬA):\n${lastSql}` : ''}
 
-Please fix the SQL query based on this error. Common issues:
-- Column names are snake_case (not camelCase)
-- Use proper table aliases
-- Check foreign key relationships
-- Verify column existence in schema
-- Use correct JOIN syntax${userId ? '\n- Include proper WHERE clauses for user authorization' : ''}
+HƯỚNG DẪN SỬA LỖI (BẮT BUỘC PHẢI LÀM THEO):
+
+1. NẾU LỖI "relation does not exist" (42P01):
+   - BẮT BUỘC: Kiểm tra lại tên bảng trong SCHEMA section ở trên
+   - Tên bảng PHẢI đúng với schema (ví dụ: "room_requests" ✅, "room_seeking_posts" ❌)
+   - Nếu schema có "room_requests" nhưng SQL dùng "room_seeking_posts" → PHẢI sửa thành "room_requests"
+   - KHÔNG BAO GIỜ đoán mò tên bảng - PHẢI kiểm tra trong schema trước
+   - Lưu ý: Prisma model có thể khác tên bảng thực tế (ví dụ: RoomSeekingPost → room_requests)
+
+2. NẾU LỖI "column does not exist" (42703):
+   - BẮT BUỘC: Kiểm tra lại tên cột trong SCHEMA section ở trên
+   - Tên cột PHẢI đúng với schema (ví dụ: "name" ✅, "title" ❌ nếu bảng không có cột title)
+   - Nếu cần "title" nhưng bảng không có → PHẢI dùng alias: r.name AS title
+   - KHÔNG BAO GIỜ đoán mò tên cột - PHẢI kiểm tra trong schema trước
+   - QUAN TRỌNG: Nếu SQL cũ dùng cột sai (ví dụ: rent.room_id), PHẢI tìm cột ĐÚNG trong schema
+     * Ví dụ: rentals table có room_instance_id (KHÔNG phải room_id)
+     * Nếu SQL cũ: SELECT * FROM rentals rent WHERE rent.room_id = ...
+     * SQL ĐÚNG: SELECT * FROM rentals rent WHERE rent.room_instance_id = ...
+     * PHẢI sửa tất cả chỗ dùng cột sai trong SQL cũ
+
+3. NẾU LỖI "syntax error" hoặc "invalid":
+   - Kiểm tra lại cú pháp PostgreSQL
+   - Kiểm tra JOIN syntax
+   - Kiểm tra WHERE clauses
+   - Kiểm tra LIMIT clause
+
+4. CÁC LỖI KHÁC:
+   - Column names are snake_case (not camelCase)
+   - Use proper table aliases
+   - Check foreign key relationships
+   - Verify column existence in schema
+   - Use correct JOIN syntax${userId ? '\n   - Include proper WHERE clauses for user authorization' : ''}
+
+QUAN TRỌNG: Trước khi tạo SQL mới, PHẢI:
+1. ĐỌC KỸ SCHEMA section để xác nhận tên bảng và cột
+2. SO SÁNH tên bảng/cột trong SQL cũ với schema
+3. SỬA LẠI tên bảng/cột cho đúng với schema
+4. KIỂM TRA lại SQL trước khi trả về
 
 `
 		: '';
