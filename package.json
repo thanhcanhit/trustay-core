@@ -33,7 +33,9 @@
     "es:seed:rooms": "node scripts/seed-elasticsearch.js --index=rooms",
     "es:seed:reindex": "node scripts/seed-elasticsearch.js --reindex",
     "db:embeddings": "node scripts/emmbedings-db-schema.mjs",
-    "ai:build-embeddings": "ts-node src/ai/scripts/build-schema-embeddings.ts"
+    "ai:build-embeddings": "ts-node src/ai/scripts/build-schema-embeddings.ts",
+    "db:setup-stats": "node scripts/setup-stats-test-data.js",
+    "db:clear-stats": "node scripts/setup-stats-test-data.js clear"
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.23",
