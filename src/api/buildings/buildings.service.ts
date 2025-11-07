@@ -436,6 +436,18 @@ export class BuildingsService {
 				return count + availableInstances;
 			}, 0) || undefined;
 
+		// Helper function to safely convert Decimal values to numbers
+		const safeDecimalToNumber = (value: any): number | undefined => {
+			if (value === null || value === undefined) {
+				return undefined;
+			}
+			try {
+				return parseFloat(value.toString());
+			} catch {
+				return undefined;
+			}
+		};
+
 		// Safely handle undefined values for Decimal fields and exclude rooms array
 		const safeBuilding = {
 			id: building.id,
@@ -449,14 +461,8 @@ export class BuildingsService {
 			districtId: building.districtId,
 			provinceId: building.provinceId,
 			country: building.country,
-			latitude:
-				building.latitude !== null && building.latitude !== undefined
-					? building.latitude
-					: undefined,
-			longitude:
-				building.longitude !== null && building.longitude !== undefined
-					? building.longitude
-					: undefined,
+			latitude: safeDecimalToNumber(building.latitude),
+			longitude: safeDecimalToNumber(building.longitude),
 			isActive: building.isActive,
 			isVerified: building.isVerified,
 			createdAt: building.createdAt,
