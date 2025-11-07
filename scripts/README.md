@@ -30,6 +30,33 @@ node scripts/clear-reference-data.js
 - Xóa tất cả SystemCostType
 - Sử dụng khi cần reset database
 
+### 3. Setup Statistics Test Data
+```bash
+# Tạo dữ liệu test cho thống kê
+node scripts/setup-stats-test-data.js
+
+# Xóa dữ liệu test
+node scripts/setup-stats-test-data.js clear
+```
+
+**Chức năng:**
+- Tạo landlord: `budget.student@trustay.com`
+- Tạo 4 phòng trọ với cấu hình khác nhau
+- Tạo 4 tenant (sinh viên) để ở các phòng
+- Tạo rentals cho các phòng
+- Tạo hóa đơn cho 3 tháng gần nhất (2 tháng đã trả, 1 tháng chưa trả)
+- Tạo payments cho các hóa đơn đã trả
+- Tạo ratings từ tenants
+- Dữ liệu phù hợp để test các tính năng thống kê
+
+**Dữ liệu được tạo:**
+- **Building**: Nhà trọ Sinh viên Quận 1
+- **Rooms**: 4 phòng (101, 102, 201, 202) với giá từ 1.5M - 3M VND
+- **Tenants**: 4 sinh viên với thông tin đầy đủ
+- **Bills**: 12 hóa đơn (4 phòng × 3 tháng)
+- **Payments**: 8 payments (2 tháng đã trả)
+- **Ratings**: 4 ratings từ tenants
+
 ## Dữ liệu được import
 
 ### System Amenities (43 items)
