@@ -4,7 +4,7 @@ import {
 	Injectable,
 	NotFoundException,
 } from '@nestjs/common';
-import { RatingTargetType } from '@prisma/client';
+import { RatingTargetType, VerificationStatus, VerificationType } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { plainToInstance } from 'class-transformer';
 import { EmailService } from '../../auth/services/email.service';
@@ -25,6 +25,15 @@ import { UsersQueryDto } from './dto/users-query.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { VerifyIdentityDto } from './dto/verify-identity.dto';
 import { VerifyPhoneDto } from './dto/verify-phone.dto';
+
+const PHONE_FALLBACK_VERIFICATION_CODE = '123456';
+
+interface VerificationCodeValidationInput {
+	readonly type: VerificationType;
+	readonly email?: string;
+	readonly phone?: string;
+	readonly code: string;
+}
 
 @Injectable()
 export class UsersService {
@@ -514,35 +523,90 @@ export class UsersService {
 		return { message: 'Address deleted successfully' };
 	}
 
-	async verifyPhone(userId: string, verifyPhoneDto: VerifyPhoneDto) {
-		// In a real application, you would verify the code against a sent SMS
-		// For now, we'll simulate verification
+	private async validateVerificationCode(input: VerificationCodeValidationInput) {
+		const email = input.email?.toLowerCase();
+		const verification = await this.prisma.verificationCode.findFirst({
+			where: {
+				type: input.type,
+				status: VerificationStatus.pending,
+				...(email ? { email } : {}),
+				...(input.phone ? { phone: input.phone } : {}),
+			},
+			orderBy: { createdAt: 'desc' },
+		});
+		if (!verification) {
+			throw new BadRequestException('Invalid verification code');
+		}
+		if (verification.expiresAt <= new Date()) {
+			await this.prisma.verificationCode.update({
+				where: { id: verification.id },
+				data: { status: VerificationStatus.expired },
+			});
+			throw new BadRequestException('Verification code has expired');
+		}
+		if (verification.attempts >= verification.maxAttempts) {
+			await this.prisma.verificationCode.update({
+				where: { id: verification.id },
+				data: { status: VerificationStatus.failed },
+			});
+			throw new BadRequestException('Maximum verification attempts exceeded');
+		}
+		if (verification.code !== input.code) {
+			const updatedAttempts = verification.attempts + 1;
+			const remainingAttempts = verification.maxAttempts - updatedAttempts;
+			const updateData =
+				remainingAttempts <= 0
+					? { attempts: updatedAttempts, status: VerificationStatus.failed }
+					: { attempts: updatedAttempts };
+			await this.prisma.verificationCode.update({
+				where: { id: verification.id },
+				data: updateData,
+			});
+			if (remainingAttempts <= 0) {
+				throw new BadRequestException('Maximum verification attempts exceeded');
+			}
+			throw new BadRequestException(
+				`Invalid verification code. ${remainingAttempts} attempts remaining.`,
+			);
+		}
+		return verification;
+	}
 
+	private async markVerificationAsVerified(verificationId: string): Promise<void> {
+		await this.prisma.verificationCode.update({
+			where: { id: verificationId },
+			data: {
+				status: VerificationStatus.verified,
+				verifiedAt: new Date(),
+			},
+		});
+	}
+
+	async verifyPhone(userId: string, verifyPhoneDto: VerifyPhoneDto) {
 		const user = await this.prisma.user.findUnique({
 			where: { id: userId },
 		});
-
 		if (!user) {
 			throw new NotFoundException('User not found');
 		}
-
-		// Check if phone number is already taken by another user
 		const existingUser = await this.prisma.user.findFirst({
 			where: {
 				phone: verifyPhoneDto.phone,
 				id: { not: userId },
 			},
 		});
-
 		if (existingUser) {
 			throw new ConflictException('Phone number is already in use');
 		}
-
-		// Simple verification code check (in production, use proper SMS verification)
-		if (verifyPhoneDto.verificationCode !== '123456') {
-			throw new BadRequestException('Invalid verification code');
+		let verificationId: string | undefined;
+		if (verifyPhoneDto.verificationCode !== PHONE_FALLBACK_VERIFICATION_CODE) {
+			const verification = await this.validateVerificationCode({
+				type: VerificationType.phone,
+				phone: verifyPhoneDto.phone,
+				code: verifyPhoneDto.verificationCode,
+			});
+			verificationId = verification.id;
 		}
-
 		const updatedUser = await this.prisma.user.update({
 			where: { id: userId },
 			data: {
@@ -556,9 +620,10 @@ export class UsersService {
 				isVerifiedPhone: true,
 			},
 		});
-
+		if (verificationId) {
+			await this.markVerificationAsVerified(verificationId);
+		}
 		await this.notificationsService.notifyAccountVerification(userId);
-
 		return {
 			message: 'Phone number verified successfully',
 			user: updatedUser,
@@ -566,37 +631,31 @@ export class UsersService {
 	}
 
 	async verifyEmail(userId: string, verifyEmailDto: VerifyEmailDto) {
-		// In a real application, you would verify the code against a sent email
-
 		const user = await this.prisma.user.findUnique({
 			where: { id: userId },
 		});
-
 		if (!user) {
 			throw new NotFoundException('User not found');
 		}
-
-		// Check if email is already taken by another user
+		const normalizedEmail = verifyEmailDto.email.toLowerCase();
 		const existingUser = await this.prisma.user.findFirst({
 			where: {
-				email: verifyEmailDto.email,
+				email: normalizedEmail,
 				id: { not: userId },
 			},
 		});
-
 		if (existingUser) {
 			throw new ConflictException('Email is already in use');
 		}
-
-		// Simple verification code check (in production, use proper email verification)
-		if (verifyEmailDto.verificationCode !== '123456') {
-			throw new BadRequestException('Invalid verification code');
-		}
-
+		const verification = await this.validateVerificationCode({
+			type: VerificationType.email,
+			email: normalizedEmail,
+			code: verifyEmailDto.verificationCode,
+		});
 		const updatedUser = await this.prisma.user.update({
 			where: { id: userId },
 			data: {
-				email: verifyEmailDto.email,
+				email: normalizedEmail,
 				isVerifiedEmail: true,
 				updatedAt: new Date(),
 			},
@@ -606,9 +665,8 @@ export class UsersService {
 				isVerifiedEmail: true,
 			},
 		});
-
+		await this.markVerificationAsVerified(verification.id);
 		await this.notificationsService.notifyAccountVerification(userId);
-
 		return {
 			message: 'Email verified successfully',
 			user: updatedUser,

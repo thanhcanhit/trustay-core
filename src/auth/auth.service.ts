@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma } from '@prisma/client';
 import { LoggerService } from '../logger/logger.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
@@ -19,6 +20,40 @@ import { EmailService } from './services/email.service';
 import { PasswordService } from './services/password.service';
 import { SmsService } from './services/sms.service';
 import { VerificationService } from './services/verification.service';
+
+const EMAIL_IDENTIFIER_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const AUTH_USER_SELECT = {
+	id: true,
+	email: true,
+	phone: true,
+	firstName: true,
+	lastName: true,
+	avatarUrl: true,
+	dateOfBirth: true,
+	gender: true,
+	role: true,
+	bio: true,
+	idCardNumber: true,
+	bankAccount: true,
+	bankName: true,
+	isVerifiedPhone: true,
+	isVerifiedEmail: true,
+	isVerifiedIdentity: true,
+	isVerifiedBank: true,
+	overallRating: true,
+	totalRatings: true,
+	lastActiveAt: true,
+	createdAt: true,
+	updatedAt: true,
+} as const;
+
+const LOGIN_USER_SELECT = {
+	...AUTH_USER_SELECT,
+	passwordHash: true,
+} as const;
+
+type LoginUser = Prisma.UserGetPayload<{ select: typeof LOGIN_USER_SELECT }>;
 
 @Injectable()
 export class AuthService {
@@ -32,6 +67,41 @@ export class AuthService {
 		private readonly smsService: SmsService,
 		private readonly logger: LoggerService,
 	) {}
+
+	private normalizeEmailIdentifier(identifier: string): string {
+		return identifier.trim().toLowerCase();
+	}
+
+	private normalizePhoneIdentifier(identifier: string): string {
+		const stripped = identifier.replace(/[\s()-]/g, '');
+		if (stripped.startsWith('00')) {
+			return `+${stripped.slice(2)}`;
+		}
+		return stripped;
+	}
+
+	private isEmailIdentifier(identifier: string): boolean {
+		return EMAIL_IDENTIFIER_REGEX.test(identifier);
+	}
+
+	private async findLoginUser(identifier: string): Promise<LoginUser | null> {
+		const trimmedIdentifier = identifier.trim();
+		if (!trimmedIdentifier) {
+			return null;
+		}
+		if (this.isEmailIdentifier(trimmedIdentifier)) {
+			const normalizedEmail = this.normalizeEmailIdentifier(trimmedIdentifier);
+			return this.prisma.user.findFirst({
+				where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+				select: LOGIN_USER_SELECT,
+			});
+		}
+		const normalizedPhone = this.normalizePhoneIdentifier(trimmedIdentifier);
+		return this.prisma.user.findFirst({
+			where: { phone: normalizedPhone },
+			select: LOGIN_USER_SELECT,
+		});
+	}
 
 	private transformUserResponse(user: any): any {
 		return {
@@ -313,41 +383,11 @@ export class AuthService {
 	}
 
 	async login(loginDto: LoginDto): Promise<AuthResponseDto> {
-		// Find user by email
-		const user = await this.prisma.user.findUnique({
-			where: { email: loginDto.email },
-			select: {
-				id: true,
-				email: true,
-				passwordHash: true,
-				phone: true,
-				firstName: true,
-				lastName: true,
-				avatarUrl: true,
-				dateOfBirth: true,
-				gender: true,
-				role: true,
-				bio: true,
-				idCardNumber: true,
-				bankAccount: true,
-				bankName: true,
-				isVerifiedPhone: true,
-				isVerifiedEmail: true,
-				isVerifiedIdentity: true,
-				isVerifiedBank: true,
-				overallRating: true,
-				totalRatings: true,
-				lastActiveAt: true,
-				createdAt: true,
-				updatedAt: true,
-			},
-		});
-
+		const trimmedIdentifier = loginDto.identifier.trim();
+		const user = await this.findLoginUser(trimmedIdentifier);
 		if (!user) {
 			throw new UnauthorizedException('Invalid credentials');
 		}
-
-		// Verify password
 		const isPasswordValid = await this.passwordService.comparePassword(
 			loginDto.password,
 			user.passwordHash,
@@ -355,37 +395,30 @@ export class AuthService {
 		if (!isPasswordValid) {
 			throw new UnauthorizedException('Invalid credentials');
 		}
-
-		// Check if password needs rehashing (security upgrade)
 		const needsRehash = await this.passwordService.needsRehash(user.passwordHash);
 		if (needsRehash) {
-			// Rehash password with current security settings
 			const newHashedPassword = await this.passwordService.hashPassword(loginDto.password);
 			await this.prisma.user.update({
 				where: { id: user.id },
 				data: { passwordHash: newHashedPassword },
 			});
 		}
-
-		// Update last active timestamp
 		await this.prisma.user.update({
 			where: { id: user.id },
 			data: { lastActiveAt: new Date() },
 		});
-
-		// Generate JWT token and refresh token
+		const identifierType = this.isEmailIdentifier(trimmedIdentifier) ? 'email' : 'phone';
 		this.logger.logAuthEvent('User logged in successfully', user.id, {
 			email: user.email,
+			phone: user.phone,
 			role: user.role,
 			needsRehash,
+			identifierType,
 		});
 		const payload = { sub: user.id, email: user.email, role: user.role };
 		const access_token = this.jwtService.sign(payload);
 		const refresh_token = await this.generateRefreshToken(user.id);
-
-		// Remove password hash from response
 		const { passwordHash: _passwordHash, ...userResponse } = user;
-
 		return {
 			access_token,
 			user: this.transformUserResponse(userResponse),
@@ -395,16 +428,17 @@ export class AuthService {
 		};
 	}
 
-	async validateUser(email: string, password: string): Promise<any> {
-		const user = await this.prisma.user.findUnique({
-			where: { email },
-		});
-
-		if (user && (await this.passwordService.comparePassword(password, user.passwordHash))) {
-			const { passwordHash: _passwordHash, ...result } = user;
-			return result;
+	async validateUser(identifier: string, password: string): Promise<any> {
+		const user = await this.findLoginUser(identifier);
+		if (!user) {
+			return null;
 		}
-		return null;
+		const isPasswordValid = await this.passwordService.comparePassword(password, user.passwordHash);
+		if (!isPasswordValid) {
+			return null;
+		}
+		const { passwordHash: _passwordHash, ...result } = user;
+		return result;
 	}
 
 	async changePassword(
