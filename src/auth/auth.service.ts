@@ -353,9 +353,9 @@ export class AuthService {
 
 		// Send welcome email if not in test mode
 		if (nodeEnv !== 'test') {
-			this.emailService
-				.sendWelcomeEmail(user.email, user.firstName)
-				.catch((error) => console.error('Failed to send welcome email:', error));
+			this.emailService.sendWelcomeEmail(user.email, user.firstName).catch((error) => {
+				this.logger.error('Failed to send welcome email', error.stack, 'Auth');
+			});
 		}
 
 		// Clean up any existing verification records for this email/phone
@@ -383,8 +383,12 @@ export class AuthService {
 	}
 
 	async login(loginDto: LoginDto): Promise<AuthResponseDto> {
-		const trimmedIdentifier = loginDto.identifier.trim();
-		const user = await this.findLoginUser(trimmedIdentifier);
+		// Priority: identifier > email
+		const identifier = loginDto.identifier?.trim() || loginDto.email?.trim();
+		if (!identifier) {
+			throw new BadRequestException('Either identifier or email must be provided');
+		}
+		const user = await this.findLoginUser(identifier);
 		if (!user) {
 			throw new UnauthorizedException('Invalid credentials');
 		}
@@ -407,7 +411,7 @@ export class AuthService {
 			where: { id: user.id },
 			data: { lastActiveAt: new Date() },
 		});
-		const identifierType = this.isEmailIdentifier(trimmedIdentifier) ? 'email' : 'phone';
+		const identifierType = this.isEmailIdentifier(identifier) ? 'email' : 'phone';
 		this.logger.logAuthEvent('User logged in successfully', user.id, {
 			email: user.email,
 			phone: user.phone,

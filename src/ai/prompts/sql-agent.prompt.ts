@@ -36,15 +36,44 @@ export function buildSqlPrompt(params: SqlPromptParams): string {
 	// Build error context
 	const errorContext = lastError
 		? `
-PREVIOUS ERROR (Attempt ${attempt - 1}):
+═══════════════════════════════════════════════════════════════
+LỖI TRƯỚC ĐÓ (Attempt ${attempt - 1}):
+═══════════════════════════════════════════════════════════════
 ${lastError}
 
-Please fix the SQL query based on this error. Common issues:
-- Column names are snake_case (not camelCase)
-- Use proper table aliases
-- Check foreign key relationships
-- Verify column existence in schema
-- Use correct JOIN syntax${userId ? '\n- Include proper WHERE clauses for user authorization' : ''}
+HƯỚNG DẪN SỬA LỖI (BẮT BUỘC PHẢI LÀM THEO):
+
+1. NẾU LỖI "relation does not exist" (42P01):
+   - BẮT BUỘC: Kiểm tra lại tên bảng trong SCHEMA section ở trên
+   - Tên bảng PHẢI đúng với schema (ví dụ: "room_requests" ✅, "room_seeking_posts" ❌)
+   - Nếu schema có "room_requests" nhưng SQL dùng "room_seeking_posts" → PHẢI sửa thành "room_requests"
+   - KHÔNG BAO GIỜ đoán mò tên bảng - PHẢI kiểm tra trong schema trước
+   - Lưu ý: Prisma model có thể khác tên bảng thực tế (ví dụ: RoomSeekingPost → room_requests)
+
+2. NẾU LỖI "column does not exist" (42703):
+   - BẮT BUỘC: Kiểm tra lại tên cột trong SCHEMA section ở trên
+   - Tên cột PHẢI đúng với schema (ví dụ: "name" ✅, "title" ❌ nếu bảng không có cột title)
+   - Nếu cần "title" nhưng bảng không có → PHẢI dùng alias: r.name AS title
+   - KHÔNG BAO GIỜ đoán mò tên cột - PHẢI kiểm tra trong schema trước
+
+3. NẾU LỖI "syntax error" hoặc "invalid":
+   - Kiểm tra lại cú pháp PostgreSQL
+   - Kiểm tra JOIN syntax
+   - Kiểm tra WHERE clauses
+   - Kiểm tra LIMIT clause
+
+4. CÁC LỖI KHÁC:
+   - Column names are snake_case (not camelCase)
+   - Use proper table aliases
+   - Check foreign key relationships
+   - Verify column existence in schema
+   - Use correct JOIN syntax${userId ? '\n   - Include proper WHERE clauses for user authorization' : ''}
+
+QUAN TRỌNG: Trước khi tạo SQL mới, PHẢI:
+1. ĐỌC KỸ SCHEMA section để xác nhận tên bảng và cột
+2. SO SÁNH tên bảng/cột trong SQL cũ với schema
+3. SỬA LẠI tên bảng/cột cho đúng với schema
+4. KIỂM TRA lại SQL trước khi trả về
 
 `
 		: '';
@@ -130,7 +159,9 @@ BƯỚC 2: VALIDATION CHECKLIST (BẮT BUỘC - PHẢI KIỂM TRA TRƯỚC KHI T
 Trước khi tạo SQL, PHẢI kiểm tra:
 
 1. ✅ TÊN BẢNG: Tên bảng có tồn tại trong schema không?
-   - Ví dụ: "rooms" ✅, "room" ❌, "Rooms" ❌ (phải snake_case)
+   - Ví dụ: "rooms" ✅, "room_requests" ✅, "room" ❌, "Rooms" ❌, "room_seeking_posts" ❌ (phải snake_case và đúng tên trong schema)
+   - QUAN TRỌNG: Prisma model có thể khác tên bảng thực tế (ví dụ: RoomSeekingPost → room_requests, KHÔNG phải room_seeking_posts)
+   - PHẢI kiểm tra tên bảng trong SCHEMA section trước khi dùng
 
 2. ✅ TÊN CỘT: Tên cột có tồn tại trong bảng đó không?
    - Ví dụ: rooms.name ✅, rooms.title ❌ (KHÔNG có column title trong rooms)
@@ -238,12 +269,15 @@ BƯỚC 5: VÍ DỤ SQL MẪU (THAM KHẢO)
    - TÌM KIẾM DANH SÁCH (từ khóa: tìm, phòng, room, bài đăng, post, ở, gần):
      * QUAN TRỌNG: Trong schema, table rooms có cột name (KHÔNG phải title). Phải dùng r.name AS title.
      * Chỉ SELECT các trường gọn nhẹ: id, name AS title (KHÔNG dùng title trực tiếp, phải alias), thumbnail_url/image_url (nếu có)
-     * BẮT BUỘC: Bổ sung constant column: 'room' AS entity (cho rooms), 'post' AS entity (cho posts), hoặc 'room_seeking_post' AS entity (cho room_seeking_posts)
+     * BẮT BUỘC: Bổ sung constant column: 'room' AS entity (cho rooms), 'post' AS entity (cho posts), hoặc 'room_seeking_post' AS entity (cho room_requests)
+     * QUAN TRỌNG: Bảng room_requests (RoomSeekingPost) - KHÔNG phải room_seeking_posts! Tên bảng thực tế là "room_requests"
      * Path sẽ được backend tự động thêm từ entity + id. KHÔNG cần SELECT path.
      * KHÔNG SELECT: description, content, body, hay bất kỳ trường text dài nào
      * LIMIT ${Math.max(1, Math.min(50, limit))}
-     * Ví dụ ĐÚNG: SELECT r.id, r.name AS title, ri.room_number, rp.base_price_monthly, 'room' AS entity FROM rooms r LEFT JOIN room_instances ri ON ri.room_id = r.id LEFT JOIN room_pricing rp ON rp.room_id = r.id WHERE r.is_active = true LIMIT ${Math.max(1, Math.min(50, limit))};
+     * Ví dụ ĐÚNG (rooms): SELECT r.id, r.name AS title, ri.room_number, rp.base_price_monthly, 'room' AS entity FROM rooms r LEFT JOIN room_instances ri ON ri.room_id = r.id LEFT JOIN room_pricing rp ON rp.room_id = r.id WHERE r.is_active = true LIMIT ${Math.max(1, Math.min(50, limit))};
+     * Ví dụ ĐÚNG (room_requests): SELECT rr.id, rr.title, rr.min_budget, rr.max_budget, 'room_seeking_post' AS entity FROM room_requests rr WHERE rr.status = 'active' LIMIT ${Math.max(1, Math.min(50, limit))};
      * Ví dụ SAI: SELECT r.id, r.title, ... ❌ (KHÔNG có column title trong rooms table!)
+     * Ví dụ SAI: SELECT * FROM room_seeking_posts ... ❌ (Tên bảng sai! Phải dùng room_requests)
 
 4. ALIAS NHẤT QUÁN (BẮT BUỘC):
    - title: cho tiêu đề (phải alias từ name)

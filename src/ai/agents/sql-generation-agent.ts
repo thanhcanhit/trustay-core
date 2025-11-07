@@ -25,6 +25,31 @@ export class SqlGenerationAgent {
 	constructor(private readonly knowledgeService?: KnowledgeService) {}
 
 	/**
+	 * Extract and format Prisma error message for better AI understanding
+	 * Prisma errors have format: Invalid `prisma.$queryRawUnsafe()` invocation: Raw query failed. Code: `42P01`. Message: `relation "table_name" does not exist`
+	 * @param error - Error object from Prisma
+	 * @returns Formatted error message
+	 */
+	private extractPrismaErrorMessage(error: unknown): string {
+		if (!(error instanceof Error)) {
+			return String(error);
+		}
+		const errorMessage = error.message;
+		// Extract PostgreSQL error code and message from Prisma error format
+		// Format: Invalid `prisma.$queryRawUnsafe()` invocation: Raw query failed. Code: `42P01`. Message: `relation "table_name" does not exist`
+		const codeMatch = errorMessage.match(/Code:\s*`([^`]+)`/);
+		const messageMatch = errorMessage.match(/Message:\s*`([^`]+)`/);
+		if (codeMatch && messageMatch) {
+			const code = codeMatch[1];
+			const message = messageMatch[1];
+			// Format error for AI: include code and clear message
+			return `PostgreSQL Error ${code}: ${message}`;
+		}
+		// Fallback: return original message
+		return errorMessage;
+	}
+
+	/**
 	 * Generate and execute SQL with conversation context, retry logic and security
 	 * @param query - User query
 	 * @param session - Chat session for context
@@ -178,7 +203,7 @@ export class SqlGenerationAgent {
 			} catch (error) {
 				// Vòng phản hồi tự sửa lỗi: Lưu error để truyền vào prompt lần sau
 				// AI sẽ tự động sửa SQL dựa trên error message này
-				lastError = error.message;
+				lastError = this.extractPrismaErrorMessage(error);
 				this.logger.warn(
 					`[SQL Regeneration] Attempt ${attempts}/${maxAttempts} failed: ${lastError}. Regenerating SQL...`,
 				);
@@ -267,7 +292,7 @@ export class SqlGenerationAgent {
 					userRole: userRole,
 				};
 			} catch (error) {
-				lastError = error.message;
+				lastError = this.extractPrismaErrorMessage(error);
 				this.logger.warn(`SQL generation attempt ${attempts} failed: ${lastError}`);
 				if (attempts >= maxAttempts) {
 					throw new Error(

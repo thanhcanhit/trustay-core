@@ -1,9 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength, ValidateIf } from 'class-validator';
 
 export class LoginDto {
 	@ApiProperty({
-		description: 'User identifier which can be an email address or phone number',
+		description:
+			'User identifier which can be an email address or phone number (takes priority over email)',
 		examples: {
 			email: {
 				summary: 'Email address',
@@ -14,11 +15,24 @@ export class LoginDto {
 				value: '+84901234567',
 			},
 		},
+		required: false,
 	})
-	@IsNotEmpty()
+	@IsOptional()
 	@IsString()
 	@MaxLength(255)
-	identifier: string;
+	identifier?: string;
+
+	@ApiProperty({
+		description: 'User email address (used if identifier is not provided)',
+		example: 'user@example.com',
+		required: false,
+	})
+	@ValidateIf((o) => !o.identifier)
+	@IsNotEmpty({ message: 'Either identifier or email must be provided' })
+	@IsEmail({}, { message: 'Email must be a valid email address' })
+	@IsString()
+	@MaxLength(255)
+	email?: string;
 
 	@ApiProperty({
 		description: 'User password',
