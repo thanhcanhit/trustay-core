@@ -11,6 +11,7 @@ export interface SqlPromptParams {
 	userRole?: string;
 	businessContext?: string;
 	lastError?: string;
+	lastSql?: string;
 	attempt?: number;
 	limit: number;
 }
@@ -29,6 +30,7 @@ export function buildSqlPrompt(params: SqlPromptParams): string {
 		userRole,
 		businessContext,
 		lastError = '',
+		lastSql = '',
 		attempt = 1,
 		limit,
 	} = params;
@@ -39,7 +41,7 @@ export function buildSqlPrompt(params: SqlPromptParams): string {
 ═══════════════════════════════════════════════════════════════
 LỖI TRƯỚC ĐÓ (Attempt ${attempt - 1}):
 ═══════════════════════════════════════════════════════════════
-${lastError}
+${lastError}${lastSql ? `\n\nSQL CŨ (CÓ LỖI - CẦN SỬA):\n${lastSql}` : ''}
 
 HƯỚNG DẪN SỬA LỖI (BẮT BUỘC PHẢI LÀM THEO):
 
@@ -55,6 +57,11 @@ HƯỚNG DẪN SỬA LỖI (BẮT BUỘC PHẢI LÀM THEO):
    - Tên cột PHẢI đúng với schema (ví dụ: "name" ✅, "title" ❌ nếu bảng không có cột title)
    - Nếu cần "title" nhưng bảng không có → PHẢI dùng alias: r.name AS title
    - KHÔNG BAO GIỜ đoán mò tên cột - PHẢI kiểm tra trong schema trước
+   - QUAN TRỌNG: Nếu SQL cũ dùng cột sai (ví dụ: rent.room_id), PHẢI tìm cột ĐÚNG trong schema
+     * Ví dụ: rentals table có room_instance_id (KHÔNG phải room_id)
+     * Nếu SQL cũ: SELECT * FROM rentals rent WHERE rent.room_id = ...
+     * SQL ĐÚNG: SELECT * FROM rentals rent WHERE rent.room_instance_id = ...
+     * PHẢI sửa tất cả chỗ dùng cột sai trong SQL cũ
 
 3. NẾU LỖI "syntax error" hoặc "invalid":
    - Kiểm tra lại cú pháp PostgreSQL
