@@ -340,7 +340,16 @@ export class RoomSeekingPostService {
 		]);
 
 		return PaginatedResponseDto.create(
-			items.map((item) => this.mapToResponseDto(item)),
+			items.map((item) => {
+				const dto = this.mapToResponseDto(item);
+				return {
+					...dto,
+					// Always show full info for authenticated user's own posts
+					requester: plainToInstance(PersonPublicView, dto.requester, {
+						groups: ['auth'],
+					}),
+				};
+			}),
 			page,
 			limit,
 			total,
@@ -450,15 +459,22 @@ export class RoomSeekingPostService {
 		// Queue Elasticsearch indexing (async, best-effort)
 		void this.elasticsearchQueueService.queueIndexRoomSeeking(roomRequest.id);
 
-		return this.mapToResponseDto(roomRequest);
+		const dto = this.mapToResponseDto(roomRequest);
+		return {
+			...dto,
+			// Always show full info for authenticated user's own posts
+			requester: plainToInstance(PersonPublicView, dto.requester, {
+				groups: ['auth'],
+			}),
+		};
 	}
 
 	async findOne(
 		id: string,
 		clientIp?: string,
-		_context: { isAuthenticated: boolean } = { isAuthenticated: false },
+		options: { isAuthenticated?: boolean } = { isAuthenticated: false },
 	): Promise<RoomSeekingDetailWithMetaResponseDto> {
-		// authentication handled by global serialization groups
+		const isAuthenticated = options.isAuthenticated ?? false;
 		const roomRequest = await this.prisma.roomSeekingPost.findUnique({
 			where: { id },
 			include: {
@@ -530,8 +546,10 @@ export class RoomSeekingPostService {
 
 		return {
 			...dto,
-			// Let global serialization groups handle masking for requester
-			requester: plainToInstance(PersonPublicView, dto.requester),
+			// Use serialization groups to handle masking for requester
+			requester: plainToInstance(PersonPublicView, dto.requester, {
+				groups: isAuthenticated ? ['auth'] : [],
+			}),
 			seo,
 			breadcrumb,
 		};
@@ -663,7 +681,14 @@ export class RoomSeekingPostService {
 		// Queue Elasticsearch re-indexing (async, best-effort)
 		void this.elasticsearchQueueService.queueIndexRoomSeeking(updatedRequest.id);
 
-		return this.mapToResponseDto(updatedRequest);
+		const dto = this.mapToResponseDto(updatedRequest);
+		return {
+			...dto,
+			// Always show full info for authenticated user's own posts
+			requester: plainToInstance(PersonPublicView, dto.requester, {
+				groups: ['auth'],
+			}),
+		};
 	}
 
 	async remove(id: string, requesterId: string): Promise<void> {
@@ -752,7 +777,14 @@ export class RoomSeekingPostService {
 			},
 		});
 
-		return this.mapToResponseDto(updatedRequest);
+		const dto = this.mapToResponseDto(updatedRequest);
+		return {
+			...dto,
+			// Always show full info for authenticated user's own posts
+			requester: plainToInstance(PersonPublicView, dto.requester, {
+				groups: ['auth'],
+			}),
+		};
 	}
 
 	private mapToResponseDto(roomRequest: any): RoomRoomSeekingPostDto {

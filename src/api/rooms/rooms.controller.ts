@@ -221,6 +221,7 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	}
 
 	@Get(':roomId')
+	@UseGuards(OptionalJwtAuthGuard)
 	@ApiOperation({
 		summary: 'Lấy thông tin chi tiết room type',
 		description:
@@ -228,8 +229,8 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	})
 	@ApiParam({
 		name: 'roomId',
-		description: 'ID của room type',
-		example: 'uuid',
+		description: 'ID hoặc slug của room type',
+		example: '002f0e6c-a2f6-4214-9b9c-90a949cdee58',
 	})
 	@ApiResponse({
 		status: HttpStatus.OK,
@@ -240,12 +241,12 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		status: HttpStatus.NOT_FOUND,
 		description: 'Room type không tồn tại',
 	})
-	@ApiResponse({
-		status: HttpStatus.UNAUTHORIZED,
-		description: 'Chưa đăng nhập',
-	})
-	async findOne(@Param('roomId') roomId: string): Promise<ApiResponseDto<RoomDetailOutputDto>> {
-		const room = await this.roomsService.findOne(roomId);
+	async findOne(
+		@Param('roomId') roomId: string,
+		@Req() req: Request,
+	): Promise<ApiResponseDto<RoomDetailOutputDto>> {
+		const isAuthenticated = Boolean((req as any)?.user);
+		const room = await this.roomsService.findOne(roomId, { isAuthenticated });
 
 		return ApiResponseDto.success(room, 'Room retrieved successfully');
 	}
