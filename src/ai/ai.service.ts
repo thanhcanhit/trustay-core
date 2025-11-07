@@ -1,10 +1,13 @@
+import { google } from '@ai-sdk/google';
 import { Injectable, Logger } from '@nestjs/common';
+import { generateText } from 'ai';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrchestratorAgent } from './agents/orchestrator-agent';
 import { ResponseGenerator } from './agents/response-generator';
 import { ResultValidatorAgent } from './agents/result-validator-agent';
 import { SqlGenerationAgent } from './agents/sql-generation-agent';
 import { KnowledgeService } from './knowledge/knowledge.service';
+import { buildOneForAllPrompt } from './prompts/one-for-all-system.prompt';
 import { VIETNAMESE_LOCALE_SYSTEM_PROMPT } from './prompts/system.prompt';
 import { generateErrorResponse } from './services/error-handler.service';
 import {
@@ -25,6 +28,9 @@ import {
 } from './utils/data-utils';
 import { buildEntityPath } from './utils/entity-route';
 import { parseResponseText } from './utils/response-parser';
+import { getCompleteDatabaseSchema } from './utils/schema-provider';
+import { serializeBigInt } from './utils/serializer';
+import { isAggregateQuery, validateSqlSafety } from './utils/sql-safety';
 export { ChatResponse };
 
 @Injectable()
@@ -731,5 +737,78 @@ export class AiService {
 			this.prisma,
 			this.AI_CONFIG,
 		);
+	}
+
+	/**
+	 * Simple one-for-all method for model evaluation
+	 * No session, no history, no agents - just direct SQL generation
+	 * @param query - User query
+	 * @returns SQL execution result
+	 */
+	async simpleText2Sql(query: string): Promise<{
+		sql: string;
+		results: unknown;
+		count: number;
+		success: boolean;
+		error?: string;
+	}> {
+		try {
+			// Get complete database schema
+			const schema = getCompleteDatabaseSchema();
+			// Build system prompt with schema
+			const systemPrompt = buildOneForAllPrompt(schema);
+			// Build user prompt
+			const userPrompt = `Câu hỏi: "${query}"\n\nSQL:`;
+			// Call LLM
+			const { text } = await generateText({
+				model: google(this.AI_CONFIG.model),
+				prompt: `${systemPrompt}\n\n${userPrompt}`,
+				temperature: this.AI_CONFIG.temperature,
+				maxOutputTokens: this.AI_CONFIG.maxTokens,
+			});
+			// Parse SQL from response
+			let sql = text.trim();
+			sql = sql
+				.replace(/```sql\n?/g, '')
+				.replace(/```\n?/g, '')
+				.trim();
+			if (!sql.endsWith(';')) {
+				sql += ';';
+			}
+			// Validate SQL safety
+			const sqlLower = sql.toLowerCase().trim();
+			if (!sqlLower.startsWith('select')) {
+				throw new Error('Only SELECT queries are allowed for security reasons');
+			}
+			const isAggregate = isAggregateQuery(sql);
+			const safetyCheck = validateSqlSafety(sql, isAggregate);
+			if (!safetyCheck.isValid) {
+				throw new Error(`SQL safety validation failed: ${safetyCheck.violations.join(', ')}`);
+			}
+			const finalSql = safetyCheck.enforcedSql || sql;
+			// Execute SQL
+			const results = await this.prisma.$queryRawUnsafe(finalSql);
+			const serializedResults = serializeBigInt(results);
+			const count = Array.isArray(serializedResults) ? serializedResults.length : 1;
+			return {
+				sql: finalSql,
+				results: serializedResults,
+				count,
+				success: true,
+			};
+		} catch (error) {
+			this.logError(
+				'SIMPLE_TEXT2SQL',
+				`Failed to generate or execute SQL: ${(error as Error).message}`,
+				error,
+			);
+			return {
+				sql: '',
+				results: [],
+				count: 0,
+				success: false,
+				error: (error as Error).message,
+			};
+		}
 	}
 }
