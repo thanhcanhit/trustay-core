@@ -450,8 +450,11 @@ export class RoomsService {
 		roomId: string,
 		context: { isAuthenticated: boolean } = { isAuthenticated: false },
 	): Promise<RoomDetailOutputDto> {
-		const room = await this.prisma.room.findUnique({
-			where: { id: roomId },
+		const room = await this.prisma.room.findFirst({
+			where: {
+				OR: [{ id: roomId }, { slug: roomId }],
+				isActive: true,
+			},
 			include: {
 				building: {
 					include: {
