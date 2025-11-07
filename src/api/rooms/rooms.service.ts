@@ -519,7 +519,13 @@ export class RoomsService {
 				costs: {
 					select: {
 						id: true,
+						costType: true,
 						fixedAmount: true,
+						perPersonAmount: true,
+						unitPrice: true,
+						unit: true,
+						meterReading: true,
+						lastMeterReading: true,
 						currency: true,
 						notes: true,
 						costTypeTemplate: {
@@ -775,7 +781,13 @@ export class RoomsService {
 				costs: {
 					select: {
 						id: true,
+						costType: true,
 						fixedAmount: true,
+						perPersonAmount: true,
+						unitPrice: true,
+						unit: true,
+						meterReading: true,
+						lastMeterReading: true,
 						currency: true,
 						notes: true,
 						costTypeTemplate: {
@@ -934,7 +946,13 @@ export class RoomsService {
 				costs: {
 					select: {
 						id: true,
+						costType: true,
 						fixedAmount: true,
+						perPersonAmount: true,
+						unitPrice: true,
+						unit: true,
+						meterReading: true,
+						lastMeterReading: true,
 						currency: true,
 						notes: true,
 						costTypeTemplate: {
@@ -1407,7 +1425,13 @@ export class RoomsService {
 					costs: {
 						select: {
 							id: true,
+							costType: true,
 							fixedAmount: true,
+							perPersonAmount: true,
+							unitPrice: true,
+							unit: true,
+							meterReading: true,
+							lastMeterReading: true,
 							currency: true,
 							notes: true,
 							costTypeTemplate: {
@@ -1557,7 +1581,13 @@ export class RoomsService {
 					costs: {
 						select: {
 							id: true,
+							costType: true,
 							fixedAmount: true,
+							perPersonAmount: true,
+							unitPrice: true,
+							unit: true,
+							meterReading: true,
+							lastMeterReading: true,
 							currency: true,
 							notes: true,
 							costTypeTemplate: {

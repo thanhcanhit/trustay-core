@@ -128,15 +128,29 @@ export function formatRoomCosts(
 	costs: any[],
 	includeDetails: boolean = false,
 ): RoomCostOutputDto[] {
-	return costs.map((cost) => ({
-		id: cost.costTypeTemplate.id,
-		name: cost.costTypeTemplate.name,
-		value: cost.baseRate?.toString() || '0',
-		category: cost.costTypeTemplate.category,
-		...(includeDetails && {
-			notes: cost.notes,
-		}),
-	}));
+	return costs.map((cost) => {
+		// Get the correct value based on costType
+		let value: string = '0';
+		const costType = cost.costType || 'fixed';
+
+		if (costType === 'fixed') {
+			value = cost.fixedAmount?.toString() || '0';
+		} else if (costType === 'per_person') {
+			value = cost.perPersonAmount?.toString() || '0';
+		} else if (costType === 'metered') {
+			value = cost.unitPrice?.toString() || '0';
+		}
+
+		return {
+			id: cost.costTypeTemplate.id,
+			name: cost.costTypeTemplate.name,
+			value,
+			category: cost.costTypeTemplate.category,
+			...(includeDetails && {
+				notes: cost.notes,
+			}),
+		};
+	});
 }
 
 /**
