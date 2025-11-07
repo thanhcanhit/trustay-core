@@ -7,7 +7,7 @@ import { ResponseGenerator } from './agents/response-generator';
 import { ResultValidatorAgent } from './agents/result-validator-agent';
 import { SqlGenerationAgent } from './agents/sql-generation-agent';
 import { KnowledgeService } from './knowledge/knowledge.service';
-import { buildOneForAllPrompt } from './prompts/one-for-all-system.prompt';
+import { buildOneForAllPrompt } from './prompts/simple-system-one-for-all';
 import { VIETNAMESE_LOCALE_SYSTEM_PROMPT } from './prompts/system.prompt';
 import { generateErrorResponse } from './services/error-handler.service';
 import {
