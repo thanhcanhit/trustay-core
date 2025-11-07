@@ -1,6 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { TEXT2SQL_PROMPT } from '../system-prompt-example/text2sql.prompt';
+import { TEXT2SQL_PROMPT } from './ai/prompts/text2sql.prompt';
 
 @ApiTags('Health Check')
 @Controller()
