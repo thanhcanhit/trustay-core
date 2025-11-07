@@ -116,7 +116,7 @@ async function setupStatsTestData() {
 		(ct) =>
 			ct.nameEn.toLowerCase().includes('management') || ct.nameEn.toLowerCase().includes('service'),
 	);
-	const garbageCost = costTypes.find(
+	let garbageCost = costTypes.find(
 		(ct) =>
 			ct.nameEn.toLowerCase().includes('garbage') ||
 			ct.nameEn.toLowerCase().includes('trash') ||
@@ -333,21 +333,55 @@ async function setupStatsTestData() {
 
 	const createdTenants = [];
 	for (const tenantData of studentTenants) {
+		// Kiểm tra tenant bằng email hoặc phone
 		let tenant = await prisma.user.findUnique({
 			where: { email: tenantData.email },
 		});
 
-		if (!tenant) {
-			tenant = await prisma.user.create({
-				data: {
-					...tenantData,
-					role: 'tenant',
-					isVerifiedPhone: true,
-					isVerifiedEmail: true,
-					passwordHash: hashedPassword,
-				},
+		// Nếu không tìm thấy bằng email, kiểm tra bằng phone
+		if (!tenant && tenantData.phone) {
+			tenant = await prisma.user.findUnique({
+				where: { phone: tenantData.phone },
 			});
-			console.log(`   ✅ Created tenant: ${tenant.firstName} ${tenant.lastName}`);
+		}
+
+		if (!tenant) {
+			// Loại bỏ trường 'year' vì không tồn tại trong schema User
+			const { year: _year, ...userData } = tenantData;
+			try {
+				tenant = await prisma.user.create({
+					data: {
+						...userData,
+						role: 'tenant',
+						isVerifiedPhone: true,
+						isVerifiedEmail: true,
+						passwordHash: hashedPassword,
+					},
+				});
+				console.log(`   ✅ Created tenant: ${tenant.firstName} ${tenant.lastName}`);
+			} catch (error) {
+				// Nếu lỗi unique constraint, tìm lại tenant
+				if (error.code === 'P2002') {
+					if (error.meta?.target?.includes('phone')) {
+						tenant = await prisma.user.findUnique({
+							where: { phone: tenantData.phone },
+						});
+					} else if (error.meta?.target?.includes('email')) {
+						tenant = await prisma.user.findUnique({
+							where: { email: tenantData.email },
+						});
+					}
+					if (tenant) {
+						console.log(
+							`   ⚠️  Tenant already exists: ${tenant.firstName} ${tenant.lastName} (${tenant.email})`,
+						);
+					} else {
+						throw error;
+					}
+				} else {
+					throw error;
+				}
+			}
 		} else {
 			console.log(`   ✅ Found tenant: ${tenant.firstName} ${tenant.lastName}`);
 		}
@@ -799,6 +833,14 @@ async function setupStatsTestData() {
 			const periodEnd = new Date(billingYear, billingMonth, 0);
 			const dueDate = new Date(billingYear, billingMonth, 5);
 
+			// Calculate rental period within billing period
+			const rentalStartInPeriod =
+				rental.contractStartDate > periodStart ? rental.contractStartDate : periodStart;
+			const rentalEndInPeriod =
+				rental.contractEndDate && rental.contractEndDate < periodEnd
+					? rental.contractEndDate
+					: periodEnd;
+
 			const bill = await prisma.bill.create({
 				data: {
 					rentalId: rental.id,
@@ -808,8 +850,13 @@ async function setupStatsTestData() {
 					billingYear,
 					periodStart,
 					periodEnd,
+					rentalStartDate: rentalStartInPeriod, // Ngày bắt đầu rental trong kỳ
+					rentalEndDate: rentalEndInPeriod, // Ngày kết thúc rental trong kỳ
 					subtotal,
+					discountAmount: 0, // Không có giảm giá
+					taxAmount: 0, // Không có thuế
 					totalAmount,
+					paidAmount: 0, // Chưa trả, sẽ cập nhật sau khi có payment
 					remainingAmount: totalAmount,
 					dueDate,
 					// Đa dạng trạng thái: một số đã trả, một số chưa trả, một số quá hạn
