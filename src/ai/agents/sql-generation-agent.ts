@@ -85,36 +85,83 @@ export class SqlGenerationAgent {
 		let canonicalDecision: any = null;
 		if (this.knowledgeService) {
 			try {
-				// Two-threshold canonical reuse/hint
+				// Check for canonical SQL to use as hint (never execute directly)
+				// Always regenerate SQL based on current schema to handle schema changes
 				canonicalDecision = await this.knowledgeService.decideCanonicalReuse(query, {
-					hard: 0.92,
-					soft: 0.8,
+					hard: 0.95, // Very high threshold - only exact matches
+					soft: 0.8, // Use as hint for similar queries
 				});
+				// NOTE: We never execute canonical SQL directly anymore
+				// Always regenerate to ensure SQL matches current schema
+				// Canonical SQL is only used as a hint/reference in the prompt
 				if (canonicalDecision?.mode === 'reuse') {
 					this.logger.debug(
-						`Canonical reuse (hard) score=${canonicalDecision.score} sqlQAId=${canonicalDecision.sqlQAId}`,
+						`Canonical match found (score=${canonicalDecision.score.toFixed(4)}) - Will use as hint only, still regenerating SQL from current schema`,
 					);
-					// Execute canonical SQL directly and return
-					const results = await prisma.$queryRawUnsafe(canonicalDecision.sql);
-					const serializedResults = serializeBigInt(results);
-					return {
-						sql: canonicalDecision.sql,
-						results: serializedResults,
-						count: Array.isArray(serializedResults) ? serializedResults.length : 1,
-						attempts: 1,
-						userId: userId,
-						userRole: userRole,
+					// Convert 'reuse' to 'hint' to ensure we still fetch RAG and regenerate
+					canonicalDecision = {
+						...canonicalDecision,
+						mode: 'hint' as const,
 					};
 				}
 				// Step 1: always fetch schema context
-				const schemaResults = await this.knowledgeService.retrieveSchemaContext(query, {
-					limit: 8,
+				// Enhance query with table hints from orchestrator if available
+				// This helps vector search match with table_overview, relationship, and column_detail chunks
+				const tablesHint = this.extractTablesHint(session);
+				const relationshipsHint = this.extractRelationshipsHint(session);
+				const enhancedQuery = tablesHint
+					? `${query} ${tablesHint
+							.split(',')
+							.map((t) => t.trim())
+							.join(' ')}`
+					: query;
+
+				this.logger.debug(
+					`RAG Context Setup:` +
+						`${tablesHint ? `\n  - TABLES_HINT: ${tablesHint}` : '\n  - TABLES_HINT: none'}` +
+						`${relationshipsHint ? `\n  - RELATIONSHIPS_HINT: ${relationshipsHint}` : '\n  - RELATIONSHIPS_HINT: none'}` +
+						`${tablesHint ? `\n  - Enhanced query: "${query}" → "${enhancedQuery}"` : ''}`,
+				);
+
+				// Dynamic limit based on number of tables in TABLES_HINT
+				// Semantic chunking strategy: each column = 1 chunk, so we need more chunks for tables with many columns
+				// Formula: base (5) + tables_count * 5 + relationships_count * 2
+				// This ensures we get enough chunks without overwhelming the context window
+				const tablesCount = tablesHint ? tablesHint.split(',').length : 0;
+				const relationshipsCount = relationshipsHint ? relationshipsHint.split('→').length - 1 : 0;
+				const dynamicLimit = Math.min(
+					5 + tablesCount * 5 + relationshipsCount * 2, // Dynamic calculation
+					25, // Hard cap to prevent token overflow (safety limit)
+				);
+				this.logger.debug(
+					`Dynamic limit calculation: base=5, tables=${tablesCount}, relationships=${relationshipsCount} → limit=${dynamicLimit}`,
+				);
+				const schemaResults = await this.knowledgeService.retrieveSchemaContext(enhancedQuery, {
+					limit: dynamicLimit,
 					threshold: 0.6,
 				});
+
+				// Log preview of each schema chunk (first 200 chars)
+				if (schemaResults.length > 0) {
+					this.logger.debug(`RAG Schema Chunks (${schemaResults.length} chunks):`);
+					schemaResults.forEach((chunk, index) => {
+						const preview = chunk.content.substring(0, 200);
+						const truncated = chunk.content.length > 200 ? '...' : '';
+						this.logger.debug(
+							`  [${index + 1}/${schemaResults.length}] Chunk preview (${chunk.content.length} chars): ${preview}${truncated}`,
+						);
+					});
+				}
+
 				const schemaContext = schemaResults.map((r) => r.content).join('\n');
 				ragContext = schemaContext
 					? `RELEVANT SCHEMA CONTEXT (from vector search):\n${schemaContext}\n`
 					: '';
+
+				// Add relationships hint to RAG context if available (helps AI understand JOINs)
+				if (relationshipsHint && ragContext) {
+					ragContext += `\nRELATIONSHIPS HINT (from orchestrator): ${relationshipsHint}\n`;
+				}
 
 				// Step 2: optionally fetch QA examples when helpful (e.g., canonical hint)
 				const needExamples = canonicalDecision?.mode === 'hint';
@@ -123,19 +170,41 @@ export class SqlGenerationAgent {
 						limit: 8,
 						threshold: 0.6,
 					});
+
+					// Log preview of QA chunks
+					if (qaResults.length > 0) {
+						this.logger.debug(`RAG QA Chunks (${qaResults.length} chunks):`);
+						qaResults.slice(0, 2).forEach((chunk, index) => {
+							const preview = chunk.content.substring(0, 200);
+							const truncated = chunk.content.length > 200 ? '...' : '';
+							this.logger.debug(
+								`  [${index + 1}/2] QA preview (${chunk.content.length} chars): ${preview}${truncated}`,
+							);
+						});
+					}
+
 					const qaContext = qaResults
 						.slice(0, 2)
 						.map((r) => r.content)
 						.join('\n');
 					ragContext += qaContext ? `RELEVANT Q&A EXAMPLES:\n${qaContext}\n` : '';
 				}
-				if (canonicalDecision?.mode === 'hint') {
-					ragContext += `\nCANONICAL SQL HINT (score=${canonicalDecision.score.toFixed(2)}):\n`;
-					ragContext += `Question: ${canonicalDecision.question}\nSQL:\n${canonicalDecision.sql}\n`;
+				if (canonicalDecision?.mode === 'hint' || canonicalDecision?.mode === 'reuse') {
+					ragContext += `\nCANONICAL SQL HINT (score=${canonicalDecision.score.toFixed(2)}, REFERENCE ONLY - schema may have changed):\n`;
+					ragContext += `Original question: ${canonicalDecision.question}\nPrevious SQL (for reference only):\n${canonicalDecision.sql}\n`;
+					ragContext += `\n⚠️ LƯU Ý QUAN TRỌNG: SQL trên chỉ là THAM KHẢO từ lần trước.\n`;
+					ragContext += `PHẢI regenerate SQL MỚI dựa trên schema HIỆN TẠI trong RAG context.\n`;
+					ragContext += `Nếu schema đã thay đổi (tên bảng/cột, relationships), PHẢI điều chỉnh SQL cho phù hợp.\n`;
+					this.logger.debug(
+						`Canonical SQL found (score=${canonicalDecision.score.toFixed(4)}) - Using as hint only, will regenerate from current schema`,
+					);
 				}
 				this.logger.debug(
-					`RAG retrieved ${schemaResults.length} schema chunks` +
-						(canonicalDecision?.mode === 'hint' ? ' and QA examples' : ''),
+					`RAG retrieval completed:` +
+						`\n  - Schema chunks: ${schemaResults.length}` +
+						`${canonicalDecision?.mode === 'hint' || canonicalDecision?.mode === 'reuse' ? '\n  - Canonical hint: included (reference only)' : ''}` +
+						`${canonicalDecision?.mode === 'hint' ? '\n  - QA examples: included' : ''}` +
+						`${ragContext.length > 0 ? `\n  - RAG context length: ${ragContext.length} chars` : '\n  - RAG context: empty (using fallback schema)'}`,
 				);
 			} catch (ragError) {
 				this.logger.warn('RAG retrieval failed, using fallback schema', ragError);
@@ -146,11 +215,26 @@ export class SqlGenerationAgent {
 		let lastSql: string = '';
 		let attempts = 0;
 		const maxAttempts = 5;
+
+		// Log SQL generation start
+		this.logger.debug(
+			`SQL Generation starting:` +
+				`\n  - Query: "${query}"` +
+				`${ragContext ? `\n  - RAG context: ${ragContext.length} chars` : '\n  - RAG context: none (using fallback schema)'}` +
+				`${businessContext ? `\n  - Business context: ${businessContext.length} chars` : '\n  - Business context: none'}` +
+				`${userId ? `\n  - User: ${userId} (${userRole})` : '\n  - User: anonymous'}`,
+		);
+
 		// Vòng phản hồi tự sửa lỗi: Nếu SQL execution fails, truyền error vào prompt
 		// để AI tự động regenerate SQL với context của lỗi trước đó
 		while (attempts < maxAttempts) {
 			attempts++;
 			try {
+				if (attempts > 1) {
+					this.logger.debug(
+						`SQL Regeneration attempt ${attempts}/${maxAttempts} (previous error: ${lastError.substring(0, 100)})`,
+					);
+				}
 				const contextualPrompt = buildSqlPrompt({
 					query,
 					schema: dbSchema,
@@ -194,7 +278,11 @@ export class SqlGenerationAgent {
 
 				// Log SQL được generate để debug
 				this.logger.debug(
-					`[SQL Generation] Attempt ${attempts}/${maxAttempts} - Generated SQL: ${finalSql.substring(0, 200)}${finalSql.length > 200 ? '...' : ''}`,
+					`SQL Generated (attempt ${attempts}/${maxAttempts}):` +
+						`\n  - SQL preview: ${finalSql.substring(0, 150)}${finalSql.length > 150 ? '...' : ''}` +
+						`\n  - SQL length: ${finalSql.length} chars` +
+						`\n  - Is aggregate: ${isAggregate}` +
+						`${safetyCheck.enforcedSql ? '\n  - LIMIT enforced by safety check' : ''}`,
 				);
 
 				// Lưu SQL để nếu fail thì có thể truyền vào prompt lần sau
@@ -202,10 +290,18 @@ export class SqlGenerationAgent {
 
 				const results = await prisma.$queryRawUnsafe(finalSql);
 				const serializedResults = serializeBigInt(results);
+				const resultCount = Array.isArray(serializedResults) ? serializedResults.length : 1;
+
+				this.logger.debug(
+					`SQL Execution successful:` +
+						`\n  - Results: ${resultCount} row(s)` +
+						`\n  - Attempts: ${attempts}`,
+				);
+
 				return {
 					sql: finalSql,
 					results: serializedResults,
-					count: Array.isArray(serializedResults) ? serializedResults.length : 1,
+					count: resultCount,
 					attempts: attempts,
 					userId: userId,
 					userRole: userRole,
@@ -318,5 +414,37 @@ export class SqlGenerationAgent {
 				await new Promise((resolve) => setTimeout(resolve, 1000));
 			}
 		}
+	}
+
+	/**
+	 * Extract tables hint from session messages
+	 * @param session - Chat session
+	 * @returns Tables hint string or undefined
+	 */
+	private extractTablesHint(session: ChatSession): string | undefined {
+		const tablesMessage = session.messages
+			.filter((m) => m.role === 'system')
+			.find((m) => m.content.startsWith('[INTENT] TABLES='));
+		if (tablesMessage) {
+			const match = tablesMessage.content.match(/\[INTENT\] TABLES=(.+)/);
+			return match?.[1]?.trim();
+		}
+		return undefined;
+	}
+
+	/**
+	 * Extract relationships hint from session messages
+	 * @param session - Chat session
+	 * @returns Relationships hint string or undefined
+	 */
+	private extractRelationshipsHint(session: ChatSession): string | undefined {
+		const relationshipsMessage = session.messages
+			.filter((m) => m.role === 'system')
+			.find((m) => m.content.startsWith('[INTENT] RELATIONSHIPS='));
+		if (relationshipsMessage) {
+			const match = relationshipsMessage.content.match(/\[INTENT\] RELATIONSHIPS=(.+)/);
+			return match?.[1]?.trim();
+		}
+		return undefined;
 	}
 }

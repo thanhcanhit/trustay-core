@@ -103,11 +103,25 @@ SECURITY REQUIREMENTS:
   * Nếu query về rentals/thuê:
     - tenant: WHERE rentals.tenant_id = '${userId}'
     - landlord: WHERE rentals.owner_id = '${userId}'
-  * Nếu query về buildings/tòa nhà (landlord): WHERE buildings.owner_id = '${userId}'
+  * Nếu query về buildings/tòa nhà/dãy trọ (landlord): WHERE buildings.owner_id = '${userId}'
   * Nếu query về bookings/đặt phòng: WHERE room_bookings.tenant_id = '${userId}'
 - Đối với dữ liệu nhạy cảm (bills, payments, rentals), BẮT BUỘC phải có WHERE clauses theo user role
 - CHỈ landlords mới được truy cập statistics/thống kê
 - CHỈ landlords mới được tạo/quản lý rooms
+
+`;
+	} else {
+		// User chưa đăng nhập - nhấn mạnh KHÔNG query dữ liệu cá nhân
+		securityContext = `
+SECURITY REQUIREMENTS (USER CHƯA ĐĂNG NHẬP):
+- QUAN TRỌNG: User chưa đăng nhập (userId không có)
+- KHÔNG BAO GIỜ query dữ liệu cá nhân khi userId không có
+- Nếu câu hỏi có ý định "own" (dữ liệu cá nhân) như "tôi có", "của tôi", "mà tôi":
+  * KHÔNG BAO GIỜ tạo SQL query dữ liệu cá nhân
+  * SQL này sẽ KHÔNG được thực thi - orchestrator đã phải chặn ở bước trước
+  * Nếu vẫn đến đây, đây là lỗi hệ thống - KHÔNG tạo SQL
+- CHỈ query dữ liệu công khai (rooms, room_requests) khi user chưa đăng nhập
+- KHÔNG query: buildings (của landlord), rentals, bills, payments, bookings (cần userId)
 
 `;
 	}
@@ -139,6 +153,10 @@ BƯỚC 1: ĐỌC VÀ HIỂU CONTEXT (BẮT BUỘC - PHẢI LÀM TRƯỚC KHI T�
    - Đây là schema context được tìm thấy qua vector search, CHÍNH XÁC và PHÙ HỢP với câu hỏi
    - ƯU TIÊN SỬ DỤNG RAG CONTEXT thay vì đoán mò
    - Kiểm tra tên bảng, tên cột trong RAG context trước khi dùng
+   - QUAN TRỌNG: Nếu có RELATIONSHIPS HINT trong RAG context, PHẢI sử dụng để hiểu cách JOIN các bảng
+     * Ví dụ: "rentals→users(tenant)" nghĩa là JOIN rentals với users qua rentals.tenant_id = users.id
+     * Ví dụ: "payments→rentals→users(owner)" nghĩa là JOIN payments → rentals → users, filter theo owner
+     * RELATIONSHIPS HINT giúp bạn JOIN đúng các bảng theo mối quan hệ thực tế trong database
 
 2. ĐỌC KỸ COMPLETE SCHEMA (nếu không có RAG context):
    - Schema chứa TẤT CẢ bảng và cột trong database
@@ -215,8 +233,17 @@ QUY TẮC Ý ĐỊNH, PHỦ ĐỊNH VÀ CHẾ ĐỘ HIỂN THỊ (BẮT BUỘC):
     - value: số liệu aggregate (COUNT/SUM/AVG...)
     - ORDER BY value DESC LIMIT 10
   * Nếu người dùng yêu cầu DANH SÁCH → TẠO SQL không aggregate (id, name AS title, ...)
-- Ý định SỞ HỮU (ví dụ: "tôi đang có phòng") → bắt buộc filter theo owner_id của user.
-- KHI NHẬN ĐƯỢC HINT (CANONICAL): PHẢI ĐIỀU CHỈNH theo ý định/polarity/chế độ hiện tại. KHÔNG tái dùng mù quáng.
+- Ý định SỞ HỮU (ví dụ: "tôi đang có phòng", "số dãy trọ mà tôi có"):
+  * QUAN TRỌNG: CHỈ tạo SQL khi userId có sẵn (user đã đăng nhập)
+  * Nếu userId không có → KHÔNG BAO GIỜ tạo SQL (orchestrator đã phải chặn ở bước trước)
+  * Nếu userId có → BẮT BUỘC filter theo owner_id/tenant_id của user
+  * Ví dụ: "số dãy trọ mà tôi có" → SELECT COUNT(*) FROM buildings WHERE owner_id = '${userId || 'USER_ID_REQUIRED'}'
+- KHI NHẬN ĐƯỢC CANONICAL SQL HINT: 
+  * Đây chỉ là SQL từ lần trước, có thể đã lỗi thời nếu schema thay đổi
+  * PHẢI regenerate SQL MỚI dựa trên schema HIỆN TẠI trong RAG context
+  * CHỈ dùng canonical SQL như tham khảo về cấu trúc/logic, KHÔNG copy y nguyên
+  * Nếu schema đã thay đổi (tên bảng/cột, relationships), PHẢI điều chỉnh SQL cho phù hợp
+  * PHẢI ĐIỀU CHỈNH theo ý định/polarity/chế độ hiện tại. KHÔNG tái dùng mù quáng.
 
 ═══════════════════════════════════════════════════════════════
 BƯỚC 4: CÁC TRƯỜNG HỢP ĐẶC BIỆT (BẮT BUỘC)

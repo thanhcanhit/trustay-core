@@ -88,11 +88,4 @@ Trong bối cảnh đô thị hóa nhanh, nhu cầu thuê trọ tăng mạnh t�
 - Hệ thống tạo Bill theo kỳ (billing_month/year, period_start/end)
 - BillItem tổng hợp các chi phí (tiền phòng, điện nước, dịch vụ, …) từ RoomCost/RoomPricing
 - Người thuê thực hiện Payment (khoản thanh toán) cho Bill/Rental
-
-7.6 Quan hệ dữ liệu then chốt
-- Building.ownerId → User.id
-- Room.buildingId → Building.id; RoomInstance.roomId → Room.id
-- RoomBooking.roomId → Room.id; RoomInvitation.roomId → Room.id
-- Rental.roomInstanceId → RoomInstance.id; Rental.tenantId/ownerId → User.id
-- Bill.rentalId → Rental.id; Payment.rentalId → Rental.id; Payment.billId → Bill.id
 `;

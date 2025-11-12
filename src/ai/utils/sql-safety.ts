@@ -5,25 +5,61 @@
 
 /**
  * Allowed tables for SQL queries (allow-list)
+ * Danh sách đầy đủ các bảng từ schema.prisma để đảm bảo AI có thể query tất cả dữ liệu cần thiết
  */
 const ALLOWED_TABLES = [
+	// User Management
 	'users',
+	'verification_codes',
+	'refresh_tokens',
+	'user_addresses',
+	// Building & Room Management
 	'buildings',
 	'rooms',
-	'rentals',
-	'bills',
-	'payments',
-	'room_bookings',
-	'notifications',
-	'districts',
-	'amenities',
-	'cost_type_templates',
-	'room_rule_templates',
-	'room_seeking_posts',
+	'room_instances', // QUAN TRỌNG: Bảng này cần thiết cho queries về occupancy rate, rentals
+	'room_images',
 	'room_pricing',
 	'room_amenities',
 	'room_costs',
 	'room_rules',
+	'room_instance_meter_readings', // Đồng hồ điện/nước cho từng phòng cụ thể
+	// Room Rules & Amenities & Costs Templates
+	'room_rule_templates',
+	'amenities',
+	'cost_type_templates',
+	// Booking & Rental Management
+	'room_bookings',
+	'room_invitations',
+	'rentals',
+	// Billing & Payment
+	'bills',
+	'bill_items',
+	'payments',
+	// Rating & Reviews
+	'ratings',
+	// Room Request (Bài đăng tìm trọ)
+	'room_requests',
+	// Roommate Seeking System
+	'roommate_seeking_posts',
+	'roommate_applications',
+	// Tenant Preferences
+	'tenant_room_preferences',
+	'tenant_roommate_preferences',
+	// Chat & Messaging
+	'conversations',
+	'messages',
+	'message_attachments',
+	// Electronic Contract System
+	'contracts',
+	'contract_signatures',
+	'contract_audit_logs',
+	// System & Notifications
+	'notifications',
+	'error_logs',
+	// Location Tables
+	'provinces',
+	'districts',
+	'wards',
 ];
 
 /**
@@ -87,16 +123,31 @@ export function validateSqlSafety(sql: string, isAggregate: boolean = false): Sq
 		}
 	}
 
-	// Check 4: Allow-list tables
-	const tableMatches = sql.match(/FROM\s+(\w+)/gi);
-	if (tableMatches) {
-		const usedTables = tableMatches.map((match) =>
-			match
-				.replace(/FROM\s+/i, '')
-				.toLowerCase()
-				.trim(),
+	// Check 4: Allow-list tables (parse FROM and JOIN clauses)
+	// Parse tables from FROM, JOIN, LEFT JOIN, RIGHT JOIN, INNER JOIN, FULL JOIN
+	const tablePatterns = [/FROM\s+(\w+)/gi, /(?:LEFT|RIGHT|INNER|FULL)?\s*JOIN\s+(\w+)/gi];
+	const usedTables = new Set<string>();
+	for (const pattern of tablePatterns) {
+		const matches = sql.match(pattern);
+		if (matches) {
+			for (const match of matches) {
+				// Extract table name (handle aliases like "table_name alias" or "table_name AS alias")
+				const tableName = match
+					.replace(/(?:FROM|LEFT|RIGHT|INNER|FULL)?\s*JOIN\s+/i, '')
+					.replace(/FROM\s+/i, '')
+					.split(/\s+/)[0] // Take first word (table name before alias)
+					.toLowerCase()
+					.trim();
+				if (tableName && !tableName.match(/^(on|using|where|group|order|having|limit)$/i)) {
+					usedTables.add(tableName);
+				}
+			}
+		}
+	}
+	if (usedTables.size > 0) {
+		const disallowedTables = Array.from(usedTables).filter(
+			(table) => !ALLOWED_TABLES.includes(table),
 		);
-		const disallowedTables = usedTables.filter((table) => !ALLOWED_TABLES.includes(table));
 		if (disallowedTables.length > 0) {
 			violations.push(`Query contains disallowed tables: ${disallowedTables.join(', ')}`);
 		}
@@ -128,7 +179,6 @@ export function validateSqlSafety(sql: string, isAggregate: boolean = false): Sq
  */
 export function enforceLimit(sql: string, limit: number): string {
 	const sqlTrimmed = sql.trim();
-	const sqlUpper = sqlTrimmed.toUpperCase();
 
 	// Remove existing LIMIT if present
 	const withoutLimit = sqlTrimmed.replace(/\s+LIMIT\s+\d+(\s*;)?$/i, '').trim();

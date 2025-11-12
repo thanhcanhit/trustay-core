@@ -281,7 +281,12 @@ export class AiService {
 			const orchestratorTime = Date.now() - startTime;
 			this.logInfo(
 				'ORCHESTRATOR',
-				`END | readyForSql=${orchestratorResponse.readyForSql} | requestType=${orchestratorResponse.requestType} | userRole=${orchestratorResponse.userRole} | took=${orchestratorTime}ms`,
+				`END | readyForSql=${orchestratorResponse.readyForSql} | requestType=${orchestratorResponse.requestType} | userRole=${orchestratorResponse.userRole}` +
+					`${orchestratorResponse.tablesHint ? ` | tablesHint=${orchestratorResponse.tablesHint}` : ''}` +
+					`${orchestratorResponse.relationshipsHint ? ` | relationshipsHint=${orchestratorResponse.relationshipsHint}` : ''}` +
+					`${orchestratorResponse.intentModeHint ? ` | modeHint=${orchestratorResponse.intentModeHint}` : ''}` +
+					`${orchestratorResponse.entityHint ? ` | entityHint=${orchestratorResponse.entityHint}` : ''}` +
+					` | took=${orchestratorTime}ms`,
 			);
 
 			// Xác định mode response dựa trên ý định người dùng (LIST/TABLE/CHART)
@@ -295,12 +300,39 @@ export class AiService {
 					'system',
 					`[INTENT] ENTITY=${orchestratorResponse.entityHint.toUpperCase()}`,
 				);
+				this.logDebug('ORCHESTRATOR', `Added ENTITY hint: ${orchestratorResponse.entityHint}`);
 			}
 			if (orchestratorResponse.filtersHint) {
 				this.addMessageToSession(
 					session,
 					'system',
 					`[INTENT] FILTERS=${orchestratorResponse.filtersHint}`,
+				);
+				this.logDebug(
+					'ORCHESTRATOR',
+					`Added FILTERS hint: ${orchestratorResponse.filtersHint.substring(0, 50)}`,
+				);
+			}
+			if (orchestratorResponse.tablesHint) {
+				this.addMessageToSession(
+					session,
+					'system',
+					`[INTENT] TABLES=${orchestratorResponse.tablesHint}`,
+				);
+				this.logDebug(
+					'ORCHESTRATOR',
+					`Added TABLES hint: ${orchestratorResponse.tablesHint} (will enhance RAG query)`,
+				);
+			}
+			if (orchestratorResponse.relationshipsHint) {
+				this.addMessageToSession(
+					session,
+					'system',
+					`[INTENT] RELATIONSHIPS=${orchestratorResponse.relationshipsHint}`,
+				);
+				this.logDebug(
+					'ORCHESTRATOR',
+					`Added RELATIONSHIPS hint: ${orchestratorResponse.relationshipsHint}`,
 				);
 			}
 			if (desiredMode === 'CHART') {
@@ -504,7 +536,8 @@ export class AiService {
 				// Trả về response yêu cầu clarification hoặc general chat
 				if (orchestratorResponse.requestType === RequestType.CLARIFICATION) {
 					this.logInfo('ORCHESTRATOR', 'END | need clarification');
-					const messageText: string = `Mình cần thêm chút thông tin để trả lời chính xác: ${orchestratorResponse.message}`;
+					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
+					const messageText: string = `Mình cần thêm chút thông tin để trả lời chính xác: ${cleanedMessage}`;
 					this.addMessageToSession(session, 'assistant', messageText, {
 						kind: 'CONTROL',
 						payload: { mode: 'CLARIFY', questions: [] },
@@ -521,7 +554,8 @@ export class AiService {
 				} else {
 					// General chat or greeting
 					this.logInfo('ORCHESTRATOR', `Request type: ${orchestratorResponse.requestType}`);
-					this.addMessageToSession(session, 'assistant', orchestratorResponse.message, {
+					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
+					this.addMessageToSession(session, 'assistant', cleanedMessage, {
 						kind: 'CONTENT',
 						payload: { mode: 'CONTENT' },
 					});
@@ -529,7 +563,7 @@ export class AiService {
 						kind: 'CONTENT',
 						sessionId: session.sessionId,
 						timestamp: new Date().toISOString(),
-						message: orchestratorResponse.message,
+						message: cleanedMessage,
 						payload: { mode: 'CONTENT' },
 					};
 					this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt);
@@ -573,15 +607,42 @@ export class AiService {
 		missingParams: Array<{ name: string; reason: string; examples?: string[] }>,
 	): string {
 		if (!missingParams || missingParams.length === 0) {
-			return baseMessage;
+			return this.cleanMessage(baseMessage);
 		}
+		// Clean base message first to remove any internal annotations
+		const cleanedMessage = this.cleanMessage(baseMessage);
 		const paramsList = missingParams.map((param) => {
 			const examplesText =
 				param.examples && param.examples.length > 0 ? ` (ví dụ: ${param.examples.join(', ')})` : '';
 			return `• ${param.reason}${examplesText}`;
 		});
 		const paramsSection = paramsList.join('\n');
-		return `${baseMessage}\n\n**Thông tin cần bổ sung:**\n${paramsSection}`;
+		return `${cleanedMessage}\n\n**Thông tin cần bổ sung:**\n${paramsSection}`;
+	}
+
+	/**
+	 * Clean message from internal annotations and dev metadata
+	 * @param message - Raw message that may contain internal annotations
+	 * @returns Cleaned message without internal annotations
+	 */
+	private cleanMessage(message: string): string {
+		if (!message) {
+			return message;
+		}
+		return message
+			.replace(/\n*INTENT_ACTION:\s*\w+\s*/gi, '')
+			.replace(/\n*POLARITY:\s*\w+\s*/gi, '')
+			.replace(/\n*CANONICAL_REUSE_OK:\s*\w+.*/gi, '')
+			.replace(/\n*REQUEST_TYPE:\s*\w+\s*/gi, '')
+			.replace(/\n*MODE_HINT:\s*\w+\s*/gi, '')
+			.replace(/\n*ENTITY_HINT:\s*\w+\s*/gi, '')
+			.replace(/\n*FILTERS_HINT:\s*.+?$/gim, '')
+			.replace(/\n*TABLES_HINT:\s*.+?$/gim, '')
+			.replace(/\n*RELATIONSHIPS_HINT:\s*.+?$/gim, '')
+			.replace(/\n*MISSING_PARAMS:\s*.+?$/gim, '')
+			.replace(/\[(LANDLORD|TENANT|GUEST)\]\s*/g, '')
+			.replace(/\n{3,}/g, '\n\n') // Replace multiple newlines with double newline
+			.trim();
 	}
 
 	/**

@@ -62,6 +62,7 @@ export class OrchestratorAgent {
 		}
 
 		// Get business context from RAG
+		// Note: Schema context will be retrieved by SQL agent with enhanced query using tablesHint
 		let businessContext = '';
 		try {
 			const ragContext = await this.knowledge.buildRagContext(query, {
@@ -93,7 +94,9 @@ export class OrchestratorAgent {
 				maxOutputTokens: 400,
 			});
 			const response = text.trim();
-			this.logger.debug(`AI response: ${response.substring(0, 200)}...`);
+			this.logger.debug(`AI response (first 200 chars): ${response.substring(0, 200)}...`);
+			// Log full response for debugging (can be enabled via log level)
+			this.logger.verbose(`Full orchestrator AI response:\n${response}`);
 
 			// Parse response to extract structured information
 			const requestTypeMatch = response.match(
@@ -102,14 +105,64 @@ export class OrchestratorAgent {
 			const modeMatch = response.match(/MODE_HINT:\s*(LIST|TABLE|CHART)/i);
 			const entityMatch = response.match(/ENTITY_HINT:\s*(room|post|room_seeking_post|none)/i);
 			const filtersMatch = response.match(/FILTERS_HINT:\s*(.+)/i);
-			const responseMatch = response.match(/RESPONSE: (.+)/s);
+			const tablesMatch = response.match(
+				/TABLES_HINT:\s*(.+?)(?=\n(?:RELATIONSHIPS_HINT|MISSING_PARAMS|RESPONSE|$))/is,
+			);
+			const relationshipsMatch = response.match(
+				/RELATIONSHIPS_HINT:\s*(.+?)(?=\n(?:MISSING_PARAMS|RESPONSE|$))/is,
+			);
+			// Parse INTENT_ACTION to detect "own" intent
+			const intentActionMatch = response.match(/INTENT_ACTION:\s*(search|own|stats)/i);
+			const intentAction = intentActionMatch ? intentActionMatch[1].toLowerCase() : undefined;
+			// Parse RESPONSE - stop at any annotation field (INTENT_ACTION, POLARITY, CANONICAL_REUSE_OK)
+			// Use non-greedy match to stop at first annotation
+			const responseMatch = response.match(
+				/RESPONSE:\s*([\s\S]+?)(?=\n(?:INTENT_ACTION|POLARITY|CANONICAL_REUSE_OK|REQUEST_TYPE|MODE_HINT|ENTITY_HINT|FILTERS_HINT|TABLES_HINT|RELATIONSHIPS_HINT|MISSING_PARAMS|$))/i,
+			);
 
-			const requestType = requestTypeMatch
+			let requestType = requestTypeMatch
 				? (requestTypeMatch[1] as RequestType)
 				: RequestType.GENERAL_CHAT;
-			const message = responseMatch
+
+			let message = responseMatch
 				? responseMatch[1].trim()
 				: this.getDefaultResponse(query, isFirstMessage);
+
+			// SECURITY CHECK: If user asks about personal data (INTENT_ACTION=own) but not logged in, force CLARIFICATION
+			if (intentAction === 'own' && !userId) {
+				this.logger.warn(
+					`User asked about personal data (INTENT_ACTION=own) but not logged in. Forcing CLARIFICATION. Query: "${query}"`,
+				);
+				requestType = RequestType.CLARIFICATION;
+				// Override message to request login if not already requesting login
+				if (
+					!message.toLowerCase().includes('đăng nhập') &&
+					!message.toLowerCase().includes('login')
+				) {
+					message =
+						'Để xem thông tin dãy trọ/phòng/hóa đơn của bạn, vui lòng đăng nhập vào hệ thống nhé! 🔐';
+				}
+			}
+
+			// Remove user role tags from message if present (should not be shown to users)
+			// Tags like [LANDLORD], [TENANT], [GUEST] should only be used internally between agents
+			message = message.replace(/\[(LANDLORD|TENANT|GUEST)\]\s*/g, '').trim();
+
+			// Remove internal annotations that might leak into RESPONSE (defensive cleanup)
+			// These are internal metadata and should never be shown to users
+			message = message
+				.replace(/\n*\s*INTENT_ACTION:\s*\w+.*/gi, '')
+				.replace(/\n*\s*POLARITY:\s*\w+.*/gi, '')
+				.replace(/\n*\s*CANONICAL_REUSE_OK:\s*\w+.*/gi, '')
+				.replace(/\n*\s*REQUEST_TYPE:\s*\w+.*/gi, '')
+				.replace(/\n*\s*MODE_HINT:\s*\w+.*/gi, '')
+				.replace(/\n*\s*ENTITY_HINT:\s*\w+.*/gi, '')
+				.replace(/\n*\s*FILTERS_HINT:\s*.+?$/gim, '')
+				.replace(/\n*\s*TABLES_HINT:\s*.+?$/gim, '')
+				.replace(/\n*\s*RELATIONSHIPS_HINT:\s*.+?$/gim, '')
+				.replace(/\n*\s*MISSING_PARAMS:\s*.+?$/gim, '')
+				.replace(/\n{3,}/g, '\n\n') // Replace multiple newlines with double newline
+				.trim();
 
 			// Parse MISSING_PARAMS for clarification (MVP)
 			const missingParamsMatch = response.match(/MISSING_PARAMS:\s*(.+?)(?=\n(?:RESPONSE|$))/s);
@@ -175,15 +228,39 @@ export class OrchestratorAgent {
 
 			// MVP: Only set missingParams if readyForSql is false
 			// If readyForSql is true, ignore missingParams (AI might have returned it incorrectly)
-			const readyForSql =
+			// SECURITY: Also check if user asks about personal data but not logged in
+			let readyForSql =
 				requestType === RequestType.QUERY && (!missingParams || missingParams.length === 0);
+
+			// SECURITY CHECK: If user asks about personal data but not logged in, force readyForSql=false
+			if (intentAction === 'own' && !userId) {
+				readyForSql = false;
+				this.logger.debug(
+					'Forcing readyForSql=false because INTENT_ACTION=own but userId is missing',
+				);
+			}
 
 			// Clear missingParams if readyForSql is true (contradiction - shouldn't happen)
 			const finalMissingParams =
 				readyForSql || requestType !== RequestType.QUERY ? undefined : missingParams;
 
+			const parsedTablesHint =
+				tablesMatch?.[1]?.trim() && tablesMatch[1].trim() !== 'none'
+					? tablesMatch[1].trim()
+					: undefined;
+			const parsedRelationshipsHint =
+				relationshipsMatch?.[1]?.trim() && relationshipsMatch[1].trim() !== 'none'
+					? relationshipsMatch[1].trim()
+					: undefined;
+
 			this.logger.debug(
-				`Parsed requestType: ${requestType}, userRole: ${userRole}, readyForSql: ${readyForSql}${finalMissingParams ? `, missingParams: [${finalMissingParams.length}]` : ''}`,
+				`Parsed requestType: ${requestType}, userRole: ${userRole}, readyForSql: ${readyForSql}` +
+					`${finalMissingParams ? `, missingParams: [${finalMissingParams.length}]` : ''}` +
+					`${parsedTablesHint ? `, tablesHint: ${parsedTablesHint}` : ''}` +
+					`${parsedRelationshipsHint ? `, relationshipsHint: ${parsedRelationshipsHint}` : ''}` +
+					`${modeMatch ? `, modeHint: ${modeMatch[1]}` : ''}` +
+					`${entityMatch && entityMatch[1] !== 'none' ? `, entityHint: ${entityMatch[1]}` : ''}` +
+					`${filtersMatch ? `, filtersHint: ${filtersMatch[1].trim().substring(0, 50)}` : ''}`,
 			);
 
 			return {
@@ -204,6 +281,8 @@ export class OrchestratorAgent {
 						? (entityMatch[1] as 'room' | 'post' | 'room_seeking_post')
 						: undefined,
 				filtersHint: filtersMatch ? filtersMatch[1].trim() : undefined,
+				tablesHint: parsedTablesHint,
+				relationshipsHint: parsedRelationshipsHint,
 			};
 		} catch (error) {
 			this.logger.error('Orchestrator agent error:', error);

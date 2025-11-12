@@ -12,11 +12,14 @@ import {
 
 /**
  * Canonical SQL match thresholds:
- *   - HARD: use existing canonical directly if score >= threshold
- *   - SOFT: provide canonical as LLM context if threshold.soft <= score < threshold.hard
+ *   - HARD: very high threshold (0.95+) for exact matches - but SQL is still regenerated from current schema
+ *   - SOFT: provide canonical as LLM hint/context if threshold.soft <= score < threshold.hard
  *   - Below SOFT: treat as new
+ *
+ * IMPORTANT: Canonical SQL is NEVER executed directly. It's only used as a hint/reference.
+ * SQL is always regenerated based on current schema to handle schema changes safely.
  */
-const _CANONICAL_REUSE_THRESHOLDS: { hard: number; soft: number } = { hard: 0.92, soft: 0.8 };
+const _CANONICAL_REUSE_THRESHOLDS: { hard: number; soft: number } = { hard: 0.95, soft: 0.8 };
 
 /**
  * Maximum #lines per schema chunk for text-based ingestion

@@ -166,6 +166,8 @@ export interface OrchestratorAgentResponse {
 	intentModeHint?: 'LIST' | 'TABLE' | 'CHART';
 	entityHint?: 'room' | 'post' | 'room_seeking_post';
 	filtersHint?: string; // natural language filters parsed (e.g., district:"gò vấp")
+	tablesHint?: string; // comma-separated list of tables needed (e.g., "rentals,users,payments")
+	relationshipsHint?: string; // relationships and JOINs needed (e.g., rentals→users(tenant), payments→rentals→users(owner))
 	missingParams?: MissingParam[]; // MVP: Missing parameters for clarification
 }
 
