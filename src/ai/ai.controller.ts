@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, Get, Ip, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Ip, Logger, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AiService, ChatResponse } from './ai.service';
+import { ChatDto } from './dto/chat.dto';
 import { Text2SqlDto } from './dto/text2sql.dto';
 
 @ApiTags('AI')
@@ -10,6 +11,8 @@ import { Text2SqlDto } from './dto/text2sql.dto';
 @UseGuards(OptionalJwtAuthGuard) // Optional authentication - allows both authenticated and anonymous users
 @ApiBearerAuth()
 export class AiController {
+	private readonly logger = new Logger(AiController.name);
+
 	constructor(private readonly aiService: AiService) {}
 
 	/**
@@ -18,11 +21,6 @@ export class AiController {
 	 */
 	@Post('chat')
 	@ApiOperation({ summary: 'Chat với AI - tương thích với AI SDK Conversation component' })
-	@ApiQuery({
-		name: 'query',
-		description: 'Câu hỏi hoặc yêu cầu của người dùng',
-		example: 'Tìm phòng trọ giá rẻ ở quận 1',
-	})
 	@ApiResponse({
 		status: 200,
 		description: 'Phản hồi từ AI thành công',
@@ -55,7 +53,7 @@ export class AiController {
 		},
 	})
 	async chat(
-		@Query('query') query: string,
+		@Query() chatDto: ChatDto,
 		@CurrentUser('id') userId: string | undefined,
 		@Ip() clientIp: string,
 	): Promise<{
@@ -66,9 +64,16 @@ export class AiController {
 		query?: string;
 	}> {
 		try {
-			const response = await this.aiService.chatWithAI(query, {
+			// Log để debug
+			if (chatDto.currentPage) {
+				this.logger.debug(`[AI Controller] Received currentPage: ${chatDto.currentPage}`);
+			} else {
+				this.logger.debug('[AI Controller] No currentPage provided');
+			}
+			const response = await this.aiService.chatWithAI(chatDto.query, {
 				userId,
 				clientIp,
+				currentPage: chatDto.currentPage,
 			});
 
 			return {
@@ -80,7 +85,7 @@ export class AiController {
 				success: false,
 				error: 'Failed to process chat message',
 				message: error.message,
-				query: query,
+				query: chatDto.query,
 			};
 		}
 	}

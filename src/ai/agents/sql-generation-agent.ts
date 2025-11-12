@@ -226,12 +226,18 @@ export class SqlGenerationAgent {
 					ragContext += `\nRELATIONSHIPS HINT (from orchestrator): ${relationshipsHint}\n`;
 				}
 
+				// Extract filters hint to check if this is a room-specific query
+				const filtersHint = this.extractFiltersHint(session);
+
 				// Step 2: optionally fetch QA examples when helpful (e.g., canonical hint)
-				const needExamples = canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT;
+				// IMPORTANT: For room-specific queries (with filtersHint), skip QA examples
+				// because they are usually not relevant (statistics queries vs room analysis)
+				const needExamples =
+					canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT && !filtersHint; // Skip QA examples if we have a specific room filter
 				if (needExamples) {
 					const qaResults = await this.knowledgeService.retrieveKnowledgeContext(query, {
 						limit: SqlGenerationAgent.QA_EXAMPLES_LIMIT,
-						threshold: SqlGenerationAgent.RAG_QA_THRESHOLD,
+						threshold: SqlGenerationAgent.RAG_QA_THRESHOLD + 0.2, // Increase threshold to 0.8 for better relevance
 					});
 
 					// Log preview of QA chunks
@@ -277,7 +283,7 @@ export class SqlGenerationAgent {
 					`RAG retrieval completed:` +
 						`\n  - Schema chunks: ${schemaResults.length}` +
 						`${canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT || canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE ? '\n  - Canonical hint: included (reference only)' : ''}` +
-						`${canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT ? '\n  - QA examples: included' : ''}` +
+						`${canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT && !filtersHint ? '\n  - QA examples: included' : filtersHint ? '\n  - QA examples: skipped (room-specific query)' : ''}` +
 						`${ragContext.length > 0 ? `\n  - RAG context length: ${ragContext.length} chars` : '\n  - RAG context: empty (using fallback schema)'}`,
 				);
 			} catch (ragError) {
@@ -311,6 +317,10 @@ export class SqlGenerationAgent {
 					);
 				}
 				const intentAction = this.extractIntentAction(session);
+				const filtersHint = this.extractFiltersHint(session);
+				this.logger.debug(
+					`SQL Generation context: intentAction=${intentAction || 'none'}, filtersHint=${filtersHint || 'none'}`,
+				);
 				const contextualPrompt = buildSqlPrompt({
 					query,
 					schema: dbSchema,
@@ -320,6 +330,7 @@ export class SqlGenerationAgent {
 					userRole,
 					businessContext,
 					intentAction, // Intent action: search (toàn hệ thống) vs own (cá nhân)
+					filtersHint, // Filters hint from orchestrator (BẮT BUỘC phải dùng)
 					lastError, // Error từ lần attempt trước → AI tự sửa lỗi
 					lastSql, // SQL cũ để AI biết cần sửa gì
 					attempt: attempts,
@@ -541,6 +552,22 @@ export class SqlGenerationAgent {
 			.find((m) => m.content.startsWith('[INTENT] RELATIONSHIPS='));
 		if (relationshipsMessage) {
 			const match = relationshipsMessage.content.match(/\[INTENT\] RELATIONSHIPS=(.+)/);
+			return match?.[1]?.trim();
+		}
+		return undefined;
+	}
+
+	/**
+	 * Extract filters hint from session messages
+	 * @param session - Chat session
+	 * @returns Filters hint string or undefined
+	 */
+	private extractFiltersHint(session: ChatSession): string | undefined {
+		const filtersMessage = session.messages
+			.filter((m) => m.role === 'system')
+			.find((m) => m.content.startsWith('[INTENT] FILTERS='));
+		if (filtersMessage) {
+			const match = filtersMessage.content.match(/\[INTENT\] FILTERS=(.+)/);
 			return match?.[1]?.trim();
 		}
 		return undefined;

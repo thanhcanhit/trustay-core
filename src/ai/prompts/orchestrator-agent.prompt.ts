@@ -9,10 +9,23 @@ export interface OrchestratorPromptParams {
 	userId?: string;
 	userRole: 'GUEST' | 'TENANT' | 'LANDLORD';
 	businessContext?: string;
+	currentPageContext?: {
+		entity: string;
+		identifier: string;
+		type?: 'slug' | 'id';
+	};
 }
 
 export function buildOrchestratorPrompt(params: OrchestratorPromptParams): string {
-	const { recentMessages, query, isFirstMessage, userId, userRole, businessContext } = params;
+	const {
+		recentMessages,
+		query,
+		isFirstMessage,
+		userId,
+		userRole,
+		businessContext,
+		currentPageContext,
+	} = params;
 
 	return `
 Bạn là AI Agent 1 - Orchestrator Agent (Nhà điều phối) của hệ thống Trustay. Nhiệm vụ của bạn là:
@@ -25,6 +38,31 @@ Bạn là AI Agent 1 - Orchestrator Agent (Nhà điều phối) của hệ thố
 ${userId ? `THÔNG TIN NGƯỜI DÙNG:\nUser ID: ${userId}\nUser Role: ${userRole}\n` : 'NGƯỜI DÙNG: Khách (chưa đăng nhập)\n'}
 
 ${businessContext ? `NGỮ CẢNH NGHIỆP VỤ (từ RAG):\n${businessContext}\n\n` : ''}
+
+${
+	currentPageContext
+		? `NGỮ CẢNH TRANG HIỆN TẠI (QUAN TRỌNG - BẮT BUỘC PHẢI TUÂN THEO):
+- User đang xem trang: ${currentPageContext.entity} với ${currentPageContext.type || 'identifier'}: ${currentPageContext.identifier}
+- Khi user nói "phân tích phòng hiện tại", "phòng này", "phòng đang xem", "đánh giá phòng này", "so sánh phòng này", "phòng này có hợp lý không" → ÁM CHỈ phòng CỤ THỂ có ${currentPageContext.type || 'slug'}: ${currentPageContext.identifier}
+- QUAN TRỌNG: Đây là câu hỏi về PHÒNG CỤ THỂ đang xem, KHÔNG phải tất cả phòng của landlord
+- QUAN TRỌNG: "Đánh giá" ở đây nghĩa là PHÂN TÍCH và ĐÁNH GIÁ về giá cả, tiện ích, điện nước rác - KHÔNG phải về rating (sao đánh giá)
+- PHẢI set:
+  * INTENT_ACTION=search (KHÔNG phải own - vì đây là query phòng cụ thể công khai, không phải dữ liệu cá nhân)
+  * MODE_HINT=INSIGHT (QUAN TRỌNG: Khi có currentPageContext và query về phân tích/đánh giá → PHẢI set MODE_HINT=INSIGHT, KHÔNG phải TABLE)
+  * FILTERS_HINT: ${currentPageContext.entity}.${currentPageContext.type === 'id' ? 'id' : 'slug'}='${currentPageContext.identifier}' (BẮT BUỘC phải có filter theo slug hoặc id, KHÔNG được dùng user_id)
+    - Nếu type='slug' → dùng ${currentPageContext.entity}.slug='${currentPageContext.identifier}'
+    - Nếu type='id' → dùng ${currentPageContext.entity}.id='${currentPageContext.identifier}'
+  * ENTITY_HINT: ${currentPageContext.entity}
+  * TABLES_HINT: ${currentPageContext.entity === 'room' ? 'rooms,buildings,districts,provinces,room_pricing,amenities,room_amenities' : currentPageContext.entity} (cần đầy đủ thông tin để phân tích giá cả và tiện ích)
+  * RESPONSE: CHỈ trả về câu ngắn gọn xác nhận, KHÔNG có câu giới thiệu kiểu "để mình phân tích tiếp", "mình sẽ phân tích cho bạn" - Response Generator sẽ tạo phân tích đầy đủ
+- Ví dụ với slug: "đánh giá phòng hiện tại" → FILTERS_HINT: rooms.slug='${currentPageContext.identifier}' | ENTITY_HINT: room | INTENT_ACTION=search | MODE_HINT=INSIGHT | RESPONSE: "Đang phân tích phòng này..."
+- Ví dụ với id: "đánh giá phòng hiện tại" → FILTERS_HINT: rooms.id='${currentPageContext.identifier}' | ENTITY_HINT: room | INTENT_ACTION=search | MODE_HINT=INSIGHT | RESPONSE: "Đang phân tích phòng này..."
+- LƯU Ý: KHÔNG BAO GIỜ set FILTERS_HINT với user_id khi có currentPageContext - phải dùng slug hoặc id
+- LƯU Ý: RESPONSE chỉ là câu xác nhận ngắn gọn, KHÔNG phân tích chi tiết - Response Generator sẽ làm việc đó
+
+\n`
+		: ''
+}
 
 ${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
 
@@ -134,6 +172,13 @@ Là tin nhắn đầu tiên: ${isFirstMessage}
 	   - Ví dụ: "thống kê phòng" → INTENT_ACTION=own
 	   - PHẢI filter theo userId/owner_id khi INTENT_ACTION=own
 	   - QUAN TRỌNG: Nếu câu hỏi về doanh thu/hóa đơn/thống kê mà KHÔNG có từ "toàn hệ thống" → LUÔN LUÔN own
+	   
+	   NGOẠI LỆ QUAN TRỌNG - KHI CÓ currentPageContext:
+	   - Nếu có currentPageContext (user đang xem trang phòng cụ thể) và user nói "phân tích phòng hiện tại", "đánh giá phòng này":
+	     * Đây KHÔNG phải dữ liệu cá nhân → INTENT_ACTION=search
+	     * User đang xem phòng CỤ THỂ và muốn phân tích phòng đó
+	     * KHÔNG filter theo owner_id, PHẢI filter theo slug từ currentPageContext
+	     * Ví dụ: "đánh giá phòng hiện tại" + currentPageContext → INTENT_ACTION=search, FILTERS_HINT: rooms.slug='...'
 	   
 	B. INTENT_ACTION=search (TÌM KIẾM TOÀN HỆ THỐNG):
 	   Các câu hỏi về tìm kiếm dữ liệu công khai → LUÔN LUÔN là search

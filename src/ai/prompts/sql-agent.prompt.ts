@@ -11,6 +11,7 @@ export interface SqlPromptParams {
 	userRole?: string;
 	businessContext?: string;
 	intentAction?: 'search' | 'own' | 'stats'; // Intent action: search (toàn hệ thống), own (cá nhân), stats (thống kê)
+	filtersHint?: string; // Filters hint from orchestrator (e.g., "rooms.slug='tuyenquan-go-vap-phong-ap1443'")
 	lastError?: string;
 	lastSql?: string;
 	attempt?: number;
@@ -31,6 +32,7 @@ export function buildSqlPrompt(params: SqlPromptParams): string {
 		userRole,
 		businessContext,
 		intentAction,
+		filtersHint,
 		lastError = '',
 		lastSql = '',
 		attempt = 1,
@@ -211,7 +213,27 @@ BƯỚC 1: ĐỌC VÀ HIỂU CONTEXT (BẮT BUỘC - PHẢI LÀM TRƯỚC KHI T�
 ═══════════════════════════════════════════════════════════════
 BƯỚC 2: VALIDATION CHECKLIST (BẮT BUỘC - PHẢI KIỂM TRA TRƯỚC KHI TẠO SQL)
 ═══════════════════════════════════════════════════════════════
+${
+	filtersHint
+		? `
+🚨🚨🚨 QUAN TRỌNG CỰC KỲ - FILTERS_HINT TỪ ORCHESTRATOR (BẮT BUỘC PHẢI SỬ DỤNG - KHÔNG BAO GIỜ BỎ QUA):
+═══════════════════════════════════════════════════════════════
+- Orchestrator đã xác định filter cụ thể: ${filtersHint}
+- ĐÂY LÀ YÊU CẦU BẮT BUỘC - PHẢI thêm WHERE clause theo FILTERS_HINT này
+- Nếu FILTERS_HINT có "room.slug='...'" hoặc "rooms.slug='...'" → PHẢI có WHERE r.slug = '...'
+- Nếu FILTERS_HINT có "room.id='...'" hoặc "rooms.id='...'" → PHẢI có WHERE r.id = '...'
+- KHÔNG BAO GIỜ bỏ qua FILTERS_HINT - đây là yêu cầu BẮT BUỘC từ orchestrator
+- KHÔNG BAO GIỜ query tất cả phòng khi có FILTERS_HINT - chỉ query 1 phòng cụ thể
+- KHÔNG BAO GIỜ dùng LIMIT 100 khi có FILTERS_HINT - chỉ query 1 phòng cụ thể
+- Ví dụ: FILTERS_HINT: room.slug='0847505626quan-binh-thanh-phong-30' → WHERE r.slug = '0847505626quan-binh-thanh-phong-30'
+- Ví dụ: FILTERS_HINT: rooms.slug='tuyenquan-go-vap-phong-ap1443' → WHERE r.slug = 'tuyenquan-go-vap-phong-ap1443'
+- Ví dụ: FILTERS_HINT: rooms.id='uuid-123' → WHERE r.id = 'uuid-123'
+- LƯU Ý: FILTERS_HINT có thể dùng "room.slug" hoặc "rooms.slug" - cả hai đều phải parse thành WHERE r.slug = '...'
+═══════════════════════════════════════════════════════════════
 
+`
+		: ''
+}
 Trước khi tạo SQL, PHẢI kiểm tra:
 
 1. ✅ TÊN BẢNG: Tên bảng có tồn tại trong schema không?
@@ -469,6 +491,30 @@ BƯỚC 5: VÍ DỤ SQL MẪU (THAM KHẢO)
      * KHÔNG trả về danh sách phòng/bài đăng chi tiết
      * Ví dụ: SELECT DATE_TRUNC('month', created_at) AS label, SUM(amount) AS value FROM invoices GROUP BY label ORDER BY value DESC LIMIT 10;
    
+   - PHÂN TÍCH/ĐÁNH GIÁ PHÒNG HIỆN TẠI (từ khóa: "phân tích phòng hiện tại", "phòng này", "phòng đang xem", "đánh giá phòng này", "so sánh phòng này", "phòng này có hợp lý không"):
+     * QUAN TRỌNG: Khi có FILTERS_HINT với slug hoặc id từ currentPageContext (ví dụ: rooms.slug='tuyenquan-go-vap-phong-ap1443' hoặc rooms.id='uuid-123')
+     * PHẢI query chi tiết phòng CỤ THỂ theo slug hoặc id, KHÔNG phải tất cả phòng của landlord
+     * "Đánh giá" nghĩa là PHÂN TÍCH về giá cả, tiện ích, điện nước rác - KHÔNG phải về rating (sao đánh giá)
+     * BẮT BUỘC: Nếu có FILTERS_HINT từ orchestrator → PHẢI dùng WHERE clause theo FILTERS_HINT, KHÔNG BAO GIỜ bỏ qua
+     * SELECT TẤT CẢ thông tin chi tiết để phân tích và đánh giá:
+       - Thông tin phòng: r.id, r.name, r.description, r.slug, r.room_type, r.area_sqm, r.max_occupancy, r.total_rooms
+       - Thông tin tòa nhà: b.name AS building_name, b.address_line_1, b.address_line_2
+       - Địa chỉ: d.district_name, p.province_name
+       - Giá cả (QUAN TRỌNG - ƯU TIÊN): rp.base_price_monthly, rp.deposit_amount, rp.utility_cost_per_person, rp.electricity_cost, rp.water_cost, rp.internet_cost, rp.cleaning_cost
+       - Tiện ích (QUAN TRỌNG - ƯU TIÊN): Danh sách amenities với tên đầy đủ (cần JOIN với room_amenities và amenities)
+       - Rating (KHÔNG QUAN TRỌNG - chỉ lấy nếu có): r.overall_rating, r.total_ratings (có thể NULL)
+     * JOIN với các bảng: buildings, districts, provinces, room_pricing, amenities, room_amenities
+     * WHERE clause (BẮT BUỘC từ FILTERS_HINT, KHÔNG filter theo owner_id):
+       - Nếu FILTERS_HINT có rooms.slug='...' → WHERE r.slug = 'slug_value' (BẮT BUỘC)
+       - Nếu FILTERS_HINT có rooms.id='...' → WHERE r.id = 'id_value' (BẮT BUỘC)
+       - Ưu tiên slug nếu có, fallback về id
+       - KHÔNG BAO GIỜ query tất cả phòng khi có FILTERS_HINT - chỉ query 1 phòng cụ thể
+     * KHÔNG cần LIMIT (chỉ 1 phòng)
+     * KHÔNG filter theo buildings.owner_id (vì đây là query phòng cụ thể công khai, không phải dữ liệu cá nhân)
+     * ƯU TIÊN: Tập trung vào giá cả (base_price_monthly, utility_cost_per_person, electricity_cost, water_cost) và tiện ích (amenities)
+     * Ví dụ với slug: SELECT r.id, r.name, r.description, r.slug, r.room_type, r.area_sqm, r.max_occupancy, r.total_rooms, b.name AS building_name, b.address_line_1, d.district_name, p.province_name, rp.base_price_monthly, rp.deposit_amount, rp.utility_cost_per_person, rp.electricity_cost, rp.water_cost, rp.internet_cost, rp.cleaning_cost, array_agg(DISTINCT a.name ORDER BY a.name) AS amenities FROM rooms r JOIN buildings b ON r.building_id = b.id JOIN districts d ON b.district_id = d.id JOIN provinces p ON b.province_id = p.id LEFT JOIN room_pricing rp ON rp.room_id = r.id LEFT JOIN room_amenities ra ON ra.room_id = r.id LEFT JOIN amenities a ON a.id = ra.amenity_id WHERE r.slug = 'tuyenquan-go-vap-phong-ap1443' GROUP BY r.id, b.id, d.id, p.id, rp.id;
+     * Ví dụ với id: SELECT r.id, r.name, r.description, r.slug, r.room_type, r.area_sqm, r.max_occupancy, r.total_rooms, b.name AS building_name, b.address_line_1, d.district_name, p.province_name, rp.base_price_monthly, rp.deposit_amount, rp.utility_cost_per_person, rp.electricity_cost, rp.water_cost, rp.internet_cost, rp.cleaning_cost, array_agg(DISTINCT a.name ORDER BY a.name) AS amenities FROM rooms r JOIN buildings b ON r.building_id = b.id JOIN districts d ON b.district_id = d.id JOIN provinces p ON b.province_id = p.id LEFT JOIN room_pricing rp ON rp.room_id = r.id LEFT JOIN room_amenities ra ON ra.room_id = r.id LEFT JOIN amenities a ON a.id = ra.amenity_id WHERE r.id = '02a927ba-c5e4-40e3-a64c-0187c9b35e33' GROUP BY r.id, b.id, d.id, p.id, rp.id;
+   
    - TÌM KIẾM DANH SÁCH (từ khóa: tìm, phòng, room, bài đăng, post, ở, gần):
      * QUAN TRỌNG: Trong schema, table rooms có cột name (KHÔNG phải title). Phải dùng r.name AS title.
      * Chỉ SELECT các trường gọn nhẹ: id, name AS title (KHÔNG dùng title trực tiếp, phải alias), thumbnail_url/image_url (nếu có)
@@ -482,7 +528,7 @@ BƯỚC 5: VÍ DỤ SQL MẪU (THAM KHẢO)
      * Ví dụ SAI: SELECT r.id, r.title, ... ❌ (KHÔNG có column title trong rooms table!)
      * Ví dụ SAI: SELECT * FROM room_seeking_posts ... ❌ (Tên bảng sai! Phải dùng room_requests)
 
-4. ALIAS NHẤT QUÁN (BẮT BUỘC):
+5. ALIAS NHẤT QUÁN (BẮT BUỘC):
    - title: cho tiêu đề (phải alias từ name)
    - thumbnail: cho ảnh
    - url: cho liên kết
@@ -490,9 +536,28 @@ BƯỚC 5: VÍ DỤ SQL MẪU (THAM KHẢO)
    - label: cho nhóm (thống kê)
    - value: cho số liệu (thống kê)
 
-5. KHÔNG TRẢ VỀ DỮ LIỆU NHẠY CẢM:
+6. KHÔNG TRẢ VỀ DỮ LIỆU NHẠY CẢM:
    - Tuyệt đối không trả về password, token, hay dữ liệu nhạy cảm khác
    - CHỈ trả về dữ liệu cần thiết để trả lời câu hỏi
 
+${
+	filtersHint
+		? `
+═══════════════════════════════════════════════════════════════
+KIỂM TRA CUỐI CÙNG - FILTERS_HINT (BẮT BUỘC):
+═══════════════════════════════════════════════════════════════
+TRƯỚC KHI TRẢ VỀ SQL, PHẢI KIỂM TRA:
+1. ✅ SQL có WHERE clause theo FILTERS_HINT: ${filtersHint} không?
+2. ✅ Nếu FILTERS_HINT có slug → SQL phải có WHERE r.slug = 'slug_value'
+3. ✅ Nếu FILTERS_HINT có id → SQL phải có WHERE r.id = 'id_value'
+4. ✅ KHÔNG có LIMIT 100 khi có FILTERS_HINT (chỉ query 1 phòng cụ thể)
+5. ✅ KHÔNG query tất cả phòng khi có FILTERS_HINT
+
+NẾU SQL KHÔNG CÓ WHERE clause theo FILTERS_HINT → SQL SAI, PHẢI SỬA LẠI!
+
+═══════════════════════════════════════════════════════════════
+`
+		: ''
+}
 SQL:`;
 }

@@ -114,7 +114,40 @@ export class OrchestratorAgent {
 			this.logger.warn('Failed to retrieve business context from RAG', error);
 		}
 
-		// Build orchestrator prompt with business context and user role
+		// Extract currentPageContext từ session messages
+		let currentPageContext:
+			| { entity: string; identifier: string; type?: 'slug' | 'id' }
+			| undefined;
+		const contextMessages = session.messages.filter(
+			(m) => m.role === 'system' && m.content.includes('[CONTEXT]'),
+		);
+		if (contextMessages.length > 0) {
+			const lastContextMessage = contextMessages[contextMessages.length - 1].content;
+			this.logger.debug(
+				`[OrchestratorAgent] Extracting context from message: ${lastContextMessage.substring(0, 200)}`,
+			);
+			const entityMatch = lastContextMessage.match(/Entity:\s*(\w+)/);
+			const identifierMatch = lastContextMessage.match(/Identifier:\s*([^\s,\n]+)/);
+			const typeMatch = lastContextMessage.match(/Type:\s*(\w+)/);
+			if (entityMatch && identifierMatch) {
+				currentPageContext = {
+					entity: entityMatch[1],
+					identifier: identifierMatch[1],
+					type: typeMatch ? (typeMatch[1] as 'slug' | 'id') : undefined,
+				};
+				this.logger.debug(
+					`[OrchestratorAgent] Extracted currentPageContext: entity=${currentPageContext.entity}, identifier=${currentPageContext.identifier}, type=${currentPageContext.type || 'unknown'}`,
+				);
+			} else {
+				this.logger.warn(
+					`[OrchestratorAgent] Failed to extract context from message. Entity match: ${entityMatch ? 'found' : 'not found'}, Identifier match: ${identifierMatch ? 'found' : 'not found'}`,
+				);
+			}
+		} else {
+			this.logger.debug('[OrchestratorAgent] No context messages found in session');
+		}
+
+		// Build orchestrator prompt with business context, user role, and current page context
 		const orchestratorPrompt = buildOrchestratorPrompt({
 			recentMessages,
 			query,
@@ -122,6 +155,7 @@ export class OrchestratorAgent {
 			userId,
 			userRole,
 			businessContext,
+			currentPageContext,
 		});
 
 		try {
@@ -143,7 +177,7 @@ export class OrchestratorAgent {
 			const requestTypeMatch = response.match(
 				/REQUEST_TYPE:\s*(QUERY|GREETING|CLARIFICATION|GENERAL_CHAT)/i,
 			);
-			const modeMatch = response.match(/MODE_HINT:\s*(LIST|TABLE|CHART)/i);
+			const modeMatch = response.match(/MODE_HINT:\s*(LIST|TABLE|CHART|INSIGHT)/i);
 			const entityMatch = response.match(/ENTITY_HINT:\s*(room|post|room_seeking_post|none)/i);
 			const filtersMatch = response.match(/FILTERS_HINT:\s*(.+)/i);
 			const tablesMatch = response.match(
@@ -321,7 +355,9 @@ export class OrchestratorAgent {
 					(finalMissingParams && finalMissingParams.length > 0),
 				missingParams: finalMissingParams,
 				needsIntroduction: requestType === RequestType.GREETING,
-				intentModeHint: modeMatch ? (modeMatch[1] as 'LIST' | 'TABLE' | 'CHART') : undefined,
+				intentModeHint: modeMatch
+					? (modeMatch[1] as 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT')
+					: undefined,
 				entityHint:
 					entityMatch && entityMatch[1] !== OrchestratorAgent.VALIDATION_NONE
 						? (entityMatch[1] as 'room' | 'post' | 'room_seeking_post')

@@ -230,6 +230,72 @@ export class AiService {
 	}
 
 	/**
+	 * Check if identifier is UUID format
+	 * @param identifier - Identifier to check
+	 * @returns true if UUID format
+	 */
+	private isUuid(identifier: string): boolean {
+		// UUID v4 pattern: 8-4-4-4-12 hex digits
+		const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+		return uuidPattern.test(identifier);
+	}
+
+	/**
+	 * Parse page context từ URL path để extract entity và identifier
+	 * @param currentPage - URL path (ví dụ: /rooms/tuyenquan-go-vap-phong-ap1443 hoặc /rooms/uuid-123)
+	 * @returns Parsed context hoặc null nếu không parse được
+	 */
+	private parsePageContext(currentPage: string): {
+		entity: string;
+		identifier: string;
+		type?: 'slug' | 'id';
+	} | null {
+		if (!currentPage || !currentPage.startsWith('/')) {
+			return null;
+		}
+		// Parse pattern: /rooms/{slug} hoặc /rooms/{id}
+		const roomMatch = currentPage.match(/^\/rooms\/([^/?#]+)/);
+		if (roomMatch) {
+			const identifier = roomMatch[1];
+			// Detect if identifier is UUID or slug
+			const type = this.isUuid(identifier) ? 'id' : 'slug';
+			return {
+				entity: 'room',
+				identifier,
+				type,
+			};
+		}
+		// Parse pattern: /room-seeking-posts/{slug} hoặc /room-seekings/{slug}
+		const roomSeekingMatch = currentPage.match(/^\/room-seeking-posts?\/([^/?#]+)/);
+		if (roomSeekingMatch) {
+			return {
+				entity: 'room_seeking_post',
+				identifier: roomSeekingMatch[1],
+				type: 'slug',
+			};
+		}
+		// Parse pattern: /roommate-seeking-posts/{slug}
+		const roommateSeekingMatch = currentPage.match(/^\/roommate-seeking-posts?\/([^/?#]+)/);
+		if (roommateSeekingMatch) {
+			return {
+				entity: 'roommate_seeking_post',
+				identifier: roommateSeekingMatch[1],
+				type: 'slug',
+			};
+		}
+		// Parse pattern: /buildings/{slug}
+		const buildingMatch = currentPage.match(/^\/buildings\/([^/?#]+)/);
+		if (buildingMatch) {
+			return {
+				entity: 'building',
+				identifier: buildingMatch[1],
+				type: 'slug',
+			};
+		}
+		return null;
+	}
+
+	/**
 	 * Chat với AI để truy vấn database - Flow đa agent
 	 *
 	 * Flow xử lý:
@@ -240,25 +306,56 @@ export class AiService {
 	 * 5. Persist: Lưu Q&A vào knowledge store để học hỏi
 	 *
 	 * @param query - Câu hỏi của người dùng
-	 * @param context - Ngữ cảnh người dùng (userId, clientIp)
+	 * @param context - Ngữ cảnh người dùng (userId, clientIp, currentPage)
+	 * @param context.userId - User ID nếu đã đăng nhập
+	 * @param context.clientIp - IP address của client
+	 * @param context.currentPage - URL trang hiện tại người dùng đang xem (từ referer hoặc x-current-page header)
 	 * @returns Phản hồi chat với lịch sử hội thoại
 	 */
 	async chatWithAI(
 		query: string,
-		context: { userId?: string; clientIp?: string } = {},
+		context: { userId?: string; clientIp?: string; currentPage?: string } = {},
 	): Promise<ChatResponse> {
-		const { userId, clientIp } = context;
+		const { userId, clientIp, currentPage } = context;
 
 		// Bước 1: Quản lý session - Lấy hoặc tạo session chat
 		// Session tự động có system prompt tiếng Việt khi tạo mới
 		const session = this.getOrCreateSession(userId, clientIp);
 		const pipelineStartAt = this.logPipelineStart(query, session.sessionId);
 
+		// Parse và thêm thông tin trang hiện tại vào context nếu có
+		if (currentPage) {
+			this.logDebug('CONTEXT', `Current page received: ${currentPage}`);
+			// Parse entity và identifier từ URL path
+			const contextInfo = this.parsePageContext(currentPage);
+			if (contextInfo) {
+				const contextMessage = `[CONTEXT] User is currently viewing: ${currentPage}\n[CONTEXT] Entity: ${contextInfo.entity}, Identifier: ${contextInfo.identifier}${contextInfo.type ? `, Type: ${contextInfo.type}` : ''}`;
+				this.addMessageToSession(session, 'system', contextMessage);
+				this.logInfo(
+					'CONTEXT',
+					`Parsed page context: entity=${contextInfo.entity}, identifier=${contextInfo.identifier}, type=${contextInfo.type || 'unknown'}`,
+				);
+			} else {
+				// Fallback: chỉ ghi lại URL nếu không parse được
+				this.addMessageToSession(
+					session,
+					'system',
+					`[CONTEXT] User is currently viewing: ${currentPage}`,
+				);
+				this.logWarn('CONTEXT', `Could not parse page context from: ${currentPage}`);
+			}
+		} else {
+			this.logDebug('CONTEXT', 'No currentPage provided');
+		}
+
 		// Lưu câu hỏi của người dùng vào session
 		this.addMessageToSession(session, 'user', query);
 
 		try {
-			this.logDebug('SESSION', `BẮT ĐẦU XỬ LÝ | session=${session.sessionId}`);
+			this.logDebug(
+				'SESSION',
+				`BẮT ĐẦU XỬ LÝ | session=${session.sessionId}${currentPage ? ` | page=${currentPage}` : ''}`,
+			);
 
 			// ========================================
 			// BƯỚC 2: Agent 1 - Orchestrator Agent
@@ -289,9 +386,12 @@ export class AiService {
 					` | took=${orchestratorTime}ms`,
 			);
 
-			// Xác định mode response dựa trên ý định người dùng (LIST/TABLE/CHART)
-			const desiredMode: 'LIST' | 'TABLE' | 'CHART' =
-				orchestratorResponse.intentModeHint ?? 'TABLE';
+			// Xác định mode response dựa trên ý định người dùng (LIST/TABLE/CHART/INSIGHT)
+			// Ưu tiên MODE_HINT từ Orchestrator (có thể là INSIGHT nếu có currentPageContext)
+			const desiredMode: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT' =
+				orchestratorResponse.intentModeHint === 'INSIGHT'
+					? 'INSIGHT'
+					: (orchestratorResponse.intentModeHint ?? 'TABLE');
 
 			// Lưu hints từ agent vào session để agent SQL hiểu rõ hơn
 			if (orchestratorResponse.entityHint) {
@@ -335,7 +435,9 @@ export class AiService {
 					`Added RELATIONSHIPS hint: ${orchestratorResponse.relationshipsHint}`,
 				);
 			}
-			if (desiredMode === 'CHART') {
+			if (desiredMode === 'INSIGHT') {
+				this.addMessageToSession(session, 'system', '[INTENT] MODE=INSIGHT');
+			} else if (desiredMode === 'CHART') {
 				this.addMessageToSession(session, 'system', '[INTENT] MODE=CHART');
 			} else if (desiredMode === 'LIST') {
 				this.addMessageToSession(session, 'system', '[INTENT] MODE=LIST');
@@ -681,8 +783,12 @@ export class AiService {
 	 */
 	private buildDataPayloadFromParsed(
 		parsedResponse: { list: any[] | null; table: any | null; chart: any | null },
-		_desiredMode?: 'LIST' | 'TABLE' | 'CHART',
+		desiredMode?: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT',
 	): DataPayload | undefined {
+		// INSIGHT mode không có structured data
+		if (desiredMode === 'INSIGHT') {
+			return undefined;
+		}
 		if (parsedResponse.list !== null && parsedResponse.list.length > 0) {
 			return {
 				mode: 'LIST',
@@ -715,8 +821,12 @@ export class AiService {
 	private buildDataPayload(
 		results: unknown,
 		_query: string,
-		desiredMode?: 'LIST' | 'TABLE' | 'CHART',
+		desiredMode?: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT',
 	): DataPayload | undefined {
+		// INSIGHT mode không có structured data
+		if (desiredMode === 'INSIGHT') {
+			return undefined;
+		}
 		if (!Array.isArray(results) || results.length === 0 || typeof results[0] !== 'object') {
 			return undefined;
 		}

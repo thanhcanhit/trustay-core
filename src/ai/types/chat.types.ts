@@ -63,7 +63,7 @@ export interface TableColumn {
 }
 
 export interface DataPayload {
-	mode: 'LIST' | 'TABLE' | 'CHART';
+	mode: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT';
 	list?: {
 		items: readonly ListItem[];
 		total: number;
@@ -163,7 +163,7 @@ export interface OrchestratorAgentResponse {
 	readyForSql: boolean;
 	needsClarification?: boolean;
 	needsIntroduction?: boolean;
-	intentModeHint?: 'LIST' | 'TABLE' | 'CHART';
+	intentModeHint?: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT';
 	entityHint?: 'room' | 'post' | 'room_seeking_post';
 	filtersHint?: string; // natural language filters parsed (e.g., district:"gò vấp")
 	tablesHint?: string; // comma-separated list of tables needed (e.g., "rentals,users,payments")

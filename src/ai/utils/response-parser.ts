@@ -32,6 +32,15 @@ export function parseResponseText(responseText: string): ParsedResponse {
 			const message = (jsonResponse.message || '').replace(/```json[\s\S]*?```/g, '').trim();
 			const payload = jsonResponse.payload || {};
 			const mode = payload.mode || 'LIST';
+			// INSIGHT mode không có structured data
+			if (mode === 'INSIGHT') {
+				return {
+					message,
+					list: null,
+					table: null,
+					chart: null,
+				};
+			}
 			return {
 				message,
 				list: mode === 'LIST' ? payload.list?.items || payload.list || null : null,
