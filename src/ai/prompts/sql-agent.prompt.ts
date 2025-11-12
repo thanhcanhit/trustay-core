@@ -10,6 +10,7 @@ export interface SqlPromptParams {
 	userId?: string;
 	userRole?: string;
 	businessContext?: string;
+	intentAction?: 'search' | 'own' | 'stats'; // Intent action: search (toàn hệ thống), own (cá nhân), stats (thống kê)
 	lastError?: string;
 	lastSql?: string;
 	attempt?: number;
@@ -29,6 +30,7 @@ export function buildSqlPrompt(params: SqlPromptParams): string {
 		userId,
 		userRole,
 		businessContext,
+		intentAction,
 		lastError = '',
 		lastSql = '',
 		attempt = 1,
@@ -88,14 +90,27 @@ QUAN TRỌNG: Trước khi tạo SQL mới, PHẢI:
 	// Build security context if authenticated - let AI generate WHERE clauses
 	let securityContext = '';
 	if (userId && userRole) {
+		// QUAN TRỌNG: Chỉ filter theo userId khi INTENT_ACTION=own (dữ liệu cá nhân)
+		// Khi INTENT_ACTION=search (tìm kiếm toàn hệ thống), KHÔNG filter theo userId
+		const shouldFilterByUser = intentAction === 'own';
+		const intentNote =
+			intentAction === 'search'
+				? '\n- QUAN TRỌNG: INTENT_ACTION=search → Đây là câu hỏi TÌM KIẾM TOÀN HỆ THỐNG\n- KHÔNG BAO GIỜ filter theo userId/owner_id khi INTENT_ACTION=search\n- User đang tìm kiếm dữ liệu công khai trên toàn hệ thống, không phải dữ liệu cá nhân\n- Ví dụ: "tìm phòng", "phòng ở Gò Vấp", "phòng dưới 4 triệu" → KHÔNG filter theo owner_id'
+				: intentAction === 'own'
+					? '\n- QUAN TRỌNG: INTENT_ACTION=own → Đây là câu hỏi về DỮ LIỆU CÁ NHÂN\n- BẮT BUỘC phải filter theo userId để đảm bảo user chỉ truy cập dữ liệu của chính họ\n- Ví dụ: "phòng của tôi", "hóa đơn của tôi", "doanh thu của tôi" → PHẢI filter theo userId/owner_id'
+					: '';
+
 		securityContext = `
 SECURITY REQUIREMENTS:
 - User ID: ${userId}
 - User Role: ${userRole}
+- Intent Action: ${intentAction || 'not specified'}${intentNote}
 - QUAN TRỌNG: Nếu user hỏi về role/thông tin của chính họ, PHẢI SELECT từ bảng users WHERE id = '${userId}'
 - KHÔNG BAO GIỜ hardcode role như SELECT '${userRole}' AS user_role - PHẢI query từ database
-- BẮT BUỘC: Phải thêm WHERE clauses để đảm bảo user chỉ truy cập dữ liệu của chính họ
-- Quy tắc WHERE clauses theo role và loại dữ liệu:
+${
+	shouldFilterByUser
+		? `- BẮT BUỘC: Phải thêm WHERE clauses để đảm bảo user chỉ truy cập dữ liệu của chính họ
+- Quy tắc WHERE clauses theo role và loại dữ liệu (CHỈ ÁP DỤNG KHI INTENT_ACTION=own):
   * Nếu query về bills/hóa đơn:
     - tenant: WHERE rentals.tenant_id = '${userId}' (và JOIN với rentals)
     - landlord: WHERE rentals.owner_id = '${userId}' (và JOIN với rentals)
@@ -104,10 +119,26 @@ SECURITY REQUIREMENTS:
     - tenant: WHERE rentals.tenant_id = '${userId}'
     - landlord: WHERE rentals.owner_id = '${userId}'
   * Nếu query về buildings/tòa nhà/dãy trọ (landlord): WHERE buildings.owner_id = '${userId}'
+  * Nếu query về rooms/phòng trọ (landlord): 
+    - BẮT BUỘC: JOIN rooms → buildings → WHERE buildings.owner_id = '${userId}'
+    - Path: rooms.building_id = buildings.id → buildings.owner_id = '${userId}'
+  * Nếu query về room_instances/phòng cụ thể (landlord):
+    - BẮT BUỘC: JOIN room_instances → rooms → buildings → WHERE buildings.owner_id = '${userId}'
+    - Path: room_instances.room_id = rooms.id → rooms.building_id = buildings.id → buildings.owner_id = '${userId}'
+  * QUAN TRỌNG: KHÔNG BAO GIỜ dùng WHERE EXISTS với rentals để filter owner cho rooms/room_instances
+    - SAI: WHERE EXISTS (SELECT 1 FROM rentals WHERE rentals.owner_id = '${userId}') ❌
+    - Lý do: rentals.owner_id là owner của rental contract, KHÔNG phải owner của room
+    - Chỉ tính phòng đã có rental, bỏ qua phòng chưa có rental → kết quả sai
+    - ĐÚNG: JOIN buildings ON rooms.building_id = buildings.id WHERE buildings.owner_id = '${userId}' ✅
   * Nếu query về bookings/đặt phòng: WHERE room_bookings.tenant_id = '${userId}'
-- Đối với dữ liệu nhạy cảm (bills, payments, rentals), BẮT BUỘC phải có WHERE clauses theo user role
-- CHỈ landlords mới được truy cập statistics/thống kê
-- CHỈ landlords mới được tạo/quản lý rooms
+- Đối với dữ liệu nhạy cảm (bills, payments, rentals), BẮT BUỘC phải có WHERE clauses theo user role (CHỈ KHI INTENT_ACTION=own)
+- CHỈ landlords mới được truy cập statistics/thống kê (CHỈ KHI INTENT_ACTION=own hoặc stats)
+- CHỈ landlords mới được tạo/quản lý rooms`
+		: `- QUAN TRỌNG: INTENT_ACTION=search → KHÔNG filter theo userId/owner_id
+- User đang tìm kiếm dữ liệu công khai trên toàn hệ thống
+- Ví dụ: Tenant tìm phòng → KHÔNG filter theo owner_id, query tất cả phòng trong hệ thống
+- Ví dụ: "phòng ở Gò Vấp", "phòng dưới 4 triệu" → KHÔNG filter theo owner_id`
+}
 
 `;
 	} else {
@@ -192,20 +223,50 @@ Trước khi tạo SQL, PHẢI kiểm tra:
    - Ví dụ: rooms.name ✅, rooms.title ❌ (KHÔNG có column title trong rooms)
    - Nếu cần "title", phải dùng r.name AS title
 
-3. ✅ FOREIGN KEYS: JOIN đúng qua FK không?
+3. ✅ ENUM VALUES (QUAN TRỌNG - PHẢI DÙNG ĐÚNG):
+   - Nhiều cột trong database dùng ENUM type, PHẢI dùng đúng giá trị enum
+   - KHÔNG BAO GIỜ đoán mò enum values - PHẢI kiểm tra trong schema/RAG context
+   - Enum values là snake_case, lowercase, không có spaces, PHẢI có quotes trong SQL string
+   - Các enum quan trọng (theo schema.prisma):
+     * room_instances.status: 'available', 'occupied', 'maintenance', 'reserved', 'unavailable'
+     * rentals.status: 'active', 'terminated', 'expired', 'pending_renewal'
+     * room_bookings.status: 'pending', 'accepted', 'rejected', 'expired', 'cancelled', 'awaiting_confirmation'
+     * room_invitations.status: 'pending', 'accepted', 'rejected', 'expired', 'cancelled', 'awaiting_confirmation'
+     * bills.status: 'draft', 'pending', 'paid', 'overdue', 'cancelled'
+     * payments.payment_type: 'rent', 'deposit', 'utility', 'fee', 'refund'
+     * payments.payment_method: 'bank_transfer', 'cash', 'e_wallet', 'card'
+     * payments.payment_status: 'pending', 'completed', 'failed', 'refunded'
+     * users.role: 'tenant', 'landlord'
+     * rooms.room_type: 'boarding_house', 'dormitory', 'sleepbox', 'apartment', 'whole_house'
+     * room_requests.status: 'active', 'paused', 'closed', 'expired'
+     * roommate_seeking_posts.status: 'draft', 'pending_approval', 'active', 'paused', 'closed', 'expired'
+     * roommate_applications.status: 'pending', 'accepted', 'rejected', 'expired', 'cancelled', 'awaiting_confirmation'
+   - Ví dụ ĐÚNG: 
+     * WHERE ri.status = 'occupied' ✅
+     * WHERE b.status = 'paid' ✅
+     * WHERE p.payment_status = 'completed' ✅
+   - Ví dụ SAI: 
+     * WHERE ri.status = 'Occupied' ❌ (sai case - phải lowercase)
+     * WHERE ri.status = 'occupied ' ❌ (có space)
+     * WHERE ri.status = 'full' ❌ (không phải enum value)
+     * WHERE b.status = 'Paid' ❌ (sai case)
+     * WHERE p.payment_type = 'Rent' ❌ (sai case)
+   - QUAN TRỌNG: Nếu RAG context có enum values, PHẢI dùng đúng values đó
+
+4. ✅ FOREIGN KEYS: JOIN đúng qua FK không?
    - Ví dụ: rooms.building_id = buildings.id ✅
    - KHÔNG join trực tiếp qua tên (ví dụ: rooms.name = buildings.name ❌)
 
-4. ✅ USER QUERY: SQL có đáp ứng đúng câu hỏi không?
+5. ✅ USER QUERY: SQL có đáp ứng đúng câu hỏi không?
    - Nếu hỏi "thống kê" → phải dùng aggregate (SUM, COUNT, AVG)
    - Nếu hỏi "tìm phòng" → phải SELECT danh sách phòng
    - Nếu hỏi "Tôi là gì" → phải SELECT từ users WHERE id = userId
 
-5. ✅ WHERE CLAUSES: Có WHERE clauses đúng cho user authorization không?
+6. ✅ WHERE CLAUSES: Có WHERE clauses đúng cho user authorization không?
    - Nếu user authenticated → PHẢI có WHERE clauses để filter dữ liệu của chính họ
    - Nếu hỏi về thông tin chính họ → PHẢI SELECT từ users WHERE id = userId
 
-6. ✅ LIMIT: Có LIMIT clause không? (trừ aggregate queries)
+7. ✅ LIMIT: Có LIMIT clause không? (trừ aggregate queries)
 
 ═══════════════════════════════════════════════════════════════
 BƯỚC 3: QUY TẮC TẠO SQL (BẮT BUỘC)
@@ -261,19 +322,106 @@ BƯỚC 4: CÁC TRƯỜNG HỢP ĐẶC BIỆT (BẮT BUỘC)
        -- SELECT 'landlord' AS user_role LIMIT 1; ❌
        -- SELECT 'tenant' AS user_role LIMIT 1; ❌
 
-2. QUY TẮC LIÊN KẾT (BẮT BUỘC):
+2. QUY TẮC LIÊN KẾT VÀ FILTER THEO OWNER (BẮT BUỘC - ĐỌC KỸ):
+   
+   A. QUY TẮC CHUNG VỀ JOIN:
    - Chỉ join qua cột FK được định nghĩa trong schema. KHÔNG join trực tiếp entity với bảng lookup theo name.
    - Ưu tiên dùng khóa kỹ thuật (id, *_id). Nếu lọc theo tên/label, dùng EXISTS qua bảng quan hệ.
    - Ví dụ ĐÚNG: rooms.building_id = buildings.id ✅
    - Ví dụ SAI: rooms.name = buildings.name ❌ (KHÔNG join qua tên)
-   - Mẫu đúng khi filter theo name:
-     -- Room Rules by name
-     -- SELECT r.* FROM rooms r
-     -- WHERE EXISTS (
-     --   SELECT 1 FROM room_rules rr
-     --   JOIN room_rule_templates rrt ON rrt.id = rr.rule_template_id
-     --   WHERE rr.room_id = r.id AND rrt.name = 'Không hút thuốc trong phòng'
-     -- ) LIMIT ${limit};
+   
+   B. QUY TẮC XÁC ĐỊNH OWNER CỦA ROOMS/ROOM_INSTANCES (QUAN TRỌNG - BẮT BUỘC TUÂN THEO):
+   
+   RULE 1: OWNERSHIP CHAIN (theo schema.prisma):
+   - Building.ownerId → User (chủ sở hữu tòa nhà)
+   - Room.buildingId → Building (phòng thuộc tòa nhà)
+   - RoomInstance.roomId → Room (phòng cụ thể thuộc loại phòng)
+   - KẾT LUẬN: Owner của RoomInstance = Owner của Building mà Room thuộc về
+   - Path: room_instances → rooms → buildings → buildings.owner_id
+   
+   RULE 2: FILTER THEO OWNER CHO ROOMS/ROOM_INSTANCES (BẮT BUỘC):
+   - Khi filter rooms/room_instances theo owner (landlord), PHẢI JOIN theo path trên
+   - Công thức BẮT BUỘC:
+     * FROM room_instances ri
+     * JOIN rooms r ON ri.room_id = r.id
+     * JOIN buildings b ON r.building_id = b.id
+     * WHERE b.owner_id = '${userId}'
+   - Áp dụng cho: thống kê phòng, tỷ lệ lấp đầy, danh sách phòng của owner
+   
+   RULE 3: KHÔNG BAO GIỜ DÙNG RENTALS ĐỂ FILTER OWNER (QUAN TRỌNG):
+   - rentals.owner_id CHỈ là owner của rental contract, KHÔNG phải owner của room
+   - SAI: WHERE EXISTS (SELECT 1 FROM rentals ren WHERE ren.owner_id = '${userId}') ❌
+   - Lý do SAI:
+     * Chỉ tính các phòng ĐÃ CÓ rental (đã được thuê)
+     * Bỏ qua các phòng CHƯA CÓ rental (chưa được thuê)
+     * Kết quả: Tỷ lệ lấp đầy sai, thống kê thiếu phòng
+   - Ví dụ: Owner có 10 phòng, 3 phòng đã thuê, 7 phòng trống
+     * Dùng WHERE EXISTS với rentals → chỉ tính 3 phòng → tỷ lệ = 100% (SAI)
+     * Dùng JOIN với buildings → tính 10 phòng → tỷ lệ = 30% (ĐÚNG)
+   
+   RULE 4: TỶ LỆ LẤP ĐẦY PHÒNG (OCCUPANCY RATE):
+   - Công thức: occupied_count / total_count
+   - occupied_count: COUNT(*) WHERE room_instances.status = 'occupied'
+   - total_count: COUNT(*) của TẤT CẢ phòng của owner
+   - BẮT BUỘC: Tính TẤT CẢ phòng (JOIN với buildings), không chỉ phòng có rental
+   - SQL ĐÚNG:
+     SELECT 
+       CAST(SUM(CASE WHEN ri.status = 'occupied' THEN 1 ELSE 0 END) AS NUMERIC) / COUNT(ri.id) AS occupancy_rate
+     FROM room_instances ri
+     JOIN rooms r ON ri.room_id = r.id
+     JOIN buildings b ON r.building_id = b.id
+     WHERE b.owner_id = '${userId}'
+       AND ri.is_active = true
+       AND r.is_active = true
+       AND b.is_active = true;
+   
+   RULE 5: KHI NÀO DÙNG RENTALS:
+   - rentals CHỈ dùng khi query về:
+     * Thống kê doanh thu (payments JOIN rentals)
+     * Danh sách hợp đồng thuê (rentals table)
+     * Hóa đơn (bills JOIN rentals)
+   - KHÔNG dùng rentals để filter rooms/room_instances theo owner
+   
+   C. QUY TẮC VỀ ENUM VALUES (BẮT BUỘC - THEO SCHEMA.PRISMA):
+   - Nhiều cột trong database dùng ENUM type, PHẢI dùng đúng giá trị enum
+   - Enum values là snake_case, lowercase, không có spaces, PHẢI có quotes trong SQL string
+   - PHẢI kiểm tra enum values trong schema/RAG context trước khi dùng
+   - Các enum quan trọng thường dùng (theo schema.prisma):
+     * room_instances.status: 'available', 'occupied', 'maintenance', 'reserved', 'unavailable'
+     * rentals.status: 'active', 'terminated', 'expired', 'pending_renewal'
+     * room_bookings.status: 'pending', 'accepted', 'rejected', 'expired', 'cancelled', 'awaiting_confirmation'
+     * room_invitations.status: 'pending', 'accepted', 'rejected', 'expired', 'cancelled', 'awaiting_confirmation'
+     * bills.status: 'draft', 'pending', 'paid', 'overdue', 'cancelled'
+     * payments.payment_type: 'rent', 'deposit', 'utility', 'fee', 'refund'
+     * payments.payment_method: 'bank_transfer', 'cash', 'e_wallet', 'card'
+     * payments.payment_status: 'pending', 'completed', 'failed', 'refunded'
+     * users.role: 'tenant', 'landlord'
+     * rooms.room_type: 'boarding_house', 'dormitory', 'sleepbox', 'apartment', 'whole_house'
+     * room_requests.status: 'active', 'paused', 'closed', 'expired'
+     * roommate_seeking_posts.status: 'draft', 'pending_approval', 'active', 'paused', 'closed', 'expired'
+     * roommate_applications.status: 'pending', 'accepted', 'rejected', 'expired', 'cancelled', 'awaiting_confirmation'
+   - Ví dụ ĐÚNG: 
+     * WHERE ri.status = 'occupied' ✅
+     * WHERE b.status = 'paid' ✅
+     * WHERE p.payment_status = 'completed' AND p.payment_type = 'rent' ✅
+   - Ví dụ SAI: 
+     * WHERE ri.status = 'Occupied' ❌ (sai case - phải lowercase)
+     * WHERE ri.status = 'occupied ' ❌ (có space)
+     * WHERE ri.status = 'full' ❌ (không phải enum value)
+     * WHERE ri.status = occupied ❌ (thiếu quotes)
+     * WHERE b.status = 'Paid' ❌ (sai case)
+     * WHERE p.payment_type = 'Rent' ❌ (sai case)
+   - QUAN TRỌNG: Nếu RAG context có enum values, PHẢI dùng đúng values đó
+   - LƯU Ý: bill_items.item_type là String (không phải enum), có thể là: 'rent', 'utility', 'service', 'other'
+   
+   D. MẪU ĐÚNG KHI FILTER THEO NAME:
+   - Room Rules by name
+   - SELECT r.* FROM rooms r
+   - WHERE EXISTS (
+   -   SELECT 1 FROM room_rules rr
+   -   JOIN room_rule_templates rrt ON rrt.id = rr.rule_template_id
+   -   WHERE rr.room_id = r.id AND rrt.name = 'Không hút thuốc trong phòng'
+   - ) LIMIT ${limit};
 
 ═══════════════════════════════════════════════════════════════
 BƯỚC 5: VÍ DỤ SQL MẪU (THAM KHẢO)
@@ -290,7 +438,28 @@ BƯỚC 5: VÍ DỤ SQL MẪU (THAM KHẢO)
    -- ORDER BY rp.base_price_monthly ASC NULLS LAST
    -- LIMIT ${limit};
 
-3. PHÂN BIỆT LOẠI CÂU HỎI (BẮT BUỘC):
+2. Tỷ lệ lấp đầy phòng của owner (landlord) - VÍ DỤ ĐÚNG:
+   -- SELECT 
+   --   CAST(SUM(CASE WHEN ri.status = 'occupied' THEN 1 ELSE 0 END) AS NUMERIC) / COUNT(ri.id) AS occupancy_rate
+   -- FROM room_instances ri
+   -- JOIN rooms r ON ri.room_id = r.id
+   -- JOIN buildings b ON r.building_id = b.id
+   -- WHERE b.owner_id = '${userId}'
+   --   AND ri.is_active = true
+   --   AND r.is_active = true
+   --   AND b.is_active = true;
+   -- QUAN TRỌNG: JOIN với buildings để filter owner, KHÔNG dùng WHERE EXISTS với rentals
+
+3. Thống kê phòng của owner (landlord) - VÍ DỤ ĐÚNG:
+   -- SELECT COUNT(*) AS total_rooms, 
+   --        SUM(CASE WHEN ri.status = 'occupied' THEN 1 ELSE 0 END) AS occupied_rooms
+   -- FROM room_instances ri
+   -- JOIN rooms r ON ri.room_id = r.id
+   -- JOIN buildings b ON r.building_id = b.id
+   -- WHERE b.owner_id = '${userId}'
+   --   AND ri.is_active = true;
+
+4. PHÂN BIỆT LOẠI CÂU HỎI (BẮT BUỘC):
    - THỐNG KÊ/HÓA ĐƠN/REVENUE (từ khóa: thống kê, hóa đơn, doanh thu, revenue, invoice, tổng, theo tháng/năm, top):
      * Dùng aggregate functions: SUM(), COUNT(), AVG(), MAX(), MIN()
      * GROUP BY theo nhóm (ví dụ: theo tháng, theo loại, theo trạng thái)

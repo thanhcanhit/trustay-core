@@ -44,18 +44,35 @@ YÊU CẦU ĐÁNH GIÁ:
    - Ví dụ: Yêu cầu thống kê nhưng kết quả là danh sách chi tiết → INVALID
    - Ví dụ: Yêu cầu tìm phòng nhưng kết quả là hóa đơn → INVALID
 
-3. QUYẾT ĐỊNH (FAIL-CLOSED):
-   - isValid: true CHỈ KHI SQL và kết quả đều đúng với yêu cầu
-   - isValid: false nếu có BẤT KỲ vấn đề nào (SQL sai, kết quả không hợp lý, thiếu filter)
-   - severity: ERROR (chặn persist) hoặc WARN (cho phép nhưng log)
-   - violations: Danh sách các vi phạm (ví dụ: "SQL thiếu WHERE clause", "Kết quả sai quận")
-   - reason: Giải thích ngắn gọn (ví dụ: "SQL query sai quận", "Kết quả không đúng loại dữ liệu")
+3. QUYẾT ĐỊNH (CHỈ LƯU CÁC CÂU TRẢ LỜI ĐÚNG/CHẤT LƯỢNG):
+   - isValid: true CHỈ KHI SQL đúng và kết quả hợp lý:
+     * SQL match với yêu cầu (đúng entity, đúng filters)
+     * Kết quả đúng loại dữ liệu (thống kê → số, danh sách → mảng)
+     * Có filter BẢO MẬT đầy đủ (WHERE owner_id khi hỏi "của tôi")
+     * Kết quả hợp lý (tìm quận 1 → kết quả là quận 1, không phải quận 2)
+   - isValid: false KHI có lỗi:
+     * SQL sai hoàn toàn (ví dụ: hỏi phòng nhưng query hóa đơn)
+     * Kết quả sai loại dữ liệu (ví dụ: hỏi thống kê nhưng trả về danh sách chi tiết)
+     * Thiếu filter BẢO MẬT quan trọng (ví dụ: thiếu WHERE owner_id khi hỏi "của tôi")
+     * Kết quả sai hoàn toàn (ví dụ: tìm quận 1 mà kết quả là quận 2)
+   - severity: ERROR khi có lỗi nghiêm trọng (isValid=false), WARN khi có vấn đề nhỏ nhưng vẫn đúng (isValid=true)
+   - violations: Liệt kê các vi phạm (nếu có)
+   - reason: Giải thích ngắn gọn
+   
+   QUAN TRỌNG: CHỈ LƯU CÁC CÂU TRẢ LỜI ĐÚNG:
+   - SQL đúng và kết quả hợp lý → isValid: true, severity: không có hoặc OK
+   - SQL đúng nhưng thiếu filter nhỏ → isValid: true, severity: WARN (VẪN LƯU nhưng đánh dấu)
+   - SQL đúng nhưng kết quả rỗng → isValid: true (có thể không có dữ liệu thực tế)
+   - SQL có vấn đề nhỏ nhưng vẫn trả lời được câu hỏi → isValid: true, severity: WARN (VẪN LƯU)
+   - SQL/kết quả SAI HOÀN TOÀN → isValid: false, severity: ERROR (KHÔNG LƯU)
 
-QUY TẮC VALIDATION (BẮT BUỘC):
-1. Match intent: entity/loại dữ liệu SQL = intent Orchestrator → INVALID nếu không match
-2. Match filters: SQL có filter đúng như yêu cầu → INVALID nếu thiếu filter quan trọng
-3. Safety: SQL phải có LIMIT (trừ aggregate), không SELECT *, không bảng ngoài allow-list → ERROR nếu vi phạm
-4. Sanity: Kết quả hợp lý (ví dụ: tìm quận 1 mà kết quả là quận 2) → ERROR nếu không hợp lý
+QUY TẮC VALIDATION (ƯU TIÊN LƯU):
+1. Match intent: entity/loại dữ liệu SQL = intent Orchestrator → ERROR CHỈ KHI sai hoàn toàn (ví dụ: hỏi phòng nhưng trả về hóa đơn). Nếu gần đúng → WARN (vẫn lưu)
+2. Match filters: SQL có filter đúng như yêu cầu → WARN nếu thiếu filter nhỏ (vẫn lưu), ERROR CHỈ KHI thiếu filter BẢO MẬT quan trọng (ví dụ: thiếu WHERE owner_id khi hỏi "của tôi")
+3. Safety: SQL phải có LIMIT (trừ aggregate), không SELECT *, không bảng ngoài allow-list → Đã được kiểm tra ở SQL safety, không cần kiểm tra lại ở đây
+4. Sanity: Kết quả hợp lý → ERROR CHỈ KHI sai hoàn toàn (ví dụ: tìm quận 1 mà kết quả là quận 2). Nếu gần đúng → WARN (vẫn lưu)
+5. Kết quả rỗng: Nếu SQL đúng nhưng không có dữ liệu → VALID (có thể không có dữ liệu thực tế)
+6. Kết quả không hoàn hảo nhưng vẫn trả lời được câu hỏi → VALID với WARN (vẫn lưu để cải thiện sau)
 
 Trả về theo format:
 IS_VALID: true/false

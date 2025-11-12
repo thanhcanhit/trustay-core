@@ -342,6 +342,17 @@ export class AiService {
 			} else {
 				this.addMessageToSession(session, 'system', '[INTENT] MODE=TABLE');
 			}
+			if (orchestratorResponse.intentAction) {
+				this.addMessageToSession(
+					session,
+					'system',
+					`[INTENT] ACTION=${orchestratorResponse.intentAction.toUpperCase()}`,
+				);
+				this.logDebug(
+					'ORCHESTRATOR',
+					`Added INTENT_ACTION hint: ${orchestratorResponse.intentAction}`,
+				);
+			}
 
 			// MVP: Handle clarification when missingParams are present
 			if (
@@ -480,29 +491,46 @@ export class AiService {
 					this.logError('ERROR', 'Error building entity path', error);
 				}
 
-				// MVP: Persist Q&A - Chỉ skip nếu có ERROR severity
-				// WARN severity vẫn cho phép persist để có thể học hỏi
-				if (validation.isValid || validation.severity === 'WARN') {
+				// Persist Q&A - ƯU TIÊN LƯU: Chỉ skip nếu có ERROR severity rõ ràng
+				// isValid=true hoặc WARN severity → lưu để có thể cải thiện sau
+				// CHỈ LƯU CÁC CÂU TRẢ LỜI ĐÚNG/CHẤT LƯỢNG:
+				// - isValid=true (SQL đúng và kết quả hợp lý)
+				// - severity !== 'ERROR' (không có lỗi nghiêm trọng)
+				// - Có SQL và có kết quả (không lưu khi SQL fail hoặc không có kết quả)
+				const shouldPersist =
+					validation.isValid &&
+					validation.severity !== 'ERROR' &&
+					sqlResult.sql &&
+					sqlResult.count >= 0; // Có thể là 0 (không có dữ liệu) nhưng vẫn hợp lệ
+				if (shouldPersist) {
 					try {
 						this.logDebug(
 							'PERSIST',
-							`Đang lưu Q&A vào knowledge store (isValid=${validation.isValid}, severity=${validation.severity})...`,
+							`Đang lưu Q&A vào knowledge store (isValid=${validation.isValid}, severity=${validation.severity || 'none'}, count=${sqlResult.count})...`,
 						);
 						await this.knowledge.saveQAInteraction({
 							question: query,
 							sql: sqlResult.sql,
 							sessionId: session.sessionId,
 							userId: session.userId,
-							context: { count: sqlResult.count },
+							context: { count: sqlResult.count, severity: validation.severity || 'OK' },
 						});
 						this.logDebug('PERSIST', 'Đã lưu Q&A thành công vào knowledge store');
 					} catch (persistErr) {
 						this.logWarn('PERSIST', 'Không thể lưu Q&A vào knowledge store', persistErr);
 					}
 				} else {
+					// Skip khi có lỗi hoặc không hợp lệ
+					const skipReason = !validation.isValid
+						? `isValid=false`
+						: validation.severity === 'ERROR'
+							? `severity=ERROR`
+							: !sqlResult.sql
+								? `no SQL`
+								: `unknown reason`;
 					this.logWarn(
 						'VALIDATOR',
-						`Kết quả không hợp lệ (ERROR), không lưu vào knowledge store: ${validation.reason || 'Unknown error'}`,
+						`Kết quả không đủ chất lượng, không lưu vào knowledge store (${skipReason}): ${validation.reason || 'Unknown error'}`,
 					);
 				}
 

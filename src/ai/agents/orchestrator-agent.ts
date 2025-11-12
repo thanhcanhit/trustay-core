@@ -18,6 +18,43 @@ import {
 export class OrchestratorAgent {
 	private readonly logger = new Logger(OrchestratorAgent.name);
 
+	// Configuration constants
+	private static readonly RECENT_MESSAGES_LIMIT = 4;
+	private static readonly RAG_BUSINESS_LIMIT = 8;
+	private static readonly RAG_BUSINESS_THRESHOLD = 0.6;
+	private static readonly TEMPERATURE = 0.4;
+	private static readonly MAX_OUTPUT_TOKENS = 400;
+	private static readonly LOG_PREVIEW_LENGTH = 200;
+	private static readonly FILTERS_HINT_PREVIEW_LENGTH = 50;
+	private static readonly MIN_PARTS_FOR_MISSING_PARAM = 2;
+	private static readonly FIRST_MESSAGE_USER_COUNT_THRESHOLD = 1;
+	// User role strings
+	private static readonly USER_ROLE_TENANT = 'tenant';
+	private static readonly USER_ROLE_LANDLORD = 'landlord';
+	// Intent action strings
+	private static readonly INTENT_ACTION_OWN = 'own';
+	// Validation strings
+	private static readonly VALIDATION_NONE = 'none';
+	private static readonly VALIDATION_NULL = 'null';
+	private static readonly ANNOTATION_RESPONSE = 'RESPONSE:';
+	// Role tags (internal annotations)
+	private static readonly ROLE_TAG_LANDLORD = '[LANDLORD]';
+	private static readonly ROLE_TAG_TENANT = '[TENANT]';
+	private static readonly ROLE_TAG_GUEST = '[GUEST]';
+	// Delimiters
+	private static readonly DELIMITER_PARAM = '|';
+	private static readonly DELIMITER_KEY_VALUE = ':';
+	private static readonly DELIMITER_EXAMPLES = ',';
+	// Login keywords
+	private static readonly LOGIN_KEYWORD_VI = 'đăng nhập';
+	private static readonly LOGIN_KEYWORD_EN = 'login';
+	// Default messages
+	private static readonly DEFAULT_LOGIN_MESSAGE =
+		'Để xem thông tin dãy trọ/phòng/hóa đơn của bạn, vui lòng đăng nhập vào hệ thống nhé! 🔐';
+	private static readonly DEFAULT_GREETING_MESSAGE =
+		`Xin chào! 👋 Tôi là AI Assistant của Trustay, rất vui được trò chuyện với bạn!\n\nTôi có thể giúp bạn tìm hiểu về dữ liệu phòng trọ, thống kê doanh thu, thông tin người dùng và nhiều thứ khác.\n\nBạn muốn tìm hiểu điều gì? 😊`;
+	private static readonly DEFAULT_SEARCH_MESSAGE = `Tôi sẽ tìm kiếm thông tin cho bạn ngay! 🔍`;
+
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly knowledge: KnowledgeService,
@@ -38,10 +75,12 @@ export class OrchestratorAgent {
 		const userId = session.userId;
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
-			.slice(-4)
+			.slice(-OrchestratorAgent.RECENT_MESSAGES_LIMIT)
 			.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
 			.join('\n');
-		const isFirstMessage = session.messages.filter((m) => m.role === 'user').length <= 1;
+		const isFirstMessage =
+			session.messages.filter((m) => m.role === 'user').length <=
+			OrchestratorAgent.FIRST_MESSAGE_USER_COUNT_THRESHOLD;
 
 		// Get user role from Prisma if authenticated, otherwise GUEST
 		let userRole: UserRole = UserRole.GUEST;
@@ -51,9 +90,9 @@ export class OrchestratorAgent {
 					where: { id: userId },
 					select: { role: true },
 				});
-				if (user?.role === 'tenant') {
+				if (user?.role === OrchestratorAgent.USER_ROLE_TENANT) {
 					userRole = UserRole.TENANT;
-				} else if (user?.role === 'landlord') {
+				} else if (user?.role === OrchestratorAgent.USER_ROLE_LANDLORD) {
 					userRole = UserRole.LANDLORD;
 				}
 			} catch (error) {
@@ -66,8 +105,8 @@ export class OrchestratorAgent {
 		let businessContext = '';
 		try {
 			const ragContext = await this.knowledge.buildRagContext(query, {
-				limit: 8,
-				threshold: 0.6,
+				limit: OrchestratorAgent.RAG_BUSINESS_LIMIT,
+				threshold: OrchestratorAgent.RAG_BUSINESS_THRESHOLD,
 				includeBusiness: true,
 			});
 			businessContext = ragContext.businessBlock || '';
@@ -90,11 +129,13 @@ export class OrchestratorAgent {
 			const { text } = await generateText({
 				model: google(aiConfig.model),
 				prompt: orchestratorPrompt,
-				temperature: 0.4,
-				maxOutputTokens: 400,
+				temperature: OrchestratorAgent.TEMPERATURE,
+				maxOutputTokens: OrchestratorAgent.MAX_OUTPUT_TOKENS,
 			});
 			const response = text.trim();
-			this.logger.debug(`AI response (first 200 chars): ${response.substring(0, 200)}...`);
+			this.logger.debug(
+				`AI response (first ${OrchestratorAgent.LOG_PREVIEW_LENGTH} chars): ${response.substring(0, OrchestratorAgent.LOG_PREVIEW_LENGTH)}...`,
+			);
 			// Log full response for debugging (can be enabled via log level)
 			this.logger.verbose(`Full orchestrator AI response:\n${response}`);
 
@@ -129,24 +170,28 @@ export class OrchestratorAgent {
 				: this.getDefaultResponse(query, isFirstMessage);
 
 			// SECURITY CHECK: If user asks about personal data (INTENT_ACTION=own) but not logged in, force CLARIFICATION
-			if (intentAction === 'own' && !userId) {
+			if (intentAction === OrchestratorAgent.INTENT_ACTION_OWN && !userId) {
 				this.logger.warn(
 					`User asked about personal data (INTENT_ACTION=own) but not logged in. Forcing CLARIFICATION. Query: "${query}"`,
 				);
 				requestType = RequestType.CLARIFICATION;
 				// Override message to request login if not already requesting login
 				if (
-					!message.toLowerCase().includes('đăng nhập') &&
-					!message.toLowerCase().includes('login')
+					!message.toLowerCase().includes(OrchestratorAgent.LOGIN_KEYWORD_VI) &&
+					!message.toLowerCase().includes(OrchestratorAgent.LOGIN_KEYWORD_EN)
 				) {
-					message =
-						'Để xem thông tin dãy trọ/phòng/hóa đơn của bạn, vui lòng đăng nhập vào hệ thống nhé! 🔐';
+					message = OrchestratorAgent.DEFAULT_LOGIN_MESSAGE;
 				}
 			}
 
 			// Remove user role tags from message if present (should not be shown to users)
 			// Tags like [LANDLORD], [TENANT], [GUEST] should only be used internally between agents
-			message = message.replace(/\[(LANDLORD|TENANT|GUEST)\]\s*/g, '').trim();
+			message = message
+				.replace(OrchestratorAgent.ROLE_TAG_LANDLORD, '')
+				.replace(OrchestratorAgent.ROLE_TAG_TENANT, '')
+				.replace(OrchestratorAgent.ROLE_TAG_GUEST, '')
+				.replace(/\s+/g, ' ')
+				.trim();
 
 			// Remove internal annotations that might leak into RESPONSE (defensive cleanup)
 			// These are internal metadata and should never be shown to users
@@ -172,44 +217,44 @@ export class OrchestratorAgent {
 				// MVP: Validate - ignore if empty, "none", "null", or contains RESPONSE text (AI might have mixed up fields)
 				if (
 					paramsStr &&
-					paramsStr !== 'none' &&
-					paramsStr !== 'null' &&
-					!paramsStr.includes('RESPONSE:') &&
-					!paramsStr.includes('[LANDLORD]') &&
-					!paramsStr.includes('[TENANT]') &&
-					!paramsStr.includes('[GUEST]') &&
+					paramsStr !== OrchestratorAgent.VALIDATION_NONE &&
+					paramsStr !== OrchestratorAgent.VALIDATION_NULL &&
+					!paramsStr.includes(OrchestratorAgent.ANNOTATION_RESPONSE) &&
+					!paramsStr.includes(OrchestratorAgent.ROLE_TAG_LANDLORD) &&
+					!paramsStr.includes(OrchestratorAgent.ROLE_TAG_TENANT) &&
+					!paramsStr.includes(OrchestratorAgent.ROLE_TAG_GUEST) &&
 					paramsStr.length > 0
 				) {
 					const params = paramsStr
-						.split('|')
+						.split(OrchestratorAgent.DELIMITER_PARAM)
 						.map((param) => param.trim())
 						.filter((p) => p.length > 0);
 					if (params.length > 0) {
 						missingParams = params
 							.map((param): MissingParam | null => {
-								const parts = param.split(':');
-								if (parts.length >= 2) {
+								const parts = param.split(OrchestratorAgent.DELIMITER_KEY_VALUE);
+								if (parts.length >= OrchestratorAgent.MIN_PARTS_FOR_MISSING_PARAM) {
 									const name = parts[0].trim();
 									const reason = parts[1].trim();
 									// MVP: Validate that name and reason are not empty or user labels
 									if (
 										!name ||
 										!reason ||
-										name === 'none' ||
-										reason === 'none' ||
-										name.includes('[LANDLORD]') ||
-										name.includes('[TENANT]') ||
-										name.includes('[GUEST]') ||
-										reason.includes('[LANDLORD]') ||
-										reason.includes('[TENANT]') ||
-										reason.includes('[GUEST]')
+										name === OrchestratorAgent.VALIDATION_NONE ||
+										reason === OrchestratorAgent.VALIDATION_NONE ||
+										name.includes(OrchestratorAgent.ROLE_TAG_LANDLORD) ||
+										name.includes(OrchestratorAgent.ROLE_TAG_TENANT) ||
+										name.includes(OrchestratorAgent.ROLE_TAG_GUEST) ||
+										reason.includes(OrchestratorAgent.ROLE_TAG_LANDLORD) ||
+										reason.includes(OrchestratorAgent.ROLE_TAG_TENANT) ||
+										reason.includes(OrchestratorAgent.ROLE_TAG_GUEST)
 									) {
 										return null;
 									}
 									const examples =
 										parts.length > 2 && parts[2].trim()
 											? parts[2]
-													.split(',')
+													.split(OrchestratorAgent.DELIMITER_EXAMPLES)
 													.map((e) => e.trim())
 													.filter((e) => e.length > 0 && !e.includes('['))
 											: undefined;
@@ -233,7 +278,7 @@ export class OrchestratorAgent {
 				requestType === RequestType.QUERY && (!missingParams || missingParams.length === 0);
 
 			// SECURITY CHECK: If user asks about personal data but not logged in, force readyForSql=false
-			if (intentAction === 'own' && !userId) {
+			if (intentAction === OrchestratorAgent.INTENT_ACTION_OWN && !userId) {
 				readyForSql = false;
 				this.logger.debug(
 					'Forcing readyForSql=false because INTENT_ACTION=own but userId is missing',
@@ -245,11 +290,12 @@ export class OrchestratorAgent {
 				readyForSql || requestType !== RequestType.QUERY ? undefined : missingParams;
 
 			const parsedTablesHint =
-				tablesMatch?.[1]?.trim() && tablesMatch[1].trim() !== 'none'
+				tablesMatch?.[1]?.trim() && tablesMatch[1].trim() !== OrchestratorAgent.VALIDATION_NONE
 					? tablesMatch[1].trim()
 					: undefined;
 			const parsedRelationshipsHint =
-				relationshipsMatch?.[1]?.trim() && relationshipsMatch[1].trim() !== 'none'
+				relationshipsMatch?.[1]?.trim() &&
+				relationshipsMatch[1].trim() !== OrchestratorAgent.VALIDATION_NONE
 					? relationshipsMatch[1].trim()
 					: undefined;
 
@@ -259,8 +305,8 @@ export class OrchestratorAgent {
 					`${parsedTablesHint ? `, tablesHint: ${parsedTablesHint}` : ''}` +
 					`${parsedRelationshipsHint ? `, relationshipsHint: ${parsedRelationshipsHint}` : ''}` +
 					`${modeMatch ? `, modeHint: ${modeMatch[1]}` : ''}` +
-					`${entityMatch && entityMatch[1] !== 'none' ? `, entityHint: ${entityMatch[1]}` : ''}` +
-					`${filtersMatch ? `, filtersHint: ${filtersMatch[1].trim().substring(0, 50)}` : ''}`,
+					`${entityMatch && entityMatch[1] !== OrchestratorAgent.VALIDATION_NONE ? `, entityHint: ${entityMatch[1]}` : ''}` +
+					`${filtersMatch ? `, filtersHint: ${filtersMatch[1].trim().substring(0, OrchestratorAgent.FILTERS_HINT_PREVIEW_LENGTH)}` : ''}`,
 			);
 
 			return {
@@ -277,12 +323,13 @@ export class OrchestratorAgent {
 				needsIntroduction: requestType === RequestType.GREETING,
 				intentModeHint: modeMatch ? (modeMatch[1] as 'LIST' | 'TABLE' | 'CHART') : undefined,
 				entityHint:
-					entityMatch && entityMatch[1] !== 'none'
+					entityMatch && entityMatch[1] !== OrchestratorAgent.VALIDATION_NONE
 						? (entityMatch[1] as 'room' | 'post' | 'room_seeking_post')
 						: undefined,
 				filtersHint: filtersMatch ? filtersMatch[1].trim() : undefined,
 				tablesHint: parsedTablesHint,
 				relationshipsHint: parsedRelationshipsHint,
+				intentAction: intentAction as 'search' | 'own' | 'stats' | undefined,
 			};
 		} catch (error) {
 			this.logger.error('Orchestrator agent error:', error);
@@ -306,7 +353,7 @@ export class OrchestratorAgent {
 	 */
 	private getDefaultResponse(_query: string, isFirstMessage: boolean): string {
 		return isFirstMessage
-			? `Xin chào! 👋 Tôi là AI Assistant của Trustay, rất vui được trò chuyện với bạn!\n\nTôi có thể giúp bạn tìm hiểu về dữ liệu phòng trọ, thống kê doanh thu, thông tin người dùng và nhiều thứ khác.\n\nBạn muốn tìm hiểu điều gì? 😊`
-			: `Tôi sẽ tìm kiếm thông tin cho bạn ngay! 🔍`;
+			? OrchestratorAgent.DEFAULT_GREETING_MESSAGE
+			: OrchestratorAgent.DEFAULT_SEARCH_MESSAGE;
 	}
 }

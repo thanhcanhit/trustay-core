@@ -169,6 +169,7 @@ export interface OrchestratorAgentResponse {
 	tablesHint?: string; // comma-separated list of tables needed (e.g., "rentals,users,payments")
 	relationshipsHint?: string; // relationships and JOINs needed (e.g., rentals→users(tenant), payments→rentals→users(owner))
 	missingParams?: MissingParam[]; // MVP: Missing parameters for clarification
+	intentAction?: 'search' | 'own' | 'stats'; // Intent action: search (toàn hệ thống), own (cá nhân), stats (thống kê)
 }
 
 /**

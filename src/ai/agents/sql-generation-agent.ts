@@ -22,6 +22,43 @@ export interface AiConfig {
 export class SqlGenerationAgent {
 	private readonly logger = new Logger(SqlGenerationAgent.name);
 
+	// Configuration constants
+	private static readonly RECENT_MESSAGES_LIMIT = 5;
+	private static readonly MAX_ATTEMPTS = 5;
+	private static readonly RETRY_DELAY_MS = 1000;
+	private static readonly MAX_CONSECUTIVE_SAME_ERROR = 2; // Stop early if same error repeats
+	// Canonical thresholds
+	private static readonly CANONICAL_HARD_THRESHOLD = 0.95;
+	private static readonly CANONICAL_SOFT_THRESHOLD = 0.8;
+	// RAG thresholds (increased for better precision with table_complete chunks)
+	private static readonly RAG_SCHEMA_THRESHOLD = 0.65; // Slightly higher for better precision
+	private static readonly RAG_QA_THRESHOLD = 0.6;
+	// Dynamic limit calculation (optimized for 1 chunk per table strategy)
+	private static readonly DYNAMIC_LIMIT_BASE = 1; // Base chunks for general context (reduced from 2)
+	private static readonly DYNAMIC_LIMIT_TABLE_MULTIPLIER = 1; // 1 chunk per table (since we use table_complete chunks)
+	private static readonly DYNAMIC_LIMIT_RELATIONSHIP_MULTIPLIER = 0; // Relationships are included in table chunks
+	private static readonly DYNAMIC_LIMIT_HARD_CAP = 6; // Reduced cap to prevent token overflow (reduced from 10)
+	// Preview lengths
+	private static readonly CHUNK_PREVIEW_LENGTH = 200;
+	private static readonly SQL_PREVIEW_LENGTH = 200;
+	// QA limit
+	private static readonly QA_EXAMPLES_LIMIT = 2; // Reduced from 8 to 2
+	// Max chunk content length (truncate if exceeds)
+	private static readonly MAX_CHUNK_CONTENT_LENGTH = 8000; // Max 8KB per chunk to prevent token overflow
+	// Message labels
+	private static readonly LABEL_USER = 'Người dùng';
+	private static readonly LABEL_AI = 'AI';
+	// Validation strings
+	private static readonly VALIDATION_NONE = 'none';
+	// Delimiters
+	private static readonly DELIMITER_TABLES = ',';
+	private static readonly DELIMITER_RELATIONSHIPS = '→';
+	// Canonical modes
+	private static readonly CANONICAL_MODE_REUSE = 'reuse';
+	private static readonly CANONICAL_MODE_HINT = 'hint';
+	// SQL commands
+	private static readonly SQL_COMMAND_SELECT = 'select';
+
 	constructor(private readonly knowledgeService?: KnowledgeService) {}
 
 	/**
@@ -67,8 +104,11 @@ export class SqlGenerationAgent {
 	): Promise<SqlGenerationResult> {
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
-			.slice(-5)
-			.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
+			.slice(-SqlGenerationAgent.RECENT_MESSAGES_LIMIT)
+			.map(
+				(m) =>
+					`${m.role === 'user' ? SqlGenerationAgent.LABEL_USER : SqlGenerationAgent.LABEL_AI}: ${m.content}`,
+			)
 			.join('\n');
 		const userId = session.userId;
 		// Get user role if authenticated - AI will handle security via prompt
@@ -88,72 +128,95 @@ export class SqlGenerationAgent {
 				// Check for canonical SQL to use as hint (never execute directly)
 				// Always regenerate SQL based on current schema to handle schema changes
 				canonicalDecision = await this.knowledgeService.decideCanonicalReuse(query, {
-					hard: 0.95, // Very high threshold - only exact matches
-					soft: 0.8, // Use as hint for similar queries
+					hard: SqlGenerationAgent.CANONICAL_HARD_THRESHOLD, // Very high threshold - only exact matches
+					soft: SqlGenerationAgent.CANONICAL_SOFT_THRESHOLD, // Use as hint for similar queries
 				});
 				// NOTE: We never execute canonical SQL directly anymore
 				// Always regenerate to ensure SQL matches current schema
 				// Canonical SQL is only used as a hint/reference in the prompt
-				if (canonicalDecision?.mode === 'reuse') {
+				if (canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE) {
 					this.logger.debug(
 						`Canonical match found (score=${canonicalDecision.score.toFixed(4)}) - Will use as hint only, still regenerating SQL from current schema`,
 					);
 					// Convert 'reuse' to 'hint' to ensure we still fetch RAG and regenerate
 					canonicalDecision = {
 						...canonicalDecision,
-						mode: 'hint' as const,
+						mode: SqlGenerationAgent.CANONICAL_MODE_HINT,
 					};
 				}
 				// Step 1: always fetch schema context
 				// Enhance query with table hints from orchestrator if available
-				// This helps vector search match with table_overview, relationship, and column_detail chunks
+				// This helps vector search match with table_complete chunks (1 chunk per table)
 				const tablesHint = this.extractTablesHint(session);
 				const relationshipsHint = this.extractRelationshipsHint(session);
+				// Enhanced query: add table names to help vector search find relevant table_complete chunks
+				// Format: "query table1 table2 table3" - helps match table_name field in chunks
 				const enhancedQuery = tablesHint
 					? `${query} ${tablesHint
-							.split(',')
+							.split(SqlGenerationAgent.DELIMITER_TABLES)
 							.map((t) => t.trim())
+							.filter((t) => t.length > 0)
 							.join(' ')}`
 					: query;
 
 				this.logger.debug(
 					`RAG Context Setup:` +
-						`${tablesHint ? `\n  - TABLES_HINT: ${tablesHint}` : '\n  - TABLES_HINT: none'}` +
-						`${relationshipsHint ? `\n  - RELATIONSHIPS_HINT: ${relationshipsHint}` : '\n  - RELATIONSHIPS_HINT: none'}` +
+						`${tablesHint ? `\n  - TABLES_HINT: ${tablesHint}` : `\n  - TABLES_HINT: ${SqlGenerationAgent.VALIDATION_NONE}`}` +
+						`${relationshipsHint ? `\n  - RELATIONSHIPS_HINT: ${relationshipsHint}` : `\n  - RELATIONSHIPS_HINT: ${SqlGenerationAgent.VALIDATION_NONE}`}` +
 						`${tablesHint ? `\n  - Enhanced query: "${query}" → "${enhancedQuery}"` : ''}`,
 				);
 
 				// Dynamic limit based on number of tables in TABLES_HINT
-				// Semantic chunking strategy: each column = 1 chunk, so we need more chunks for tables with many columns
-				// Formula: base (5) + tables_count * 5 + relationships_count * 2
-				// This ensures we get enough chunks without overwhelming the context window
-				const tablesCount = tablesHint ? tablesHint.split(',').length : 0;
-				const relationshipsCount = relationshipsHint ? relationshipsHint.split('→').length - 1 : 0;
+				// Optimized for 1 chunk per table strategy (table_complete chunks)
+				// Formula: base (2) + tables_count * 1
+				// Each table_complete chunk contains all columns and relationships, so we only need 1 chunk per table
+				const tablesCount = tablesHint
+					? tablesHint.split(SqlGenerationAgent.DELIMITER_TABLES).length
+					: 0;
 				const dynamicLimit = Math.min(
-					5 + tablesCount * 5 + relationshipsCount * 2, // Dynamic calculation
-					25, // Hard cap to prevent token overflow (safety limit)
+					SqlGenerationAgent.DYNAMIC_LIMIT_BASE +
+						tablesCount * SqlGenerationAgent.DYNAMIC_LIMIT_TABLE_MULTIPLIER, // 1 chunk per table
+					SqlGenerationAgent.DYNAMIC_LIMIT_HARD_CAP, // Hard cap to prevent token overflow
 				);
 				this.logger.debug(
-					`Dynamic limit calculation: base=5, tables=${tablesCount}, relationships=${relationshipsCount} → limit=${dynamicLimit}`,
+					`Dynamic limit calculation: base=${SqlGenerationAgent.DYNAMIC_LIMIT_BASE}, tables=${tablesCount} → limit=${dynamicLimit} (optimized for 1 chunk per table)`,
 				);
 				const schemaResults = await this.knowledgeService.retrieveSchemaContext(enhancedQuery, {
 					limit: dynamicLimit,
-					threshold: 0.6,
+					threshold: SqlGenerationAgent.RAG_SCHEMA_THRESHOLD,
 				});
 
 				// Log preview of each schema chunk (first 200 chars)
 				if (schemaResults.length > 0) {
 					this.logger.debug(`RAG Schema Chunks (${schemaResults.length} chunks):`);
 					schemaResults.forEach((chunk, index) => {
-						const preview = chunk.content.substring(0, 200);
-						const truncated = chunk.content.length > 200 ? '...' : '';
+						const preview = chunk.content.substring(0, SqlGenerationAgent.CHUNK_PREVIEW_LENGTH);
+						const truncated =
+							chunk.content.length > SqlGenerationAgent.CHUNK_PREVIEW_LENGTH ? '...' : '';
 						this.logger.debug(
 							`  [${index + 1}/${schemaResults.length}] Chunk preview (${chunk.content.length} chars): ${preview}${truncated}`,
 						);
 					});
 				}
 
-				const schemaContext = schemaResults.map((r) => r.content).join('\n');
+				// Truncate chunks that are too large to prevent token overflow
+				const schemaContext = schemaResults
+					.map((r) => {
+						if (r.content.length > SqlGenerationAgent.MAX_CHUNK_CONTENT_LENGTH) {
+							// Truncate but keep JSON structure intact
+							const truncated = r.content.substring(0, SqlGenerationAgent.MAX_CHUNK_CONTENT_LENGTH);
+							// Try to find last complete JSON object/array
+							const lastBrace = truncated.lastIndexOf('}');
+							const lastBracket = truncated.lastIndexOf(']');
+							const cutPoint = Math.max(lastBrace, lastBracket);
+							if (cutPoint > SqlGenerationAgent.MAX_CHUNK_CONTENT_LENGTH * 0.8) {
+								return `${truncated.substring(0, cutPoint + 1)}\n... (truncated)`;
+							}
+							return `${truncated}\n... (truncated)`;
+						}
+						return r.content;
+					})
+					.join('\n\n');
 				ragContext = schemaContext
 					? `RELEVANT SCHEMA CONTEXT (from vector search):\n${schemaContext}\n`
 					: '';
@@ -164,32 +227,43 @@ export class SqlGenerationAgent {
 				}
 
 				// Step 2: optionally fetch QA examples when helpful (e.g., canonical hint)
-				const needExamples = canonicalDecision?.mode === 'hint';
+				const needExamples = canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT;
 				if (needExamples) {
 					const qaResults = await this.knowledgeService.retrieveKnowledgeContext(query, {
-						limit: 8,
-						threshold: 0.6,
+						limit: SqlGenerationAgent.QA_EXAMPLES_LIMIT,
+						threshold: SqlGenerationAgent.RAG_QA_THRESHOLD,
 					});
 
 					// Log preview of QA chunks
 					if (qaResults.length > 0) {
 						this.logger.debug(`RAG QA Chunks (${qaResults.length} chunks):`);
 						qaResults.slice(0, 2).forEach((chunk, index) => {
-							const preview = chunk.content.substring(0, 200);
-							const truncated = chunk.content.length > 200 ? '...' : '';
+							const preview = chunk.content.substring(0, SqlGenerationAgent.CHUNK_PREVIEW_LENGTH);
+							const truncated =
+								chunk.content.length > SqlGenerationAgent.CHUNK_PREVIEW_LENGTH ? '...' : '';
 							this.logger.debug(
 								`  [${index + 1}/2] QA preview (${chunk.content.length} chars): ${preview}${truncated}`,
 							);
 						});
 					}
 
+					// Limit QA examples and truncate if too long
 					const qaContext = qaResults
 						.slice(0, 2)
-						.map((r) => r.content)
-						.join('\n');
+						.map((r) => {
+							// Truncate QA content if too long (max 2000 chars per QA)
+							if (r.content.length > 2000) {
+								return `${r.content.substring(0, 2000)}... (truncated)`;
+							}
+							return r.content;
+						})
+						.join('\n\n');
 					ragContext += qaContext ? `RELEVANT Q&A EXAMPLES:\n${qaContext}\n` : '';
 				}
-				if (canonicalDecision?.mode === 'hint' || canonicalDecision?.mode === 'reuse') {
+				if (
+					canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT ||
+					canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE
+				) {
 					ragContext += `\nCANONICAL SQL HINT (score=${canonicalDecision.score.toFixed(2)}, REFERENCE ONLY - schema may have changed):\n`;
 					ragContext += `Original question: ${canonicalDecision.question}\nPrevious SQL (for reference only):\n${canonicalDecision.sql}\n`;
 					ragContext += `\n⚠️ LƯU Ý QUAN TRỌNG: SQL trên chỉ là THAM KHẢO từ lần trước.\n`;
@@ -202,8 +276,8 @@ export class SqlGenerationAgent {
 				this.logger.debug(
 					`RAG retrieval completed:` +
 						`\n  - Schema chunks: ${schemaResults.length}` +
-						`${canonicalDecision?.mode === 'hint' || canonicalDecision?.mode === 'reuse' ? '\n  - Canonical hint: included (reference only)' : ''}` +
-						`${canonicalDecision?.mode === 'hint' ? '\n  - QA examples: included' : ''}` +
+						`${canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT || canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE ? '\n  - Canonical hint: included (reference only)' : ''}` +
+						`${canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT ? '\n  - QA examples: included' : ''}` +
 						`${ragContext.length > 0 ? `\n  - RAG context length: ${ragContext.length} chars` : '\n  - RAG context: empty (using fallback schema)'}`,
 				);
 			} catch (ragError) {
@@ -214,7 +288,8 @@ export class SqlGenerationAgent {
 		let lastError: string = '';
 		let lastSql: string = '';
 		let attempts = 0;
-		const maxAttempts = 5;
+		const maxAttempts = SqlGenerationAgent.MAX_ATTEMPTS;
+		let consecutiveSameError = 0;
 
 		// Log SQL generation start
 		this.logger.debug(
@@ -235,6 +310,7 @@ export class SqlGenerationAgent {
 						`SQL Regeneration attempt ${attempts}/${maxAttempts} (previous error: ${lastError.substring(0, 100)})`,
 					);
 				}
+				const intentAction = this.extractIntentAction(session);
 				const contextualPrompt = buildSqlPrompt({
 					query,
 					schema: dbSchema,
@@ -243,6 +319,7 @@ export class SqlGenerationAgent {
 					userId,
 					userRole,
 					businessContext,
+					intentAction, // Intent action: search (toàn hệ thống) vs own (cá nhân)
 					lastError, // Error từ lần attempt trước → AI tự sửa lỗi
 					lastSql, // SQL cũ để AI biết cần sửa gì
 					attempt: attempts,
@@ -263,7 +340,7 @@ export class SqlGenerationAgent {
 					sql += ';';
 				}
 				const sqlLower = sql.toLowerCase().trim();
-				if (!sqlLower.startsWith('select')) {
+				if (!sqlLower.startsWith(SqlGenerationAgent.SQL_COMMAND_SELECT)) {
 					throw new Error('Only SELECT queries are allowed for security reasons');
 				}
 
@@ -309,11 +386,32 @@ export class SqlGenerationAgent {
 			} catch (error) {
 				// Vòng phản hồi tự sửa lỗi: Lưu error và SQL cũ để truyền vào prompt lần sau
 				// AI sẽ tự động sửa SQL dựa trên error message và SQL cũ này
-				lastError = this.extractPrismaErrorMessage(error);
+				const currentError = this.extractPrismaErrorMessage(error);
+
+				// Detect if same error repeats (early exit to save resources)
+				const isSameError = lastError && currentError === lastError;
+				if (isSameError) {
+					consecutiveSameError++;
+				} else {
+					consecutiveSameError = 1;
+				}
+
+				// Early exit if same error repeats (AI is not learning from previous attempts)
+				if (consecutiveSameError >= SqlGenerationAgent.MAX_CONSECUTIVE_SAME_ERROR) {
+					this.logger.error(
+						`[SQL Regeneration] Same error repeated ${consecutiveSameError} times. Stopping early to save resources. Error: ${currentError}`,
+					);
+					throw new Error(
+						`Failed to generate valid SQL after ${attempts} attempts. Same error repeated ${consecutiveSameError} times: ${currentError}`,
+					);
+				}
+
+				lastError = currentError;
+
 				// Log SQL cũ để debug
 				if (lastSql) {
 					this.logger.warn(
-						`[SQL Regeneration] Attempt ${attempts}/${maxAttempts} failed. Previous SQL: ${lastSql.substring(0, 200)}${lastSql.length > 200 ? '...' : ''}`,
+						`[SQL Regeneration] Attempt ${attempts}/${maxAttempts} failed. Previous SQL: ${lastSql.substring(0, SqlGenerationAgent.SQL_PREVIEW_LENGTH)}${lastSql.length > SqlGenerationAgent.SQL_PREVIEW_LENGTH ? '...' : ''}`,
 					);
 				}
 				this.logger.warn(
@@ -325,7 +423,7 @@ export class SqlGenerationAgent {
 					);
 				}
 				// Delay để tránh rate limiting
-				await new Promise((resolve) => setTimeout(resolve, 1000));
+				await new Promise((resolve) => setTimeout(resolve, SqlGenerationAgent.RETRY_DELAY_MS));
 			}
 		}
 	}
@@ -358,7 +456,7 @@ export class SqlGenerationAgent {
 		const dbSchema = getCompleteDatabaseSchema();
 		let lastError: string = '';
 		let attempts = 0;
-		const maxAttempts = 5;
+		const maxAttempts = SqlGenerationAgent.MAX_ATTEMPTS;
 		while (attempts < maxAttempts) {
 			attempts++;
 			try {
@@ -386,7 +484,7 @@ export class SqlGenerationAgent {
 					sql += ';';
 				}
 				const sqlLower = sql.toLowerCase().trim();
-				if (!sqlLower.startsWith('select')) {
+				if (!sqlLower.startsWith(SqlGenerationAgent.SQL_COMMAND_SELECT)) {
 					throw new Error('Only SELECT queries are allowed for security reasons');
 				}
 				const results = await prisma.$queryRawUnsafe(sql);
@@ -411,7 +509,7 @@ export class SqlGenerationAgent {
 						`Failed to generate valid SQL after ${maxAttempts} attempts. Last error: ${lastError}`,
 					);
 				}
-				await new Promise((resolve) => setTimeout(resolve, 1000));
+				await new Promise((resolve) => setTimeout(resolve, SqlGenerationAgent.RETRY_DELAY_MS));
 			}
 		}
 	}
@@ -444,6 +542,25 @@ export class SqlGenerationAgent {
 		if (relationshipsMessage) {
 			const match = relationshipsMessage.content.match(/\[INTENT\] RELATIONSHIPS=(.+)/);
 			return match?.[1]?.trim();
+		}
+		return undefined;
+	}
+
+	/**
+	 * Extract intent action from session messages
+	 * @param session - Chat session
+	 * @returns Intent action ('search' | 'own' | 'stats') or undefined
+	 */
+	private extractIntentAction(session: ChatSession): 'search' | 'own' | 'stats' | undefined {
+		const actionMessage = session.messages
+			.filter((m) => m.role === 'system')
+			.find((m) => m.content.startsWith('[INTENT] ACTION='));
+		if (actionMessage) {
+			const match = actionMessage.content.match(/\[INTENT\] ACTION=(.+)/);
+			const action = match?.[1]?.trim().toLowerCase();
+			if (action === 'search' || action === 'own' || action === 'stats') {
+				return action;
+			}
 		}
 		return undefined;
 	}
