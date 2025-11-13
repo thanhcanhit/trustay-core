@@ -109,13 +109,23 @@ export class AiService {
 		return Date.now();
 	}
 
-	private logPipelineEnd(sessionId: string, outcome: string, startedAtMs: number): void {
+	private logPipelineEnd(
+		sessionId: string,
+		outcome: string,
+		startedAtMs: number,
+		tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number },
+	): void {
 		const tookMs = Date.now() - startedAtMs;
 		const bannerTop = '===================== END PIPELINE =====================';
 		const bannerBottom = '========================================================';
 		const header = `PIPELINE@ai.service.ts | session=${sessionId}`;
 		this.logger.log(`${bannerTop}`);
 		this.logger.log(`[${header}] outcome=${outcome} took=${tookMs}ms`);
+		if (tokenUsage) {
+			this.logger.log(
+				`[${header}] tokens: prompt=${tokenUsage.promptTokens} completion=${tokenUsage.completionTokens} total=${tokenUsage.totalTokens}`,
+			);
+		}
 		this.logger.log(`${bannerBottom}`);
 	}
 
@@ -648,6 +658,25 @@ export class AiService {
 					payload: dataPayload,
 				});
 
+				// Tích lũy token usage từ tất cả các agent
+				const totalTokenUsage = {
+					promptTokens:
+						(orchestratorResponse.tokenUsage?.promptTokens || 0) +
+						(sqlResult.tokenUsage?.promptTokens || 0) +
+						(validation.tokenUsage?.promptTokens || 0) +
+						(parsedResponse.meta?.tokenUsage?.promptTokens || 0),
+					completionTokens:
+						(orchestratorResponse.tokenUsage?.completionTokens || 0) +
+						(sqlResult.tokenUsage?.completionTokens || 0) +
+						(validation.tokenUsage?.completionTokens || 0) +
+						(parsedResponse.meta?.tokenUsage?.completionTokens || 0),
+					totalTokens:
+						(orchestratorResponse.tokenUsage?.totalTokens || 0) +
+						(sqlResult.tokenUsage?.totalTokens || 0) +
+						(validation.tokenUsage?.totalTokens || 0) +
+						(parsedResponse.meta?.tokenUsage?.totalTokens || 0),
+				};
+
 				// Trả về response với payload structured cho UI
 				const response: ChatResponse = {
 					kind: 'DATA',
@@ -656,7 +685,7 @@ export class AiService {
 					message: parsedResponse.message,
 					payload: dataPayload,
 				};
-				this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt);
+				this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt, totalTokenUsage);
 				return response;
 			} else {
 				// ========================================
@@ -679,7 +708,12 @@ export class AiService {
 						message: messageText,
 						payload: { mode: 'CLARIFY', questions: [] },
 					};
-					this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt);
+					this.logPipelineEnd(
+						session.sessionId,
+						response.kind,
+						pipelineStartAt,
+						orchestratorResponse.tokenUsage,
+					);
 					return response;
 				} else {
 					// General chat or greeting
@@ -696,7 +730,12 @@ export class AiService {
 						message: cleanedMessage,
 						payload: { mode: 'CONTENT' },
 					};
-					this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt);
+					this.logPipelineEnd(
+						session.sessionId,
+						response.kind,
+						pipelineStartAt,
+						orchestratorResponse.tokenUsage,
+					);
 					return response;
 				}
 			}

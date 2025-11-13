@@ -7,6 +7,14 @@ export interface ParsedResponse {
 	list: any[] | null;
 	table: any | null;
 	chart: any | null;
+	meta?: {
+		tokenUsage?: {
+			promptTokens: number;
+			completionTokens: number;
+			totalTokens: number;
+		};
+		[key: string]: any;
+	};
 }
 
 /**
@@ -39,6 +47,7 @@ export function parseResponseText(responseText: string): ParsedResponse {
 					list: null,
 					table: null,
 					chart: null,
+					meta: jsonResponse.meta || undefined,
 				};
 			}
 			return {
@@ -46,6 +55,7 @@ export function parseResponseText(responseText: string): ParsedResponse {
 				list: mode === 'LIST' ? payload.list?.items || payload.list || null : null,
 				table: mode === 'TABLE' ? payload.table || null : null,
 				chart: mode === 'CHART' ? payload.chart || null : null,
+				meta: jsonResponse.meta || undefined,
 			};
 		}
 	} catch {

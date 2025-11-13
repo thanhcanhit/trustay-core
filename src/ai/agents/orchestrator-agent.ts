@@ -160,13 +160,23 @@ export class OrchestratorAgent {
 
 		try {
 			this.logger.debug(`Generating orchestrator response for query: "${query}"`);
-			const { text } = await generateText({
+			const { text, usage } = await generateText({
 				model: google(aiConfig.model),
 				prompt: orchestratorPrompt,
 				temperature: OrchestratorAgent.TEMPERATURE,
 				maxOutputTokens: OrchestratorAgent.MAX_OUTPUT_TOKENS,
 			});
 			const response = text.trim();
+			const tokenUsage = usage
+				? {
+						promptTokens: (usage as any).promptTokens || (usage as any).prompt || 0,
+						completionTokens: (usage as any).completionTokens || (usage as any).completion || 0,
+						totalTokens:
+							(usage as any).totalTokens ||
+							((usage as any).promptTokens || (usage as any).prompt || 0) +
+								((usage as any).completionTokens || (usage as any).completion || 0),
+					}
+				: undefined;
 			this.logger.debug(
 				`AI response (first ${OrchestratorAgent.LOG_PREVIEW_LENGTH} chars): ${response.substring(0, OrchestratorAgent.LOG_PREVIEW_LENGTH)}...`,
 			);
@@ -366,6 +376,7 @@ export class OrchestratorAgent {
 				tablesHint: parsedTablesHint,
 				relationshipsHint: parsedRelationshipsHint,
 				intentAction: intentAction as 'search' | 'own' | 'stats' | undefined,
+				tokenUsage,
 			};
 		} catch (error) {
 			this.logger.error('Orchestrator agent error:', error);
@@ -377,6 +388,7 @@ export class OrchestratorAgent {
 				businessContext: businessContext || undefined,
 				readyForSql: false,
 				needsClarification: true,
+				tokenUsage: undefined,
 			};
 		}
 	}

@@ -7,7 +7,7 @@ import {
 	getNoResultsMessage,
 	getSuccessMessage,
 } from '../prompts/response-generator.prompt';
-import { ChatSession, SqlGenerationResult } from '../types/chat.types';
+import { ChatSession, SqlGenerationResult, TokenUsage } from '../types/chat.types';
 import {
 	inferColumns,
 	isListLike,
@@ -91,13 +91,23 @@ export class ResponseGenerator {
 			});
 
 			try {
-				const { text } = await generateText({
+				const { text, usage } = await generateText({
 					model: google(aiConfig.model),
 					prompt: insightPrompt,
 					temperature: ResponseGenerator.TEMPERATURE,
 					maxOutputTokens: ResponseGenerator.MAX_OUTPUT_TOKENS_INSIGHT,
 				});
 				const messageText = text.trim();
+				const tokenUsage: TokenUsage | undefined = usage
+					? {
+							promptTokens: (usage as any).promptTokens || (usage as any).prompt || 0,
+							completionTokens: (usage as any).completionTokens || (usage as any).completion || 0,
+							totalTokens:
+								(usage as any).totalTokens ||
+								((usage as any).promptTokens || (usage as any).prompt || 0) +
+									((usage as any).completionTokens || (usage as any).completion || 0),
+						}
+					: undefined;
 
 				return JSON.stringify({
 					message: messageText,
@@ -109,6 +119,7 @@ export class ResponseGenerator {
 					},
 					meta: {
 						sessionId: session.sessionId,
+						tokenUsage,
 					},
 				});
 			} catch (error) {
@@ -152,13 +163,23 @@ export class ResponseGenerator {
 		});
 
 		try {
-			const { text } = await generateText({
+			const { text, usage } = await generateText({
 				model: google(aiConfig.model),
 				prompt: finalPrompt,
 				temperature: ResponseGenerator.TEMPERATURE,
 				maxOutputTokens: ResponseGenerator.MAX_OUTPUT_TOKENS_FINAL,
 			});
 			const messageText = text.trim();
+			const tokenUsage: TokenUsage | undefined = usage
+				? {
+						promptTokens: (usage as any).promptTokens || (usage as any).prompt || 0,
+						completionTokens: (usage as any).completionTokens || (usage as any).completion || 0,
+						totalTokens:
+							(usage as any).totalTokens ||
+							((usage as any).promptTokens || (usage as any).prompt || 0) +
+								((usage as any).completionTokens || (usage as any).completion || 0),
+					}
+				: undefined;
 			const mode: 'LIST' | 'TABLE' | 'CHART' | 'NONE' = structuredData?.list
 				? ResponseGenerator.MODE_LIST
 				: structuredData?.chart
@@ -177,6 +198,7 @@ export class ResponseGenerator {
 				},
 				meta: {
 					sessionId: session.sessionId,
+					tokenUsage,
 				},
 			});
 		} catch (error) {

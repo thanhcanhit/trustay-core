@@ -296,6 +296,9 @@ export class SqlGenerationAgent {
 		let attempts = 0;
 		const maxAttempts = SqlGenerationAgent.MAX_ATTEMPTS;
 		let consecutiveSameError = 0;
+		let totalTokenUsage:
+			| { promptTokens: number; completionTokens: number; totalTokens: number }
+			| undefined;
 
 		// Log SQL generation start
 		this.logger.debug(
@@ -336,12 +339,24 @@ export class SqlGenerationAgent {
 					attempt: attempts,
 					limit: aiConfig.limit,
 				});
-				const { text } = await generateText({
+				const { text, usage } = await generateText({
 					model: google(aiConfig.model),
 					prompt: contextualPrompt,
 					temperature: aiConfig.temperature,
 					maxOutputTokens: aiConfig.maxTokens,
 				});
+				// Accumulate token usage across attempts
+				if (usage) {
+					const promptTokens = (usage as any).promptTokens || (usage as any).prompt || 0;
+					const completionTokens =
+						(usage as any).completionTokens || (usage as any).completion || 0;
+					const totalTokens = (usage as any).totalTokens || promptTokens + completionTokens;
+					totalTokenUsage = {
+						promptTokens: (totalTokenUsage?.promptTokens || 0) + promptTokens,
+						completionTokens: (totalTokenUsage?.completionTokens || 0) + completionTokens,
+						totalTokens: (totalTokenUsage?.totalTokens || 0) + totalTokens,
+					};
+				}
 				let sql = text.trim();
 				sql = sql
 					.replace(/```sql\n?/g, '')
@@ -393,6 +408,7 @@ export class SqlGenerationAgent {
 					attempts: attempts,
 					userId: userId,
 					userRole: userRole,
+					tokenUsage: totalTokenUsage,
 				};
 			} catch (error) {
 				// Vòng phản hồi tự sửa lỗi: Lưu error và SQL cũ để truyền vào prompt lần sau

@@ -2,7 +2,7 @@ import { google } from '@ai-sdk/google';
 import { Logger } from '@nestjs/common';
 import { generateText } from 'ai';
 import { buildResultValidatorPrompt } from '../prompts/result-validator-agent.prompt';
-import { RequestType, ResultValidationResponse } from '../types/chat.types';
+import { RequestType, ResultValidationResponse, TokenUsage } from '../types/chat.types';
 
 /**
  * Agent 4: Result Validator Agent - Validates SQL results before persisting to knowledge store
@@ -68,12 +68,22 @@ export class ResultValidatorAgent {
 
 		try {
 			this.logger.debug(`Validating results for query: "${query}" (type: ${expectedType})`);
-			const { text } = await generateText({
+			const { text, usage } = await generateText({
 				model: google(aiConfig.model),
 				prompt: validatorPrompt,
 				temperature: ResultValidatorAgent.TEMPERATURE,
 				maxOutputTokens: ResultValidatorAgent.MAX_OUTPUT_TOKENS,
 			});
+			const tokenUsage: TokenUsage | undefined = usage
+				? {
+						promptTokens: (usage as any).promptTokens || (usage as any).prompt || 0,
+						completionTokens: (usage as any).completionTokens || (usage as any).completion || 0,
+						totalTokens:
+							(usage as any).totalTokens ||
+							((usage as any).promptTokens || (usage as any).prompt || 0) +
+								((usage as any).completionTokens || (usage as any).completion || 0),
+					}
+				: undefined;
 
 			const response = text.trim();
 			this.logger.debug(
@@ -165,6 +175,7 @@ export class ResultValidatorAgent {
 				reason,
 				violations,
 				severity,
+				tokenUsage,
 			};
 		} catch (error) {
 			this.logger.error('Result validator error:', error);
@@ -174,6 +185,7 @@ export class ResultValidatorAgent {
 				reason: ResultValidatorAgent.ERROR_MESSAGE_VALIDATION_FAILED,
 				violations: [ResultValidatorAgent.ERROR_VIOLATION_EXCEPTION],
 				severity: ResultValidatorAgent.SEVERITY_ERROR,
+				tokenUsage: undefined,
 			};
 		}
 	}
