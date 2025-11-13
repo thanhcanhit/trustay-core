@@ -12,11 +12,14 @@ import {
 
 /**
  * Canonical SQL match thresholds:
- *   - HARD: use existing canonical directly if score >= threshold
- *   - SOFT: provide canonical as LLM context if threshold.soft <= score < threshold.hard
+ *   - HARD: very high threshold (0.95+) for exact matches - but SQL is still regenerated from current schema
+ *   - SOFT: provide canonical as LLM hint/context if threshold.soft <= score < threshold.hard
  *   - Below SOFT: treat as new
+ *
+ * IMPORTANT: Canonical SQL is NEVER executed directly. It's only used as a hint/reference.
+ * SQL is always regenerated based on current schema to handle schema changes safely.
  */
-const _CANONICAL_REUSE_THRESHOLDS: { hard: number; soft: number } = { hard: 0.92, soft: 0.8 };
+const _CANONICAL_REUSE_THRESHOLDS: { hard: number; soft: number } = { hard: 0.95, soft: 0.8 };
 
 /**
  * Maximum #lines per schema chunk for text-based ingestion
@@ -266,7 +269,10 @@ export class KnowledgeService {
 		}
 
 		// Reuse existing canonical SQL if a highly similar question already exists
-		const reuse = await this.findReusableCanonicalSql(question, 0.8);
+		// IMPORTANT: For room-specific queries (with currentPageContext), we should NOT reuse
+		// because each room has different SQL (different slug/id filter)
+		// Only reuse if threshold is very high (0.95+) to avoid false matches
+		const reuse = await this.findReusableCanonicalSql(question, 0.95);
 		if (reuse) {
 			this.logger.debug(
 				`Reusing existing QA - Chunk ID: ${reuse.chunkId}, SQL QA ID: ${reuse.sqlQAId}`,
@@ -275,6 +281,8 @@ export class KnowledgeService {
 		}
 
 		// Similarity dedupe: if a near-duplicate QA chunk already exists, do not insert a new one
+		// IMPORTANT: For room-specific queries, we should check if SQL is different (different slug/id)
+		// Even if question is similar, SQL might be different (different room filter)
 		try {
 			const near = await this.vectorStore.similaritySearch(question, 'qa', {
 				limit: 1,
@@ -282,11 +290,39 @@ export class KnowledgeService {
 				dbKey: this.dbKey,
 			});
 			const top = near[0];
-			if (top && typeof top.score === 'number' && top.score >= 0.9) {
-				this.logger.debug(
-					`Skipping QA chunk insert (near-duplicate found, score=${top.score.toFixed(2)}, chunkId=${top.id})`,
-				);
-				return { chunkId: Number(top.id), sqlQAId: 0 };
+			if (top && typeof top.score === 'number' && top.score >= 0.95) {
+				// Only skip if score is very high (0.95+) AND SQL is the same
+				// For room-specific queries, even similar questions have different SQL (different slug/id)
+				// So we should still save if SQL is different
+				if (sql) {
+					// Check if the existing QA has the same SQL
+					const originalQuestion = this.extractQuestionFromContent(top.content);
+					if (originalQuestion) {
+						const matches = await this.vectorStore.searchSqlQA(originalQuestion, {
+							limit: 1,
+							tenantId: this.tenantId,
+							dbKey: this.dbKey,
+						});
+						const hit = matches[0];
+						if (hit?.sqlCanonical && hit.sqlCanonical === sql) {
+							// Same question AND same SQL → skip
+							this.logger.debug(
+								`Skipping QA chunk insert (exact duplicate found, score=${top.score.toFixed(2)}, chunkId=${top.id}, same SQL)`,
+							);
+							return { chunkId: Number(top.id), sqlQAId: Number(hit.id) };
+						}
+						// Different SQL → save new QA even if question is similar
+						this.logger.debug(
+							`Question similar (score=${top.score.toFixed(2)}) but SQL different, saving new QA`,
+						);
+					}
+				} else {
+					// No SQL provided, skip if question is very similar
+					this.logger.debug(
+						`Skipping QA chunk insert (near-duplicate found, score=${top.score.toFixed(2)}, chunkId=${top.id}, no SQL to compare)`,
+					);
+					return { chunkId: Number(top.id), sqlQAId: 0 };
+				}
 			}
 		} catch (e) {
 			this.logger.warn('Similarity dedupe check failed, proceeding to save QA', e);

@@ -7,7 +7,7 @@ import {
 	getNoResultsMessage,
 	getSuccessMessage,
 } from '../prompts/response-generator.prompt';
-import { ChatSession, SqlGenerationResult } from '../types/chat.types';
+import { ChatSession, SqlGenerationResult, TokenUsage } from '../types/chat.types';
 import {
 	inferColumns,
 	isListLike,
@@ -24,6 +24,34 @@ import { buildEntityPath } from '../utils/entity-route';
 export class ResponseGenerator {
 	private readonly logger = new Logger(ResponseGenerator.name);
 
+	// Configuration constants
+	private static readonly RECENT_MESSAGES_LIMIT = 3;
+	private static readonly TEMPERATURE = 0.3;
+	private static readonly MAX_OUTPUT_TOKENS_FINAL = 500;
+	private static readonly MAX_OUTPUT_TOKENS_FRIENDLY = 300;
+	private static readonly MAX_OUTPUT_TOKENS_INSIGHT = 2000; // Increased for detailed insight analysis (300-400 words)
+	private static readonly DATA_PREVIEW_LENGTH_FINAL = 800;
+	private static readonly DATA_PREVIEW_LENGTH_FRIENDLY = 1000;
+	private static readonly LIST_ITEMS_LIMIT = 50;
+	private static readonly TABLE_ROWS_LIMIT = 50;
+	private static readonly PREVIEW_LIMIT = 50;
+	// Chart constants
+	private static readonly CHART_MIME_TYPE = 'image/png';
+	private static readonly CHART_ALT_TEXT = 'Chart (Top 10)';
+	// Entity types
+	private static readonly ENTITY_ROOM = 'room';
+	private static readonly ENTITY_POST = 'post';
+	private static readonly ENTITY_ROOM_SEEKING_POST = 'room_seeking_post';
+	// Message labels
+	private static readonly LABEL_USER = 'Người dùng';
+	private static readonly LABEL_AI = 'AI';
+	// Mode strings
+	private static readonly MODE_LIST = 'LIST';
+	private static readonly MODE_TABLE = 'TABLE';
+	private static readonly MODE_CHART = 'CHART';
+	private static readonly MODE_INSIGHT = 'INSIGHT';
+	private static readonly MODE_NONE = 'NONE';
+
 	/**
 	 * Generate final response combining conversational context with SQL results
 	 * Format: message text ---END LIST: [] TABLE: {} CHART: {}
@@ -31,7 +59,7 @@ export class ResponseGenerator {
 	 * @param sqlResult - SQL execution result
 	 * @param session - Chat session for context
 	 * @param aiConfig - AI configuration
-	 * @param desiredMode - Desired output mode (LIST/TABLE/CHART)
+	 * @param desiredMode - Desired output mode (LIST/TABLE/CHART/INSIGHT)
 	 * @returns Final combined response with ---END delimiter and structured data
 	 */
 	async generateFinalResponse(
@@ -39,52 +67,138 @@ export class ResponseGenerator {
 		sqlResult: SqlGenerationResult,
 		session: ChatSession,
 		aiConfig: { model: string; temperature: number; maxTokens: number },
-		desiredMode?: 'LIST' | 'TABLE' | 'CHART',
+		desiredMode?: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT',
 	): Promise<string> {
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
-			.slice(-3)
-			.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
+			.slice(-ResponseGenerator.RECENT_MESSAGES_LIMIT)
+			.map(
+				(m) =>
+					`${m.role === 'user' ? ResponseGenerator.LABEL_USER : ResponseGenerator.LABEL_AI}: ${m.content}`,
+			)
 			.join('\n');
 
-		// Build structured data payload
-		const structuredData = this.buildStructuredData(sqlResult.results, desiredMode);
+		// INSIGHT mode: Chỉ trả về message với phân tích chi tiết, không có structured data
+		if (desiredMode === ResponseGenerator.MODE_INSIGHT) {
+			// For INSIGHT mode, use full data preview (no truncation) to ensure all details are available
+			const insightPrompt = buildFinalMessagePrompt({
+				recentMessages,
+				conversationalMessage,
+				count: sqlResult.count,
+				dataPreview: JSON.stringify(sqlResult.results), // Use full data, no truncation for insight
+				structuredData: null, // Không có structured data cho insight mode
+				isInsightMode: true,
+			});
+
+			try {
+				const { text, usage } = await generateText({
+					model: google(aiConfig.model),
+					prompt: insightPrompt,
+					temperature: ResponseGenerator.TEMPERATURE,
+					maxOutputTokens: ResponseGenerator.MAX_OUTPUT_TOKENS_INSIGHT,
+				});
+				const messageText = text.trim();
+				const tokenUsage: TokenUsage | undefined = usage
+					? {
+							promptTokens: (usage as any).promptTokens || (usage as any).prompt || 0,
+							completionTokens: (usage as any).completionTokens || (usage as any).completion || 0,
+							totalTokens:
+								(usage as any).totalTokens ||
+								((usage as any).promptTokens || (usage as any).prompt || 0) +
+									((usage as any).completionTokens || (usage as any).completion || 0),
+						}
+					: undefined;
+
+				return JSON.stringify({
+					message: messageText,
+					payload: {
+						mode: ResponseGenerator.MODE_INSIGHT,
+						list: null,
+						table: null,
+						chart: null,
+					},
+					meta: {
+						sessionId: session.sessionId,
+						tokenUsage,
+					},
+				});
+			} catch (error) {
+				this.logger.warn('Failed to generate insight response, using fallback', error);
+				const messageText =
+					sqlResult.count === 0
+						? getNoResultsMessage()
+						: 'Đã có thông tin phòng nhưng không thể tạo insight chi tiết.';
+				return JSON.stringify({
+					message: messageText,
+					payload: {
+						mode: ResponseGenerator.MODE_INSIGHT,
+						list: null,
+						table: null,
+						chart: null,
+					},
+					meta: {
+						sessionId: session.sessionId,
+					},
+				});
+			}
+		}
+
+		// Build structured data payload cho các mode khác (không phải INSIGHT)
+		let structuredData: { list: any[] | null; table: any | null; chart: any | null } | null = null;
+		if (desiredMode && desiredMode !== ('INSIGHT' as typeof desiredMode)) {
+			structuredData = this.buildStructuredData(sqlResult.results, desiredMode);
+		}
 
 		// Build message-only prompt for the LLM
 		const finalPrompt = buildFinalMessagePrompt({
 			recentMessages,
 			conversationalMessage,
 			count: sqlResult.count,
-			dataPreview: JSON.stringify(sqlResult.results).substring(0, 800),
+			dataPreview: JSON.stringify(sqlResult.results).substring(
+				0,
+				ResponseGenerator.DATA_PREVIEW_LENGTH_FINAL,
+			),
 			structuredData,
+			isInsightMode: false,
 		});
 
 		try {
-			const { text } = await generateText({
+			const { text, usage } = await generateText({
 				model: google(aiConfig.model),
 				prompt: finalPrompt,
-				temperature: 0.3,
-				maxOutputTokens: 500,
+				temperature: ResponseGenerator.TEMPERATURE,
+				maxOutputTokens: ResponseGenerator.MAX_OUTPUT_TOKENS_FINAL,
 			});
 			const messageText = text.trim();
-			const mode: 'LIST' | 'TABLE' | 'CHART' | 'NONE' = structuredData.list
-				? 'LIST'
-				: structuredData.chart
-					? 'CHART'
-					: structuredData.table
-						? 'TABLE'
-						: 'NONE';
+			const tokenUsage: TokenUsage | undefined = usage
+				? {
+						promptTokens: (usage as any).promptTokens || (usage as any).prompt || 0,
+						completionTokens: (usage as any).completionTokens || (usage as any).completion || 0,
+						totalTokens:
+							(usage as any).totalTokens ||
+							((usage as any).promptTokens || (usage as any).prompt || 0) +
+								((usage as any).completionTokens || (usage as any).completion || 0),
+					}
+				: undefined;
+			const mode: 'LIST' | 'TABLE' | 'CHART' | 'NONE' = structuredData?.list
+				? ResponseGenerator.MODE_LIST
+				: structuredData?.chart
+					? ResponseGenerator.MODE_CHART
+					: structuredData?.table
+						? ResponseGenerator.MODE_TABLE
+						: ResponseGenerator.MODE_NONE;
 
 			return JSON.stringify({
 				message: messageText,
 				payload: {
 					mode,
-					list: structuredData.list,
-					table: structuredData.table,
-					chart: structuredData.chart,
+					list: structuredData?.list || null,
+					table: structuredData?.table || null,
+					chart: structuredData?.chart || null,
 				},
 				meta: {
 					sessionId: session.sessionId,
+					tokenUsage,
 				},
 			});
 		} catch (error) {
@@ -92,12 +206,12 @@ export class ResponseGenerator {
 			const messageText =
 				sqlResult.count === 0 ? getNoResultsMessage() : getSuccessMessage(sqlResult.count);
 			const mode: 'LIST' | 'TABLE' | 'CHART' | 'NONE' = structuredData.list
-				? 'LIST'
+				? ResponseGenerator.MODE_LIST
 				: structuredData.chart
-					? 'CHART'
+					? ResponseGenerator.MODE_CHART
 					: structuredData.table
-						? 'TABLE'
-						: 'NONE';
+						? ResponseGenerator.MODE_TABLE
+						: ResponseGenerator.MODE_NONE;
 			return JSON.stringify({
 				message: messageText,
 				payload: {
@@ -130,8 +244,8 @@ export class ResponseGenerator {
 		const rows = results as ReadonlyArray<Record<string, unknown>>;
 
 		// Prefer LIST mode
-		if (desiredMode === 'LIST' || isListLike(rows)) {
-			const items = toListItems(rows).slice(0, 50);
+		if (desiredMode === ResponseGenerator.MODE_LIST || isListLike(rows)) {
+			const items = toListItems(rows).slice(0, ResponseGenerator.LIST_ITEMS_LIMIT);
 			return {
 				list: items,
 				table: null,
@@ -140,18 +254,18 @@ export class ResponseGenerator {
 		}
 
 		// Try CHART for aggregate/statistics-like data
-		if (desiredMode === 'CHART') {
+		if (desiredMode === ResponseGenerator.MODE_CHART) {
 			const chartData = tryBuildChart(rows);
 			if (chartData) {
 				return {
 					list: null,
 					table: null,
 					chart: {
-						mimeType: 'image/png',
+						mimeType: ResponseGenerator.CHART_MIME_TYPE,
 						url: chartData.url,
 						width: chartData.width,
 						height: chartData.height,
-						alt: 'Chart (Top 10)',
+						alt: ResponseGenerator.CHART_ALT_TEXT,
 					},
 				};
 			}
@@ -160,7 +274,7 @@ export class ResponseGenerator {
 		// Fallback to TABLE
 		const inferred = inferColumns(rows);
 		const columns = selectImportantColumns(inferred, rows);
-		const normalized = normalizeRows(rows, columns).slice(0, 50);
+		const normalized = normalizeRows(rows, columns).slice(0, ResponseGenerator.TABLE_ROWS_LIMIT);
 
 		// MVP: Add path to table rows if entity and id exist
 		const rowsWithPath = normalized.map((row) => {
@@ -172,7 +286,9 @@ export class ResponseGenerator {
 			if (
 				entityId &&
 				entity &&
-				(entity === 'room' || entity === 'post' || entity === 'room_seeking_post')
+				(entity === ResponseGenerator.ENTITY_ROOM ||
+					entity === ResponseGenerator.ENTITY_POST ||
+					entity === ResponseGenerator.ENTITY_ROOM_SEEKING_POST)
 			) {
 				const path = buildEntityPath(entity, entityId);
 				return { ...row, path };
@@ -185,7 +301,7 @@ export class ResponseGenerator {
 			table: {
 				columns,
 				rows: rowsWithPath,
-				previewLimit: 50,
+				previewLimit: ResponseGenerator.PREVIEW_LIMIT,
 			},
 			chart: null,
 		};
@@ -209,21 +325,27 @@ export class ResponseGenerator {
 	): Promise<string> {
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
-			.slice(-3)
-			.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
+			.slice(-ResponseGenerator.RECENT_MESSAGES_LIMIT)
+			.map(
+				(m) =>
+					`${m.role === 'user' ? ResponseGenerator.LABEL_USER : ResponseGenerator.LABEL_AI}: ${m.content}`,
+			)
 			.join('\n');
 		const responsePrompt = buildFriendlyResponsePrompt({
 			recentMessages,
 			query,
 			count: sqlResult.count,
-			dataPreview: JSON.stringify(sqlResult.results).substring(0, 1000),
+			dataPreview: JSON.stringify(sqlResult.results).substring(
+				0,
+				ResponseGenerator.DATA_PREVIEW_LENGTH_FRIENDLY,
+			),
 		});
 		try {
 			const { text } = await generateText({
 				model: google(aiConfig.model),
 				prompt: responsePrompt,
-				temperature: 0.3,
-				maxOutputTokens: 300,
+				temperature: ResponseGenerator.TEMPERATURE,
+				maxOutputTokens: ResponseGenerator.MAX_OUTPUT_TOKENS_FRIENDLY,
 			});
 			return text.trim();
 		} catch {

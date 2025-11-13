@@ -109,13 +109,23 @@ export class AiService {
 		return Date.now();
 	}
 
-	private logPipelineEnd(sessionId: string, outcome: string, startedAtMs: number): void {
+	private logPipelineEnd(
+		sessionId: string,
+		outcome: string,
+		startedAtMs: number,
+		tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number },
+	): void {
 		const tookMs = Date.now() - startedAtMs;
 		const bannerTop = '===================== END PIPELINE =====================';
 		const bannerBottom = '========================================================';
 		const header = `PIPELINE@ai.service.ts | session=${sessionId}`;
 		this.logger.log(`${bannerTop}`);
 		this.logger.log(`[${header}] outcome=${outcome} took=${tookMs}ms`);
+		if (tokenUsage) {
+			this.logger.log(
+				`[${header}] tokens: prompt=${tokenUsage.promptTokens} completion=${tokenUsage.completionTokens} total=${tokenUsage.totalTokens}`,
+			);
+		}
 		this.logger.log(`${bannerBottom}`);
 	}
 
@@ -230,6 +240,72 @@ export class AiService {
 	}
 
 	/**
+	 * Check if identifier is UUID format
+	 * @param identifier - Identifier to check
+	 * @returns true if UUID format
+	 */
+	private isUuid(identifier: string): boolean {
+		// UUID v4 pattern: 8-4-4-4-12 hex digits
+		const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+		return uuidPattern.test(identifier);
+	}
+
+	/**
+	 * Parse page context từ URL path để extract entity và identifier
+	 * @param currentPage - URL path (ví dụ: /rooms/tuyenquan-go-vap-phong-ap1443 hoặc /rooms/uuid-123)
+	 * @returns Parsed context hoặc null nếu không parse được
+	 */
+	private parsePageContext(currentPage: string): {
+		entity: string;
+		identifier: string;
+		type?: 'slug' | 'id';
+	} | null {
+		if (!currentPage || !currentPage.startsWith('/')) {
+			return null;
+		}
+		// Parse pattern: /rooms/{slug} hoặc /rooms/{id}
+		const roomMatch = currentPage.match(/^\/rooms\/([^/?#]+)/);
+		if (roomMatch) {
+			const identifier = roomMatch[1];
+			// Detect if identifier is UUID or slug
+			const type = this.isUuid(identifier) ? 'id' : 'slug';
+			return {
+				entity: 'room',
+				identifier,
+				type,
+			};
+		}
+		// Parse pattern: /room-seeking-posts/{slug} hoặc /room-seekings/{slug}
+		const roomSeekingMatch = currentPage.match(/^\/room-seeking-posts?\/([^/?#]+)/);
+		if (roomSeekingMatch) {
+			return {
+				entity: 'room_seeking_post',
+				identifier: roomSeekingMatch[1],
+				type: 'slug',
+			};
+		}
+		// Parse pattern: /roommate-seeking-posts/{slug}
+		const roommateSeekingMatch = currentPage.match(/^\/roommate-seeking-posts?\/([^/?#]+)/);
+		if (roommateSeekingMatch) {
+			return {
+				entity: 'roommate_seeking_post',
+				identifier: roommateSeekingMatch[1],
+				type: 'slug',
+			};
+		}
+		// Parse pattern: /buildings/{slug}
+		const buildingMatch = currentPage.match(/^\/buildings\/([^/?#]+)/);
+		if (buildingMatch) {
+			return {
+				entity: 'building',
+				identifier: buildingMatch[1],
+				type: 'slug',
+			};
+		}
+		return null;
+	}
+
+	/**
 	 * Chat với AI để truy vấn database - Flow đa agent
 	 *
 	 * Flow xử lý:
@@ -240,25 +316,56 @@ export class AiService {
 	 * 5. Persist: Lưu Q&A vào knowledge store để học hỏi
 	 *
 	 * @param query - Câu hỏi của người dùng
-	 * @param context - Ngữ cảnh người dùng (userId, clientIp)
+	 * @param context - Ngữ cảnh người dùng (userId, clientIp, currentPage)
+	 * @param context.userId - User ID nếu đã đăng nhập
+	 * @param context.clientIp - IP address của client
+	 * @param context.currentPage - URL trang hiện tại người dùng đang xem (từ referer hoặc x-current-page header)
 	 * @returns Phản hồi chat với lịch sử hội thoại
 	 */
 	async chatWithAI(
 		query: string,
-		context: { userId?: string; clientIp?: string } = {},
+		context: { userId?: string; clientIp?: string; currentPage?: string } = {},
 	): Promise<ChatResponse> {
-		const { userId, clientIp } = context;
+		const { userId, clientIp, currentPage } = context;
 
 		// Bước 1: Quản lý session - Lấy hoặc tạo session chat
 		// Session tự động có system prompt tiếng Việt khi tạo mới
 		const session = this.getOrCreateSession(userId, clientIp);
 		const pipelineStartAt = this.logPipelineStart(query, session.sessionId);
 
+		// Parse và thêm thông tin trang hiện tại vào context nếu có
+		if (currentPage) {
+			this.logDebug('CONTEXT', `Current page received: ${currentPage}`);
+			// Parse entity và identifier từ URL path
+			const contextInfo = this.parsePageContext(currentPage);
+			if (contextInfo) {
+				const contextMessage = `[CONTEXT] User is currently viewing: ${currentPage}\n[CONTEXT] Entity: ${contextInfo.entity}, Identifier: ${contextInfo.identifier}${contextInfo.type ? `, Type: ${contextInfo.type}` : ''}`;
+				this.addMessageToSession(session, 'system', contextMessage);
+				this.logInfo(
+					'CONTEXT',
+					`Parsed page context: entity=${contextInfo.entity}, identifier=${contextInfo.identifier}, type=${contextInfo.type || 'unknown'}`,
+				);
+			} else {
+				// Fallback: chỉ ghi lại URL nếu không parse được
+				this.addMessageToSession(
+					session,
+					'system',
+					`[CONTEXT] User is currently viewing: ${currentPage}`,
+				);
+				this.logWarn('CONTEXT', `Could not parse page context from: ${currentPage}`);
+			}
+		} else {
+			this.logDebug('CONTEXT', 'No currentPage provided');
+		}
+
 		// Lưu câu hỏi của người dùng vào session
 		this.addMessageToSession(session, 'user', query);
 
 		try {
-			this.logDebug('SESSION', `BẮT ĐẦU XỬ LÝ | session=${session.sessionId}`);
+			this.logDebug(
+				'SESSION',
+				`BẮT ĐẦU XỬ LÝ | session=${session.sessionId}${currentPage ? ` | page=${currentPage}` : ''}`,
+			);
 
 			// ========================================
 			// BƯỚC 2: Agent 1 - Orchestrator Agent
@@ -281,12 +388,20 @@ export class AiService {
 			const orchestratorTime = Date.now() - startTime;
 			this.logInfo(
 				'ORCHESTRATOR',
-				`END | readyForSql=${orchestratorResponse.readyForSql} | requestType=${orchestratorResponse.requestType} | userRole=${orchestratorResponse.userRole} | took=${orchestratorTime}ms`,
+				`END | readyForSql=${orchestratorResponse.readyForSql} | requestType=${orchestratorResponse.requestType} | userRole=${orchestratorResponse.userRole}` +
+					`${orchestratorResponse.tablesHint ? ` | tablesHint=${orchestratorResponse.tablesHint}` : ''}` +
+					`${orchestratorResponse.relationshipsHint ? ` | relationshipsHint=${orchestratorResponse.relationshipsHint}` : ''}` +
+					`${orchestratorResponse.intentModeHint ? ` | modeHint=${orchestratorResponse.intentModeHint}` : ''}` +
+					`${orchestratorResponse.entityHint ? ` | entityHint=${orchestratorResponse.entityHint}` : ''}` +
+					` | took=${orchestratorTime}ms`,
 			);
 
-			// Xác định mode response dựa trên ý định người dùng (LIST/TABLE/CHART)
-			const desiredMode: 'LIST' | 'TABLE' | 'CHART' =
-				orchestratorResponse.intentModeHint ?? 'TABLE';
+			// Xác định mode response dựa trên ý định người dùng (LIST/TABLE/CHART/INSIGHT)
+			// Ưu tiên MODE_HINT từ Orchestrator (có thể là INSIGHT nếu có currentPageContext)
+			const desiredMode: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT' =
+				orchestratorResponse.intentModeHint === 'INSIGHT'
+					? 'INSIGHT'
+					: (orchestratorResponse.intentModeHint ?? 'TABLE');
 
 			// Lưu hints từ agent vào session để agent SQL hiểu rõ hơn
 			if (orchestratorResponse.entityHint) {
@@ -295,6 +410,7 @@ export class AiService {
 					'system',
 					`[INTENT] ENTITY=${orchestratorResponse.entityHint.toUpperCase()}`,
 				);
+				this.logDebug('ORCHESTRATOR', `Added ENTITY hint: ${orchestratorResponse.entityHint}`);
 			}
 			if (orchestratorResponse.filtersHint) {
 				this.addMessageToSession(
@@ -302,13 +418,52 @@ export class AiService {
 					'system',
 					`[INTENT] FILTERS=${orchestratorResponse.filtersHint}`,
 				);
+				this.logDebug(
+					'ORCHESTRATOR',
+					`Added FILTERS hint: ${orchestratorResponse.filtersHint.substring(0, 50)}`,
+				);
 			}
-			if (desiredMode === 'CHART') {
+			if (orchestratorResponse.tablesHint) {
+				this.addMessageToSession(
+					session,
+					'system',
+					`[INTENT] TABLES=${orchestratorResponse.tablesHint}`,
+				);
+				this.logDebug(
+					'ORCHESTRATOR',
+					`Added TABLES hint: ${orchestratorResponse.tablesHint} (will enhance RAG query)`,
+				);
+			}
+			if (orchestratorResponse.relationshipsHint) {
+				this.addMessageToSession(
+					session,
+					'system',
+					`[INTENT] RELATIONSHIPS=${orchestratorResponse.relationshipsHint}`,
+				);
+				this.logDebug(
+					'ORCHESTRATOR',
+					`Added RELATIONSHIPS hint: ${orchestratorResponse.relationshipsHint}`,
+				);
+			}
+			if (desiredMode === 'INSIGHT') {
+				this.addMessageToSession(session, 'system', '[INTENT] MODE=INSIGHT');
+			} else if (desiredMode === 'CHART') {
 				this.addMessageToSession(session, 'system', '[INTENT] MODE=CHART');
 			} else if (desiredMode === 'LIST') {
 				this.addMessageToSession(session, 'system', '[INTENT] MODE=LIST');
 			} else {
 				this.addMessageToSession(session, 'system', '[INTENT] MODE=TABLE');
+			}
+			if (orchestratorResponse.intentAction) {
+				this.addMessageToSession(
+					session,
+					'system',
+					`[INTENT] ACTION=${orchestratorResponse.intentAction.toUpperCase()}`,
+				);
+				this.logDebug(
+					'ORCHESTRATOR',
+					`Added INTENT_ACTION hint: ${orchestratorResponse.intentAction}`,
+				);
 			}
 
 			// MVP: Handle clarification when missingParams are present
@@ -448,29 +603,46 @@ export class AiService {
 					this.logError('ERROR', 'Error building entity path', error);
 				}
 
-				// MVP: Persist Q&A - Chỉ skip nếu có ERROR severity
-				// WARN severity vẫn cho phép persist để có thể học hỏi
-				if (validation.isValid || validation.severity === 'WARN') {
+				// Persist Q&A - ƯU TIÊN LƯU: Chỉ skip nếu có ERROR severity rõ ràng
+				// isValid=true hoặc WARN severity → lưu để có thể cải thiện sau
+				// CHỈ LƯU CÁC CÂU TRẢ LỜI ĐÚNG/CHẤT LƯỢNG:
+				// - isValid=true (SQL đúng và kết quả hợp lý)
+				// - severity !== 'ERROR' (không có lỗi nghiêm trọng)
+				// - Có SQL và có kết quả (không lưu khi SQL fail hoặc không có kết quả)
+				const shouldPersist =
+					validation.isValid &&
+					validation.severity !== 'ERROR' &&
+					sqlResult.sql &&
+					sqlResult.count >= 0; // Có thể là 0 (không có dữ liệu) nhưng vẫn hợp lệ
+				if (shouldPersist) {
 					try {
 						this.logDebug(
 							'PERSIST',
-							`Đang lưu Q&A vào knowledge store (isValid=${validation.isValid}, severity=${validation.severity})...`,
+							`Đang lưu Q&A vào knowledge store (isValid=${validation.isValid}, severity=${validation.severity || 'none'}, count=${sqlResult.count})...`,
 						);
 						await this.knowledge.saveQAInteraction({
 							question: query,
 							sql: sqlResult.sql,
 							sessionId: session.sessionId,
 							userId: session.userId,
-							context: { count: sqlResult.count },
+							context: { count: sqlResult.count, severity: validation.severity || 'OK' },
 						});
 						this.logDebug('PERSIST', 'Đã lưu Q&A thành công vào knowledge store');
 					} catch (persistErr) {
 						this.logWarn('PERSIST', 'Không thể lưu Q&A vào knowledge store', persistErr);
 					}
 				} else {
+					// Skip khi có lỗi hoặc không hợp lệ
+					const skipReason = !validation.isValid
+						? `isValid=false`
+						: validation.severity === 'ERROR'
+							? `severity=ERROR`
+							: !sqlResult.sql
+								? `no SQL`
+								: `unknown reason`;
 					this.logWarn(
 						'VALIDATOR',
-						`Kết quả không hợp lệ (ERROR), không lưu vào knowledge store: ${validation.reason || 'Unknown error'}`,
+						`Kết quả không đủ chất lượng, không lưu vào knowledge store (${skipReason}): ${validation.reason || 'Unknown error'}`,
 					);
 				}
 
@@ -486,6 +658,25 @@ export class AiService {
 					payload: dataPayload,
 				});
 
+				// Tích lũy token usage từ tất cả các agent
+				const totalTokenUsage = {
+					promptTokens:
+						(orchestratorResponse.tokenUsage?.promptTokens || 0) +
+						(sqlResult.tokenUsage?.promptTokens || 0) +
+						(validation.tokenUsage?.promptTokens || 0) +
+						(parsedResponse.meta?.tokenUsage?.promptTokens || 0),
+					completionTokens:
+						(orchestratorResponse.tokenUsage?.completionTokens || 0) +
+						(sqlResult.tokenUsage?.completionTokens || 0) +
+						(validation.tokenUsage?.completionTokens || 0) +
+						(parsedResponse.meta?.tokenUsage?.completionTokens || 0),
+					totalTokens:
+						(orchestratorResponse.tokenUsage?.totalTokens || 0) +
+						(sqlResult.tokenUsage?.totalTokens || 0) +
+						(validation.tokenUsage?.totalTokens || 0) +
+						(parsedResponse.meta?.tokenUsage?.totalTokens || 0),
+				};
+
 				// Trả về response với payload structured cho UI
 				const response: ChatResponse = {
 					kind: 'DATA',
@@ -494,7 +685,7 @@ export class AiService {
 					message: parsedResponse.message,
 					payload: dataPayload,
 				};
-				this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt);
+				this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt, totalTokenUsage);
 				return response;
 			} else {
 				// ========================================
@@ -504,7 +695,8 @@ export class AiService {
 				// Trả về response yêu cầu clarification hoặc general chat
 				if (orchestratorResponse.requestType === RequestType.CLARIFICATION) {
 					this.logInfo('ORCHESTRATOR', 'END | need clarification');
-					const messageText: string = `Mình cần thêm chút thông tin để trả lời chính xác: ${orchestratorResponse.message}`;
+					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
+					const messageText: string = `Mình cần thêm chút thông tin để trả lời chính xác: ${cleanedMessage}`;
 					this.addMessageToSession(session, 'assistant', messageText, {
 						kind: 'CONTROL',
 						payload: { mode: 'CLARIFY', questions: [] },
@@ -516,12 +708,18 @@ export class AiService {
 						message: messageText,
 						payload: { mode: 'CLARIFY', questions: [] },
 					};
-					this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt);
+					this.logPipelineEnd(
+						session.sessionId,
+						response.kind,
+						pipelineStartAt,
+						orchestratorResponse.tokenUsage,
+					);
 					return response;
 				} else {
 					// General chat or greeting
 					this.logInfo('ORCHESTRATOR', `Request type: ${orchestratorResponse.requestType}`);
-					this.addMessageToSession(session, 'assistant', orchestratorResponse.message, {
+					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
+					this.addMessageToSession(session, 'assistant', cleanedMessage, {
 						kind: 'CONTENT',
 						payload: { mode: 'CONTENT' },
 					});
@@ -529,10 +727,15 @@ export class AiService {
 						kind: 'CONTENT',
 						sessionId: session.sessionId,
 						timestamp: new Date().toISOString(),
-						message: orchestratorResponse.message,
+						message: cleanedMessage,
 						payload: { mode: 'CONTENT' },
 					};
-					this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt);
+					this.logPipelineEnd(
+						session.sessionId,
+						response.kind,
+						pipelineStartAt,
+						orchestratorResponse.tokenUsage,
+					);
 					return response;
 				}
 			}
@@ -573,15 +776,42 @@ export class AiService {
 		missingParams: Array<{ name: string; reason: string; examples?: string[] }>,
 	): string {
 		if (!missingParams || missingParams.length === 0) {
-			return baseMessage;
+			return this.cleanMessage(baseMessage);
 		}
+		// Clean base message first to remove any internal annotations
+		const cleanedMessage = this.cleanMessage(baseMessage);
 		const paramsList = missingParams.map((param) => {
 			const examplesText =
 				param.examples && param.examples.length > 0 ? ` (ví dụ: ${param.examples.join(', ')})` : '';
 			return `• ${param.reason}${examplesText}`;
 		});
 		const paramsSection = paramsList.join('\n');
-		return `${baseMessage}\n\n**Thông tin cần bổ sung:**\n${paramsSection}`;
+		return `${cleanedMessage}\n\n**Thông tin cần bổ sung:**\n${paramsSection}`;
+	}
+
+	/**
+	 * Clean message from internal annotations and dev metadata
+	 * @param message - Raw message that may contain internal annotations
+	 * @returns Cleaned message without internal annotations
+	 */
+	private cleanMessage(message: string): string {
+		if (!message) {
+			return message;
+		}
+		return message
+			.replace(/\n*INTENT_ACTION:\s*\w+\s*/gi, '')
+			.replace(/\n*POLARITY:\s*\w+\s*/gi, '')
+			.replace(/\n*CANONICAL_REUSE_OK:\s*\w+.*/gi, '')
+			.replace(/\n*REQUEST_TYPE:\s*\w+\s*/gi, '')
+			.replace(/\n*MODE_HINT:\s*\w+\s*/gi, '')
+			.replace(/\n*ENTITY_HINT:\s*\w+\s*/gi, '')
+			.replace(/\n*FILTERS_HINT:\s*.+?$/gim, '')
+			.replace(/\n*TABLES_HINT:\s*.+?$/gim, '')
+			.replace(/\n*RELATIONSHIPS_HINT:\s*.+?$/gim, '')
+			.replace(/\n*MISSING_PARAMS:\s*.+?$/gim, '')
+			.replace(/\[(LANDLORD|TENANT|GUEST)\]\s*/g, '')
+			.replace(/\n{3,}/g, '\n\n') // Replace multiple newlines with double newline
+			.trim();
 	}
 
 	/**
@@ -592,8 +822,12 @@ export class AiService {
 	 */
 	private buildDataPayloadFromParsed(
 		parsedResponse: { list: any[] | null; table: any | null; chart: any | null },
-		_desiredMode?: 'LIST' | 'TABLE' | 'CHART',
+		desiredMode?: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT',
 	): DataPayload | undefined {
+		// INSIGHT mode không có structured data
+		if (desiredMode === 'INSIGHT') {
+			return undefined;
+		}
 		if (parsedResponse.list !== null && parsedResponse.list.length > 0) {
 			return {
 				mode: 'LIST',
@@ -626,8 +860,12 @@ export class AiService {
 	private buildDataPayload(
 		results: unknown,
 		_query: string,
-		desiredMode?: 'LIST' | 'TABLE' | 'CHART',
+		desiredMode?: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT',
 	): DataPayload | undefined {
+		// INSIGHT mode không có structured data
+		if (desiredMode === 'INSIGHT') {
+			return undefined;
+		}
 		if (!Array.isArray(results) || results.length === 0 || typeof results[0] !== 'object') {
 			return undefined;
 		}

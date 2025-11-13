@@ -11,11 +11,49 @@ export interface FinalResponsePromptParams {
 		list: any[] | null;
 		table: any | null;
 		chart: any | null;
-	};
+	} | null;
+	isInsightMode?: boolean; // true khi ở INSIGHT mode - chỉ trả về message, không có structured data
 }
 
 export function buildFinalResponsePrompt(params: FinalResponsePromptParams): string {
-	const { recentMessages, conversationalMessage, count, dataPreview, structuredData } = params;
+	const {
+		recentMessages,
+		conversationalMessage,
+		count,
+		dataPreview,
+		structuredData,
+		isInsightMode,
+	} = params;
+
+	// INSIGHT MODE: Chỉ trả về message với phân tích chi tiết, không có structured data
+	if (isInsightMode) {
+		return `
+Bạn là AI assistant của Trustay. Phân tích CHI TIẾT phòng trọ với SỐ LIỆU CỤ THỂ từ dữ liệu.
+
+${recentMessages ? `NGỮ CẢNH:\n${recentMessages}\n\n` : ''}
+
+THÔNG ĐIỆP: "${conversationalMessage}"
+DỮ LIỆU PHÒNG: ${dataPreview}
+
+QUY TẮC BẮT BUỘC:
+1. BẮT ĐẦU NGAY với số liệu cụ thể: "Phòng [X]m² tại [địa chỉ], giá thuê [Y] triệu/tháng..."
+2. PHẢI dùng SỐ LIỆU từ dữ liệu, KHÔNG nói chung chung
+3. Tính giá/m²: [giá thuê] / [diện tích] = [X] triệu/m²/tháng
+4. Tính tổng chi phí: giá thuê + phí dịch vụ + điện + nước + internet + dọn dẹp
+5. Đánh giá hợp lý: so sánh giá/m² với thị trường khu vực, so sánh giá với số lượng tiện ích
+6. Liệt kê ĐẦY ĐỦ tiện ích từ mảng amenities
+7. Kết luận: "Giá này [hợp lý/không hợp lý] vì [lý do cụ thể với số liệu]"
+
+CẤM TUYỆT ĐỐI:
+- KHÔNG viết: "Mình đã tìm thấy", "Mình sẽ phân tích", "Bạn xem qua", "Bạn thấy sao"
+- KHÔNG nói chung chung: "giá khá ổn", "nhiều tiện ích" → PHẢI có số cụ thể
+- KHÔNG chỉ liệt kê → PHẢI phân tích và đánh giá
+
+VÍ DỤ ĐÚNG:
+"Phòng 30m² tại đường Nguyễn Gia Trí, quận Bình Thạnh. Giá thuê 5.5 triệu/tháng, tiền cọc 11 triệu (2 tháng), phí dịch vụ 500k/tháng không bao gồm. Tổng chi phí thực tế 6 triệu/tháng. Giá/m² = 5.5/30 = 0.18 triệu/m²/tháng, hợp lý so với thị trường Bình Thạnh (0.15-0.2 triệu/m²). Phòng có 10 tiện ích: điều hòa, wifi, gác lửng, ban công, tủ lạnh, máy giặt, máy nước nóng... Với giá 5.5 triệu và 10 tiện ích đầy đủ, giá này hợp lý hơn phòng cùng diện tích chỉ có 5-6 tiện ích giá 4.5 triệu. Điểm mạnh: giá/m² thấp hơn trung bình, tiện ích đầy đủ, vị trí thuận tiện. Điểm yếu: phí dịch vụ không bao gồm. Kết luận: Tổng chi phí 6 triệu/tháng cho phòng 30m² với 10 tiện ích là hợp lý và đáng xem xét."
+
+TRẢ VỀ: Chỉ message text (Markdown), 300-400 từ, đầy đủ số liệu và đánh giá cụ thể.`;
+	}
 
 	const structuredDataSection = structuredData
 		? `
@@ -48,6 +86,22 @@ YÊU CẦU ĐỊNH DẠNG (BẮT BUỘC):
    - room → "/rooms/:id"
    - post → "/posts/:id"
    - room_seeking_post → "/room-seeking-posts/:id"
+
+QUAN TRỌNG - PHÂN TÍCH/ĐÁNH GIÁ PHÒNG:
+- Khi user hỏi "phân tích phòng hiện tại", "đánh giá phòng này", "phòng này có hợp lý không":
+  * "Đánh giá" nghĩa là PHÂN TÍCH về giá cả, tiện ích, điện nước rác - KHÔNG phải về rating (sao đánh giá)
+  * PHẢI phân tích chi tiết:
+    - Giá cả: base_price_monthly (giá thuê), deposit_amount (tiền cọc), utility_cost_per_person (phí dịch vụ), electricity_cost (điện), water_cost (nước), internet_cost (internet), cleaning_cost (dọn dẹp)
+    - Tiện ích: Danh sách amenities (điều hòa, wifi, gác lửng, ban công, tủ lạnh, máy giặt, v.v.)
+    - Địa điểm: district_name, province_name
+    - Diện tích: area_sqm
+    - Sức chứa: max_occupancy
+  * ĐÁNH GIÁ HỢP LÝ:
+    - So sánh giá với diện tích và tiện ích
+    - Đánh giá xem giá có hợp lý với tiện ích được cung cấp không
+    - Gợi ý về điểm mạnh/yếu của phòng
+  * ƯU TIÊN: Tập trung vào giá cả và tiện ích, KHÔNG tập trung vào rating (rating thường ít hoặc không có)
+  * Format: "Phòng này có [tiện ích 1, tiện ích 2, ...]. Giá thuê [X] triệu/tháng, tiền cọc [Y] triệu, phí dịch vụ [Z] triệu/người. [Đánh giá hợp lý dựa trên giá và tiện ích]"
    (Thay ":id" bằng giá trị id thực tế). Nếu không biết entity, bỏ qua path.
 8. ƯU TIÊN CHART: Nếu structured data có thể dựng biểu đồ và ý định là thống kê/vẽ/biểu đồ → ưu tiên payload CHART; chỉ dùng TABLE khi không có số liệu phù hợp.
 
@@ -79,11 +133,49 @@ export interface FinalMessagePromptParams {
 		list: any[] | null;
 		table: any | null;
 		chart: any | null;
-	};
+	} | null;
+	isInsightMode?: boolean; // true khi ở INSIGHT mode - chỉ trả về message, không có structured data
 }
 
 export function buildFinalMessagePrompt(params: FinalMessagePromptParams): string {
-	const { recentMessages, conversationalMessage, count, dataPreview, structuredData } = params;
+	const {
+		recentMessages,
+		conversationalMessage,
+		count,
+		dataPreview,
+		structuredData,
+		isInsightMode,
+	} = params;
+
+	// INSIGHT MODE: Sử dụng prompt đã rút gọn
+	if (isInsightMode) {
+		return `
+Bạn là AI assistant của Trustay. Phân tích CHI TIẾT phòng trọ với SỐ LIỆU CỤ THỂ từ dữ liệu.
+
+${recentMessages ? `NGỮ CẢNH:\n${recentMessages}\n\n` : ''}
+
+THÔNG ĐIỆP: "${conversationalMessage}"
+DỮ LIỆU PHÒNG: ${dataPreview}
+
+QUY TẮC BẮT BUỘC:
+1. BẮT ĐẦU NGAY với số liệu cụ thể: "Phòng [X]m² tại [địa chỉ], giá thuê [Y] triệu/tháng..."
+2. PHẢI dùng SỐ LIỆU từ dữ liệu, KHÔNG nói chung chung
+3. Tính giá/m²: [giá thuê] / [diện tích] = [X] triệu/m²/tháng
+4. Tính tổng chi phí: giá thuê + phí dịch vụ + điện + nước + internet + dọn dẹp
+5. Đánh giá hợp lý: so sánh giá/m² với thị trường khu vực, so sánh giá với số lượng tiện ích
+6. Liệt kê ĐẦY ĐỦ tiện ích từ mảng amenities
+7. Kết luận: "Giá này [hợp lý/không hợp lý] vì [lý do cụ thể với số liệu]"
+
+CẤM TUYỆT ĐỐI:
+- KHÔNG viết: "Mình đã tìm thấy", "Mình sẽ phân tích", "Bạn xem qua", "Bạn thấy sao"
+- KHÔNG nói chung chung: "giá khá ổn", "nhiều tiện ích" → PHẢI có số cụ thể
+- KHÔNG chỉ liệt kê → PHẢI phân tích và đánh giá
+
+VÍ DỤ ĐÚNG:
+"Phòng 30m² tại đường Nguyễn Gia Trí, quận Bình Thạnh. Giá thuê 5.5 triệu/tháng, tiền cọc 11 triệu (2 tháng), phí dịch vụ 500k/tháng không bao gồm. Tổng chi phí thực tế 6 triệu/tháng. Giá/m² = 5.5/30 = 0.18 triệu/m²/tháng, hợp lý so với thị trường Bình Thạnh (0.15-0.2 triệu/m²). Phòng có 10 tiện ích: điều hòa, wifi, gác lửng, ban công, tủ lạnh, máy giặt, máy nước nóng... Với giá 5.5 triệu và 10 tiện ích đầy đủ, giá này hợp lý hơn phòng cùng diện tích chỉ có 5-6 tiện ích giá 4.5 triệu. Điểm mạnh: giá/m² thấp hơn trung bình, tiện ích đầy đủ, vị trí thuận tiện. Điểm yếu: phí dịch vụ không bao gồm. Kết luận: Tổng chi phí 6 triệu/tháng cho phòng 30m² với 10 tiện ích là hợp lý và đáng xem xét."
+
+TRẢ VỀ: Chỉ message text (Markdown), 300-400 từ, đầy đủ số liệu và đánh giá cụ thể.`;
+	}
 
 	const structuredDataSection = structuredData
 		? `

@@ -63,7 +63,7 @@ export interface TableColumn {
 }
 
 export interface DataPayload {
-	mode: 'LIST' | 'TABLE' | 'CHART';
+	mode: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT';
 	list?: {
 		items: readonly ListItem[];
 		total: number;
@@ -143,6 +143,15 @@ export enum UserRole {
 }
 
 /**
+ * Token usage from AI SDK generateText calls
+ */
+export interface TokenUsage {
+	promptTokens: number;
+	completionTokens: number;
+	totalTokens: number;
+}
+
+/**
  * Missing parameter for clarification
  */
 export interface MissingParam {
@@ -163,10 +172,14 @@ export interface OrchestratorAgentResponse {
 	readyForSql: boolean;
 	needsClarification?: boolean;
 	needsIntroduction?: boolean;
-	intentModeHint?: 'LIST' | 'TABLE' | 'CHART';
+	intentModeHint?: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT';
 	entityHint?: 'room' | 'post' | 'room_seeking_post';
 	filtersHint?: string; // natural language filters parsed (e.g., district:"gò vấp")
+	tablesHint?: string; // comma-separated list of tables needed (e.g., "rentals,users,payments")
+	relationshipsHint?: string; // relationships and JOINs needed (e.g., rentals→users(tenant), payments→rentals→users(owner))
 	missingParams?: MissingParam[]; // MVP: Missing parameters for clarification
+	intentAction?: 'search' | 'own' | 'stats'; // Intent action: search (toàn hệ thống), own (cá nhân), stats (thống kê)
+	tokenUsage?: TokenUsage; // Token usage from LLM call
 }
 
 /**
@@ -179,6 +192,7 @@ export interface SqlGenerationResult {
 	attempts?: number;
 	userId?: string;
 	userRole?: string;
+	tokenUsage?: TokenUsage; // Token usage from LLM call(s)
 }
 
 /**
@@ -189,4 +203,5 @@ export interface ResultValidationResponse {
 	reason?: string;
 	violations?: string[]; // List of validation violations
 	severity?: 'ERROR' | 'WARN'; // Severity level: ERROR blocks persistence, WARN allows but logs
+	tokenUsage?: TokenUsage; // Token usage from LLM call
 }
