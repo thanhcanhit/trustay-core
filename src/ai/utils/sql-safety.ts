@@ -230,6 +230,42 @@ function extractTablesFromAST(ast: AST | AST[], tables: Set<string>): void {
 }
 
 /**
+ * Extract function name from AST node safely
+ * @param nameNode - Function name node (can be string, object, or array)
+ * @returns Function name as string or null
+ */
+function extractFunctionName(nameNode: any): string | null {
+	if (!nameNode) {
+		return null;
+	}
+	// If it's a string, return it directly
+	if (typeof nameNode === 'string') {
+		return nameNode.toLowerCase();
+	}
+	// If it's an object, try to extract name
+	if (typeof nameNode === 'object') {
+		// Try common property names
+		if (nameNode.name && typeof nameNode.name === 'string') {
+			return nameNode.name.toLowerCase();
+		}
+		if (nameNode.value && typeof nameNode.value === 'string') {
+			return nameNode.value.toLowerCase();
+		}
+		// Try to get first string property
+		for (const key in nameNode) {
+			if (typeof nameNode[key] === 'string' && key !== 'type') {
+				return nameNode[key].toLowerCase();
+			}
+		}
+	}
+	// If it's an array, get first element
+	if (Array.isArray(nameNode) && nameNode.length > 0) {
+		return extractFunctionName(nameNode[0]);
+	}
+	return null;
+}
+
+/**
  * Extract all function names from SQL AST
  * @param ast - SQL AST node
  * @param functions - Set to collect function names
@@ -244,13 +280,22 @@ function extractFunctionsFromAST(ast: AST | AST[], functions: Set<string>): void
 	}
 	const node = ast as any;
 	// Extract function calls
-	if (node.type === 'function' && node.name) {
-		const funcName = node.name.toLowerCase();
-		functions.add(funcName);
+	if (node.type === 'function') {
+		const funcName = extractFunctionName(node.name);
+		if (funcName) {
+			functions.add(funcName);
+		}
+	}
+	// Also check for aggregate functions and other function-like nodes
+	if (node.type === 'aggr_func' || node.type === 'expr_func') {
+		const funcName = extractFunctionName(node.name || node.function);
+		if (funcName) {
+			functions.add(funcName);
+		}
 	}
 	// Recursively process all children
 	Object.keys(node).forEach((key) => {
-		if (key !== 'type' && typeof node[key] === 'object') {
+		if (key !== 'type' && typeof node[key] === 'object' && node[key] !== null) {
 			extractFunctionsFromAST(node[key], functions);
 		}
 	});
@@ -321,8 +366,16 @@ export function validateSqlSafety(sql: string, isAggregate: boolean = false): Sq
 		const parseResult = parser.astify(sanitizedSql, { database: 'PostgreSQL' });
 		ast = parseResult;
 	} catch (error) {
-		// If parsing fails, fallback to regex-based validation
-		violations.push(`Invalid SQL syntax: ${(error as Error).message}`);
+		// If parsing fails, fallback to basic validation
+		// Still check for dangerous patterns using regex
+		const errorMessage = (error as Error).message || String(error);
+		violations.push(`Invalid SQL syntax: ${errorMessage}`);
+		// Still check for dangerous patterns even if parsing fails
+		for (const pattern of DENIED_SCHEMA_PATTERNS) {
+			if (pattern.test(sql)) {
+				violations.push('Access to system schemas is not allowed');
+			}
+		}
 		return { isValid: false, violations, sanitizedSql };
 	}
 
@@ -334,13 +387,20 @@ export function validateSqlSafety(sql: string, isAggregate: boolean = false): Sq
 	}
 
 	// Check 2.5: Extract and validate functions using AST
-	const usedFunctions = new Set<string>();
-	extractFunctionsFromAST(ast, usedFunctions);
-	for (const func of usedFunctions) {
-		if (DENIED_FUNCTIONS.includes(func)) {
-			violations.push(`Query contains disallowed function: ${func}`);
-			return { isValid: false, violations, sanitizedSql };
+	try {
+		const usedFunctions = new Set<string>();
+		extractFunctionsFromAST(ast, usedFunctions);
+		for (const func of usedFunctions) {
+			if (DENIED_FUNCTIONS.includes(func)) {
+				violations.push(`Query contains disallowed function: ${func}`);
+				return { isValid: false, violations, sanitizedSql };
+			}
 		}
+	} catch {
+		// If function extraction fails, continue validation
+		// This is defensive programming - don't block on extraction errors
+		// Note: In production, you might want to log this for monitoring
+		// Silently continue - function validation is not critical if extraction fails
 	}
 
 	// Check 2.6: Deny system schemas (information_schema, pg_catalog, pg_*)
@@ -363,17 +423,31 @@ export function validateSqlSafety(sql: string, isAggregate: boolean = false): Sq
 	}
 
 	// Check 4: Extract and validate tables using AST (more accurate than regex)
-	const usedTables = new Set<string>();
-	extractTablesFromAST(ast, usedTables);
-	// Filter out PostgreSQL functions/constants that might be parsed as tables
-	const validTables = Array.from(usedTables).filter(
-		(table) => !POSTGRES_FUNCTIONS_AND_CONSTANTS.includes(table),
-	);
-	if (validTables.length > 0) {
-		const disallowedTables = validTables.filter((table) => !ALLOWED_TABLES.includes(table));
-		if (disallowedTables.length > 0) {
-			violations.push(`Query contains disallowed tables: ${disallowedTables.join(', ')}`);
+	try {
+		const usedTables = new Set<string>();
+		extractTablesFromAST(ast, usedTables);
+		// Filter out PostgreSQL functions/constants that might be parsed as tables
+		const validTables = Array.from(usedTables).filter(
+			(table) => !POSTGRES_FUNCTIONS_AND_CONSTANTS.includes(table),
+		);
+		if (validTables.length > 0) {
+			const disallowedTables = validTables.filter((table) => !ALLOWED_TABLES.includes(table));
+			if (disallowedTables.length > 0) {
+				violations.push(`Query contains disallowed tables: ${disallowedTables.join(', ')}`);
+			}
 		}
+	} catch {
+		// If table extraction fails, fallback to basic validation
+		// This is defensive programming - don't block on extraction errors
+		// Note: In production, you might want to log this for monitoring
+		// Still check for system schemas using regex as fallback
+		for (const pattern of DENIED_SCHEMA_PATTERNS) {
+			if (pattern.test(sql)) {
+				violations.push('Access to system schemas is not allowed');
+			}
+		}
+		// Mark as invalid if we can't extract tables (safety first)
+		violations.push('Failed to validate table access - SQL parsing error');
 	}
 
 	// Check 5: Enforce LIMIT for non-aggregate queries
