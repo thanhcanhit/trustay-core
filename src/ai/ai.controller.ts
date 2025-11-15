@@ -272,6 +272,20 @@ export class AiController {
 		},
 	})
 	async simpleText2Sql(@Query('query') query: string) {
-		return await this.aiService.simpleText2Sql(query);
+		this.logger.log(`[BASELINE@ai.controller.ts] Received query: "${query}"`);
+		const result = await this.aiService.simpleText2Sql(query);
+		this.logger.log(`[BASELINE@ai.controller.ts] SQL: ${result.sql}`);
+		this.logger.log(
+			`[BASELINE@ai.controller.ts] Results count: ${result.count}, Success: ${result.success}`,
+		);
+		if (result.results) {
+			this.logger.log(
+				`[BASELINE@ai.controller.ts] Results preview: ${JSON.stringify(result.results).substring(0, 500)}${JSON.stringify(result.results).length > 500 ? '...' : ''}`,
+			);
+		}
+		if (result.error) {
+			this.logger.error(`[BASELINE@ai.controller.ts] Error: ${result.error}`);
+		}
+		return result;
 	}
 }

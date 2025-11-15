@@ -1024,16 +1024,47 @@ export class AiService {
 				throw new Error(`SQL safety validation failed: ${safetyCheck.violations.join(', ')}`);
 			}
 			const finalSql = safetyCheck.enforcedSql || sql;
+			// Log SQL before execution
+			const sqlBannerTop = '==================== GENERATED SQL (BASELINE) ====================';
+			const sqlBannerBottom = '========================================================';
+			this.logger.log(this.formatStep('SIMPLE_TEXT2SQL', sqlBannerTop));
+			this.logger.log(this.formatStep('SIMPLE_TEXT2SQL', `Query: "${query}"`));
+			this.logger.log(this.formatStep('SIMPLE_TEXT2SQL', `SQL: ${finalSql}`));
+			this.logger.log(this.formatStep('SIMPLE_TEXT2SQL', sqlBannerBottom));
 			// Execute SQL
 			const results = await this.prisma.$queryRawUnsafe(finalSql);
 			const serializedResults = serializeBigInt(results);
 			const count = Array.isArray(serializedResults) ? serializedResults.length : 1;
-			return {
+			// Log results
+			const resultsBannerTop = '==================== SQL RESULTS (BASELINE) ====================';
+			const resultsBannerBottom = '========================================================';
+			this.logger.log(this.formatStep('SIMPLE_TEXT2SQL', resultsBannerTop));
+			this.logger.log(this.formatStep('SIMPLE_TEXT2SQL', `Count: ${count}`));
+			this.logger.log(
+				this.formatStep(
+					'SIMPLE_TEXT2SQL',
+					`Results: ${JSON.stringify(serializedResults, null, 2).substring(0, 1000)}${JSON.stringify(serializedResults).length > 1000 ? '...' : ''}`,
+				),
+			);
+			this.logger.log(this.formatStep('SIMPLE_TEXT2SQL', resultsBannerBottom));
+			const response = {
 				sql: finalSql,
 				results: serializedResults,
 				count,
 				success: true,
 			};
+			// Log final response
+			const responseBannerTop = '==================== RESPONSE (BASELINE) ====================';
+			const responseBannerBottom = '========================================================';
+			this.logger.log(this.formatStep('SIMPLE_TEXT2SQL', responseBannerTop));
+			this.logger.log(
+				this.formatStep(
+					'SIMPLE_TEXT2SQL',
+					`Response: ${JSON.stringify(response, null, 2).substring(0, 1000)}${JSON.stringify(response).length > 1000 ? '...' : ''}`,
+				),
+			);
+			this.logger.log(this.formatStep('SIMPLE_TEXT2SQL', responseBannerBottom));
+			return response;
 		} catch (error) {
 			this.logError(
 				'SIMPLE_TEXT2SQL',
