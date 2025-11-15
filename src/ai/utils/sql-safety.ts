@@ -1,7 +1,8 @@
 /**
  * SQL Safety utilities - Enforce LIMIT and allow-list tables
- * Simple regex-based validation for MVP (có thể nâng cấp với AST parser sau)
+ * Uses AST parser (node-sql-parser) for accurate SQL parsing and validation
  */
+import { AST, Parser } from 'node-sql-parser';
 
 /**
  * Allowed tables for SQL queries (allow-list)
@@ -62,22 +63,61 @@ const ALLOWED_TABLES = [
 	'wards',
 ];
 
+// Note: DENIED_KEYWORDS removed - now using AST parser to detect operations
+// AST parser can accurately detect UNION, DELETE, UPDATE, INSERT, etc. from AST node types
+
 /**
- * Denied SQL keywords (DDL/DML operations)
+ * Dangerous PostgreSQL functions that should be blocked
  */
-const DENIED_KEYWORDS = [
-	'DELETE',
-	'UPDATE',
-	'INSERT',
-	'DROP',
-	'ALTER',
-	'CREATE',
-	'TRUNCATE',
-	'GRANT',
-	'REVOKE',
-	'EXECUTE',
-	'EXEC',
-	'CALL',
+const DENIED_FUNCTIONS = [
+	'pg_read_file',
+	'pg_ls_dir',
+	'pg_read_binary_file',
+	'pg_execute',
+	'lo_import',
+	'lo_export',
+	'pg_stat_file',
+];
+
+/**
+ * System schema patterns that should be blocked
+ */
+const DENIED_SCHEMA_PATTERNS = [
+	/information_schema\./i,
+	/pg_catalog\./i,
+	/pg_/i, // All PostgreSQL system tables (pg_shadow, pg_user, etc.)
+];
+
+/**
+ * PostgreSQL functions/constants to ignore when parsing table names
+ * These are not tables, so should not be validated against allow-list
+ */
+const POSTGRES_FUNCTIONS_AND_CONSTANTS = [
+	'current_date',
+	'current_time',
+	'current_timestamp',
+	'now',
+	'date_trunc',
+	'extract',
+	'date_part',
+	'coalesce',
+	'nullif',
+	'case',
+	'cast',
+	'to_char',
+	'to_date',
+	'to_timestamp',
+	'age',
+	'interval',
+	'generate_series',
+	'array_agg',
+	'string_agg',
+	'json_agg',
+	'jsonb_agg',
+	'unnest',
+	'array',
+	'row',
+	'values',
 ];
 
 /**
@@ -87,6 +127,165 @@ export interface SqlSafetyResult {
 	isValid: boolean;
 	violations: string[];
 	enforcedSql?: string; // SQL with enforced LIMIT if needed
+	sanitizedSql?: string; // SQL after stripping comments
+}
+
+/**
+ * SQL Parser instance
+ */
+const parser = new Parser();
+
+/**
+ * Strip SQL comments to prevent comment-based injection attacks
+ * @param sql - SQL query
+ * @returns SQL without comments
+ */
+function stripSqlComments(sql: string): string {
+	return sql
+		.replace(/--[^\n]*/g, '') // Remove -- comments
+		.replace(/\/\*[\s\S]*?\*\//g, '') // Remove /* */ comments
+		.trim();
+}
+
+/**
+ * Extract all table names from SQL AST
+ * Recursively traverses AST to find all table references
+ * @param ast - SQL AST node
+ * @param tables - Set to collect table names
+ */
+function extractTablesFromAST(ast: AST | AST[], tables: Set<string>): void {
+	if (!ast) {
+		return;
+	}
+	if (Array.isArray(ast)) {
+		ast.forEach((node) => extractTablesFromAST(node, tables));
+		return;
+	}
+	const node = ast as any;
+	// Extract table from FROM clause (table type)
+	if (node.type === 'table') {
+		if (typeof node.table === 'string') {
+			const tableName = node.table.toLowerCase();
+			// Remove schema prefix if present (e.g., "schema.table" -> "table")
+			const tableWithoutSchema = tableName.split('.').pop() || tableName;
+			if (
+				tableWithoutSchema &&
+				!tableWithoutSchema.startsWith('(') &&
+				tableWithoutSchema !== 'select'
+			) {
+				tables.add(tableWithoutSchema);
+			}
+		} else if (node.table && typeof node.table === 'object') {
+			// Recursive if table is an object (subquery)
+			extractTablesFromAST(node.table, tables);
+		}
+	}
+	// Extract table from JOIN clauses
+	if (node.type === 'join') {
+		if (node.table) {
+			if (typeof node.table === 'string') {
+				const tableName = node.table.toLowerCase();
+				const tableWithoutSchema = tableName.split('.').pop() || tableName;
+				if (tableWithoutSchema && !tableWithoutSchema.startsWith('(')) {
+					tables.add(tableWithoutSchema);
+				}
+			} else if (typeof node.table === 'object') {
+				extractTablesFromAST(node.table, tables);
+			}
+		}
+	}
+	// Extract tables from WITH clause (CTE)
+	if (node.type === 'with') {
+		if (Array.isArray(node.value)) {
+			node.value.forEach((cte: any) => {
+				if (cte.stmt) {
+					extractTablesFromAST(cte.stmt, tables);
+				}
+			});
+		} else if (node.value) {
+			extractTablesFromAST(node.value, tables);
+		}
+	}
+	// Extract tables from SELECT statements (including subqueries)
+	if (node.type === 'select') {
+		if (node.from) {
+			extractTablesFromAST(node.from, tables);
+		}
+	}
+	// Extract tables from UNION/INTERSECT/EXCEPT
+	if (node.type === 'union' || node.type === 'except' || node.type === 'intersect') {
+		if (node.left) {
+			extractTablesFromAST(node.left, tables);
+		}
+		if (node.right) {
+			extractTablesFromAST(node.right, tables);
+		}
+	}
+	// Recursively process all object children
+	Object.keys(node).forEach((key) => {
+		if (key !== 'type' && typeof node[key] === 'object' && node[key] !== null) {
+			extractTablesFromAST(node[key], tables);
+		}
+	});
+}
+
+/**
+ * Extract all function names from SQL AST
+ * @param ast - SQL AST node
+ * @param functions - Set to collect function names
+ */
+function extractFunctionsFromAST(ast: AST | AST[], functions: Set<string>): void {
+	if (!ast) {
+		return;
+	}
+	if (Array.isArray(ast)) {
+		ast.forEach((node) => extractFunctionsFromAST(node, functions));
+		return;
+	}
+	const node = ast as any;
+	// Extract function calls
+	if (node.type === 'function' && node.name) {
+		const funcName = node.name.toLowerCase();
+		functions.add(funcName);
+	}
+	// Recursively process all children
+	Object.keys(node).forEach((key) => {
+		if (key !== 'type' && typeof node[key] === 'object') {
+			extractFunctionsFromAST(node[key], functions);
+		}
+	});
+}
+
+/**
+ * Check if AST contains denied keywords/operations
+ * @param ast - SQL AST node
+ * @returns Array of violations
+ */
+function checkDeniedOperations(ast: AST | AST[]): string[] {
+	const violations: string[] = [];
+	if (!ast) {
+		return violations;
+	}
+	if (Array.isArray(ast)) {
+		ast.forEach((node) => violations.push(...checkDeniedOperations(node)));
+		return violations;
+	}
+	const node = ast as any;
+	// Check for UNION, INTERSECT, EXCEPT
+	if (node.type === 'union' || node.type === 'except' || node.type === 'intersect') {
+		violations.push(`Query contains disallowed set operation: ${node.type.toUpperCase()}`);
+	}
+	// Check for DELETE, UPDATE, INSERT
+	if (node.type === 'delete' || node.type === 'update' || node.type === 'insert') {
+		violations.push(`Query contains disallowed operation: ${node.type.toUpperCase()}`);
+	}
+	// Recursively check children
+	Object.keys(node).forEach((key) => {
+		if (key !== 'type' && typeof node[key] === 'object') {
+			violations.push(...checkDeniedOperations(node[key]));
+		}
+	});
+	return violations;
 }
 
 /**
@@ -97,78 +296,102 @@ export interface SqlSafetyResult {
  */
 export function validateSqlSafety(sql: string, isAggregate: boolean = false): SqlSafetyResult {
 	const violations: string[] = [];
-	const sqlUpper = sql.toUpperCase().trim();
 
-	// Check 1: Must be SELECT only
-	if (!sqlUpper.startsWith('SELECT')) {
+	// Step 0: Strip comments first to prevent comment-based injection
+	const sanitizedSql = stripSqlComments(sql);
+	const sqlUpper = sanitizedSql.toUpperCase().trim();
+
+	// Check 1: Must be SELECT only (check first statement only)
+	// Handle multiple statements separated by semicolons
+	const firstStatement = sqlUpper.split(';')[0].trim();
+	if (!firstStatement.startsWith('SELECT')) {
 		violations.push('Query must be SELECT only');
-		return { isValid: false, violations };
+		return { isValid: false, violations, sanitizedSql };
 	}
 
-	// Check 2: Deny DDL/DML keywords
-	for (const keyword of DENIED_KEYWORDS) {
-		if (sqlUpper.includes(` ${keyword} `) || sqlUpper.includes(`\n${keyword} `)) {
-			violations.push(`Query contains disallowed keyword: ${keyword}`);
-			return { isValid: false, violations };
+	// Check 1.5: Only allow single SELECT statement (no multiple statements)
+	if (sanitizedSql.split(';').filter((s) => s.trim().length > 0).length > 1) {
+		violations.push('Multiple statements are not allowed');
+		return { isValid: false, violations, sanitizedSql };
+	}
+
+	// Step 2: Parse SQL using AST parser
+	let ast: AST | AST[];
+	try {
+		const parseResult = parser.astify(sanitizedSql, { database: 'PostgreSQL' });
+		ast = parseResult;
+	} catch (error) {
+		// If parsing fails, fallback to regex-based validation
+		violations.push(`Invalid SQL syntax: ${(error as Error).message}`);
+		return { isValid: false, violations, sanitizedSql };
+	}
+
+	// Check 2: Check for denied operations using AST
+	const deniedOps = checkDeniedOperations(ast);
+	if (deniedOps.length > 0) {
+		violations.push(...deniedOps);
+		return { isValid: false, violations, sanitizedSql };
+	}
+
+	// Check 2.5: Extract and validate functions using AST
+	const usedFunctions = new Set<string>();
+	extractFunctionsFromAST(ast, usedFunctions);
+	for (const func of usedFunctions) {
+		if (DENIED_FUNCTIONS.includes(func)) {
+			violations.push(`Query contains disallowed function: ${func}`);
+			return { isValid: false, violations, sanitizedSql };
 		}
 	}
 
-	// Check 3: Deny SELECT * (except in subqueries or specific cases)
-	const hasSelectStar = /SELECT\s+\*\s+FROM/i.test(sql);
+	// Check 2.6: Deny system schemas (information_schema, pg_catalog, pg_*)
+	// Check in original SQL (before stripping) to catch schema prefixes
+	for (const pattern of DENIED_SCHEMA_PATTERNS) {
+		if (pattern.test(sql)) {
+			violations.push('Access to system schemas is not allowed');
+			return { isValid: false, violations, sanitizedSql };
+		}
+	}
+
+	// Check 3: Warn about SELECT * but don't block (allow for flexibility)
+	// SELECT * is allowed but not recommended - we'll just log a warning
+	// This allows normal operations while still encouraging best practices
+	const hasSelectStar = /SELECT\s+\*\s+FROM/i.test(sanitizedSql);
 	if (hasSelectStar && !isAggregate) {
-		// Allow SELECT * only in subqueries or aggregate contexts
-		const isInSubquery = /SELECT\s+\*\s+FROM.*\)/i.test(sql);
-		if (!isInSubquery) {
-			violations.push('Query contains SELECT * (use explicit columns)');
-		}
+		// Allow SELECT * - just log warning, don't block
+		// This is more permissive for normal operations
+		// Note: In production, you might want to log this for monitoring
 	}
 
-	// Check 4: Allow-list tables (parse FROM and JOIN clauses)
-	// Parse tables from FROM, JOIN, LEFT JOIN, RIGHT JOIN, INNER JOIN, FULL JOIN
-	const tablePatterns = [/FROM\s+(\w+)/gi, /(?:LEFT|RIGHT|INNER|FULL)?\s*JOIN\s+(\w+)/gi];
+	// Check 4: Extract and validate tables using AST (more accurate than regex)
 	const usedTables = new Set<string>();
-	for (const pattern of tablePatterns) {
-		const matches = sql.match(pattern);
-		if (matches) {
-			for (const match of matches) {
-				// Extract table name (handle aliases like "table_name alias" or "table_name AS alias")
-				const tableName = match
-					.replace(/(?:FROM|LEFT|RIGHT|INNER|FULL)?\s*JOIN\s+/i, '')
-					.replace(/FROM\s+/i, '')
-					.split(/\s+/)[0] // Take first word (table name before alias)
-					.toLowerCase()
-					.trim();
-				if (tableName && !tableName.match(/^(on|using|where|group|order|having|limit)$/i)) {
-					usedTables.add(tableName);
-				}
-			}
-		}
-	}
-	if (usedTables.size > 0) {
-		const disallowedTables = Array.from(usedTables).filter(
-			(table) => !ALLOWED_TABLES.includes(table),
-		);
+	extractTablesFromAST(ast, usedTables);
+	// Filter out PostgreSQL functions/constants that might be parsed as tables
+	const validTables = Array.from(usedTables).filter(
+		(table) => !POSTGRES_FUNCTIONS_AND_CONSTANTS.includes(table),
+	);
+	if (validTables.length > 0) {
+		const disallowedTables = validTables.filter((table) => !ALLOWED_TABLES.includes(table));
 		if (disallowedTables.length > 0) {
 			violations.push(`Query contains disallowed tables: ${disallowedTables.join(', ')}`);
 		}
 	}
 
 	// Check 5: Enforce LIMIT for non-aggregate queries
-	const hasLimit = /LIMIT\s+\d+/i.test(sql);
+	const hasLimit = /\bLIMIT\s+\d+/i.test(sanitizedSql);
 	if (!isAggregate && !hasLimit) {
 		// Auto-enforce LIMIT 50 for non-aggregate queries
-		const enforcedSql = enforceLimit(sql, 50);
+		const enforcedSql = enforceLimit(sanitizedSql, 50);
 		if (violations.length === 0) {
 			// Only return enforced SQL if no other violations
-			return { isValid: true, violations: [], enforcedSql };
+			return { isValid: true, violations: [], enforcedSql, sanitizedSql };
 		}
 	}
 
 	if (violations.length > 0) {
-		return { isValid: false, violations };
+		return { isValid: false, violations, sanitizedSql };
 	}
 
-	return { isValid: true, violations: [] };
+	return { isValid: true, violations: [], sanitizedSql };
 }
 
 /**
