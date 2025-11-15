@@ -981,9 +981,13 @@ export class AiService {
 	 * Simple one-for-all method for model evaluation
 	 * No session, no history, no agents - just direct SQL generation
 	 * @param query - User query
+	 * @param userId - Optional user ID for authorization
 	 * @returns SQL execution result
 	 */
-	async simpleText2Sql(query: string): Promise<{
+	async simpleText2Sql(
+		query: string,
+		userId?: string,
+	): Promise<{
 		sql: string;
 		results: unknown;
 		count: number;
@@ -1012,6 +1016,26 @@ export class AiService {
 				.trim();
 			if (!sql.endsWith(';')) {
 				sql += ';';
+			}
+			// Replace USER_ID placeholder with actual userId if provided
+			if (userId) {
+				// Validate userId is UUID format for security
+				if (!this.isUuid(userId)) {
+					throw new Error(`Invalid userId format: ${userId} (must be UUID)`);
+				}
+				// Replace 'USER_ID' (with quotes) - prompt instructs model to use this format
+				sql = sql.replace(/'USER_ID'/g, `'${userId}'`);
+				// Also replace USER_ID without quotes in WHERE clauses (fallback for edge cases)
+				sql = sql.replace(/(WHERE\s+[^=]+\s*=\s*)USER_ID(\s|;|$)/gi, `$1'${userId}'$2`);
+				this.logDebug('SIMPLE_TEXT2SQL', `Replaced USER_ID placeholder with userId: ${userId}`);
+			} else {
+				// If userId is not provided but SQL contains USER_ID placeholder, log warning
+				if (sql.includes('USER_ID')) {
+					this.logWarn(
+						'SIMPLE_TEXT2SQL',
+						'SQL contains USER_ID placeholder but userId is not provided - query may fail',
+					);
+				}
 			}
 			// Validate SQL safety
 			const sqlLower = sql.toLowerCase().trim();

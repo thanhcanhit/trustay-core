@@ -271,9 +271,14 @@ export class AiController {
 			},
 		},
 	})
-	async simpleText2Sql(@Query('query') query: string) {
-		this.logger.log(`[BASELINE@ai.controller.ts] Received query: "${query}"`);
-		const result = await this.aiService.simpleText2Sql(query);
+	async simpleText2Sql(
+		@Query('query') query: string,
+		@CurrentUser('id') userId: string | undefined,
+	) {
+		this.logger.log(
+			`[BASELINE@ai.controller.ts] Received query: "${query}"${userId ? ` | userId: ${userId}` : ' | anonymous'}`,
+		);
+		const result = await this.aiService.simpleText2Sql(query, userId);
 		this.logger.log(`[BASELINE@ai.controller.ts] SQL: ${result.sql}`);
 		this.logger.log(
 			`[BASELINE@ai.controller.ts] Results count: ${result.count}, Success: ${result.success}`,
