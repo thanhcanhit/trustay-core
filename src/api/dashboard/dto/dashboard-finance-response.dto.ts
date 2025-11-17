@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { ChartResponseDto } from './chart-response.dto';
 
 class ReferencePeriodDto {
 	@ApiProperty({ example: '2025-11-01T00:00:00.000Z' })
@@ -87,4 +88,10 @@ export class DashboardFinanceResponseDto {
 
 	@ApiProperty({ type: () => PaymentSummaryDto })
 	readonly payments: PaymentSummaryDto;
+
+	@ApiProperty({
+		description: 'Những biểu đồ chính trên dashboard tài chính',
+		example: ['revenueTrend', 'buildingPerformance', 'roomTypeDistribution'],
+	})
+	readonly charts: Record<string, ChartResponseDto>;
 }

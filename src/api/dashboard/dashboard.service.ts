@@ -8,6 +8,7 @@ import {
 	RoomStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ChartResponseDto } from './dto/chart-response.dto';
 import { DashboardFilterQueryDto } from './dto/dashboard-filter-query.dto';
 import { DashboardFinanceResponseDto } from './dto/dashboard-finance-response.dto';
 import { DashboardOperationsResponseDto } from './dto/dashboard-operations-response.dto';
@@ -21,6 +22,7 @@ const PENDING_REQUEST_STATUSES: RequestStatus[] = [
 const OPERATION_QUEUE_LIMIT = 5;
 const EXPIRING_WINDOW_DAYS = 30;
 const DUE_SOON_WINDOW_DAYS = 7;
+const MAX_BUILDINGS_IN_CHART = 5;
 
 interface BuildingSummary {
 	total: number;
@@ -177,10 +179,11 @@ export class DashboardService {
 	): Promise<DashboardFinanceResponseDto> {
 		const { buildingId } = query;
 		const reference = this.resolveReferencePeriod(query.referenceMonth);
-		const [revenue, bills, payments] = await Promise.all([
+		const [revenue, bills, payments, charts] = await Promise.all([
 			this.getRevenueSnapshot(landlordId, buildingId, reference),
 			this.getBillAlerts(landlordId, buildingId),
 			this.getPaymentSummary(landlordId, buildingId, reference),
+			this.getFinanceCharts(landlordId, buildingId, reference, query.referenceMonth),
 		]);
 		return {
 			referencePeriod: {
@@ -190,6 +193,7 @@ export class DashboardService {
 			revenue,
 			bills,
 			payments,
+			charts,
 		};
 	}
 
@@ -658,6 +662,228 @@ export class DashboardService {
 		};
 	}
 
+	private async getFinanceCharts(
+		landlordId: string,
+		buildingId: string | undefined,
+		reference: ReferencePeriod,
+		referenceMonth?: string,
+	): Promise<Record<string, ChartResponseDto>> {
+		const [revenueTrend, buildingPerformance, roomTypeDistribution] = await Promise.all([
+			this.getRevenueTrendChart(landlordId, buildingId, reference, referenceMonth),
+			this.getBuildingPerformanceChart(landlordId, buildingId, reference, referenceMonth),
+			this.getRoomTypeDistributionChart(landlordId, buildingId),
+		]);
+		return {
+			revenueTrend,
+			buildingPerformance,
+			roomTypeDistribution,
+		};
+	}
+
+	private async getRevenueTrendChart(
+		landlordId: string,
+		buildingId: string | undefined,
+		reference: ReferencePeriod,
+		referenceMonth?: string,
+	): Promise<ChartResponseDto> {
+		const billWhere: Prisma.BillWhereInput = {
+			periodStart: { gte: reference.start },
+			periodEnd: { lte: reference.end },
+			rental: this.buildRentalWhere(landlordId, buildingId),
+		};
+		const bills = await this.prisma.bill.findMany({
+			where: billWhere,
+			select: {
+				periodStart: true,
+				totalAmount: true,
+			},
+		});
+		const dayKeys = this.generateDateKeys(reference);
+		const totals = dayKeys.reduce<Record<string, number>>((acc, key) => {
+			acc[key] = 0;
+			return acc;
+		}, {});
+		for (const bill of bills) {
+			const key = this.toDateKey(bill.periodStart ?? reference.start);
+			if (totals[key] === undefined) {
+				totals[key] = 0;
+			}
+			totals[key] += this.toNumber(bill.totalAmount);
+		}
+		return {
+			type: 'line',
+			title: 'Doanh thu theo ngày',
+			meta: {
+				unit: 'VND',
+				period: { start: reference.start.toISOString(), end: reference.end.toISOString() },
+				filters: {
+					...(buildingId ? { buildingId } : {}),
+					...(referenceMonth ? { referenceMonth } : {}),
+				},
+			},
+			dataset: [
+				{
+					label: 'Tổng doanh thu',
+					points: dayKeys.map((key) => ({
+						x: key,
+						y: Number((totals[key] ?? 0).toFixed(2)),
+					})),
+				},
+			],
+		};
+	}
+
+	private async getBuildingPerformanceChart(
+		landlordId: string,
+		buildingId: string | undefined,
+		reference: ReferencePeriod,
+		referenceMonth?: string,
+	): Promise<ChartResponseDto> {
+		const buildingWhere = this.buildBuildingWhere(landlordId, buildingId);
+		const buildings = await this.prisma.building.findMany({
+			where: buildingWhere,
+			select: {
+				id: true,
+				name: true,
+				rooms: {
+					select: {
+						roomInstances: {
+							select: {
+								status: true,
+							},
+						},
+					},
+				},
+			},
+			take: MAX_BUILDINGS_IN_CHART,
+		});
+		if (buildings.length === 0) {
+			return {
+				type: 'bar',
+				title: 'Hiệu suất tòa nhà',
+				meta: { unit: 'VND' },
+				dataset: [],
+			};
+		}
+		const bills = await this.prisma.bill.findMany({
+			where: {
+				periodStart: { gte: reference.start },
+				periodEnd: { lte: reference.end },
+				rental: {
+					ownerId: landlordId,
+					roomInstance: {
+						room: {
+							building: this.buildBuildingWhere(landlordId, buildingId),
+						},
+					},
+				},
+			},
+			include: {
+				rental: {
+					include: {
+						roomInstance: {
+							include: {
+								room: {
+									select: {
+										buildingId: true,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		});
+		const revenueMap = new Map<string, number>();
+		for (const bill of bills) {
+			const buildingKey = bill.rental.roomInstance.room.buildingId;
+			if (!buildingKey) {
+				continue;
+			}
+			revenueMap.set(
+				buildingKey,
+				(revenueMap.get(buildingKey) ?? 0) + this.toNumber(bill.totalAmount),
+			);
+		}
+		const revenueDataset = {
+			label: 'Doanh thu',
+			points: [] as { x: string; y: number }[],
+		};
+		const occupancyDataset = {
+			label: 'Tỷ lệ lấp đầy (%)',
+			points: [] as { x: string; y: number }[],
+		};
+		for (const building of buildings) {
+			const totalInstances = building.rooms.reduce(
+				(sum, room) => sum + room.roomInstances.length,
+				0,
+			);
+			const occupiedInstances = building.rooms.reduce(
+				(sum, room) =>
+					sum + room.roomInstances.filter((ri) => ri.status === RoomStatus.occupied).length,
+				0,
+			);
+			const occupancyPercent =
+				totalInstances === 0 ? 0 : Number(((occupiedInstances / totalInstances) * 100).toFixed(2));
+			const revenueValue = Number((revenueMap.get(building.id) ?? 0).toFixed(2));
+			const label = building.name;
+			revenueDataset.points.push({ x: label, y: revenueValue });
+			occupancyDataset.points.push({ x: label, y: occupancyPercent });
+		}
+		return {
+			type: 'bar',
+			title: 'Hiệu suất tòa nhà',
+			meta: {
+				unit: 'VND',
+				period: { start: reference.start.toISOString(), end: reference.end.toISOString() },
+				filters: {
+					...(buildingId ? { buildingId } : {}),
+					...(referenceMonth ? { referenceMonth } : {}),
+				},
+			},
+			dataset: [revenueDataset, occupancyDataset],
+		};
+	}
+
+	private async getRoomTypeDistributionChart(
+		landlordId: string,
+		buildingId: string | undefined,
+	): Promise<ChartResponseDto> {
+		const instances = await this.prisma.roomInstance.findMany({
+			where: this.buildRoomInstanceWhere(landlordId, buildingId),
+			select: {
+				room: {
+					select: {
+						roomType: true,
+					},
+				},
+			},
+		});
+		const typeCounts = instances.reduce<Record<string, number>>((acc, instance) => {
+			const type = instance.room.roomType ?? 'unknown';
+			acc[type] = (acc[type] ?? 0) + 1;
+			return acc;
+		}, {});
+		const points = Object.entries(typeCounts).map(([type, count]) => ({
+			x: type,
+			y: count,
+		}));
+		return {
+			type: 'pie',
+			title: 'Phân bổ loại phòng',
+			meta: {
+				unit: 'rooms',
+				filters: { ...(buildingId ? { buildingId } : {}) },
+			},
+			dataset: [
+				{
+					label: 'Số lượng phòng',
+					points,
+				},
+			],
+		};
+	}
+
 	private buildBuildingWhere(landlordId: string, buildingId?: string): Prisma.BuildingWhereInput {
 		return {
 			ownerId: landlordId,
@@ -718,6 +944,20 @@ export class DashboardService {
 		const clone = new Date(date);
 		clone.setDate(clone.getDate() + days);
 		return clone;
+	}
+
+	private generateDateKeys(reference: ReferencePeriod): string[] {
+		const keys: string[] = [];
+		let cursor = new Date(reference.start);
+		while (cursor <= reference.end) {
+			keys.push(this.toDateKey(cursor));
+			cursor = this.addDays(cursor, 1);
+		}
+		return keys;
+	}
+
+	private toDateKey(date: Date): string {
+		return date.toISOString().slice(0, 10);
 	}
 
 	private toNumber(value?: Prisma.Decimal | null | number): number {
