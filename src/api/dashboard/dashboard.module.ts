@@ -1,0 +1,15 @@
+import { Module } from '@nestjs/common';
+import { PrismaModule } from '../../prisma/prisma.module';
+import { DashboardController } from './dashboard.controller';
+import { DashboardService } from './dashboard.service';
+
+/**
+ * Module cung cấp dashboard API cho landlord.
+ */
+@Module({
+	imports: [PrismaModule],
+	controllers: [DashboardController],
+	providers: [DashboardService],
+	exports: [DashboardService],
+})
+export class DashboardModule {}

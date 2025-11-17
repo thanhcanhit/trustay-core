@@ -6,6 +6,7 @@ import { BillsModule } from './api/bills/bills.module';
 import { BuildingModule } from './api/buildings/building.module';
 import { ChatModule } from './api/chat/chat.module';
 import { ContractsModule } from './api/contracts/contracts.module';
+import { DashboardModule } from './api/dashboard/dashboard.module';
 import { LandlordModule } from './api/landlord/landlord.module';
 import { ListingModule } from './api/listing/listing.module';
 import { NotificationsModule } from './api/notifications/notifications.module';
@@ -88,6 +89,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 		RealtimeModule,
 		ChatModule,
 		LandlordModule,
+		DashboardModule,
 		AiModule,
 	],
 	controllers: [AppController],
