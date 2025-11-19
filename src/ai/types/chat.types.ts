@@ -1,3 +1,5 @@
+import { RoomPublishingDraft } from './room-publishing.types';
+
 /**
  * Interface for chat message compatible with AI SDK
  */
@@ -20,6 +22,12 @@ export interface ChatSession {
 	messages: ChatMessage[];
 	lastActivity: Date;
 	createdAt: Date;
+	context?: ChatSessionContext;
+}
+
+export interface ChatSessionContext {
+	activeFlow?: 'room-publishing';
+	roomPublishing?: RoomPublishingDraft;
 }
 
 /**

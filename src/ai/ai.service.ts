@@ -10,11 +10,13 @@ import { KnowledgeService } from './knowledge/knowledge.service';
 import { buildOneForAllPrompt } from './prompts/simple-system-one-for-all';
 import { VIETNAMESE_LOCALE_SYSTEM_PROMPT } from './prompts/system.prompt';
 import { generateErrorResponse } from './services/error-handler.service';
+import { RoomPublishingService } from './services/room-publishing.service';
 import {
 	ChatMessage,
 	ChatResponse,
 	ChatSession,
 	DataPayload,
+	OrchestratorAgentResponse,
 	RequestType,
 	TableColumn,
 } from './types/chat.types';
@@ -61,6 +63,7 @@ export class AiService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly knowledge: KnowledgeService,
+		private readonly roomPublishingService: RoomPublishingService,
 	) {
 		// Initialize orchestrator agent with Prisma and KnowledgeService
 		this.orchestratorAgent = new OrchestratorAgent(this.prisma, this.knowledge);
@@ -239,6 +242,51 @@ export class AiService {
 		}
 	}
 
+	private tryHandleRoomPublishingFlow(
+		session: ChatSession,
+		userMessage: string,
+		orchestratorResponse: OrchestratorAgentResponse,
+	): ChatResponse | null {
+		if (!this.shouldActivateRoomFlow(userMessage, orchestratorResponse)) {
+			return null;
+		}
+		const stepResult = this.roomPublishingService.handleUserMessage(session, userMessage);
+		const meta: Record<string, string | number | boolean> = {
+			stage: stepResult.stage,
+		};
+		if (stepResult.missingField?.key) {
+			meta.missingField = stepResult.missingField.key;
+		}
+		if (stepResult.sqlInstruction) {
+			meta.sqlInstruction = stepResult.sqlInstruction;
+		}
+		if (stepResult.executionPlan) {
+			meta.planReady = true;
+			meta.shouldCreateBuilding = stepResult.executionPlan.shouldCreateBuilding;
+		}
+		return {
+			kind: 'CONTENT',
+			sessionId: session.sessionId,
+			timestamp: new Date().toISOString(),
+			message: stepResult.prompt,
+			payload: { mode: 'CONTENT' },
+			meta,
+		};
+	}
+
+	private shouldActivateRoomFlow(
+		query: string,
+		orchestratorResponse: OrchestratorAgentResponse,
+	): boolean {
+		const normalized = query.toLowerCase();
+		const keywordMatch =
+			/(tạo|đăng|thêm|publish|create).*(phòng|room)/.test(normalized) ||
+			/(phòng|room).*(tạo|đăng|mở)/.test(normalized);
+		const intentMatch =
+			orchestratorResponse.entityHint === 'room' && orchestratorResponse.intentAction === 'own';
+		return keywordMatch || intentMatch;
+	}
+
 	/**
 	 * Check if identifier is UUID format
 	 * @param identifier - Identifier to check
@@ -395,6 +443,15 @@ export class AiService {
 					`${orchestratorResponse.entityHint ? ` | entityHint=${orchestratorResponse.entityHint}` : ''}` +
 					` | took=${orchestratorTime}ms`,
 			);
+			const roomFlowEnvelope = this.tryHandleRoomPublishingFlow(
+				session,
+				query,
+				orchestratorResponse,
+			);
+			if (roomFlowEnvelope) {
+				this.logPipelineEnd(session.sessionId, 'ROOM_FLOW', pipelineStartAt);
+				return roomFlowEnvelope;
+			}
 
 			// Xác định mode response dựa trên ý định người dùng (LIST/TABLE/CHART/INSIGHT)
 			// Ưu tiên MODE_HINT từ Orchestrator (có thể là INSIGHT nếu có currentPageContext)
