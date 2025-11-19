@@ -5,6 +5,48 @@ const prisma = new PrismaClient();
 
 // Default password for all users
 const DEFAULT_PASSWORD = 'trustay123';
+const DASHBOARD_SAMPLE_TAG = '[dashboard-sample]';
+const DASHBOARD_SAMPLE_USERS = {
+	booking1: {
+		email: 'lead.booking1@trustay.com',
+		phone: '0938881001',
+		firstName: 'Mai',
+		lastName: 'Anh',
+	},
+	booking2: {
+		email: 'lead.booking2@trustay.com',
+		phone: '0938881002',
+		firstName: 'Trương',
+		lastName: 'Nam',
+	},
+	invite1: {
+		email: 'invite.tenant1@trustay.com',
+		phone: '0938882001',
+		firstName: 'Phạm',
+		lastName: 'Khánh',
+	},
+	roommateApplicant1: {
+		email: 'roommate.applicant1@trustay.com',
+		phone: '0938883001',
+		firstName: 'Đỗ',
+		lastName: 'Hải',
+	},
+	roommateApplicant2: {
+		email: 'roommate.applicant2@trustay.com',
+		phone: '0938883002',
+		firstName: 'Phan',
+		lastName: 'Như',
+	},
+	contractProspect: {
+		email: 'contract.prospect1@trustay.com',
+		phone: '0938884001',
+		firstName: 'Hoàng',
+		lastName: 'Khoa',
+	},
+};
+const DASHBOARD_SAMPLE_USER_EMAILS = Object.values(DASHBOARD_SAMPLE_USERS).map(
+	(user) => user.email,
+);
 
 /**
  * Setup test data for statistics testing
@@ -1137,6 +1179,12 @@ async function setupStatsTestData() {
 		}
 	}
 
+	await createDashboardSampleData({
+		landlord,
+		building,
+		hashedPassword,
+	});
+
 	// Summary
 	console.log('\n📊 Test Data Setup Summary:');
 	console.log(`   • Landlord: ${landlord.firstName} ${landlord.lastName} (${landlord.email})`);
@@ -1158,6 +1206,9 @@ async function setupStatsTestData() {
 	console.log(`   • Rentals: ${createdRentals.length}`);
 	console.log(`   • Bills: ${billsCreated.length} (3 tháng × ${createdRentals.length} phòng)`);
 	console.log(`   • Ratings: ${createdRentals.length}`);
+	console.log(
+		'   • Dashboard sample data: bookings, invitations, roommate posts, contracts, notifications',
+	);
 	console.log(`\n📋 Room Details:`);
 	roomsData.forEach((rd) => {
 		const status = rd.hasOccupants ? `✅ ${rd.studentCount} sinh viên` : '🟢 Trống';
@@ -1190,8 +1241,366 @@ async function setupStatsTestData() {
 	console.log('');
 }
 
+async function ensureSampleTenantUser(seed, hashedPassword) {
+	if (!seed) {
+		throw new Error('Sample user seed is required');
+	}
+	let user = await prisma.user.findUnique({ where: { email: seed.email } });
+	if (!user) {
+		user = await prisma.user.create({
+			data: {
+				email: seed.email,
+				phone: seed.phone,
+				firstName: seed.firstName,
+				lastName: seed.lastName,
+				role: 'tenant',
+				passwordHash: hashedPassword,
+				isVerifiedEmail: true,
+				isVerifiedPhone: false,
+			},
+		});
+		console.log(`   ✅ Created sample tenant lead: ${seed.email}`);
+	}
+	return user;
+}
+
+async function deleteDashboardSampleArtifacts(landlordId) {
+	await prisma.roommateApplication.deleteMany({
+		where: { applicationMessage: { contains: DASHBOARD_SAMPLE_TAG } },
+	});
+	await prisma.roommateSeekingPost.deleteMany({
+		where: { title: { contains: DASHBOARD_SAMPLE_TAG } },
+	});
+	await prisma.roomInvitation.deleteMany({
+		where: { message: { contains: DASHBOARD_SAMPLE_TAG } },
+	});
+	await prisma.roomBooking.deleteMany({
+		where: { messageToOwner: { contains: DASHBOARD_SAMPLE_TAG } },
+	});
+	await prisma.contract.deleteMany({
+		where: {
+			contractCode: { startsWith: 'HD-DASH-' },
+			...(landlordId ? { landlordId } : {}),
+		},
+	});
+	await prisma.notification.deleteMany({
+		where: {
+			notificationType: 'dashboard_sample',
+			...(landlordId ? { userId: landlordId } : {}),
+		},
+	});
+	await prisma.roomInstance.deleteMany({
+		where: { notes: DASHBOARD_SAMPLE_TAG },
+	});
+	await prisma.user.deleteMany({
+		where: { email: { in: DASHBOARD_SAMPLE_USER_EMAILS } },
+	});
+}
+
+async function createDashboardSampleData({ landlord, building, hashedPassword }) {
+	console.log('\n📈 Creating dashboard sample data for dashboard testing...');
+	await deleteDashboardSampleArtifacts(landlord?.id);
+
+	const rooms = await prisma.room.findMany({
+		where: { buildingId: building.id },
+	});
+
+	if (rooms.length === 0) {
+		console.log('   ⚠️  No rooms found. Skipping dashboard sample data.');
+		return;
+	}
+
+	const bookingRoom = rooms[0];
+	const invitationRoom = rooms[1] ?? bookingRoom;
+	const futureDate = (days) => {
+		const date = new Date();
+		date.setDate(date.getDate() + days);
+		return date;
+	};
+
+	const bookingSeeds = [
+		{
+			userSeed: DASHBOARD_SAMPLE_USERS.booking1,
+			status: 'pending',
+			moveInDays: 14,
+			message: 'Em cần xem phòng vào cuối tuần này.',
+		},
+		{
+			userSeed: DASHBOARD_SAMPLE_USERS.booking2,
+			status: 'awaiting_confirmation',
+			moveInDays: 30,
+			message: 'Anh đã đặt cọc, chờ xác nhận chi tiết hợp đồng.',
+		},
+	];
+
+	for (const seed of bookingSeeds) {
+		const tenant = await ensureSampleTenantUser(seed.userSeed, hashedPassword);
+		const existingBooking = await prisma.roomBooking.findFirst({
+			where: {
+				tenantId: tenant.id,
+				roomId: bookingRoom.id,
+				status: seed.status,
+				messageToOwner: { contains: DASHBOARD_SAMPLE_TAG },
+			},
+		});
+
+		if (existingBooking) {
+			continue;
+		}
+
+		await prisma.roomBooking.create({
+			data: {
+				roomId: bookingRoom.id,
+				tenantId: tenant.id,
+				moveInDate: futureDate(seed.moveInDays),
+				rentalMonths: 12,
+				monthlyRent: 1800000,
+				depositAmount: 3600000,
+				status: seed.status,
+				messageToOwner: `${DASHBOARD_SAMPLE_TAG} ${seed.message}`,
+			},
+		});
+	}
+
+	const invitationSeeds = [
+		{
+			userSeed: DASHBOARD_SAMPLE_USERS.invite1,
+			status: 'pending',
+			moveInDays: 10,
+			message: 'Mời thuê phòng studio tầng 2.',
+			withAccount: true,
+		},
+		{
+			userSeed: {
+				email: 'invite.external@trustay.com',
+				phone: '0938882002',
+				firstName: 'Nguyễn',
+				lastName: 'Ly',
+			},
+			status: 'awaiting_confirmation',
+			moveInDays: 18,
+			message: 'Thư mời qua email cho khách chưa có tài khoản.',
+			withAccount: false,
+		},
+	];
+
+	for (const seed of invitationSeeds) {
+		let recipientUser = null;
+		if (seed.withAccount) {
+			recipientUser = await ensureSampleTenantUser(seed.userSeed, hashedPassword);
+		}
+
+		const existingInvitation = await prisma.roomInvitation.findFirst({
+			where: {
+				roomId: invitationRoom.id,
+				status: seed.status,
+				message: { contains: DASHBOARD_SAMPLE_TAG },
+				...(seed.withAccount
+					? { recipientId: recipientUser?.id ?? undefined }
+					: { recipientEmail: seed.userSeed.email }),
+			},
+		});
+
+		if (existingInvitation) {
+			continue;
+		}
+
+		await prisma.roomInvitation.create({
+			data: {
+				roomId: invitationRoom.id,
+				senderId: landlord.id,
+				recipientId: recipientUser?.id ?? undefined,
+				recipientEmail: seed.withAccount ? undefined : seed.userSeed.email,
+				status: seed.status,
+				monthlyRent: 2000000,
+				depositAmount: 4000000,
+				moveInDate: futureDate(seed.moveInDays),
+				message: `${DASHBOARD_SAMPLE_TAG} ${seed.message}`,
+			},
+		});
+	}
+
+	const activeRental = await prisma.rental.findFirst({
+		where: { ownerId: landlord.id, status: { in: ['active', 'pending_renewal'] } },
+		include: {
+			roomInstance: true,
+		},
+	});
+
+	let roommatePost = null;
+	if (activeRental) {
+		await prisma.roommateApplication.deleteMany({
+			where: {
+				roommateSeekingPost: {
+					slug: 'dashboard-roommate-post',
+				},
+			},
+		});
+
+		roommatePost = await prisma.roommateSeekingPost.upsert({
+			where: { slug: 'dashboard-roommate-post' },
+			update: {
+				title: `${DASHBOARD_SAMPLE_TAG} Tìm người ở ghép phòng ${activeRental.roomInstance.roomNumber}`,
+				description: `${DASHBOARD_SAMPLE_TAG} Cần thêm bạn cùng phòng gọn gàng, ưu tiên IT.`,
+				remainingSlots: 1,
+				currentOccupancy: 1,
+				status: 'active',
+				isActive: true,
+			},
+			create: {
+				slug: 'dashboard-roommate-post',
+				title: `${DASHBOARD_SAMPLE_TAG} Tìm người ở ghép phòng ${activeRental.roomInstance.roomNumber}`,
+				description: `${DASHBOARD_SAMPLE_TAG} Cần thêm bạn nữ gọn gàng, ưa sạch sẽ, ưu tiên sinh viên IUH.`,
+				tenantId: activeRental.tenantId,
+				roomInstanceId: activeRental.roomInstanceId,
+				rentalId: activeRental.id,
+				monthlyRent: activeRental.monthlyRent,
+				currency: 'VND',
+				depositAmount: activeRental.monthlyRent,
+				utilityCostPerPerson: 350000,
+				seekingCount: 2,
+				approvedCount: 1,
+				remainingSlots: 1,
+				maxOccupancy: 2,
+				currentOccupancy: 1,
+				availableFromDate: futureDate(7),
+				minimumStayMonths: 6,
+				status: 'active',
+				requiresLandlordApproval: false,
+				isApprovedByLandlord: true,
+				isActive: true,
+			},
+		});
+
+		const roommateApplicants = [
+			{
+				userSeed: DASHBOARD_SAMPLE_USERS.roommateApplicant1,
+				status: 'pending',
+				moveInDays: 12,
+			},
+			{
+				userSeed: DASHBOARD_SAMPLE_USERS.roommateApplicant2,
+				status: 'awaiting_confirmation',
+				moveInDays: 20,
+			},
+		];
+
+		for (const seed of roommateApplicants) {
+			const applicant = await ensureSampleTenantUser(seed.userSeed, hashedPassword);
+			const existingApplication = await prisma.roommateApplication.findFirst({
+				where: {
+					roommateSeekingPostId: roommatePost.id,
+					applicantId: applicant.id,
+					status: seed.status,
+				},
+			});
+
+			if (existingApplication) {
+				continue;
+			}
+
+			await prisma.roommateApplication.create({
+				data: {
+					roommateSeekingPostId: roommatePost.id,
+					applicantId: applicant.id,
+					fullName: `${applicant.firstName} ${applicant.lastName}`,
+					phoneNumber: applicant.phone ?? '0900000000',
+					moveInDate: futureDate(seed.moveInDays),
+					status: seed.status,
+					applicationMessage: `${DASHBOARD_SAMPLE_TAG} Mình học IUH, giờ giấc linh hoạt.`,
+				},
+			});
+		}
+	}
+
+	let sampleRoomInstance = await prisma.roomInstance.findFirst({
+		where: { notes: DASHBOARD_SAMPLE_TAG },
+	});
+
+	if (!sampleRoomInstance) {
+		const referenceRoom = rooms[2] ?? rooms[0];
+		const roomNumber = `DS${Date.now().toString().slice(-4)}`;
+		sampleRoomInstance = await prisma.roomInstance.create({
+			data: {
+				roomId: referenceRoom.id,
+				roomNumber,
+				status: 'available',
+				isActive: true,
+				notes: DASHBOARD_SAMPLE_TAG,
+			},
+		});
+	}
+
+	const contractTenant = await ensureSampleTenantUser(
+		DASHBOARD_SAMPLE_USERS.contractProspect,
+		hashedPassword,
+	);
+
+	const contractSeeds = [
+		{ code: 'HD-DASH-001', status: 'draft', startOffset: 5, endOffset: 365 },
+		{ code: 'HD-DASH-002', status: 'pending_signature', startOffset: 15, endOffset: 400 },
+	];
+
+	for (const seed of contractSeeds) {
+		await prisma.contract.upsert({
+			where: { contractCode: seed.code },
+			update: {
+				status: seed.status,
+				contractData: { sampleTag: DASHBOARD_SAMPLE_TAG, rent: 2600000 },
+				legalMetadata: { sampleTag: DASHBOARD_SAMPLE_TAG },
+			},
+			create: {
+				contractCode: seed.code,
+				landlordId: landlord.id,
+				tenantId: contractTenant.id,
+				roomInstanceId: sampleRoomInstance.id,
+				contractType: 'monthly_rental',
+				status: seed.status,
+				contractData: { sampleTag: DASHBOARD_SAMPLE_TAG, rent: 2600000 },
+				legalMetadata: { sampleTag: DASHBOARD_SAMPLE_TAG },
+				startDate: futureDate(seed.startOffset),
+				endDate: futureDate(seed.endOffset),
+			},
+		});
+	}
+
+	await prisma.notification.deleteMany({
+		where: { notificationType: 'dashboard_sample', userId: landlord.id },
+	});
+
+	const notificationSeeds = [
+		{
+			title: `${DASHBOARD_SAMPLE_TAG} Hóa đơn tháng 11 còn 2 ngày đến hạn`,
+			message: 'Nhắc thanh toán hóa đơn phòng 201 cho sinh viên Trần Văn Minh.',
+		},
+		{
+			title: `${DASHBOARD_SAMPLE_TAG} Hợp đồng sắp hết hạn`,
+			message: 'Hợp đồng phòng 101 sẽ hết hạn trong 18 ngày nữa.',
+		},
+	];
+
+	for (const seed of notificationSeeds) {
+		await prisma.notification.create({
+			data: {
+				userId: landlord.id,
+				notificationType: 'dashboard_sample',
+				title: seed.title,
+				message: seed.message,
+				isRead: false,
+			},
+		});
+	}
+
+	console.log('   ✅ Dashboard sample data ready.');
+}
+
 async function clearStatsTestData() {
 	console.log('🗑️  Clearing statistics test data...\n');
+
+	const landlord = await prisma.user.findUnique({
+		where: { email: 'budget.student@trustay.com' },
+	});
+	await deleteDashboardSampleArtifacts(landlord?.id);
 
 	// Delete in reverse order of dependencies
 	const studentEmails = [
