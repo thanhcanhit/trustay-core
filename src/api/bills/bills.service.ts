@@ -1274,6 +1274,17 @@ export class BillsService {
 			throw new BadRequestException('Cannot delete paid bills');
 		}
 
+		if (bill.roomInstanceId) {
+			await (this.prisma as any).roomInstanceMeterReading.updateMany({
+				where: {
+					roomInstanceId: bill.roomInstanceId,
+				},
+				data: {
+					meterReading: null,
+				},
+			});
+		}
+
 		await this.prisma.bill.delete({
 			where: { id: billId },
 		});
