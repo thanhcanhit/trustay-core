@@ -1,4 +1,4 @@
-import { RoomPublishingDraft } from './room-publishing.types';
+import { RoomPublishingDraft, RoomPublishingExecutionPlan } from './room-publishing.types';
 
 /**
  * Interface for chat message compatible with AI SDK
@@ -91,10 +91,11 @@ export interface DataPayload {
 }
 
 export interface ControlPayload {
-	mode: 'CLARIFY' | 'ERROR';
+	mode: 'CLARIFY' | 'ERROR' | 'ROOM_PUBLISH';
 	questions?: readonly string[];
 	code?: string;
 	details?: string;
+	plan?: RoomPublishingExecutionPlan;
 }
 
 /**

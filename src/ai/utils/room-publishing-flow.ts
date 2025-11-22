@@ -1,5 +1,9 @@
+import { BillingCycle, CostType } from '@prisma/client';
+import type { CreateRoomCostDto, CreateRoomDto } from '../../api/rooms/dto';
 import {
+	BuildingCandidate,
 	BuildingDraftState,
+	RoomCostDraft,
 	RoomDraftState,
 	RoomPublishingDraft,
 	RoomPublishingExecutionPlan,
@@ -129,6 +133,9 @@ export function listMissingBuildingFields(
 	building: BuildingDraftState,
 ): RoomPublishingFieldRequirement[] {
 	const missing: RoomPublishingFieldRequirement[] = [];
+	if (building.id) {
+		return missing;
+	}
 	if (!building.name) {
 		missing.push(BUILDING_REQUIREMENTS[0]);
 	}
@@ -198,6 +205,15 @@ export function applyRoomDefaults(room: RoomDraftState): RoomDraftState {
 export function getNextMandatoryQuestion(
 	draft: RoomPublishingDraft,
 ): RoomPublishingFieldRequirement | null {
+	if (needsBuildingSelection(draft)) {
+		return {
+			key: 'building.selection',
+			label: 'Chọn tòa nhà',
+			description: 'Vui lòng chọn tòa nhà mà bạn muốn đăng phòng',
+			stage: 'ensure-building',
+			isOptional: false,
+		};
+	}
 	const missingBuilding = listMissingBuildingFields(draft.building);
 	if (missingBuilding.length > 0 && draft.stage === 'ensure-building') {
 		return missingBuilding[0];
@@ -213,7 +229,8 @@ export function buildExecutionPlan(draft: RoomPublishingDraft): RoomPublishingEx
 	if (!draft.isReadyForExecution) {
 		return null;
 	}
-	const buildingPayload = draft.building.isExisting
+	const shouldCreateBuilding = !draft.building.isExisting || !draft.building.id;
+	const buildingPayload = shouldCreateBuilding
 		? undefined
 		: {
 				name: draft.building.name,
@@ -223,7 +240,7 @@ export function buildExecutionPlan(draft: RoomPublishingDraft): RoomPublishingEx
 				wardId: draft.building.wardId,
 				country: draft.building.country || 'Vietnam',
 			};
-	const roomPayload = {
+	const roomPayload: CreateRoomDto = {
 		name: draft.room.name!,
 		description: draft.room.description,
 		roomType: draft.room.roomType!,
@@ -244,14 +261,66 @@ export function buildExecutionPlan(draft: RoomPublishingDraft): RoomPublishingEx
 			priceNegotiable: draft.room.pricing.priceNegotiable ?? false,
 		},
 		amenities: draft.room.amenities,
-		costs: draft.room.costs,
+		costs: convertCostsToDto(draft.room.costs),
 		rules: draft.room.rules,
 		images: { images: draft.room.images },
 	};
 	return {
-		shouldCreateBuilding: !draft.building.isExisting,
+		shouldCreateBuilding,
+		buildingId: shouldCreateBuilding ? undefined : draft.building.id,
 		buildingPayload,
 		roomPayload,
 		description: 'Create building (if needed) then create room with collected draft data.',
 	};
+}
+
+export function selectBuildingCandidate(
+	draft: RoomPublishingDraft,
+	candidate: BuildingCandidate,
+): RoomPublishingDraft {
+	draft.building.id = candidate.id;
+	draft.building.name = candidate.name;
+	draft.building.isExisting = true;
+	draft.building.addressLine1 = candidate.addressLine1;
+	draft.building.districtId = candidate.districtId ?? draft.building.districtId;
+	draft.building.provinceId = candidate.provinceId ?? draft.building.provinceId;
+	draft.building.wardId = candidate.wardId ?? draft.building.wardId;
+	draft.building.candidates = undefined;
+	draft.building.selectionMessage = undefined;
+	return draft;
+}
+
+export function needsBuildingSelection(draft: RoomPublishingDraft): boolean {
+	return !draft.building.id && !!draft.building.candidates && draft.building.candidates.length > 0;
+}
+
+function convertCostsToDto(costs: RoomCostDraft[]): CreateRoomCostDto[] {
+	return costs.map((cost) => ({
+		systemCostTypeId: cost.systemCostTypeId,
+		value: cost.value,
+		costType: normalizeCostType(cost.costType),
+		unit: cost.unit,
+		billingCycle: normalizeBillingCycle(cost.billingCycle),
+		includedInRent: cost.includedInRent ?? false,
+		isOptional: cost.isOptional ?? false,
+		notes: cost.notes,
+	}));
+}
+
+function normalizeCostType(value?: string): CostType {
+	if (!value) {
+		return CostType.fixed;
+	}
+	const normalized = value.toLowerCase();
+	const match = (Object.values(CostType) as string[]).find((option) => option === normalized);
+	return (match as CostType) ?? CostType.fixed;
+}
+
+function normalizeBillingCycle(value?: string): BillingCycle | undefined {
+	if (!value) {
+		return undefined;
+	}
+	const normalized = value.toLowerCase();
+	const match = (Object.values(BillingCycle) as string[]).find((option) => option === normalized);
+	return match as BillingCycle | undefined;
 }

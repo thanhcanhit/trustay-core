@@ -10,7 +10,10 @@ import { KnowledgeService } from './knowledge/knowledge.service';
 import { buildOneForAllPrompt } from './prompts/simple-system-one-for-all';
 import { VIETNAMESE_LOCALE_SYSTEM_PROMPT } from './prompts/system.prompt';
 import { generateErrorResponse } from './services/error-handler.service';
-import { RoomPublishingService } from './services/room-publishing.service';
+import {
+	RoomPublishingService,
+	RoomPublishingStepResult,
+} from './services/room-publishing.service';
 import {
 	ChatMessage,
 	ChatResponse,
@@ -242,27 +245,78 @@ export class AiService {
 		}
 	}
 
-	private tryHandleRoomPublishingFlow(
+	private async tryHandleRoomPublishingFlow(
 		session: ChatSession,
 		userMessage: string,
 		orchestratorResponse: OrchestratorAgentResponse,
-	): ChatResponse | null {
-		if (!this.shouldActivateRoomFlow(userMessage, orchestratorResponse)) {
+	): Promise<ChatResponse | null> {
+		if (!this.shouldActivateRoomFlow(session, userMessage, orchestratorResponse)) {
 			return null;
 		}
-		const stepResult = this.roomPublishingService.handleUserMessage(session, userMessage);
+		let stepResult = this.roomPublishingService.handleUserMessage(session, userMessage);
+		stepResult = await this.resolveRoomPublishingActions(session, stepResult);
+		this.logInfo(
+			'ROOM_FLOW',
+			`stage=${stepResult.stage} planReady=${stepResult.executionPlan ? 'yes' : 'no'}`,
+		);
 		const meta: Record<string, string | number | boolean> = {
 			stage: stepResult.stage,
 		};
+		return this.buildRoomFlowResponse(session, stepResult, meta);
+	}
+
+	private async resolveRoomPublishingActions(
+		session: ChatSession,
+		initialStep: RoomPublishingStepResult,
+	): Promise<RoomPublishingStepResult> {
+		let stepResult = initialStep;
+		let guard = 0;
+		while (stepResult.actions && stepResult.actions.length > 0 && guard < 5) {
+			for (const action of stepResult.actions) {
+				try {
+					const rows = (await this.prisma.$queryRawUnsafe(action.sql)) as Array<
+						Record<string, unknown>
+					>;
+					const normalizedRows = serializeBigInt(rows) as Array<Record<string, unknown>>;
+					stepResult = this.roomPublishingService.applyActionResult(
+						session,
+						action,
+						normalizedRows,
+					);
+				} catch (error) {
+					this.logError('ROOM_FLOW', `Action ${action.type} failed`, error);
+				}
+			}
+			guard += 1;
+		}
+		return stepResult;
+	}
+
+	private buildRoomFlowResponse(
+		session: ChatSession,
+		stepResult: RoomPublishingStepResult,
+		meta: Record<string, string | number | boolean>,
+	): ChatResponse {
 		if (stepResult.missingField?.key) {
 			meta.missingField = stepResult.missingField.key;
 		}
-		if (stepResult.sqlInstruction) {
-			meta.sqlInstruction = stepResult.sqlInstruction;
+		if (stepResult.draft.building.candidates) {
+			meta.buildingCandidates = stepResult.draft.building.candidates.length;
 		}
-		if (stepResult.executionPlan) {
+		if (stepResult.executionPlan && stepResult.stage === 'finalize-room') {
 			meta.planReady = true;
 			meta.shouldCreateBuilding = stepResult.executionPlan.shouldCreateBuilding;
+			return {
+				kind: 'CONTROL',
+				sessionId: session.sessionId,
+				timestamp: new Date().toISOString(),
+				message: stepResult.prompt,
+				payload: {
+					mode: 'ROOM_PUBLISH',
+					plan: stepResult.executionPlan,
+				},
+				meta,
+			};
 		}
 		return {
 			kind: 'CONTENT',
@@ -275,16 +329,22 @@ export class AiService {
 	}
 
 	private shouldActivateRoomFlow(
+		session: ChatSession,
 		query: string,
 		orchestratorResponse: OrchestratorAgentResponse,
 	): boolean {
+		if (session.context?.activeFlow === 'room-publishing') {
+			return true;
+		}
 		const normalized = query.toLowerCase();
 		const keywordMatch =
 			/(tạo|đăng|thêm|publish|create).*(phòng|room)/.test(normalized) ||
 			/(phòng|room).*(tạo|đăng|mở)/.test(normalized);
 		const intentMatch =
-			orchestratorResponse.entityHint === 'room' && orchestratorResponse.intentAction === 'own';
-		return keywordMatch || intentMatch;
+			orchestratorResponse.entityHint === 'room' &&
+			orchestratorResponse.intentAction === 'own' &&
+			orchestratorResponse.requestType !== RequestType.GENERAL_CHAT;
+		return keywordMatch && intentMatch;
 	}
 
 	/**
@@ -443,7 +503,7 @@ export class AiService {
 					`${orchestratorResponse.entityHint ? ` | entityHint=${orchestratorResponse.entityHint}` : ''}` +
 					` | took=${orchestratorTime}ms`,
 			);
-			const roomFlowEnvelope = this.tryHandleRoomPublishingFlow(
+			const roomFlowEnvelope = await this.tryHandleRoomPublishingFlow(
 				session,
 				query,
 				orchestratorResponse,

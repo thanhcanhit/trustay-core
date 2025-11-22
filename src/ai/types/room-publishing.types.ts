@@ -9,6 +9,7 @@ export type RoomPublishingStage =
 	| 'finalize-room';
 
 export interface BuildingDraftState {
+	id?: string;
 	name?: string;
 	addressLine1?: string;
 	wardId?: number;
@@ -16,8 +17,26 @@ export interface BuildingDraftState {
 	provinceId?: number;
 	country?: string;
 	locationHint?: string;
+	locationResolved?: LocationResolutionResult;
+	locationCacheKey?: string;
 	notes?: string;
 	isExisting?: boolean;
+	candidates?: BuildingCandidate[];
+	selectionMessage?: string;
+}
+
+export interface BuildingCandidate {
+	id: string;
+	name: string;
+	slug?: string;
+	addressLine1?: string;
+	districtId?: number;
+	provinceId?: number;
+	wardId?: number;
+	districtName?: string;
+	provinceName?: string;
+	wardName?: string;
+	matchScore?: number;
 }
 
 export interface RoomPricingDraft {
@@ -88,6 +107,7 @@ export interface RoomPublishingDraft {
 	pendingConfirmation?: string;
 	isReadyForSql: boolean;
 	isReadyForExecution: boolean;
+	lastActions?: RoomPublishingAction[];
 }
 
 export interface RoomPublishingFieldRequirement {
@@ -102,6 +122,7 @@ export interface LocationLookupInstruction {
 	normalizedDistrict?: string;
 	normalizedProvince?: string;
 	sql: string;
+	cacheKey?: string;
 }
 
 export interface LocationResolutionResult {
@@ -114,7 +135,17 @@ export interface LocationResolutionResult {
 
 export interface RoomPublishingExecutionPlan {
 	shouldCreateBuilding: boolean;
+	buildingId?: string;
 	buildingPayload?: CreateBuildingDto;
 	roomPayload: CreateRoomDto;
 	description: string;
+}
+
+export type RoomPublishingActionType = 'LOOKUP_LOCATION' | 'LIST_OWNER_BUILDINGS';
+
+export interface RoomPublishingAction {
+	type: RoomPublishingActionType;
+	sql: string;
+	description: string;
+	cacheKey?: string;
 }

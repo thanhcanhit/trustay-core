@@ -1,4 +1,5 @@
 import {
+	BuildingCandidate,
 	RoomPublishingFieldRequirement,
 	RoomPublishingStage,
 } from '../types/room-publishing.types';
@@ -53,4 +54,17 @@ export function buildUtilitySuggestionPrompt(): string {
 
 export function buildImageSuggestionPrompt(): string {
 	return 'Bạn có thể gửi đường dẫn hình ảnh hoặc mô tả ngắn để mình thêm vào phần hình ảnh của phòng.';
+}
+
+export function buildBuildingSelectionPrompt(candidates: BuildingCandidate[]): string {
+	if (candidates.length === 0) {
+		return 'Mình không tìm thấy tòa nhà nào trùng khớp. Bạn muốn tạo tòa nhà mới hay thử nhập lại tên khác?';
+	}
+	const optionLines = candidates
+		.map((candidate, index) => {
+			const location = [candidate.districtName, candidate.provinceName].filter(Boolean).join(', ');
+			return `${index + 1}. ${candidate.name}${location ? ` (${location})` : ''}`;
+		})
+		.join('\n');
+	return `Mình thấy vài tòa nhà có thể trùng với tên bạn cung cấp. Bạn chọn giúp mình số tương ứng hoặc gõ "mới" để tạo tòa nhà mới:\n${optionLines}`;
 }

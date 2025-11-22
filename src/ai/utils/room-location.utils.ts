@@ -1,4 +1,5 @@
 import {
+	BuildingCandidate,
 	LocationLookupInstruction,
 	LocationResolutionResult,
 } from '../types/room-publishing.types';
@@ -61,6 +62,7 @@ LIMIT 5;
 		normalizedDistrict: hints.districtKeyword,
 		normalizedProvince: hints.provinceKeyword,
 		sql,
+		cacheKey: hints.rawText ? normalizeText(hints.rawText) : undefined,
 	};
 }
 
@@ -81,4 +83,51 @@ export function resolveLocationFromRow(row: {
 		confidence,
 		explanation,
 	};
+}
+
+export function buildOwnerBuildingLookupSql(
+	userId: string,
+	keyword: string,
+	limit: number = 5,
+): string {
+	const normalizedKeyword = normalizeText(keyword);
+	const safeKeyword = normalizedKeyword ? normalizedKeyword.replace(SQL_QUOTE, "''") : '';
+	return `
+SELECT 
+	b.id,
+	b.name,
+	b.slug,
+	b.address_line1,
+	b.ward_id,
+	b.district_id,
+	b.province_id,
+	d.name AS district_name,
+	p.name AS province_name,
+	0.8 AS match_score
+FROM building b
+LEFT JOIN district d ON d.id = b.district_id
+LEFT JOIN province p ON p.id = b.province_id
+WHERE b.owner_id = '${userId}'
+	AND (
+		LOWER(b.name) LIKE '%${safeKeyword}%'
+		OR LOWER(COALESCE(b.address_line1, '')) LIKE '%${safeKeyword}%'
+	)
+ORDER BY b.updated_at DESC
+LIMIT ${limit};
+`.trim();
+}
+
+export function mapBuildingCandidates(rows: Array<Record<string, any>>): BuildingCandidate[] {
+	return rows.map((row) => ({
+		id: row.id,
+		name: row.name,
+		slug: row.slug,
+		addressLine1: row.address_line1,
+		wardId: row.ward_id,
+		districtId: row.district_id,
+		provinceId: row.province_id,
+		districtName: row.district_name,
+		provinceName: row.province_name,
+		matchScore: typeof row.match_score === 'number' ? row.match_score : undefined,
+	}));
 }
