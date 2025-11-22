@@ -60,7 +60,7 @@ export class AiService {
 	// Chat session management - similar to rooms.service.ts view cache pattern
 	private chatSessions = new Map<string, ChatSession>();
 	private readonly SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 phút
-	private readonly MAX_MESSAGES_PER_SESSION = 20; // Giới hạn tin nhắn mỗi session
+	private readonly MAX_MESSAGES_PER_SESSION = 10; // Giới hạn tin nhắn mỗi session
 	private readonly CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 phút
 
 	constructor(
@@ -249,11 +249,12 @@ export class AiService {
 		session: ChatSession,
 		userMessage: string,
 		orchestratorResponse: OrchestratorAgentResponse,
+		images?: string[],
 	): Promise<ChatResponse | null> {
 		if (!this.shouldActivateRoomFlow(session, userMessage, orchestratorResponse)) {
 			return null;
 		}
-		let stepResult = this.roomPublishingService.handleUserMessage(session, userMessage);
+		let stepResult = this.roomPublishingService.handleUserMessage(session, userMessage, images);
 		stepResult = await this.resolveRoomPublishingActions(session, stepResult);
 		this.logInfo(
 			'ROOM_FLOW',
@@ -432,9 +433,9 @@ export class AiService {
 	 */
 	async chatWithAI(
 		query: string,
-		context: { userId?: string; clientIp?: string; currentPage?: string } = {},
+		context: { userId?: string; clientIp?: string; currentPage?: string; images?: string[] } = {},
 	): Promise<ChatResponse> {
-		const { userId, clientIp, currentPage } = context;
+		const { userId, clientIp, currentPage, images } = context;
 
 		// Bước 1: Quản lý session - Lấy hoặc tạo session chat
 		// Session tự động có system prompt tiếng Việt khi tạo mới
@@ -507,6 +508,7 @@ export class AiService {
 				session,
 				query,
 				orchestratorResponse,
+				images,
 			);
 			if (roomFlowEnvelope) {
 				this.logPipelineEnd(session.sessionId, 'ROOM_FLOW', pipelineStartAt);

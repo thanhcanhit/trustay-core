@@ -61,8 +61,20 @@ export class RoomPublishingService {
 		return session.context.roomPublishing!;
 	}
 
-	handleUserMessage(session: ChatSession, userMessage: string): RoomPublishingStepResult {
+	handleUserMessage(
+		session: ChatSession,
+		userMessage: string,
+		images?: string[],
+	): RoomPublishingStepResult {
 		const draft = this.ensureDraft(session);
+		if (images && images.length > 0) {
+			draft.room.images = images.map((path, index) => ({
+				path,
+				alt: `Room image ${index + 1}`,
+				isPrimary: index === 0,
+				sortOrder: index,
+			}));
+		}
 		const actions = this.applyAnswer(draft, userMessage, session.userId);
 		return this.composeStepResult(session, draft, actions);
 	}

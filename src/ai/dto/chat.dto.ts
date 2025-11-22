@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class ChatDto {
 	@ApiProperty({
@@ -17,4 +17,14 @@ export class ChatDto {
 	@IsString()
 	@IsOptional()
 	currentPage?: string;
+
+	@ApiPropertyOptional({
+		description: 'Danh sách đường dẫn hình ảnh (cho room publishing)',
+		example: ['/images/photo1.jpg', '/images/photo2.jpg'],
+		type: [String],
+	})
+	@IsArray()
+	@IsString({ each: true })
+	@IsOptional()
+	images?: string[];
 }
