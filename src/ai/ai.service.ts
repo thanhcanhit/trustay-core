@@ -714,11 +714,12 @@ export class AiService {
 
 			// Lưu message thành công vào session
 			const successMessage = `Đã tạo phòng thành công! Phòng của bạn đã được đăng tải.`;
+			const session = this.getOrCreateSession(userId);
 			this.logDebug(
 				'ROOM_PUBLISH',
 				'[TOOL CALL] addMessageToSession() - Saving success message to session',
 			);
-			this.addMessageToSession(this.getOrCreateSession(userId), 'assistant', successMessage, {
+			this.addMessageToSession(session, 'assistant', successMessage, {
 				kind: 'CONTROL',
 				payload: {
 					mode: 'ROOM_PUBLISH',
@@ -729,6 +730,19 @@ export class AiService {
 				},
 			});
 			this.logDebug('ROOM_PUBLISH', '[TOOL CALL] addMessageToSession() - Completed');
+
+			// Clear room publishing context để tránh nhầm context cũ khi tạo phòng mới
+			if (session.context?.roomPublishing) {
+				this.logDebug(
+					'ROOM_PUBLISH',
+					'[CLEANUP] Clearing room publishing context to prevent stale data',
+				);
+				session.context.roomPublishing = undefined;
+				// Nếu context không còn gì khác, reset context
+				if (session.context && !session.context.activeFlow) {
+					session.context = undefined;
+				}
+			}
 
 			this.logInfo(
 				'ROOM_PUBLISH',
