@@ -786,22 +786,34 @@ export class RoomPublishingService {
 								(c) => c.systemCostTypeId === matchedSystemCostType!.id,
 							);
 
-							// Xác định costType và unit dựa trên category và name
-							let finalCostType: string = cost.costType || 'fixed';
-							let finalUnit: string = cost.unit || matchedSystemCostType.defaultUnit || 'per_month';
-
-							// Logic thông minh để xác định costType và unit dựa trên tên cost type
+							// Xác định costType và unit dựa trên tên cost type
+							// QUAN TRỌNG: Điện luôn là metered, nước luôn là per_unit (KHÔNG BAO GIỜ fixed)
 							const costName = matchedSystemCostType.name.toLowerCase();
+							let finalCostType: string;
+							let finalUnit: string;
+
 							if (costName.includes('điện') || costName.includes('electricity')) {
+								// Điện: LUÔN là metered (theo đồng hồ/số điện), KHÔNG BAO GIỜ fixed
 								finalCostType = 'metered';
 								finalUnit = 'per_kwh';
+								this.logger.debug(
+									`Cost type "${costName}" identified as ELECTRICITY → FORCED costType=metered, unit=per_kwh (ignoring LLM costType=${cost.costType})`,
+								);
 							} else if (costName.includes('nước') || costName.includes('water')) {
+								// Nước: LUÔN là per_unit (theo đầu người), KHÔNG BAO GIỜ fixed
 								finalCostType = 'per_unit';
 								finalUnit = 'per_person';
+								this.logger.debug(
+									`Cost type "${costName}" identified as WATER → FORCED costType=per_unit, unit=per_person (ignoring LLM costType=${cost.costType})`,
+								);
 							} else {
-								// Các cost types khác thường là fixed
-								finalCostType = 'fixed';
-								finalUnit = finalUnit || 'per_month';
+								// Các cost types khác (internet, gửi xe, rác, etc.): thường là fixed
+								// Cho phép LLM override cho các cost types này
+								finalCostType = cost.costType || 'fixed';
+								finalUnit = cost.unit || matchedSystemCostType.defaultUnit || 'per_month';
+								this.logger.debug(
+									`Cost type "${costName}" identified as OTHER → costType=${finalCostType}, unit=${finalUnit}`,
+								);
 							}
 
 							if (!existingCost) {
@@ -820,14 +832,11 @@ export class RoomPublishingService {
 							} else {
 								// Cập nhật giá trị nếu đã có
 								existingCost.value = cost.value;
-								if (cost.unit) {
-									existingCost.unit = cost.unit;
-								}
-								if (cost.costType) {
-									existingCost.costType = cost.costType as any;
-								}
+								// Đảm bảo costType và unit đúng cho điện/nước
+								existingCost.costType = finalCostType as any;
+								existingCost.unit = finalUnit;
 								this.logger.debug(
-									`Updated cost: ${matchedSystemCostType.name} (${matchedSystemCostType.id}) = ${cost.value} VNĐ`,
+									`Updated cost: ${matchedSystemCostType.name} (${matchedSystemCostType.id}) = ${cost.value} VNĐ, type=${finalCostType}, unit=${finalUnit}`,
 								);
 							}
 						} else {
