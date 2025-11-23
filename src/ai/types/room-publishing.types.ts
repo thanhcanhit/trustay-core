@@ -152,7 +152,11 @@ export enum RoomPublishingStatus {
 
 export interface RoomPublishingAction {
 	type: RoomPublishingActionType;
-	sql: string;
+	params: {
+		userId?: string;
+		keyword?: string;
+		locationQuery?: string;
+	};
 	description: string;
 	cacheKey?: string;
 }

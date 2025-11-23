@@ -1,6 +1,9 @@
 import { google } from '@ai-sdk/google';
 import { Injectable, Logger } from '@nestjs/common';
 import { generateText } from 'ai';
+import { BuildingsService } from '../../api/buildings/buildings.service';
+import { AddressService } from '../../api/provinces/address/address.service';
+import { ReferenceService } from '../../api/reference/reference.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
 	buildBuildingSelectionPrompt,
@@ -18,8 +21,6 @@ import {
 	RoomPublishingStatus,
 } from '../types/room-publishing.types';
 import {
-	buildLocationLookupInstruction,
-	buildOwnerBuildingLookupSql,
 	mapBuildingCandidates,
 	normalizeText,
 	resolveLocationFromRow,
@@ -45,6 +46,8 @@ export interface RoomPublishingStepResult {
 	actions?: RoomPublishingAction[];
 	executionPlan?: RoomPublishingExecutionPlan | null;
 	roomId?: string; // ID của phòng đã tạo (nếu status = CREATED)
+	roomSlug?: string; // Slug của phòng đã tạo (nếu status = CREATED)
+	roomPath?: string; // Path để navigate tới phòng (nếu status = CREATED)
 	error?: string; // Lỗi nếu status = CREATION_FAILED
 }
 
@@ -56,7 +59,12 @@ export class RoomPublishingService {
 		temperature: 0.1,
 		maxTokens: 2000, // Tăng để hỗ trợ description HTML dài
 	};
-	constructor(private readonly prisma: PrismaService) {}
+	constructor(
+		private readonly prisma: PrismaService,
+		private readonly buildingsService: BuildingsService,
+		private readonly addressService: AddressService,
+		private readonly referenceService: ReferenceService,
+	) {}
 
 	ensureDraft(session: ChatSession): RoomPublishingDraft {
 		if (!session.context) {
@@ -82,21 +90,39 @@ export class RoomPublishingService {
 		buildingId?: string,
 	): Promise<RoomPublishingStepResult> {
 		const draft = this.ensureDraft(session);
-		// Nếu có buildingId từ frontend (có thể là UUID hoặc slug), lookup để lấy UUID thực sự
+		// Nếu có buildingId từ frontend (có thể là UUID hoặc slug), lookup để lấy UUID thực sự và địa chỉ
 		if (buildingId) {
 			try {
-				// Thử tìm building bằng ID hoặc slug
+				// Thử tìm building bằng ID hoặc slug, lấy cả thông tin địa chỉ
 				const building = await this.prisma.building.findFirst({
 					where: {
 						OR: [{ id: buildingId }, { slug: buildingId }],
 					},
-					select: { id: true },
+					select: {
+						id: true,
+						name: true,
+						addressLine1: true,
+						addressLine2: true,
+						wardId: true,
+						districtId: true,
+						provinceId: true,
+						country: true,
+					},
 				});
 				if (building) {
 					draft.building.id = building.id;
+					draft.building.name = building.name;
 					draft.building.isExisting = true;
+					// Lấy địa chỉ từ building
+					draft.building.addressLine1 = building.addressLine1;
+					draft.building.wardId = building.wardId || undefined;
+					draft.building.districtId = building.districtId || undefined;
+					draft.building.provinceId = building.provinceId || undefined;
+					draft.building.country = building.country || 'Vietnam';
+					// Set locationHint từ addressLine1 hoặc name để hiển thị
+					draft.building.locationHint = building.addressLine1 || building.name || undefined;
 					this.logger.debug(
-						`Building found: ${building.id} (from ${buildingId}), skipping building selection`,
+						`Building found: ${building.id} (from ${buildingId}), address loaded: districtId=${building.districtId}, provinceId=${building.provinceId}`,
 					);
 				} else {
 					this.logger.warn(`Building not found: ${buildingId}, will create new building`);
@@ -154,6 +180,7 @@ export class RoomPublishingService {
 		draft: RoomPublishingDraft,
 		missingField: RoomPublishingFieldRequirement | null,
 		allMissingFields?: RoomPublishingFieldRequirement[],
+		hasPendingActions: boolean = false,
 	): string {
 		// Nếu đã có execution plan (đủ thông tin), KHÔNG HỎI GÌ CẢ
 		const executionPlan = buildExecutionPlan(draft);
@@ -171,6 +198,17 @@ export class RoomPublishingService {
 			return draft.building.selectionMessage
 				? `${draft.building.selectionMessage}\n${selectionPrompt}`
 				: selectionPrompt;
+		}
+
+		// Nếu đang có actions pending (đang lookup location, list buildings), thông báo rõ ràng
+		if (hasPendingActions) {
+			if (draft.lastActions?.some((a) => a.type === 'LOOKUP_LOCATION')) {
+				return `Đang tìm kiếm thông tin địa điểm...`;
+			}
+			if (draft.lastActions?.some((a) => a.type === 'LIST_OWNER_BUILDINGS')) {
+				return `Đang tìm kiếm tòa nhà của bạn...`;
+			}
+			return `Đang xử lý thông tin...`;
 		}
 
 		// CHỈ hỏi những field thật sự cần thiết: giá cả, vị trí (chỉ khi không có buildingId)
@@ -204,9 +242,17 @@ export class RoomPublishingService {
 			return `Mình cần thêm ${missingInfo.join(' và ')} để hoàn tất đăng phòng cho bạn.\n\nBạn có thể trả lời đơn giản như:\n- "Gò Vấp Hồ Chí Minh, 2 triệu"\n- "Quận 1 TP.HCM, phòng 2.5 triệu"\n- "2 triệu, ở Gò Vấp"`;
 		}
 
-		// Nếu không thiếu field bắt buộc nhưng chưa có execution plan, có thể đang chờ action results
-		// Không hỏi gì, để action results xử lý
-		return `Đang xử lý thông tin...`;
+		// Nếu không thiếu field bắt buộc nhưng chưa có execution plan và không có actions
+		// Có thể là do thiếu thông tin không bắt buộc hoặc đang trong quá trình xử lý
+		// Trả về message rõ ràng hơn
+		if (allMissingFields && allMissingFields.length > 0) {
+			// Có missing fields nhưng không phải essential -> có thể là optional fields
+			const missingLabels = allMissingFields.map((f) => f.label).join(', ');
+			return `Mình đã nhận được thông tin của bạn. Để hoàn tất, bạn có thể cung cấp thêm: ${missingLabels}.`;
+		}
+
+		// Fallback: Nếu không có missing fields và không có execution plan, có thể đang trong quá trình xử lý
+		return `Đang xử lý thông tin phòng trọ của bạn...`;
 	}
 
 	private async applyAnswer(
@@ -247,7 +293,10 @@ export class RoomPublishingService {
 					if (userId) {
 						actions.push({
 							type: 'LIST_OWNER_BUILDINGS',
-							sql: buildOwnerBuildingLookupSql(userId, trimmed),
+							params: {
+								userId,
+								keyword: trimmed,
+							},
 							description: `Lookup existing buildings for "${trimmed}"`,
 						});
 					}
@@ -260,12 +309,13 @@ export class RoomPublishingService {
 				}
 				if (trimmed) {
 					draft.building.locationHint = trimmed;
-					const locationInstruction = buildLocationLookupInstruction(trimmed);
 					actions.push({
 						type: 'LOOKUP_LOCATION',
-						sql: locationInstruction.sql,
+						params: {
+							locationQuery: trimmed,
+						},
 						description: `Resolve location for "${trimmed}"`,
-						cacheKey: locationInstruction.cacheKey,
+						cacheKey: normalizeText(trimmed),
 					});
 					parsed = true;
 				}
@@ -351,6 +401,57 @@ export class RoomPublishingService {
 				}
 			}
 
+			// Query system reference data để AI chỉ sử dụng các giá trị có sẵn
+			let systemCostTypes: Array<{
+				id: string;
+				name: string;
+				category: string;
+				defaultUnit?: string;
+			}> = [];
+			let systemAmenities: Array<{
+				id: string;
+				name: string;
+				category: string;
+				description?: string;
+			}> = [];
+			let systemRules: Array<{ id: string; name: string; category: string; description?: string }> =
+				[];
+
+			try {
+				const [costTypes, amenities, rules] = await Promise.all([
+					this.referenceService.getSystemCostTypesByCategory(),
+					this.referenceService.getSystemAmenitiesByCategory(),
+					this.referenceService.getSystemRoomRulesByCategory(),
+				]);
+
+				systemCostTypes = costTypes.map((ct) => ({
+					id: ct.id,
+					name: ct.name,
+					category: ct.category,
+					defaultUnit: ct.defaultUnit || undefined,
+				}));
+
+				systemAmenities = amenities.map((a) => ({
+					id: a.id,
+					name: a.name,
+					category: a.category,
+					description: a.description || undefined,
+				}));
+
+				systemRules = rules.map((r) => ({
+					id: r.id,
+					name: r.name,
+					category: r.category,
+					description: r.description || undefined,
+				}));
+
+				this.logger.debug(
+					`Loaded ${systemCostTypes.length} cost types, ${systemAmenities.length} amenities, ${systemRules.length} rules for AI extraction`,
+				);
+			} catch (error) {
+				this.logger.warn('Failed to fetch system reference data', error);
+			}
+
 			const extractionPrompt = buildRoomPublishingExtractionPrompt({
 				userMessage: message,
 				currentDraft: {
@@ -381,6 +482,9 @@ export class RoomPublishingService {
 					description: f.description,
 				})),
 				userName,
+				systemCostTypes,
+				systemAmenities,
+				systemRules,
 			});
 
 			const { text } = await generateText({
@@ -406,16 +510,40 @@ export class RoomPublishingService {
 					name?: string | null;
 					roomType?: string | null;
 					totalRooms?: number | null;
+					areaSqm?: number | null;
+					maxOccupancy?: number | null;
+					floorNumber?: number | null;
 					description?: string | null;
 					pricing?: {
 						basePriceMonthly?: number | null;
 						depositAmount?: number | null;
+						depositMonths?: number | null;
+						utilityIncluded?: boolean | null;
+						utilityCostMonthly?: number | null;
+						minimumStayMonths?: number | null;
+						maximumStayMonths?: number | null;
+						priceNegotiable?: boolean | null;
 					};
 					costs?: Array<{
+						systemCostTypeId?: string;
 						costType?: string;
 						value?: number;
 						unit?: string;
 						billingCycle?: string;
+						includedInRent?: boolean | null;
+						isOptional?: boolean | null;
+						notes?: string | null;
+					}>;
+					amenities?: Array<{
+						systemAmenityId?: string;
+						customValue?: string | null;
+						notes?: string | null;
+					}>;
+					rules?: Array<{
+						systemRuleId?: string;
+						customValue?: string | null;
+						isEnforced?: boolean | null;
+						notes?: string | null;
 					}>;
 				};
 			};
@@ -432,7 +560,10 @@ export class RoomPublishingService {
 					if (userId && wasNew) {
 						actions.push({
 							type: 'LIST_OWNER_BUILDINGS',
-							sql: buildOwnerBuildingLookupSql(userId, extracted.building.name),
+							params: {
+								userId,
+								keyword: extracted.building.name,
+							},
 							description: `Lookup existing buildings for "${extracted.building.name}"`,
 						});
 					}
@@ -446,12 +577,13 @@ export class RoomPublishingService {
 				) {
 					if (!this.shouldSkipLocationLookup(draft, extracted.building.location)) {
 						draft.building.locationHint = extracted.building.location;
-						const locationInstruction = buildLocationLookupInstruction(extracted.building.location);
 						actions.push({
 							type: 'LOOKUP_LOCATION',
-							sql: locationInstruction.sql,
+							params: {
+								locationQuery: extracted.building.location,
+							},
 							description: `Resolve location for "${extracted.building.location}"`,
-							cacheKey: locationInstruction.cacheKey,
+							cacheKey: normalizeText(extracted.building.location),
 						});
 					}
 				}
@@ -467,13 +599,29 @@ export class RoomPublishingService {
 					const buildingName = draft.building.name || 'ABC';
 					draft.room.name = `Phòng trọ ${buildingName}`;
 				}
-				// Loại phòng: LUÔN là boarding_house (phòng trọ) - mặc định
-				draft.room.roomType = 'boarding_house';
+				// Loại phòng: Ưu tiên extracted, nếu không có thì mặc định boarding_house
+				if (extracted.room.roomType !== null && extracted.room.roomType !== undefined) {
+					draft.room.roomType = this.normalizeRoomType(extracted.room.roomType);
+				} else if (!draft.room.roomType) {
+					draft.room.roomType = 'boarding_house';
+				}
 				// Số lượng phòng: Ưu tiên extracted, nếu không có thì mặc định 1
 				if (extracted.room.totalRooms !== null && extracted.room.totalRooms !== undefined) {
-					draft.room.totalRooms = extracted.room.totalRooms;
+					draft.room.totalRooms = Math.max(1, Math.min(100, extracted.room.totalRooms)); // Validate range 1-100
 				} else if (!draft.room.totalRooms) {
 					draft.room.totalRooms = 1;
+				}
+				// Diện tích phòng: Ưu tiên extracted
+				if (extracted.room.areaSqm !== null && extracted.room.areaSqm !== undefined) {
+					draft.room.areaSqm = Math.max(1, Math.min(1000, extracted.room.areaSqm)); // Validate range 1-1000
+				}
+				// Số người ở tối đa: Ưu tiên extracted
+				if (extracted.room.maxOccupancy !== null && extracted.room.maxOccupancy !== undefined) {
+					draft.room.maxOccupancy = Math.max(1, Math.min(10, extracted.room.maxOccupancy)); // Validate range 1-10
+				}
+				// Số tầng: Ưu tiên extracted
+				if (extracted.room.floorNumber !== null && extracted.room.floorNumber !== undefined) {
+					draft.room.floorNumber = Math.max(0, Math.min(50, extracted.room.floorNumber)); // Validate range 0-50
 				}
 				// Tiền cọc: Nếu không có, mặc định = 1 tháng tiền thuê
 				if (
@@ -494,33 +642,247 @@ export class RoomPublishingService {
 						extracted.room.pricing.basePriceMonthly !== null &&
 						extracted.room.pricing.basePriceMonthly !== undefined
 					) {
-						draft.room.pricing.basePriceMonthly = extracted.room.pricing.basePriceMonthly;
+						// Normalize giá: nếu giá < 1000, có thể là đơn vị triệu, nhân với 1,000,000
+						let normalizedPrice = extracted.room.pricing.basePriceMonthly;
+						if (normalizedPrice > 0 && normalizedPrice < 1000) {
+							// Có thể là đơn vị triệu (ví dụ: 5 triệu = 5)
+							normalizedPrice = normalizedPrice * 1000000;
+							this.logger.debug(
+								`Normalized basePriceMonthly from ${extracted.room.pricing.basePriceMonthly} to ${normalizedPrice} (assumed unit: triệu)`,
+							);
+						}
+						draft.room.pricing.basePriceMonthly = Math.max(0, normalizedPrice);
 					}
 					if (
 						extracted.room.pricing.depositAmount !== null &&
 						extracted.room.pricing.depositAmount !== undefined
 					) {
-						draft.room.pricing.depositAmount = extracted.room.pricing.depositAmount;
+						// Normalize giá: nếu giá < 1000, có thể là đơn vị triệu, nhân với 1,000,000
+						let normalizedDeposit = extracted.room.pricing.depositAmount;
+						if (normalizedDeposit > 0 && normalizedDeposit < 1000) {
+							// Có thể là đơn vị triệu (ví dụ: 5 triệu = 5)
+							normalizedDeposit = normalizedDeposit * 1000000;
+							this.logger.debug(
+								`Normalized depositAmount from ${extracted.room.pricing.depositAmount} to ${normalizedDeposit} (assumed unit: triệu)`,
+							);
+						}
+						draft.room.pricing.depositAmount = Math.max(0, normalizedDeposit);
+					}
+					if (
+						extracted.room.pricing.depositMonths !== null &&
+						extracted.room.pricing.depositMonths !== undefined
+					) {
+						draft.room.pricing.depositMonths = Math.max(
+							1,
+							Math.min(12, extracted.room.pricing.depositMonths),
+						);
+					}
+					if (
+						extracted.room.pricing.utilityIncluded !== null &&
+						extracted.room.pricing.utilityIncluded !== undefined
+					) {
+						draft.room.pricing.utilityIncluded = extracted.room.pricing.utilityIncluded;
+					}
+					if (
+						extracted.room.pricing.utilityCostMonthly !== null &&
+						extracted.room.pricing.utilityCostMonthly !== undefined
+					) {
+						draft.room.pricing.utilityCostMonthly = Math.max(
+							0,
+							extracted.room.pricing.utilityCostMonthly,
+						);
+					}
+					if (
+						extracted.room.pricing.minimumStayMonths !== null &&
+						extracted.room.pricing.minimumStayMonths !== undefined
+					) {
+						draft.room.pricing.minimumStayMonths = Math.max(
+							1,
+							Math.min(60, extracted.room.pricing.minimumStayMonths),
+						);
+					}
+					if (
+						extracted.room.pricing.maximumStayMonths !== null &&
+						extracted.room.pricing.maximumStayMonths !== undefined
+					) {
+						draft.room.pricing.maximumStayMonths = Math.max(
+							1,
+							Math.min(60, extracted.room.pricing.maximumStayMonths),
+						);
+					}
+					if (
+						extracted.room.pricing.priceNegotiable !== null &&
+						extracted.room.pricing.priceNegotiable !== undefined
+					) {
+						draft.room.pricing.priceNegotiable = extracted.room.pricing.priceNegotiable;
 					}
 				}
-				if (extracted.room.costs) {
+				// Xử lý costs với validation và mapping thông minh
+				if (extracted.room.costs && systemCostTypes.length > 0) {
 					for (const cost of extracted.room.costs) {
-						if (cost.costType && cost.value) {
-							const existingCost = draft.room.costs.find((c) => c.costType === cost.costType);
+						if (!cost.value || cost.value <= 0) {
+							this.logger.warn(`Invalid cost value: ${cost.value}, skipping cost`);
+							continue;
+						}
+
+						let matchedSystemCostType:
+							| { id: string; name: string; category: string; defaultUnit?: string }
+							| undefined;
+
+						// Trường hợp 1: AI đã trả về systemCostTypeId hợp lệ
+						if (cost.systemCostTypeId) {
+							matchedSystemCostType = systemCostTypes.find((ct) => ct.id === cost.systemCostTypeId);
+							if (!matchedSystemCostType) {
+								this.logger.warn(
+									`Invalid systemCostTypeId from AI: ${cost.systemCostTypeId}, attempting fallback mapping`,
+								);
+							}
+						}
+
+						// Trường hợp 2: Fallback - Tìm kiếm thông minh dựa trên costType hoặc keywords
+						if (!matchedSystemCostType && cost.costType) {
+							const normalizedCostType = cost.costType.toLowerCase();
+							// Tìm kiếm theo keywords phổ biến
+							const keywords: Record<string, string[]> = {
+								điện: ['điện', 'electricity', 'electric'],
+								nước: ['nước', 'water'],
+								internet: ['internet', 'wifi', 'mạng', 'network'],
+								xe: ['xe', 'parking', 'gửi xe', 'park'],
+								rác: ['rác', 'waste', 'garbage', 'trash'],
+								an_ninh: ['an ninh', 'security', 'bảo vệ'],
+								dịch_vụ: ['dịch vụ', 'service', 'phí dịch vụ'],
+							};
+
+							// Tìm keyword match
+							for (const [_key, searchTerms] of Object.entries(keywords)) {
+								if (searchTerms.some((term) => normalizedCostType.includes(term))) {
+									// Tìm cost type có name chứa keyword
+									matchedSystemCostType = systemCostTypes.find((ct) => {
+										const ctName = ct.name.toLowerCase();
+										return searchTerms.some((term) => ctName.includes(term));
+									});
+									if (matchedSystemCostType) {
+										this.logger.debug(
+											`Matched cost type "${cost.costType}" to system cost type "${matchedSystemCostType.name}" (${matchedSystemCostType.id})`,
+										);
+										break;
+									}
+								}
+							}
+
+							// Nếu vẫn chưa tìm thấy, thử tìm kiếm trực tiếp trong name
+							if (!matchedSystemCostType) {
+								matchedSystemCostType = systemCostTypes.find(
+									(ct) =>
+										ct.name.toLowerCase().includes(normalizedCostType) ||
+										normalizedCostType.includes(ct.name.toLowerCase()),
+								);
+							}
+						}
+
+						// Nếu tìm thấy system cost type, thêm vào draft
+						if (matchedSystemCostType) {
+							const existingCost = draft.room.costs.find(
+								(c) => c.systemCostTypeId === matchedSystemCostType!.id,
+							);
+
+							// Xác định costType và unit dựa trên category và name
+							let finalCostType: string = cost.costType || 'fixed';
+							let finalUnit: string = cost.unit || matchedSystemCostType.defaultUnit || 'per_month';
+
+							// Logic thông minh để xác định costType và unit dựa trên tên cost type
+							const costName = matchedSystemCostType.name.toLowerCase();
+							if (costName.includes('điện') || costName.includes('electricity')) {
+								finalCostType = 'metered';
+								finalUnit = 'per_kwh';
+							} else if (costName.includes('nước') || costName.includes('water')) {
+								finalCostType = 'per_unit';
+								finalUnit = 'per_person';
+							} else {
+								// Các cost types khác thường là fixed
+								finalCostType = 'fixed';
+								finalUnit = finalUnit || 'per_month';
+							}
+
 							if (!existingCost) {
 								draft.room.costs.push({
-									systemCostTypeId: '', // Will be set later
+									systemCostTypeId: matchedSystemCostType.id,
 									value: cost.value,
-									costType: cost.costType as any,
-									unit: cost.unit || (cost.costType === 'ELECTRICITY' ? 'per_kwh' : 'per_person'),
-									billingCycle: 'MONTHLY' as any,
+									costType: finalCostType as any,
+									unit: finalUnit,
+									billingCycle: (cost.billingCycle as any) || 'MONTHLY',
+									includedInRent: false,
+									isOptional: false,
 								});
+								this.logger.debug(
+									`Added cost: ${matchedSystemCostType.name} (${matchedSystemCostType.id}) = ${cost.value} VNĐ, type=${finalCostType}, unit=${finalUnit}`,
+								);
 							} else {
 								// Cập nhật giá trị nếu đã có
 								existingCost.value = cost.value;
 								if (cost.unit) {
 									existingCost.unit = cost.unit;
 								}
+								if (cost.costType) {
+									existingCost.costType = cost.costType as any;
+								}
+								this.logger.debug(
+									`Updated cost: ${matchedSystemCostType.name} (${matchedSystemCostType.id}) = ${cost.value} VNĐ`,
+								);
+							}
+						} else {
+							this.logger.warn(
+								`Could not find matching system cost type for cost: ${JSON.stringify(cost)}, skipping`,
+							);
+						}
+					}
+				} else if (
+					extracted.room.costs &&
+					extracted.room.costs.length > 0 &&
+					systemCostTypes.length === 0
+				) {
+					this.logger.warn('Cannot process costs: no system cost types available');
+				}
+				// Xử lý amenities nếu có
+				if (extracted.room.amenities && Array.isArray(extracted.room.amenities)) {
+					for (const amenity of extracted.room.amenities) {
+						if (amenity.systemAmenityId) {
+							const existingAmenity = draft.room.amenities?.find(
+								(a) => a.systemAmenityId === amenity.systemAmenityId,
+							);
+							if (!existingAmenity) {
+								if (!draft.room.amenities) {
+									draft.room.amenities = [];
+								}
+								draft.room.amenities.push({
+									systemAmenityId: amenity.systemAmenityId,
+									customValue: amenity.customValue || undefined,
+									notes: amenity.notes || undefined,
+								});
+							}
+						}
+					}
+				}
+				// Xử lý rules nếu có
+				if (extracted.room.rules && Array.isArray(extracted.room.rules)) {
+					for (const rule of extracted.room.rules) {
+						if (rule.systemRuleId) {
+							const existingRule = draft.room.rules?.find(
+								(r) => r.systemRuleId === rule.systemRuleId,
+							);
+							if (!existingRule) {
+								if (!draft.room.rules) {
+									draft.room.rules = [];
+								}
+								draft.room.rules.push({
+									systemRuleId: rule.systemRuleId,
+									customValue: rule.customValue || undefined,
+									isEnforced:
+										rule.isEnforced !== null && rule.isEnforced !== undefined
+											? rule.isEnforced
+											: true,
+									notes: rule.notes || undefined,
+								});
 							}
 						}
 					}
@@ -555,14 +917,22 @@ export class RoomPublishingService {
 		draft.stage = determineNextStage(draft);
 		const missingField = getNextMandatoryQuestion(draft);
 		const allMissingFields = getAllMissingFields(draft);
-		const prompt = this.composePrompt(draft, missingField, allMissingFields);
+		const hasPendingActions = actions.length > 0;
+		const prompt = this.composePrompt(draft, missingField, allMissingFields, hasPendingActions);
 		draft.pendingConfirmation = missingField?.key;
 		draft.lastActions = actions;
 		session.context = { activeFlow: 'room-publishing', roomPublishing: draft };
 		const executionPlan = buildExecutionPlan(draft);
+
+		// Xác định status rõ ràng:
+		// 1. Nếu có execution plan -> READY_TO_CREATE
+		// 2. Nếu có actions pending -> NEED_MORE_INFO (đang chờ xử lý)
+		// 3. Nếu có missing fields -> NEED_MORE_INFO (cần thêm thông tin)
+		// 4. Nếu không có gì -> NEED_MORE_INFO (fallback)
 		const status = executionPlan
 			? RoomPublishingStatus.READY_TO_CREATE
 			: RoomPublishingStatus.NEED_MORE_INFO;
+
 		return {
 			stage: draft.stage,
 			status,

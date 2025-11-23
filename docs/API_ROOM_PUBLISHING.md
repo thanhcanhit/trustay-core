@@ -1,407 +1,200 @@
-  # API Room Publishing với AI
+# API Room Publishing với AI
 
-  ## Tổng quan
+## Endpoint
 
-  API này cho phép người dùng đăng phòng trọ thông qua cuộc trò chuyện với AI. AI sẽ tự động hỏi các thông tin cần thiết (giá cả, vị trí, hình ảnh) và tự động tạo các thông tin khác (tên phòng, mô tả, loại phòng, số phòng).
+**POST** `/api/ai/room-publish`
 
-  ## Endpoint
+**Authentication**: Bắt buộc (JWT Bearer Token)
 
-  ### POST `/api/ai/room-publish`
+## Request
 
-  **Mô tả**: Endpoint chuyên dụng cho room publishing flow, tách biệt hoàn toàn khỏi chat flow thông thường.
+```typescript
+{
+  message?: string;      // Tin nhắn của user (optional - có thể rỗng để trigger tạo phòng)
+  buildingId?: string;   // ID hoặc slug của building (optional)
+  images?: string[];     // Danh sách đường dẫn hình ảnh (optional)
+}
+```
 
-  **Authentication**: Bắt buộc (JWT Bearer Token)
+**Ví dụ**:
+```json
+{
+  "message": "Phòng trọ 20m2, giá 2.5 triệu, nước 50k 1 người, điện 3.5k",
+  "buildingId": "nhi-tuong-phong-troquan-go-vap",
+  "images": ["/images/photo1.jpg"]
+}
+```
 
-  **Request Body**:
+## Response - 4 Trạng thái
 
-  ```typescript
-  {
-    message: string;        // Tin nhắn của người dùng về thông tin phòng
-    buildingId?: string;    // (Optional) ID của building nếu đã biết. Nếu có, sẽ bỏ qua bước tìm/select building
-    images?: string[];      // (Optional) Danh sách đường dẫn hình ảnh phòng
+### 1. NEED_MORE_INFO - Cần thêm thông tin
+
+```typescript
+{
+  success: true,
+  data: {
+    kind: 'CONTROL',
+    sessionId: string,
+    message: string,  // Câu hỏi từ AI
+    payload: {
+      mode: 'ROOM_PUBLISH',
+      status: 'NEED_MORE_INFO',
+      missingField?: string,      // Field còn thiếu
+      hasPendingActions?: boolean  // Đang chờ xử lý actions
+    },
+    meta: {
+      stage: string,
+      pendingActions?: number,
+      actionTypes?: string
+    }
   }
-  ```
+}
+```
 
-  **Ví dụ Request**:
+**Hành động**: Hiển thị message và chờ user trả lời
 
-  ```json
-  {
-    "message": "1 phòng 2 triệu, cọc 1 triệu. Điện 3k nước 5k",
-    "buildingId": "02a927ba-c5e4-40e3-a64c-0187c9b35e33",
-    "images": ["/images/photo1.jpg", "/images/photo2.jpg"]
-  }
-  ```
+### 2. READY_TO_CREATE - Sẵn sàng tạo phòng
 
-  **Lưu ý về `buildingId`**:
-  - Nếu frontend đã biết building ID (ví dụ: user đang ở trang building detail), có thể truyền vào để bỏ qua bước tìm/select building
-  - Nếu không truyền `buildingId`, AI sẽ tự động hỏi về tên tòa nhà và địa điểm để tìm/select building
-
-  **Response**:
-
-  #### 1. Khi đang thu thập thông tin (chưa đủ thông tin)
-
-  **Status**: `200 OK`
-
-  ```typescript
-  {
-    success: true,
-    data: {
-      kind: 'CONTENT',
-      sessionId: string,
-      timestamp: string,
-      message: string,  // Câu hỏi từ AI (ví dụ: "Mình cần thêm thông tin về giá thuê/tháng...")
-      payload: {
-        mode: 'CONTENT'
-      },
-      meta: {
-        stage: string  // 'capture-context' | 'ensure-building' | 'collect-room-core' | 'enrich-room' | 'finalize-room'
+```typescript
+{
+  success: true,
+  data: {
+    kind: 'CONTROL',
+    sessionId: string,
+    message: string,  // "Hoàn tất! Mình sẽ tạo phòng trọ cho bạn ngay."
+    payload: {
+      mode: 'ROOM_PUBLISH',
+      status: 'READY_TO_CREATE',
+      plan: {
+        shouldCreateBuilding: boolean,
+        buildingId?: string,
+        buildingPayload?: CreateBuildingDto,
+        roomPayload: CreateRoomDto
       }
+    },
+    meta: {
+      stage: 'finalize-room',
+      planReady: true
     }
   }
-  ```
+}
+```
 
-  **Ví dụ Response**:
+**Hành động**: 
+- Nếu `message` rỗng → Backend tự động tạo phòng
+- Nếu có `message` → Hiển thị xác nhận, gửi request rỗng để trigger tạo phòng
 
-  ```json
-  {
-    "success": true,
-    "data": {
-      "kind": "CONTENT",
-      "sessionId": "user_02a927ba-c5e4-40e3-a64c-0187c9b35e33",
-      "timestamp": "2025-11-22T15:18:05.000Z",
-      "message": "Mình cần thêm một số thông tin để hoàn tất đăng phòng. Bạn có thể cung cấp tất cả cùng lúc được không?\n\n• Giá thuê mỗi tháng (ví dụ: 2 triệu, 3000000)\n• Địa điểm (ví dụ: Quận 1 TP.HCM, Gò Vấp Hồ Chí Minh)",
-      "payload": {
-        "mode": "CONTENT"
-      },
-      "meta": {
-        "stage": "collect-room-core"
-      }
+### 3. CREATED - Đã tạo thành công
+
+```typescript
+{
+  success: true,
+  data: {
+    kind: 'CONTROL',
+    sessionId: string,
+    message: string,  // "Đã tạo phòng thành công!"
+    payload: {
+      mode: 'ROOM_PUBLISH',
+      status: 'CREATED',
+      roomId: string,
+      roomSlug: string,
+      roomPath: string  // "/rooms/{slug}" - dùng để redirect
     }
   }
-  ```
+}
+```
 
-  #### 2. Khi đã đủ thông tin (sẵn sàng tạo phòng)
+**Hành động**: Redirect user tới `roomPath`
 
-  **Status**: `200 OK`
+### 4. CREATION_FAILED - Tạo thất bại
 
-  ```typescript
-  {
-    success: true,
-    data: {
-      kind: 'CONTROL',
-      sessionId: string,
-      timestamp: string,
-      message: string,  // Thông báo xác nhận từ AI
-      payload: {
-        mode: 'ROOM_PUBLISH',
-        plan: {
-          shouldCreateBuilding: boolean,  // true nếu cần tạo building mới
-          buildingId?: string,            // ID building nếu dùng building có sẵn
-          buildingPayload?: CreateBuildingDto,  // Payload để tạo building (nếu shouldCreateBuilding = true)
-          roomPayload: CreateRoomDto,     // Payload để tạo room
-          description: string             // Mô tả về execution plan
-        }
-      },
-      meta: {
-        stage: 'finalize-room',
-        planReady: true,
-        shouldCreateBuilding: boolean
-      }
+```typescript
+{
+  success: true,
+  data: {
+    kind: 'CONTROL',
+    sessionId: string,
+    message: string,  // Thông báo lỗi
+    payload: {
+      mode: 'ROOM_PUBLISH',
+      status: 'CREATION_FAILED',
+      error: string
     }
   }
-  ```
+}
+```
 
-  **Ví dụ Response**:
+**Hành động**: Hiển thị lỗi cho user
 
-  ```json
-  {
-    "success": true,
-    "data": {
-      "kind": "CONTROL",
-      "sessionId": "user_02a927ba-c5e4-40e3-a64c-0187c9b35e33",
-      "timestamp": "2025-11-22T15:20:00.000Z",
-      "message": "Kiểm tra lại thông tin, mình sẽ gửi sang hệ thống để tạo phòng ngay. Có cần mình rà soát lại trước khi gửi đi không?",
-      "payload": {
-        "mode": "ROOM_PUBLISH",
-        "plan": {
-          "shouldCreateBuilding": true,
-          "buildingPayload": {
-            "name": "Kahn",
-            "addressLine1": "123 Đường ABC",
-            "districtId": 1,
-            "provinceId": 1,
-            "wardId": 1,
-            "country": "Vietnam"
-          },
-          "roomPayload": {
-            "name": "Phòng trọ Kahn",
-            "description": "Phòng trọ 2 triệu tại Gò Vấp Hồ Chí Minh. Điện 3k/số, nước 5k/người. Giá hợp lý, tiện nghi.",
-            "roomType": "boarding_house",
-            "totalRooms": 1,
-            "pricing": {
-              "basePriceMonthly": 2000000,
-              "depositAmount": 1000000
-            },
-            "costs": [
-              {
-                "systemCostTypeId": "electricity_cost_id",
-                "value": 3000,
-                "costType": "ELECTRICITY",
-                "unit": "per_kwh",
-                "billingCycle": "MONTHLY"
-              },
-              {
-                "systemCostTypeId": "water_cost_id",
-                "value": 5000,
-                "costType": "WATER",
-                "unit": "per_person",
-                "billingCycle": "MONTHLY"
-              }
-            ],
-            "images": {
-              "images": ["/images/photo1.jpg", "/images/photo2.jpg"]
-            }
-          },
-          "description": "Tạo building mới 'Kahn' và room 'Phòng trọ Kahn'"
-        }
-      },
-      "meta": {
-        "stage": "finalize-room",
-        "planReady": true,
-        "shouldCreateBuilding": true
-      }
-    }
-  }
-  ```
+## Flow đơn giản
 
-  #### 3. Khi có lỗi
+1. **Gửi thông tin phòng** → Nhận `NEED_MORE_INFO` hoặc `READY_TO_CREATE`
+2. **Nếu `READY_TO_CREATE`** → Gửi request rỗng (`message: ""`) để trigger tạo phòng
+3. **Nhận `CREATED`** → Redirect tới `roomPath`
 
-  **Status**: `400 Bad Request` hoặc `401 Unauthorized`
+## Ví dụ code
 
-  ```typescript
-  {
-    success: false,
-    error: string,      // Mô tả lỗi
-    message: string     // Chi tiết lỗi
-  }
-  ```
+```typescript
+// 1. Gửi thông tin phòng
+const response = await fetch('/api/ai/room-publish', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  },
+  body: JSON.stringify({
+    message: "Phòng trọ 20m2, giá 2.5 triệu",
+    buildingId: "nhi-tuong-phong-troquan-go-vap",
+    images: ["/images/photo1.jpg"]
+  })
+});
 
-  **Ví dụ Response**:
+const result = await response.json();
 
-  ```json
-  {
-    "success": false,
-    "error": "Authentication required",
-    "message": "Bạn cần đăng nhập để đăng phòng"
-  }
-  ```
-
-  ## Flow hoạt động
-
-  ### 1. Bắt đầu đăng phòng
-
-  **Request**:
-  ```json
-  {
-    "message": "Đăng phòng trọ"
-  }
-  ```
-
-  **Response**: AI sẽ hỏi về thông tin cần thiết (giá, vị trí)
-
-  ### 2. Cung cấp thông tin
-
-  **Request**:
-  ```json
-  {
-    "message": "1 phòng 2 triệu, cọc 1 triệu, toà nhà Kahn, gò vấp hồ chí minh. Điện 3k nước 5k",
-    "images": ["/images/photo1.jpg"]
-  }
-  ```
-
-  **Response**: 
-  - Nếu thiếu thông tin: AI sẽ hỏi lại những gì còn thiếu
-  - Nếu đủ thông tin: AI sẽ trả về execution plan (`kind: 'CONTROL'`, `mode: 'ROOM_PUBLISH'`)
-
-  ### 3. Xác nhận và tạo phòng
-
-  Khi nhận được response với `kind: 'CONTROL'` và `mode: 'ROOM_PUBLISH'`, frontend cần:
-
-  1. **Hiển thị thông tin xác nhận** cho user
-  2. **Gọi API tạo building** (nếu `plan.shouldCreateBuilding === true`):
-    - Endpoint: `POST /api/buildings`
-    - Body: `plan.buildingPayload`
-  3. **Gọi API tạo room**:
-    - Endpoint: `POST /api/rooms`
-    - Body: `plan.roomPayload` (cập nhật `buildingId` nếu cần)
-
-  ## Lưu ý quan trọng
-
-  ### Thông tin bắt buộc (AI sẽ hỏi nếu thiếu)
-  - **Giá thuê/tháng** (`basePriceMonthly`)
-  - **Building ID hoặc thông tin building**:
-    - Nếu frontend truyền `buildingId` → Không cần hỏi
-    - Nếu không có `buildingId` → AI sẽ hỏi về **Vị trí địa lý** (`building.location` - districtId, provinceId) và **Tên tòa nhà** (`building.name`) để tìm/select building
-
-  ### Thông tin tự động tạo (AI không hỏi)
-  - **Tên phòng** (`room.name`) - tự tạo dựa trên tên tòa nhà
-  - **Loại phòng** (`room.roomType`) - mặc định `boarding_house`
-  - **Số lượng phòng** (`room.totalRooms`) - mặc định `1`
-  - **Mô tả** (`room.description`) - tự tạo dựa trên giá, vị trí, tiện ích
-
-  ### Thông tin khuyến khích (không bắt buộc)
-  - **Hình ảnh** (`images`) - AI sẽ gợi ý nhưng không bắt buộc
-  - **Giá điện/nước** (`costs`) - Nếu user cung cấp, AI sẽ tự động parse
-
-  ## Session Management
-
-  - Mỗi user có một session riêng (dựa trên `userId`)
-  - Session được lưu trong memory, timeout sau 30 phút không hoạt động
-  - Tối đa 10 tin nhắn mỗi session (để tránh memory leak)
-  - Frontend không cần quản lý session, chỉ cần gửi `message` và nhận response
-
-  ## Ví dụ sử dụng (Frontend)
-
-  ### TypeScript/React Example
-
-  ```typescript
-  interface RoomPublishRequest {
-    message: string;
-    buildingId?: string;  // Optional: ID của building nếu đã biết
-    images?: string[];
-  }
-
-  interface RoomPublishResponse {
-    success: boolean;
-    data?: {
-      kind: 'CONTENT' | 'CONTROL';
-      sessionId: string;
-      message: string;
-      payload?: {
-        mode: 'CONTENT' | 'ROOM_PUBLISH';
-        plan?: {
-          shouldCreateBuilding: boolean;
-          buildingId?: string;
-          buildingPayload?: any;
-          roomPayload: any;
-          description: string;
-        };
-      };
-      meta?: {
-        stage: string;
-        planReady?: boolean;
-        shouldCreateBuilding?: boolean;
-      };
-    };
-    error?: string;
-  }
-
-  async function publishRoom(
-    message: string, 
-    buildingId?: string, 
-    images?: string[]
-  ): Promise<RoomPublishResponse> {
-    const response = await fetch('/api/ai/room-publish', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}` // JWT token
-      },
-      body: JSON.stringify({ message, buildingId, images })
-    });
+// 2. Xử lý theo status
+switch (result.data.payload.status) {
+  case 'NEED_MORE_INFO':
+    // Hiển thị message, chờ user trả lời
+    showMessage(result.data.message);
+    break;
     
-    return response.json();
-  }
-
-  // Sử dụng - Không có buildingId (AI sẽ hỏi về building)
-  const result = await publishRoom(
-    "1 phòng 2 triệu, cọc 1 triệu, toà nhà Kahn, gò vấp hồ chí minh. Điện 3k nước 5k",
-    undefined,  // buildingId
-    ["/images/photo1.jpg"]
-  );
-
-  // Sử dụng - Có buildingId (bỏ qua bước tìm/select building)
-  const resultWithBuilding = await publishRoom(
-    "1 phòng 2 triệu, cọc 1 triệu. Điện 3k nước 5k",
-    "02a927ba-c5e4-40e3-a64c-0187c9b35e33",  // buildingId
-    ["/images/photo1.jpg"]
-  );
-
-  if (result.success && result.data?.kind === 'CONTROL' && result.data.payload?.mode === 'ROOM_PUBLISH') {
-    const plan = result.data.payload.plan;
-    
-    // Tạo building nếu cần
-    let buildingId = plan.buildingId;
-    if (plan.shouldCreateBuilding && plan.buildingPayload) {
-      const buildingResponse = await fetch('/api/buildings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(plan.buildingPayload)
-      });
-      const building = await buildingResponse.json();
-      buildingId = building.id;
-    }
-    
-    // Tạo room
-    const roomPayload = {
-      ...plan.roomPayload,
-      buildingId: buildingId || plan.buildingId
-    };
-    
-    const roomResponse = await fetch('/api/rooms', {
+  case 'READY_TO_CREATE':
+    // Gửi request rỗng để trigger tạo phòng
+    const createResponse = await fetch('/api/ai/room-publish', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify(roomPayload)
+      body: JSON.stringify({
+        message: "",  // Rỗng để trigger tạo phòng
+        buildingId: result.data.payload.plan.buildingId
+      })
     });
+    const createResult = await createResponse.json();
     
-    const room = await roomResponse.json();
-    console.log('Room created:', room);
-  }
-  ```
+    if (createResult.data.payload.status === 'CREATED') {
+      // Redirect tới trang phòng
+      window.location.href = createResult.data.payload.roomPath;
+    }
+    break;
+    
+  case 'CREATED':
+    // Redirect tới trang phòng
+    window.location.href = result.data.payload.roomPath;
+    break;
+    
+  case 'CREATION_FAILED':
+    // Hiển thị lỗi
+    showError(result.data.message);
+    break;
+}
+```
 
-  ## Error Handling
+## Lưu ý
 
-  ### Authentication Error (401)
-  ```json
-  {
-    "success": false,
-    "error": "Authentication required",
-    "message": "Bạn cần đăng nhập để đăng phòng"
-  }
-  ```
-
-  ### Validation Error (400)
-  ```json
-  {
-    "success": false,
-    "error": "Failed to process room publishing",
-    "message": "Invalid request format"
-  }
-  ```
-
-  ### Server Error (500)
-  ```json
-  {
-    "success": false,
-    "error": "Failed to process room publishing",
-    "message": "Internal server error"
-  }
-  ```
-
-  ## Best Practices
-
-  1. **Luôn kiểm tra `success` field** trước khi xử lý response
-  2. **Kiểm tra `kind` và `mode`** để biết response type:
-    - `kind: 'CONTENT'` → Đang hỏi thông tin, hiển thị message cho user
-    - `kind: 'CONTROL'` + `mode: 'ROOM_PUBLISH'` → Đã đủ thông tin, hiển thị xác nhận và tạo phòng
-  3. **Xử lý `plan.shouldCreateBuilding`** để quyết định có cần tạo building không
-  4. **Cập nhật `buildingId`** trong `roomPayload` trước khi gọi API tạo room
-  5. **Hiển thị loading state** khi đang xử lý
-  6. **Xử lý lỗi** một cách graceful, hiển thị thông báo thân thiện cho user
-
+- **Session**: Tự động quản lý theo `userId`, không cần truyền `sessionId`
+- **buildingId**: Có thể là UUID hoặc slug
+- **Auto-create**: Khi `status = READY_TO_CREATE` và gửi `message = ""`, backend tự động tạo phòng
+- **Thông tin bắt buộc**: Giá thuê (`basePriceMonthly`) và địa điểm (nếu không có `buildingId`)
+- **Thông tin tự động**: Tên phòng, mô tả, loại phòng, số phòng (AI tự tạo)
