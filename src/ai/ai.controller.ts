@@ -4,6 +4,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AiService, ChatResponse } from './ai.service';
 import { ChatDto } from './dto/chat.dto';
+import { RoomPublishDto } from './dto/room-publish.dto';
 import { Text2SqlDto } from './dto/text2sql.dto';
 
 @ApiTags('AI')
@@ -18,9 +19,95 @@ export class AiController {
 	/**
 	 * Main chat endpoint - Compatible with AI SDK Conversation component
 	 * Supports both authenticated users (via JWT) and anonymous users (via IP)
+	 * GET method for backward compatibility (legacy)
+	 */
+	@Get('chat')
+	@ApiOperation({ summary: 'Chat với AI - GET method (tương thích ngược)' })
+	@ApiQuery({
+		name: 'query',
+		description: 'Câu hỏi hoặc yêu cầu của người dùng',
+		example: 'Tìm phòng trọ giá rẻ ở quận 1',
+	})
+	@ApiQuery({
+		name: 'currentPage',
+		description: 'Pathname của trang hiện tại (từ frontend)',
+		required: false,
+		example: '/rooms/tuyenquan-go-vap-phong-ap1443',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Phản hồi từ AI thành công',
+		schema: {
+			type: 'object',
+			properties: {
+				success: { type: 'boolean', example: true },
+				data: {
+					type: 'object',
+					properties: {
+						message: { type: 'string', example: 'Tôi đã tìm thấy 5 phòng trọ phù hợp...' },
+						sql: { type: 'string', example: 'SELECT * FROM rooms WHERE...' },
+						results: { type: 'array', items: { type: 'object' } },
+					},
+				},
+			},
+		},
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Lỗi xử lý chat',
+		schema: {
+			type: 'object',
+			properties: {
+				success: { type: 'boolean', example: false },
+				error: { type: 'string', example: 'Failed to process chat message' },
+				message: { type: 'string', example: 'Invalid query format' },
+				query: { type: 'string', example: 'Tìm phòng trọ' },
+			},
+		},
+	})
+	async chatGet(
+		@Query('query') query: string,
+		@Query('currentPage') currentPage: string | undefined,
+		@CurrentUser('id') userId: string | undefined,
+		@Ip() clientIp: string,
+	): Promise<{
+		success: boolean;
+		data?: ChatResponse;
+		error?: string;
+		message?: string;
+		query?: string;
+	}> {
+		try {
+			if (currentPage) {
+				this.logger.debug(`[AI Controller] GET - Received currentPage: ${currentPage}`);
+			}
+			const response = await this.aiService.chatWithAI(query, {
+				userId,
+				clientIp,
+				currentPage,
+			});
+
+			return {
+				success: true,
+				data: response,
+			};
+		} catch (error) {
+			return {
+				success: false,
+				error: 'Failed to process chat message',
+				message: error.message,
+				query,
+			};
+		}
+	}
+
+	/**
+	 * Main chat endpoint - Compatible with AI SDK Conversation component
+	 * Supports both authenticated users (via JWT) and anonymous users (via IP)
+	 * POST method with full payload support (including images)
 	 */
 	@Post('chat')
-	@ApiOperation({ summary: 'Chat với AI - tương thích với AI SDK Conversation component' })
+	@ApiOperation({ summary: 'Chat với AI - POST method (hỗ trợ đầy đủ tính năng)' })
 	@ApiResponse({
 		status: 200,
 		description: 'Phản hồi từ AI thành công',
@@ -53,7 +140,7 @@ export class AiController {
 		},
 	})
 	async chat(
-		@Query() chatDto: ChatDto,
+		@Body() chatDto: ChatDto,
 		@CurrentUser('id') userId: string | undefined,
 		@Ip() clientIp: string,
 	): Promise<{
@@ -66,9 +153,12 @@ export class AiController {
 		try {
 			// Log để debug
 			if (chatDto.currentPage) {
-				this.logger.debug(`[AI Controller] Received currentPage: ${chatDto.currentPage}`);
+				this.logger.debug(`[AI Controller] POST - Received currentPage: ${chatDto.currentPage}`);
 			} else {
-				this.logger.debug('[AI Controller] No currentPage provided');
+				this.logger.debug('[AI Controller] POST - No currentPage provided');
+			}
+			if (chatDto.images && chatDto.images.length > 0) {
+				this.logger.debug(`[AI Controller] POST - Received ${chatDto.images.length} images`);
 			}
 			const response = await this.aiService.chatWithAI(chatDto.query, {
 				userId,
@@ -184,6 +274,90 @@ export class AiController {
 			return {
 				success: false,
 				error: 'Failed to clear chat history',
+				message: error.message,
+			};
+		}
+	}
+
+	/**
+	 * Room publishing endpoint - Dedicated endpoint for room publishing flow
+	 * Separate from main chat to avoid conflicts with SQL generation
+	 */
+	@Post('room-publish')
+	@ApiOperation({ summary: 'Đăng phòng trọ - Endpoint riêng cho room publishing flow' })
+	@ApiResponse({
+		status: 200,
+		description: 'Phản hồi từ room publishing flow',
+		schema: {
+			type: 'object',
+			properties: {
+				success: { type: 'boolean', example: true },
+				data: {
+					type: 'object',
+					properties: {
+						message: { type: 'string', example: 'Mình sẽ giúp bạn đăng phòng...' },
+						stage: { type: 'string', example: 'collect-room-core' },
+						plan: { type: 'object' },
+					},
+				},
+			},
+		},
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Lỗi xử lý room publishing',
+		schema: {
+			type: 'object',
+			properties: {
+				success: { type: 'boolean', example: false },
+				error: { type: 'string', example: 'Failed to process room publishing' },
+				message: { type: 'string', example: 'Invalid request' },
+			},
+		},
+	})
+	async roomPublish(
+		@Body() roomPublishDto: RoomPublishDto,
+		@CurrentUser('id') userId: string | undefined,
+		@Ip() clientIp: string,
+	): Promise<{
+		success: boolean;
+		data?: ChatResponse;
+		error?: string;
+		message?: string;
+	}> {
+		try {
+			if (!userId) {
+				return {
+					success: false,
+					error: 'Authentication required',
+					message: 'Bạn cần đăng nhập để đăng phòng',
+				};
+			}
+			if (roomPublishDto.images && roomPublishDto.images.length > 0) {
+				this.logger.debug(
+					`[AI Controller] Room Publish - Received ${roomPublishDto.images.length} images`,
+				);
+			}
+			if (roomPublishDto.buildingId) {
+				this.logger.debug(
+					`[AI Controller] Room Publish - Received buildingId: ${roomPublishDto.buildingId}`,
+				);
+			}
+			const response = await this.aiService.publishRoom(roomPublishDto.message || '', {
+				userId,
+				clientIp,
+				buildingId: roomPublishDto.buildingId,
+				images: roomPublishDto.images,
+			});
+
+			return {
+				success: true,
+				data: response,
+			};
+		} catch (error) {
+			return {
+				success: false,
+				error: 'Failed to process room publishing',
 				message: error.message,
 			};
 		}

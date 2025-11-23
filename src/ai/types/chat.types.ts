@@ -1,3 +1,5 @@
+import { RoomPublishingDraft, RoomPublishingExecutionPlan } from './room-publishing.types';
+
 /**
  * Interface for chat message compatible with AI SDK
  */
@@ -20,6 +22,12 @@ export interface ChatSession {
 	messages: ChatMessage[];
 	lastActivity: Date;
 	createdAt: Date;
+	context?: ChatSessionContext;
+}
+
+export interface ChatSessionContext {
+	activeFlow?: 'room-publishing';
+	roomPublishing?: RoomPublishingDraft;
 }
 
 /**
@@ -83,10 +91,11 @@ export interface DataPayload {
 }
 
 export interface ControlPayload {
-	mode: 'CLARIFY' | 'ERROR';
+	mode: 'CLARIFY' | 'ERROR' | 'ROOM_PUBLISH';
 	questions?: readonly string[];
 	code?: string;
 	details?: string;
+	plan?: RoomPublishingExecutionPlan;
 }
 
 /**

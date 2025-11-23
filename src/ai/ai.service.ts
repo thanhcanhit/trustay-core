@@ -1,6 +1,9 @@
 import { google } from '@ai-sdk/google';
 import { Injectable, Logger } from '@nestjs/common';
 import { generateText } from 'ai';
+import { BuildingsService } from '../api/buildings/buildings.service';
+import { AddressService } from '../api/provinces/address/address.service';
+import { RoomsService } from '../api/rooms/rooms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrchestratorAgent } from './agents/orchestrator-agent';
 import { ResponseGenerator } from './agents/response-generator';
@@ -11,6 +14,10 @@ import { buildOneForAllPrompt } from './prompts/simple-system-one-for-all';
 import { VIETNAMESE_LOCALE_SYSTEM_PROMPT } from './prompts/system.prompt';
 import { generateErrorResponse } from './services/error-handler.service';
 import {
+	RoomPublishingService,
+	RoomPublishingStepResult,
+} from './services/room-publishing.service';
+import {
 	ChatMessage,
 	ChatResponse,
 	ChatSession,
@@ -18,6 +25,7 @@ import {
 	RequestType,
 	TableColumn,
 } from './types/chat.types';
+import { RoomPublishingStatus } from './types/room-publishing.types';
 import {
 	inferColumns,
 	isListLike,
@@ -55,12 +63,16 @@ export class AiService {
 	// Chat session management - similar to rooms.service.ts view cache pattern
 	private chatSessions = new Map<string, ChatSession>();
 	private readonly SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 phút
-	private readonly MAX_MESSAGES_PER_SESSION = 20; // Giới hạn tin nhắn mỗi session
+	private readonly MAX_MESSAGES_PER_SESSION = 10; // Giới hạn tin nhắn mỗi session
 	private readonly CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 phút
 
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly knowledge: KnowledgeService,
+		private readonly roomPublishingService: RoomPublishingService,
+		private readonly buildingsService: BuildingsService,
+		private readonly roomsService: RoomsService,
+		private readonly addressService: AddressService,
 	) {
 		// Initialize orchestrator agent with Prisma and KnowledgeService
 		this.orchestratorAgent = new OrchestratorAgent(this.prisma, this.knowledge);
@@ -240,6 +252,524 @@ export class AiService {
 	}
 
 	/**
+	 * Dedicated room publishing endpoint - Separate from main chat flow
+	 * @param message - User message about room information
+	 * @param context - User context (userId, clientIp, buildingId, images)
+	 * @returns ChatResponse for room publishing flow
+	 */
+	async publishRoom(
+		message: string,
+		context: { userId: string; clientIp?: string; buildingId?: string; images?: string[] },
+	): Promise<ChatResponse> {
+		const { userId, clientIp, buildingId, images } = context;
+		if (!userId) {
+			throw new Error('User must be authenticated to publish room');
+		}
+
+		const session = this.getOrCreateSession(userId, clientIp);
+		const pipelineStartAt = this.logPipelineStart(message, session.sessionId);
+
+		this.logDebug('ROOM_PUBLISH', `Starting room publishing flow for user ${userId}`);
+		if (buildingId) {
+			this.logDebug('ROOM_PUBLISH', `Building ID provided: ${buildingId}`);
+		}
+
+		// Lưu câu hỏi của người dùng vào session
+		this.addMessageToSession(session, 'user', message);
+
+		try {
+			// Step 1: Handle user message
+			this.logInfo('ROOM_PUBLISH', '[STEP 1/4] handleUserMessage - Processing user input');
+			let stepResult = await this.roomPublishingService.handleUserMessage(
+				session,
+				message,
+				images,
+				buildingId,
+			);
+			this.logInfo(
+				'ROOM_PUBLISH',
+				`[STEP 1/4] handleUserMessage - Completed | stage=${stepResult.stage} status=${stepResult.status} actions=${stepResult.actions?.length || 0}`,
+			);
+
+			// Step 2: Resolve actions (lookup location, list buildings, etc.)
+			if (stepResult.actions && stepResult.actions.length > 0) {
+				this.logInfo(
+					'ROOM_PUBLISH',
+					`[STEP 2/4] resolveRoomPublishingActions - Processing ${stepResult.actions.length} action(s)`,
+				);
+				stepResult.actions.forEach((action, idx) => {
+					this.logDebug(
+						'ROOM_PUBLISH',
+						`[STEP 2/4] Action ${idx + 1}: ${action.type} - ${action.description}`,
+					);
+				});
+			} else {
+				this.logInfo(
+					'ROOM_PUBLISH',
+					'[STEP 2/4] resolveRoomPublishingActions - No actions to process',
+				);
+			}
+			stepResult = await this.resolveRoomPublishingActions(session, stepResult);
+			this.logInfo(
+				'ROOM_PUBLISH',
+				`[STEP 2/4] resolveRoomPublishingActions - Completed | stage=${stepResult.stage} status=${stepResult.status} planReady=${stepResult.executionPlan ? 'yes' : 'no'}`,
+			);
+
+			// Step 3: Execute room creation if ready
+			if (
+				stepResult.status === RoomPublishingStatus.READY_TO_CREATE &&
+				stepResult.executionPlan &&
+				(!message || message.trim() === '')
+			) {
+				this.logInfo(
+					'ROOM_PUBLISH',
+					'[STEP 3/4] executeRoomCreation - Auto-creating room (empty message + plan ready)',
+				);
+				stepResult = await this.executeRoomCreation(userId, stepResult);
+				this.logInfo(
+					'ROOM_PUBLISH',
+					`[STEP 3/4] executeRoomCreation - Completed | status=${stepResult.status} roomId=${stepResult.roomId || 'N/A'}`,
+				);
+			} else {
+				this.logInfo(
+					'ROOM_PUBLISH',
+					'[STEP 3/4] executeRoomCreation - Skipped (not ready or message not empty)',
+				);
+			}
+
+			// Step 4: Build response
+			this.logInfo('ROOM_PUBLISH', '[STEP 4/4] buildRoomFlowResponse - Building final response');
+			this.logInfo(
+				'ROOM_PUBLISH',
+				`Final state: stage=${stepResult.stage} status=${stepResult.status} planReady=${stepResult.executionPlan ? 'yes' : 'no'}`,
+			);
+			const meta: Record<string, string | number | boolean> = {
+				stage: stepResult.stage,
+			};
+			const response = this.buildRoomFlowResponse(session, stepResult, meta);
+			this.logInfo('ROOM_PUBLISH', '[STEP 4/4] buildRoomFlowResponse - Completed');
+			this.logPipelineEnd(session.sessionId, 'ROOM_PUBLISH', pipelineStartAt);
+			return response;
+		} catch (error) {
+			this.logError('ROOM_PUBLISH', `Error in room publishing flow`, error);
+			const errorMessage = generateErrorResponse((error as Error).message);
+			const messageText: string = `Xin lỗi, đã xảy ra lỗi khi xử lý đăng phòng: ${errorMessage}`;
+			this.addMessageToSession(session, 'assistant', messageText, {
+				kind: 'CONTROL',
+				payload: { mode: 'ERROR', details: (error as Error).message },
+			});
+			const response: ChatResponse = {
+				kind: 'CONTROL',
+				sessionId: session.sessionId,
+				timestamp: new Date().toISOString(),
+				message: messageText,
+				payload: { mode: 'ERROR', details: (error as Error).message },
+			};
+			this.logPipelineEnd(session.sessionId, 'ROOM_PUBLISH_ERROR', pipelineStartAt);
+			return response;
+		}
+	}
+
+	private async resolveRoomPublishingActions(
+		session: ChatSession,
+		initialStep: RoomPublishingStepResult,
+	): Promise<RoomPublishingStepResult> {
+		let stepResult = initialStep;
+		let guard = 0;
+		while (stepResult.actions && stepResult.actions.length > 0 && guard < 5) {
+			for (const action of stepResult.actions) {
+				try {
+					this.logDebug('ROOM_FLOW', `[TOOL CALL] Executing action: ${action.type}`);
+					const actionStartTime = Date.now();
+					let data: Array<Record<string, unknown>> = [];
+
+					if (
+						action.type === 'LIST_OWNER_BUILDINGS' &&
+						action.params.userId &&
+						action.params.keyword
+					) {
+						// Gọi BuildingsService thay vì SQL
+						this.logInfo(
+							'ROOM_FLOW',
+							`[TOOL CALL] buildingsService.findQuickListByOwner(userId=${action.params.userId})`,
+						);
+						const buildings = await this.buildingsService.findQuickListByOwner(
+							action.params.userId,
+						);
+						this.logInfo(
+							'ROOM_FLOW',
+							`[TOOL CALL] buildingsService.findQuickListByOwner - Found ${buildings.length} buildings`,
+						);
+
+						// Filter buildings by keyword
+						const keyword = action.params.keyword.toLowerCase();
+						const filteredBuildings = buildings.filter(
+							(b) =>
+								b.name.toLowerCase().includes(keyword) ||
+								(b.location.districtName?.toLowerCase().includes(keyword) ?? false) ||
+								(b.location.provinceName?.toLowerCase().includes(keyword) ?? false),
+						);
+						this.logInfo(
+							'ROOM_FLOW',
+							`[TOOL CALL] Filtered to ${filteredBuildings.length} buildings matching keyword "${keyword}"`,
+						);
+
+						// Map to BuildingCandidate format
+						data = filteredBuildings.slice(0, 5).map((b) => ({
+							id: b.id,
+							name: b.name,
+							slug: b.id, // QuickList uses id as slug
+							address_line1: undefined,
+							ward_id: null,
+							district_id: undefined,
+							province_id: undefined,
+							district_name: b.location.districtName || undefined,
+							province_name: b.location.provinceName || undefined,
+							match_score: 0.8,
+						}));
+						this.logInfo(
+							'ROOM_FLOW',
+							`[TOOL CALL] LIST_OWNER_BUILDINGS - Returning ${data.length} candidates`,
+						);
+					} else if (action.type === 'LOOKUP_LOCATION' && action.params.locationQuery) {
+						// Gọi AddressService thay vì SQL
+						this.logInfo(
+							'ROOM_FLOW',
+							`[TOOL CALL] addressService.search(query="${action.params.locationQuery}")`,
+						);
+						const searchResult = await this.addressService.search(action.params.locationQuery);
+						this.logInfo(
+							'ROOM_FLOW',
+							`[TOOL CALL] addressService.search - Found ${searchResult.results.districts.length} districts, ${searchResult.results.provinces.length} provinces`,
+						);
+
+						// Ưu tiên districts (vì thường có district + province)
+						if (searchResult.results.districts.length > 0) {
+							const district = searchResult.results.districts[0];
+							data = [
+								{
+									district_id: district.id,
+									district_name: district.name,
+									province_id: district.provinceId,
+									province_name: district.province?.name,
+									confidence_score: 0.8,
+								},
+							];
+							this.logInfo(
+								'ROOM_FLOW',
+								`[TOOL CALL] LOOKUP_LOCATION - Selected district: ${district.name} (id=${district.id})`,
+							);
+						} else if (searchResult.results.provinces.length > 0) {
+							const province = searchResult.results.provinces[0];
+							data = [
+								{
+									province_id: province.id,
+									province_name: province.name,
+									confidence_score: 0.7,
+								},
+							];
+							this.logInfo(
+								'ROOM_FLOW',
+								`[TOOL CALL] LOOKUP_LOCATION - Selected province: ${province.name} (id=${province.id})`,
+							);
+						}
+					}
+
+					const normalizedRows = serializeBigInt(data) as Array<Record<string, unknown>>;
+					const actionDuration = Date.now() - actionStartTime;
+					this.logInfo(
+						'ROOM_FLOW',
+						`[TOOL CALL] Action ${action.type} completed in ${actionDuration}ms`,
+					);
+
+					this.logDebug(
+						'ROOM_FLOW',
+						`[TOOL CALL] roomPublishingService.applyActionResult(action=${action.type})`,
+					);
+					stepResult = this.roomPublishingService.applyActionResult(
+						session,
+						action,
+						normalizedRows,
+					);
+					this.logDebug(
+						'ROOM_FLOW',
+						`[TOOL CALL] roomPublishingService.applyActionResult - Completed`,
+					);
+				} catch (error) {
+					this.logError('ROOM_FLOW', `[TOOL CALL] Action ${action.type} failed`, error);
+				}
+			}
+			guard += 1;
+		}
+		return stepResult;
+	}
+
+	private buildRoomFlowResponse(
+		session: ChatSession,
+		stepResult: RoomPublishingStepResult,
+		meta: Record<string, string | number | boolean>,
+	): ChatResponse {
+		if (stepResult.missingField?.key) {
+			meta.missingField = stepResult.missingField.key;
+		}
+		if (stepResult.draft.building.candidates) {
+			meta.buildingCandidates = stepResult.draft.building.candidates.length;
+		}
+		if (stepResult.actions && stepResult.actions.length > 0) {
+			meta.pendingActions = stepResult.actions.length;
+			meta.actionTypes = stepResult.actions.map((a) => a.type).join(',');
+		}
+
+		// Đảm bảo message luôn có giá trị rõ ràng
+		let message = stepResult.prompt || 'Xin chào! Mình sẽ giúp bạn đăng phòng.';
+
+		// Nếu message quá ngắn hoặc không rõ ràng, cải thiện dựa trên status
+		if (message.length < 10 || message.includes('Đang xử lý') || message.includes('...')) {
+			switch (stepResult.status) {
+				case RoomPublishingStatus.READY_TO_CREATE:
+					message = stepResult.executionPlan
+						? `Tuyệt vời! Mình đã có đủ thông tin để tạo phòng trọ cho bạn.${stepResult.draft.room.images.length === 0 ? ' Bạn có muốn thêm hình ảnh không? (Không bắt buộc)' : ''}`
+						: message;
+					break;
+				case RoomPublishingStatus.NEED_MORE_INFO:
+					if (stepResult.actions && stepResult.actions.length > 0) {
+						// Đang chờ action results
+						if (stepResult.actions.some((a) => a.type === 'LOOKUP_LOCATION')) {
+							message = 'Đang tìm kiếm thông tin địa điểm...';
+						} else if (stepResult.actions.some((a) => a.type === 'LIST_OWNER_BUILDINGS')) {
+							message = 'Đang tìm kiếm tòa nhà của bạn...';
+						} else {
+							message = 'Đang xử lý thông tin...';
+						}
+					} else if (stepResult.missingField) {
+						// Cần thêm thông tin cụ thể
+						const fieldLabel = stepResult.missingField.label || stepResult.missingField.key;
+						message = `Mình cần thêm thông tin về ${fieldLabel.toLowerCase()} để hoàn tất đăng phòng cho bạn.`;
+					} else {
+						message =
+							'Mình cần thêm một số thông tin để hoàn tất đăng phòng. Bạn có thể cung cấp thông tin về giá thuê và địa điểm được không?';
+					}
+					break;
+				case RoomPublishingStatus.CREATED:
+					message = stepResult.roomId
+						? `Đã tạo phòng thành công! Phòng của bạn đã được đăng tải.`
+						: message;
+					break;
+				case RoomPublishingStatus.CREATION_FAILED:
+					message = stepResult.error
+						? `Xin lỗi, đã xảy ra lỗi khi tạo phòng: ${stepResult.error}`
+						: 'Xin lỗi, đã xảy ra lỗi khi tạo phòng.';
+					break;
+			}
+		}
+
+		this.logDebug('ROOM_FLOW', `Response message: "${message.substring(0, 100)}..."`);
+		this.logInfo(
+			'ROOM_FLOW',
+			`Response status: ${stepResult.status} | hasExecutionPlan: ${!!stepResult.executionPlan} | hasActions: ${!!stepResult.actions} | missingField: ${stepResult.missingField?.key || 'none'}`,
+		);
+
+		// Luôn trả về status trong payload - ĐẢM BẢO 4 TRẠNG THÁI
+		const basePayload: any = {
+			mode: 'ROOM_PUBLISH',
+			status: stepResult.status,
+		};
+
+		// Status 1: READY_TO_CREATE
+		if (stepResult.status === RoomPublishingStatus.READY_TO_CREATE && stepResult.executionPlan) {
+			meta.planReady = true;
+			meta.shouldCreateBuilding = stepResult.executionPlan.shouldCreateBuilding;
+			return {
+				kind: 'CONTROL',
+				sessionId: session.sessionId,
+				timestamp: new Date().toISOString(),
+				message,
+				payload: {
+					...basePayload,
+					plan: stepResult.executionPlan,
+				},
+				meta,
+			};
+		}
+
+		// Status 2: CREATED
+		if (stepResult.status === RoomPublishingStatus.CREATED && stepResult.roomId) {
+			return {
+				kind: 'CONTROL',
+				sessionId: session.sessionId,
+				timestamp: new Date().toISOString(),
+				message,
+				payload: {
+					...basePayload,
+					roomId: stepResult.roomId,
+					roomSlug: stepResult.roomSlug,
+					roomPath: stepResult.roomPath,
+				},
+				meta,
+			};
+		}
+
+		// Status 3: CREATION_FAILED
+		if (stepResult.status === RoomPublishingStatus.CREATION_FAILED && stepResult.error) {
+			return {
+				kind: 'CONTROL',
+				sessionId: session.sessionId,
+				timestamp: new Date().toISOString(),
+				message,
+				payload: {
+					...basePayload,
+					error: stepResult.error,
+				},
+				meta,
+			};
+		}
+
+		// Status 4: NEED_MORE_INFO (default)
+		return {
+			kind: 'CONTROL',
+			sessionId: session.sessionId,
+			timestamp: new Date().toISOString(),
+			message,
+			payload: {
+				...basePayload,
+				missingField: stepResult.missingField?.key,
+				hasPendingActions: !!(stepResult.actions && stepResult.actions.length > 0),
+			},
+			meta,
+		};
+	}
+
+	/**
+	 * Execute room creation based on execution plan
+	 * @param userId - User ID
+	 * @param stepResult - Step result with execution plan
+	 * @returns Updated step result with room creation status
+	 */
+	private async executeRoomCreation(
+		userId: string,
+		stepResult: RoomPublishingStepResult,
+	): Promise<RoomPublishingStepResult> {
+		if (!stepResult.executionPlan) {
+			return {
+				...stepResult,
+				status: RoomPublishingStatus.CREATION_FAILED,
+				error: 'No execution plan available',
+			};
+		}
+
+		const { executionPlan } = stepResult;
+
+		try {
+			let finalBuildingId = executionPlan.buildingId;
+
+			// Tạo building nếu cần
+			if (executionPlan.shouldCreateBuilding && executionPlan.buildingPayload) {
+				this.logInfo(
+					'ROOM_PUBLISH',
+					'[TOOL CALL] buildingsService.create() - Creating new building',
+				);
+				const buildingStartTime = Date.now();
+				const building = await this.buildingsService.create(userId, executionPlan.buildingPayload);
+				const buildingDuration = Date.now() - buildingStartTime;
+				finalBuildingId = building.id;
+				this.logInfo(
+					'ROOM_PUBLISH',
+					`[TOOL CALL] buildingsService.create() - Completed in ${buildingDuration}ms | buildingId=${finalBuildingId} slug=${building.slug}`,
+				);
+			} else {
+				this.logInfo(
+					'ROOM_PUBLISH',
+					`[TOOL CALL] buildingsService.create() - Skipped (using existing buildingId=${finalBuildingId})`,
+				);
+			}
+
+			if (!finalBuildingId) {
+				this.logError(
+					'ROOM_PUBLISH',
+					'[TOOL CALL] Building ID validation failed - No building ID available',
+				);
+				return {
+					...stepResult,
+					status: RoomPublishingStatus.CREATION_FAILED,
+					error: 'Building ID is required but not available',
+				};
+			}
+
+			// Tạo room
+			this.logInfo(
+				'ROOM_PUBLISH',
+				`[TOOL CALL] roomsService.create(buildingId=${finalBuildingId}) - Creating room`,
+			);
+			const roomStartTime = Date.now();
+			const room = await this.roomsService.create(
+				userId,
+				finalBuildingId,
+				executionPlan.roomPayload,
+			);
+			const roomDuration = Date.now() - roomStartTime;
+			this.logInfo(
+				'ROOM_PUBLISH',
+				`[TOOL CALL] roomsService.create() - Completed in ${roomDuration}ms | roomId=${room.id} slug=${room.slug}`,
+			);
+
+			// Lưu message thành công vào session
+			const successMessage = `Đã tạo phòng thành công! Phòng của bạn đã được đăng tải.`;
+			const session = this.getOrCreateSession(userId);
+			this.logDebug(
+				'ROOM_PUBLISH',
+				'[TOOL CALL] addMessageToSession() - Saving success message to session',
+			);
+			this.addMessageToSession(session, 'assistant', successMessage, {
+				kind: 'CONTROL',
+				payload: {
+					mode: 'ROOM_PUBLISH',
+					status: RoomPublishingStatus.CREATED,
+					roomId: room.id,
+					roomSlug: room.slug,
+					roomPath: `/rooms/${room.slug}`,
+				},
+			});
+			this.logDebug('ROOM_PUBLISH', '[TOOL CALL] addMessageToSession() - Completed');
+
+			// Clear room publishing context để tránh nhầm context cũ khi tạo phòng mới
+			if (session.context?.roomPublishing) {
+				this.logDebug(
+					'ROOM_PUBLISH',
+					'[CLEANUP] Clearing room publishing context to prevent stale data',
+				);
+				session.context.roomPublishing = undefined;
+				// Nếu context không còn gì khác, reset context
+				if (session.context && !session.context.activeFlow) {
+					session.context = undefined;
+				}
+			}
+
+			this.logInfo(
+				'ROOM_PUBLISH',
+				`[SUCCESS] Room creation completed | roomId=${room.id} roomSlug=${room.slug} roomPath=/rooms/${room.slug}`,
+			);
+
+			return {
+				...stepResult,
+				status: RoomPublishingStatus.CREATED,
+				prompt: successMessage,
+				roomId: room.id,
+				roomSlug: room.slug,
+				roomPath: `/rooms/${room.slug}`,
+			};
+		} catch (error) {
+			this.logError('ROOM_PUBLISH', '[TOOL CALL] Room creation failed', error);
+			const errorMessage = (error as Error).message || 'Unknown error occurred';
+			return {
+				...stepResult,
+				status: RoomPublishingStatus.CREATION_FAILED,
+				prompt: `Xin lỗi, đã xảy ra lỗi khi tạo phòng: ${errorMessage}`,
+				error: errorMessage,
+			};
+		}
+	}
+
+	/**
 	 * Check if identifier is UUID format
 	 * @param identifier - Identifier to check
 	 * @returns true if UUID format
@@ -396,6 +926,97 @@ export class AiService {
 					` | took=${orchestratorTime}ms`,
 			);
 
+			// SKIP LOGIC: Nếu không phải QUERY, return ngay (CLARIFICATION, GENERAL_CHAT, GREETING)
+			if (orchestratorResponse.requestType !== RequestType.QUERY) {
+				this.logInfo(
+					'ORCHESTRATOR',
+					`Skipping SQL flow | requestType=${orchestratorResponse.requestType}`,
+				);
+				if (orchestratorResponse.requestType === RequestType.CLARIFICATION) {
+					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
+					const messageText: string = cleanedMessage.trim().endsWith('?')
+						? cleanedMessage
+						: `Minh can them thong tin de tra loi chinh xac: ${cleanedMessage}`;
+					this.addMessageToSession(session, 'assistant', messageText, {
+						kind: 'CONTROL',
+						payload: { mode: 'CLARIFY', questions: [] },
+					});
+					const response: ChatResponse = {
+						kind: 'CONTROL',
+						sessionId: session.sessionId,
+						timestamp: new Date().toISOString(),
+						message: messageText,
+						payload: { mode: 'CLARIFY', questions: [] },
+					};
+					this.logPipelineEnd(
+						session.sessionId,
+						response.kind,
+						pipelineStartAt,
+						orchestratorResponse.tokenUsage,
+					);
+					return response;
+				} else {
+					// General chat or greeting
+					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
+					this.addMessageToSession(session, 'assistant', cleanedMessage, {
+						kind: 'CONTENT',
+						payload: { mode: 'CONTENT' },
+					});
+					const response: ChatResponse = {
+						kind: 'CONTENT',
+						sessionId: session.sessionId,
+						timestamp: new Date().toISOString(),
+						message: cleanedMessage,
+						payload: { mode: 'CONTENT' },
+					};
+					this.logPipelineEnd(
+						session.sessionId,
+						response.kind,
+						pipelineStartAt,
+						orchestratorResponse.tokenUsage,
+					);
+					return response;
+				}
+			}
+
+			// MVP: Handle clarification when missingParams are present (chỉ khi requestType === QUERY)
+			if (orchestratorResponse.missingParams && orchestratorResponse.missingParams.length > 0) {
+				// Return clarification response with missingParams
+				const clarificationMessage = this.formatClarificationMessage(
+					orchestratorResponse.message,
+					orchestratorResponse.missingParams,
+				);
+				this.addMessageToSession(session, 'assistant', clarificationMessage, {
+					kind: 'CONTROL',
+					payload: {
+						mode: 'CLARIFY',
+						questions: orchestratorResponse.missingParams.map(
+							(p) => `${p.reason}${p.examples ? ` (ví dụ: ${p.examples.join(', ')})` : ''}`,
+						),
+					},
+				});
+				const response: ChatResponse = {
+					kind: 'CONTROL',
+					sessionId: session.sessionId,
+					timestamp: new Date().toISOString(),
+					message: clarificationMessage,
+					payload: {
+						mode: 'CLARIFY',
+						questions: orchestratorResponse.missingParams.map(
+							(p) => `${p.reason}${p.examples ? ` (ví dụ: ${p.examples.join(', ')})` : ''}`,
+						),
+					},
+				};
+				this.logPipelineEnd(
+					session.sessionId,
+					response.kind,
+					pipelineStartAt,
+					orchestratorResponse.tokenUsage,
+				);
+				return response;
+			}
+
+			// Từ đây trở đi, chỉ xử lý khi requestType === QUERY và không có missingParams
 			// Xác định mode response dựa trên ý định người dùng (LIST/TABLE/CHART/INSIGHT)
 			// Ưu tiên MODE_HINT từ Orchestrator (có thể là INSIGHT nếu có currentPageContext)
 			const desiredMode: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT' =
@@ -466,36 +1087,8 @@ export class AiService {
 				);
 			}
 
-			// MVP: Handle clarification when missingParams are present
-			if (
-				orchestratorResponse.requestType === RequestType.QUERY &&
-				orchestratorResponse.missingParams &&
-				orchestratorResponse.missingParams.length > 0
-			) {
-				// Return clarification response with missingParams
-				const clarificationMessage = this.formatClarificationMessage(
-					orchestratorResponse.message,
-					orchestratorResponse.missingParams,
-				);
-				return {
-					kind: 'CONTROL',
-					sessionId: session.sessionId,
-					timestamp: new Date().toISOString(),
-					message: clarificationMessage,
-					payload: {
-						mode: 'CLARIFY',
-						questions: orchestratorResponse.missingParams.map(
-							(p) => `${p.reason}${p.examples ? ` (ví dụ: ${p.examples.join(', ')})` : ''}`,
-						),
-					},
-				};
-			}
-
 			// Kiểm tra: Agent 1 đã xác định đủ thông tin để tạo SQL chưa?
-			if (
-				orchestratorResponse.requestType === RequestType.QUERY &&
-				orchestratorResponse.readyForSql
-			) {
+			if (orchestratorResponse.readyForSql) {
 				// ========================================
 				// BƯỚC 3: Agent 2 - SQL Generation Agent
 				// ========================================
@@ -688,56 +1281,31 @@ export class AiService {
 				this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt, totalTokenUsage);
 				return response;
 			} else {
-				// ========================================
-				// Trường hợp: Chưa đủ thông tin hoặc không phải QUERY
-				// ========================================
-				// Agent 1 xác định cần làm rõ thêm trước khi có thể tạo SQL
-				// Trả về response yêu cầu clarification hoặc general chat
-				if (orchestratorResponse.requestType === RequestType.CLARIFICATION) {
-					this.logInfo('ORCHESTRATOR', 'END | need clarification');
-					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
-					const messageText: string = `Mình cần thêm chút thông tin để trả lời chính xác: ${cleanedMessage}`;
-					this.addMessageToSession(session, 'assistant', messageText, {
-						kind: 'CONTROL',
-						payload: { mode: 'CLARIFY', questions: [] },
-					});
-					const response: ChatResponse = {
-						kind: 'CONTROL',
-						sessionId: session.sessionId,
-						timestamp: new Date().toISOString(),
-						message: messageText,
-						payload: { mode: 'CLARIFY', questions: [] },
-					};
-					this.logPipelineEnd(
-						session.sessionId,
-						response.kind,
-						pipelineStartAt,
-						orchestratorResponse.tokenUsage,
-					);
-					return response;
-				} else {
-					// General chat or greeting
-					this.logInfo('ORCHESTRATOR', `Request type: ${orchestratorResponse.requestType}`);
-					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
-					this.addMessageToSession(session, 'assistant', cleanedMessage, {
-						kind: 'CONTENT',
-						payload: { mode: 'CONTENT' },
-					});
-					const response: ChatResponse = {
-						kind: 'CONTENT',
-						sessionId: session.sessionId,
-						timestamp: new Date().toISOString(),
-						message: cleanedMessage,
-						payload: { mode: 'CONTENT' },
-					};
-					this.logPipelineEnd(
-						session.sessionId,
-						response.kind,
-						pipelineStartAt,
-						orchestratorResponse.tokenUsage,
-					);
-					return response;
-				}
+				// Edge case: requestType === QUERY nhưng readyForSql = false
+				// (Không nên xảy ra thường xuyên, nhưng để an toàn)
+				this.logWarn(
+					'ORCHESTRATOR',
+					`Edge case: QUERY but readyForSql=false | requestType=${orchestratorResponse.requestType}`,
+				);
+				const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
+				this.addMessageToSession(session, 'assistant', cleanedMessage, {
+					kind: 'CONTENT',
+					payload: { mode: 'CONTENT' },
+				});
+				const response: ChatResponse = {
+					kind: 'CONTENT',
+					sessionId: session.sessionId,
+					timestamp: new Date().toISOString(),
+					message: cleanedMessage,
+					payload: { mode: 'CONTENT' },
+				};
+				this.logPipelineEnd(
+					session.sessionId,
+					response.kind,
+					pipelineStartAt,
+					orchestratorResponse.tokenUsage,
+				);
+				return response;
 			}
 		} catch (error) {
 			// ========================================
