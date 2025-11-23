@@ -118,7 +118,19 @@ export function createEmptyRoomPublishingDraft(userId?: string): RoomPublishingD
 		userId,
 		building: {},
 		room: {
-			pricing: {},
+			// Mặc định là phòng trọ
+			roomType: 'boarding_house',
+			totalRooms: 1,
+			maxOccupancy: 2,
+			floorNumber: 1,
+			roomNumberPrefix: 'P',
+			roomNumberStart: 1,
+			pricing: {
+				depositMonths: 1,
+				minimumStayMonths: 1,
+				priceNegotiable: false,
+				utilityIncluded: false,
+			},
 			amenities: [],
 			costs: [],
 			rules: [],
@@ -193,12 +205,21 @@ export function markExecutionReadiness(draft: RoomPublishingDraft): RoomPublishi
 }
 
 export function applyRoomDefaults(room: RoomDraftState): RoomDraftState {
-	room.maxOccupancy = room.maxOccupancy ?? 1;
+	// Mặc định là phòng trọ
+	room.roomType = room.roomType ?? 'boarding_house';
+	room.totalRooms = room.totalRooms ?? 1;
+	room.maxOccupancy = room.maxOccupancy ?? 2;
+	room.floorNumber = room.floorNumber ?? 1;
+	room.roomNumberPrefix = room.roomNumberPrefix ?? 'P';
 	room.roomNumberStart = room.roomNumberStart ?? 1;
 	room.pricing.depositMonths = room.pricing.depositMonths ?? 1;
 	room.pricing.utilityIncluded = room.pricing.utilityIncluded ?? false;
 	room.pricing.priceNegotiable = room.pricing.priceNegotiable ?? false;
 	room.pricing.minimumStayMonths = room.pricing.minimumStayMonths ?? 1;
+	// Tự động tạo tên phòng nếu chưa có
+	if (!room.name) {
+		room.name = 'Phòng trọ';
+	}
 	return room;
 }
 
@@ -225,30 +246,55 @@ export function getNextMandatoryQuestion(
 	return null;
 }
 
+export function getAllMissingFields(draft: RoomPublishingDraft): RoomPublishingFieldRequirement[] {
+	const fields: RoomPublishingFieldRequirement[] = [];
+	if (needsBuildingSelection(draft)) {
+		fields.push({
+			key: 'building.selection',
+			label: 'Chọn tòa nhà',
+			description: 'Vui lòng chọn tòa nhà mà bạn muốn đăng phòng',
+			stage: 'ensure-building',
+			isOptional: false,
+		});
+		return fields;
+	}
+	const missingBuilding = listMissingBuildingFields(draft.building);
+	if (missingBuilding.length > 0 && draft.stage === 'ensure-building') {
+		fields.push(...missingBuilding);
+	}
+	const missingRoom = listMissingRoomFields(draft.room);
+	if (missingRoom.length > 0) {
+		fields.push(...missingRoom);
+	}
+	return fields;
+}
+
 export function buildExecutionPlan(draft: RoomPublishingDraft): RoomPublishingExecutionPlan | null {
 	if (!draft.isReadyForExecution) {
 		return null;
 	}
-	const shouldCreateBuilding = !draft.building.isExisting || !draft.building.id;
+	// Nếu không có buildingId, mặc định tạo building mới
+	const shouldCreateBuilding = !draft.building.id || !draft.building.isExisting;
+	const locationText = draft.building.locationHint || '';
 	const buildingPayload = shouldCreateBuilding
-		? undefined
-		: {
-				name: draft.building.name,
-				addressLine1: draft.building.addressLine1 || `${draft.building.name}`,
+		? {
+				name: draft.building.name || 'Nhà trọ mới',
+				addressLine1: draft.building.addressLine1 || locationText || draft.building.name || '',
 				districtId: draft.building.districtId ?? 0,
 				provinceId: draft.building.provinceId ?? 0,
 				wardId: draft.building.wardId,
 				country: draft.building.country || 'Vietnam',
-			};
+			}
+		: undefined;
 	const roomPayload: CreateRoomDto = {
 		name: draft.room.name!,
 		description: draft.room.description,
 		roomType: draft.room.roomType!,
 		totalRooms: draft.room.totalRooms!,
-		maxOccupancy: draft.room.maxOccupancy ?? 1,
+		maxOccupancy: draft.room.maxOccupancy ?? 2, // Mặc định 2 người cho phòng trọ
 		areaSqm: draft.room.areaSqm,
-		floorNumber: draft.room.floorNumber,
-		roomNumberPrefix: draft.room.roomNumberPrefix,
+		floorNumber: draft.room.floorNumber ?? 1,
+		roomNumberPrefix: draft.room.roomNumberPrefix ?? 'P',
 		roomNumberStart: draft.room.roomNumberStart ?? 1,
 		pricing: {
 			basePriceMonthly: draft.room.pricing.basePriceMonthly!,

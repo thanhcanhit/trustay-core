@@ -143,6 +143,13 @@ export interface RoomPublishingExecutionPlan {
 
 export type RoomPublishingActionType = 'LOOKUP_LOCATION' | 'LIST_OWNER_BUILDINGS';
 
+export enum RoomPublishingStatus {
+	NEED_MORE_INFO = 'NEED_MORE_INFO', // Cần thêm thông tin
+	READY_TO_CREATE = 'READY_TO_CREATE', // Đủ để tạo phòng (có thể thêm thông tin hoặc tạo luôn)
+	CREATED = 'CREATED', // Tạo thành công
+	CREATION_FAILED = 'CREATION_FAILED', // Tạo thất bại
+}
+
 export interface RoomPublishingAction {
 	type: RoomPublishingActionType;
 	sql: string;

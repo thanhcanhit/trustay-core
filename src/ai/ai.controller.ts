@@ -4,6 +4,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AiService, ChatResponse } from './ai.service';
 import { ChatDto } from './dto/chat.dto';
+import { RoomPublishDto } from './dto/room-publish.dto';
 import { Text2SqlDto } from './dto/text2sql.dto';
 
 @ApiTags('AI')
@@ -163,7 +164,6 @@ export class AiController {
 				userId,
 				clientIp,
 				currentPage: chatDto.currentPage,
-				images: chatDto.images,
 			});
 
 			return {
@@ -274,6 +274,90 @@ export class AiController {
 			return {
 				success: false,
 				error: 'Failed to clear chat history',
+				message: error.message,
+			};
+		}
+	}
+
+	/**
+	 * Room publishing endpoint - Dedicated endpoint for room publishing flow
+	 * Separate from main chat to avoid conflicts with SQL generation
+	 */
+	@Post('room-publish')
+	@ApiOperation({ summary: 'Đăng phòng trọ - Endpoint riêng cho room publishing flow' })
+	@ApiResponse({
+		status: 200,
+		description: 'Phản hồi từ room publishing flow',
+		schema: {
+			type: 'object',
+			properties: {
+				success: { type: 'boolean', example: true },
+				data: {
+					type: 'object',
+					properties: {
+						message: { type: 'string', example: 'Mình sẽ giúp bạn đăng phòng...' },
+						stage: { type: 'string', example: 'collect-room-core' },
+						plan: { type: 'object' },
+					},
+				},
+			},
+		},
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Lỗi xử lý room publishing',
+		schema: {
+			type: 'object',
+			properties: {
+				success: { type: 'boolean', example: false },
+				error: { type: 'string', example: 'Failed to process room publishing' },
+				message: { type: 'string', example: 'Invalid request' },
+			},
+		},
+	})
+	async roomPublish(
+		@Body() roomPublishDto: RoomPublishDto,
+		@CurrentUser('id') userId: string | undefined,
+		@Ip() clientIp: string,
+	): Promise<{
+		success: boolean;
+		data?: ChatResponse;
+		error?: string;
+		message?: string;
+	}> {
+		try {
+			if (!userId) {
+				return {
+					success: false,
+					error: 'Authentication required',
+					message: 'Bạn cần đăng nhập để đăng phòng',
+				};
+			}
+			if (roomPublishDto.images && roomPublishDto.images.length > 0) {
+				this.logger.debug(
+					`[AI Controller] Room Publish - Received ${roomPublishDto.images.length} images`,
+				);
+			}
+			if (roomPublishDto.buildingId) {
+				this.logger.debug(
+					`[AI Controller] Room Publish - Received buildingId: ${roomPublishDto.buildingId}`,
+				);
+			}
+			const response = await this.aiService.publishRoom(roomPublishDto.message || '', {
+				userId,
+				clientIp,
+				buildingId: roomPublishDto.buildingId,
+				images: roomPublishDto.images,
+			});
+
+			return {
+				success: true,
+				data: response,
+			};
+		} catch (error) {
+			return {
+				success: false,
+				error: 'Failed to process room publishing',
 				message: error.message,
 			};
 		}

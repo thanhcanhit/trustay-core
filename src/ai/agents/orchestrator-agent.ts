@@ -19,7 +19,7 @@ export class OrchestratorAgent {
 	private readonly logger = new Logger(OrchestratorAgent.name);
 
 	// Configuration constants
-	private static readonly RECENT_MESSAGES_LIMIT = 4;
+	private static readonly RECENT_MESSAGES_LIMIT = 10;
 	private static readonly RAG_BUSINESS_LIMIT = 8;
 	private static readonly RAG_BUSINESS_THRESHOLD = 0.6;
 	private static readonly TEMPERATURE = 0.4;

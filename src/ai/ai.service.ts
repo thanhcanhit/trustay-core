@@ -1,6 +1,8 @@
 import { google } from '@ai-sdk/google';
 import { Injectable, Logger } from '@nestjs/common';
 import { generateText } from 'ai';
+import { BuildingsService } from '../api/buildings/buildings.service';
+import { RoomsService } from '../api/rooms/rooms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrchestratorAgent } from './agents/orchestrator-agent';
 import { ResponseGenerator } from './agents/response-generator';
@@ -19,10 +21,10 @@ import {
 	ChatResponse,
 	ChatSession,
 	DataPayload,
-	OrchestratorAgentResponse,
 	RequestType,
 	TableColumn,
 } from './types/chat.types';
+import { RoomPublishingStatus } from './types/room-publishing.types';
 import {
 	inferColumns,
 	isListLike,
@@ -67,6 +69,8 @@ export class AiService {
 		private readonly prisma: PrismaService,
 		private readonly knowledge: KnowledgeService,
 		private readonly roomPublishingService: RoomPublishingService,
+		private readonly buildingsService: BuildingsService,
+		private readonly roomsService: RoomsService,
 	) {
 		// Initialize orchestrator agent with Prisma and KnowledgeService
 		this.orchestratorAgent = new OrchestratorAgent(this.prisma, this.knowledge);
@@ -245,25 +249,68 @@ export class AiService {
 		}
 	}
 
-	private async tryHandleRoomPublishingFlow(
-		session: ChatSession,
-		userMessage: string,
-		orchestratorResponse: OrchestratorAgentResponse,
-		images?: string[],
-	): Promise<ChatResponse | null> {
-		if (!this.shouldActivateRoomFlow(session, userMessage, orchestratorResponse)) {
-			return null;
+	/**
+	 * Dedicated room publishing endpoint - Separate from main chat flow
+	 * @param message - User message about room information
+	 * @param context - User context (userId, clientIp, buildingId, images)
+	 * @returns ChatResponse for room publishing flow
+	 */
+	async publishRoom(
+		message: string,
+		context: { userId: string; clientIp?: string; buildingId?: string; images?: string[] },
+	): Promise<ChatResponse> {
+		const { userId, clientIp, buildingId, images } = context;
+		if (!userId) {
+			throw new Error('User must be authenticated to publish room');
 		}
-		let stepResult = this.roomPublishingService.handleUserMessage(session, userMessage, images);
-		stepResult = await this.resolveRoomPublishingActions(session, stepResult);
-		this.logInfo(
-			'ROOM_FLOW',
-			`stage=${stepResult.stage} planReady=${stepResult.executionPlan ? 'yes' : 'no'}`,
-		);
-		const meta: Record<string, string | number | boolean> = {
-			stage: stepResult.stage,
-		};
-		return this.buildRoomFlowResponse(session, stepResult, meta);
+
+		const session = this.getOrCreateSession(userId, clientIp);
+		const pipelineStartAt = this.logPipelineStart(message, session.sessionId);
+
+		this.logDebug('ROOM_PUBLISH', `Starting room publishing flow for user ${userId}`);
+		if (buildingId) {
+			this.logDebug('ROOM_PUBLISH', `Building ID provided: ${buildingId}`);
+		}
+
+		// Lưu câu hỏi của người dùng vào session
+		this.addMessageToSession(session, 'user', message);
+
+		try {
+			let stepResult = await this.roomPublishingService.handleUserMessage(
+				session,
+				message,
+				images,
+				buildingId,
+			);
+			stepResult = await this.resolveRoomPublishingActions(session, stepResult);
+			this.logInfo(
+				'ROOM_PUBLISH',
+				`stage=${stepResult.stage} planReady=${stepResult.executionPlan ? 'yes' : 'no'}`,
+			);
+			const meta: Record<string, string | number | boolean> = {
+				stage: stepResult.stage,
+			};
+			const response = this.buildRoomFlowResponse(session, stepResult, meta);
+			this.logPipelineEnd(session.sessionId, 'ROOM_PUBLISH', pipelineStartAt);
+			return response;
+		} catch (error) {
+			this.logError('ROOM_PUBLISH', `Error in room publishing flow`, error);
+			const errorMessage = generateErrorResponse((error as Error).message);
+			const messageText: string = `Xin lỗi, đã xảy ra lỗi khi xử lý đăng phòng: ${errorMessage}`;
+			this.addMessageToSession(session, 'assistant', messageText, {
+				kind: 'CONTROL',
+				payload: { mode: 'ERROR', details: (error as Error).message },
+			});
+			const response: ChatResponse = {
+				kind: 'CONTROL',
+				sessionId: session.sessionId,
+				timestamp: new Date().toISOString(),
+				message: messageText,
+				payload: { mode: 'ERROR', details: (error as Error).message },
+			};
+			this.logPipelineEnd(session.sessionId, 'ROOM_PUBLISH_ERROR', pipelineStartAt);
+			return response;
+		}
 	}
 
 	private async resolveRoomPublishingActions(
@@ -304,48 +351,67 @@ export class AiService {
 		if (stepResult.draft.building.candidates) {
 			meta.buildingCandidates = stepResult.draft.building.candidates.length;
 		}
-		if (stepResult.executionPlan && stepResult.stage === 'finalize-room') {
+		const message = stepResult.prompt || 'Xin chào! Mình sẽ giúp bạn đăng phòng.';
+		this.logDebug('ROOM_FLOW', `Response message: "${message.substring(0, 100)}..."`);
+
+		// Luôn trả về status trong payload
+		const basePayload: any = {
+			mode: 'ROOM_PUBLISH',
+			status: stepResult.status,
+		};
+
+		if (stepResult.status === RoomPublishingStatus.READY_TO_CREATE && stepResult.executionPlan) {
 			meta.planReady = true;
 			meta.shouldCreateBuilding = stepResult.executionPlan.shouldCreateBuilding;
 			return {
 				kind: 'CONTROL',
 				sessionId: session.sessionId,
 				timestamp: new Date().toISOString(),
-				message: stepResult.prompt,
+				message,
 				payload: {
-					mode: 'ROOM_PUBLISH',
+					...basePayload,
 					plan: stepResult.executionPlan,
 				},
 				meta,
 			};
 		}
+
+		if (stepResult.status === RoomPublishingStatus.CREATED && stepResult.roomId) {
+			return {
+				kind: 'CONTROL',
+				sessionId: session.sessionId,
+				timestamp: new Date().toISOString(),
+				message,
+				payload: {
+					...basePayload,
+					roomId: stepResult.roomId,
+				},
+				meta,
+			};
+		}
+
+		if (stepResult.status === RoomPublishingStatus.CREATION_FAILED && stepResult.error) {
+			return {
+				kind: 'CONTROL',
+				sessionId: session.sessionId,
+				timestamp: new Date().toISOString(),
+				message,
+				payload: {
+					...basePayload,
+					error: stepResult.error,
+				},
+				meta,
+			};
+		}
+
 		return {
 			kind: 'CONTENT',
 			sessionId: session.sessionId,
 			timestamp: new Date().toISOString(),
-			message: stepResult.prompt,
+			message,
 			payload: { mode: 'CONTENT' },
 			meta,
 		};
-	}
-
-	private shouldActivateRoomFlow(
-		session: ChatSession,
-		query: string,
-		orchestratorResponse: OrchestratorAgentResponse,
-	): boolean {
-		if (session.context?.activeFlow === 'room-publishing') {
-			return true;
-		}
-		const normalized = query.toLowerCase();
-		const keywordMatch =
-			/(tạo|đăng|thêm|publish|create).*(phòng|room)/.test(normalized) ||
-			/(phòng|room).*(tạo|đăng|mở)/.test(normalized);
-		const intentMatch =
-			orchestratorResponse.entityHint === 'room' &&
-			orchestratorResponse.intentAction === 'own' &&
-			orchestratorResponse.requestType !== RequestType.GENERAL_CHAT;
-		return keywordMatch && intentMatch;
 	}
 
 	/**
@@ -433,9 +499,9 @@ export class AiService {
 	 */
 	async chatWithAI(
 		query: string,
-		context: { userId?: string; clientIp?: string; currentPage?: string; images?: string[] } = {},
+		context: { userId?: string; clientIp?: string; currentPage?: string } = {},
 	): Promise<ChatResponse> {
-		const { userId, clientIp, currentPage, images } = context;
+		const { userId, clientIp, currentPage } = context;
 
 		// Bước 1: Quản lý session - Lấy hoặc tạo session chat
 		// Session tự động có system prompt tiếng Việt khi tạo mới
@@ -504,17 +570,98 @@ export class AiService {
 					`${orchestratorResponse.entityHint ? ` | entityHint=${orchestratorResponse.entityHint}` : ''}` +
 					` | took=${orchestratorTime}ms`,
 			);
-			const roomFlowEnvelope = await this.tryHandleRoomPublishingFlow(
-				session,
-				query,
-				orchestratorResponse,
-				images,
-			);
-			if (roomFlowEnvelope) {
-				this.logPipelineEnd(session.sessionId, 'ROOM_FLOW', pipelineStartAt);
-				return roomFlowEnvelope;
+
+			// SKIP LOGIC: Nếu không phải QUERY, return ngay (CLARIFICATION, GENERAL_CHAT, GREETING)
+			if (orchestratorResponse.requestType !== RequestType.QUERY) {
+				this.logInfo(
+					'ORCHESTRATOR',
+					`Skipping SQL flow | requestType=${orchestratorResponse.requestType}`,
+				);
+				if (orchestratorResponse.requestType === RequestType.CLARIFICATION) {
+					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
+					const messageText: string = cleanedMessage.trim().endsWith('?')
+						? cleanedMessage
+						: `Minh can them thong tin de tra loi chinh xac: ${cleanedMessage}`;
+					this.addMessageToSession(session, 'assistant', messageText, {
+						kind: 'CONTROL',
+						payload: { mode: 'CLARIFY', questions: [] },
+					});
+					const response: ChatResponse = {
+						kind: 'CONTROL',
+						sessionId: session.sessionId,
+						timestamp: new Date().toISOString(),
+						message: messageText,
+						payload: { mode: 'CLARIFY', questions: [] },
+					};
+					this.logPipelineEnd(
+						session.sessionId,
+						response.kind,
+						pipelineStartAt,
+						orchestratorResponse.tokenUsage,
+					);
+					return response;
+				} else {
+					// General chat or greeting
+					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
+					this.addMessageToSession(session, 'assistant', cleanedMessage, {
+						kind: 'CONTENT',
+						payload: { mode: 'CONTENT' },
+					});
+					const response: ChatResponse = {
+						kind: 'CONTENT',
+						sessionId: session.sessionId,
+						timestamp: new Date().toISOString(),
+						message: cleanedMessage,
+						payload: { mode: 'CONTENT' },
+					};
+					this.logPipelineEnd(
+						session.sessionId,
+						response.kind,
+						pipelineStartAt,
+						orchestratorResponse.tokenUsage,
+					);
+					return response;
+				}
 			}
 
+			// MVP: Handle clarification when missingParams are present (chỉ khi requestType === QUERY)
+			if (orchestratorResponse.missingParams && orchestratorResponse.missingParams.length > 0) {
+				// Return clarification response with missingParams
+				const clarificationMessage = this.formatClarificationMessage(
+					orchestratorResponse.message,
+					orchestratorResponse.missingParams,
+				);
+				this.addMessageToSession(session, 'assistant', clarificationMessage, {
+					kind: 'CONTROL',
+					payload: {
+						mode: 'CLARIFY',
+						questions: orchestratorResponse.missingParams.map(
+							(p) => `${p.reason}${p.examples ? ` (ví dụ: ${p.examples.join(', ')})` : ''}`,
+						),
+					},
+				});
+				const response: ChatResponse = {
+					kind: 'CONTROL',
+					sessionId: session.sessionId,
+					timestamp: new Date().toISOString(),
+					message: clarificationMessage,
+					payload: {
+						mode: 'CLARIFY',
+						questions: orchestratorResponse.missingParams.map(
+							(p) => `${p.reason}${p.examples ? ` (ví dụ: ${p.examples.join(', ')})` : ''}`,
+						),
+					},
+				};
+				this.logPipelineEnd(
+					session.sessionId,
+					response.kind,
+					pipelineStartAt,
+					orchestratorResponse.tokenUsage,
+				);
+				return response;
+			}
+
+			// Từ đây trở đi, chỉ xử lý khi requestType === QUERY và không có missingParams
 			// Xác định mode response dựa trên ý định người dùng (LIST/TABLE/CHART/INSIGHT)
 			// Ưu tiên MODE_HINT từ Orchestrator (có thể là INSIGHT nếu có currentPageContext)
 			const desiredMode: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT' =
@@ -585,36 +732,8 @@ export class AiService {
 				);
 			}
 
-			// MVP: Handle clarification when missingParams are present
-			if (
-				orchestratorResponse.requestType === RequestType.QUERY &&
-				orchestratorResponse.missingParams &&
-				orchestratorResponse.missingParams.length > 0
-			) {
-				// Return clarification response with missingParams
-				const clarificationMessage = this.formatClarificationMessage(
-					orchestratorResponse.message,
-					orchestratorResponse.missingParams,
-				);
-				return {
-					kind: 'CONTROL',
-					sessionId: session.sessionId,
-					timestamp: new Date().toISOString(),
-					message: clarificationMessage,
-					payload: {
-						mode: 'CLARIFY',
-						questions: orchestratorResponse.missingParams.map(
-							(p) => `${p.reason}${p.examples ? ` (ví dụ: ${p.examples.join(', ')})` : ''}`,
-						),
-					},
-				};
-			}
-
 			// Kiểm tra: Agent 1 đã xác định đủ thông tin để tạo SQL chưa?
-			if (
-				orchestratorResponse.requestType === RequestType.QUERY &&
-				orchestratorResponse.readyForSql
-			) {
+			if (orchestratorResponse.readyForSql) {
 				// ========================================
 				// BƯỚC 3: Agent 2 - SQL Generation Agent
 				// ========================================
@@ -807,56 +926,31 @@ export class AiService {
 				this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt, totalTokenUsage);
 				return response;
 			} else {
-				// ========================================
-				// Trường hợp: Chưa đủ thông tin hoặc không phải QUERY
-				// ========================================
-				// Agent 1 xác định cần làm rõ thêm trước khi có thể tạo SQL
-				// Trả về response yêu cầu clarification hoặc general chat
-				if (orchestratorResponse.requestType === RequestType.CLARIFICATION) {
-					this.logInfo('ORCHESTRATOR', 'END | need clarification');
-					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
-					const messageText: string = `Mình cần thêm chút thông tin để trả lời chính xác: ${cleanedMessage}`;
-					this.addMessageToSession(session, 'assistant', messageText, {
-						kind: 'CONTROL',
-						payload: { mode: 'CLARIFY', questions: [] },
-					});
-					const response: ChatResponse = {
-						kind: 'CONTROL',
-						sessionId: session.sessionId,
-						timestamp: new Date().toISOString(),
-						message: messageText,
-						payload: { mode: 'CLARIFY', questions: [] },
-					};
-					this.logPipelineEnd(
-						session.sessionId,
-						response.kind,
-						pipelineStartAt,
-						orchestratorResponse.tokenUsage,
-					);
-					return response;
-				} else {
-					// General chat or greeting
-					this.logInfo('ORCHESTRATOR', `Request type: ${orchestratorResponse.requestType}`);
-					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
-					this.addMessageToSession(session, 'assistant', cleanedMessage, {
-						kind: 'CONTENT',
-						payload: { mode: 'CONTENT' },
-					});
-					const response: ChatResponse = {
-						kind: 'CONTENT',
-						sessionId: session.sessionId,
-						timestamp: new Date().toISOString(),
-						message: cleanedMessage,
-						payload: { mode: 'CONTENT' },
-					};
-					this.logPipelineEnd(
-						session.sessionId,
-						response.kind,
-						pipelineStartAt,
-						orchestratorResponse.tokenUsage,
-					);
-					return response;
-				}
+				// Edge case: requestType === QUERY nhưng readyForSql = false
+				// (Không nên xảy ra thường xuyên, nhưng để an toàn)
+				this.logWarn(
+					'ORCHESTRATOR',
+					`Edge case: QUERY but readyForSql=false | requestType=${orchestratorResponse.requestType}`,
+				);
+				const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
+				this.addMessageToSession(session, 'assistant', cleanedMessage, {
+					kind: 'CONTENT',
+					payload: { mode: 'CONTENT' },
+				});
+				const response: ChatResponse = {
+					kind: 'CONTENT',
+					sessionId: session.sessionId,
+					timestamp: new Date().toISOString(),
+					message: cleanedMessage,
+					payload: { mode: 'CONTENT' },
+				};
+				this.logPipelineEnd(
+					session.sessionId,
+					response.kind,
+					pipelineStartAt,
+					orchestratorResponse.tokenUsage,
+				);
+				return response;
 			}
 		} catch (error) {
 			// ========================================
