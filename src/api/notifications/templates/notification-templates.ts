@@ -154,6 +154,13 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		message: 'Đã nhận thanh toán {{amount}}đ cho {{paymentType}} phòng {{roomName}}',
 	},
 
+	[NotificationType.PAYMENT_COMPLETED]: {
+		type: NotificationType.PAYMENT_COMPLETED,
+		title: 'Thanh toán thành công',
+		message:
+			'Bạn đã thanh toán {{amount}}đ cho {{paymentType}} phòng {{roomName}} vào {{paidDate}}',
+	},
+
 	[NotificationType.PAYMENT_FAILED]: {
 		type: NotificationType.PAYMENT_FAILED,
 		title: 'Thanh toán thất bại',

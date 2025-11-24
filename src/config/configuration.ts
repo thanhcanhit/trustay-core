@@ -56,6 +56,13 @@ export interface AppConfig {
 		anonKey: string;
 		serviceKey?: string;
 	};
+	payos: {
+		clientId: string;
+		apiKey: string;
+		checksumKey: string;
+		returnUrl: string;
+		cancelUrl: string;
+	};
 }
 
 /**
@@ -115,6 +122,13 @@ const getConfig = (): AppConfig => ({
 		url: process.env.SUPABASE_URL ?? '',
 		anonKey: process.env.SUPABASE_ANON_KEY ?? '',
 		serviceKey: process.env.SUPABASE_SERVICE_KEY ?? '',
+	},
+	payos: {
+		clientId: process.env.PAYOS_CLIENT_ID ?? '',
+		apiKey: process.env.PAYOS_API_KEY ?? '',
+		checksumKey: process.env.PAYOS_CHECKSUM_KEY ?? '',
+		returnUrl: process.env.PAYOS_RETURN_URL ?? '',
+		cancelUrl: process.env.PAYOS_CANCEL_URL ?? '',
 	},
 });
 

@@ -13,6 +13,8 @@
 | DELETE | `/bills/:id` | Xóa hóa đơn | Landlord |
 | POST | `/bills/:id/mark-paid` | Đánh dấu đã thanh toán | Landlord |
 | POST | `/bills/:id/meter-data` | Cập nhật dữ liệu đồng hồ | Landlord |
+| POST | `/bills/:id/payos-link` | Tạo link thanh toán PayOS | Tenant/Landlord |
+| POST | `/payos/webhook` | Nhận webhook thanh toán PayOS | Public |
 
 ### Cost Types
 | Type | Description | Prorated | Input Required |
@@ -111,3 +113,56 @@ await updateMeterData("bill-123", [
 
 // Result: Bill recalculated with new meter readings
 ```
+
+### Tạo link thanh toán PayOS
+```http
+POST /bills/:id/payos-link
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "returnUrl": "https://app.trustay.vn/payments/success",
+  "cancelUrl": "https://app.trustay.vn/payments/cancel"
+}
+```
+
+```json
+{
+  "checkoutUrl": "https://pay.payos.vn/web/b0f.../checkout",
+  "qrCode": "https://pay.payos.vn/qr/b0f...png",
+  "orderCode": 1731999123456,
+  "amount": 2500000,
+  "currency": "VND",
+  "description": "Thanh toán hóa đơn 2025-01 | Nhà A - P301",
+  "paymentLinkId": "pl_01JABCDE",
+  "expiredAt": 1732002723
+}
+```
+
+> Cần cấu hình `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY`, `PAYOS_RETURN_URL`, `PAYOS_CANCEL_URL`. Hệ thống sử dụng SDK `@payos/node` theo tài liệu chính thức của PayOS ([docs](https://payos.vn/docs/sdks/back-end/node)).
+
+### Webhook PayOS
+- Endpoint thực tế: `POST /api/payos/webhook` (prefix `api` được thiết lập trong `main.ts`).
+- PayOS sẽ gửi payload dạng:
+```json
+{
+  "code": "00",
+  "desc": "Success",
+  "success": true,
+  "signature": "abc123",
+  "data": {
+    "orderCode": 1731999123456,
+    "amount": 2500000,
+    "description": "Thanh toán hóa đơn 2025-01 | Nhà A - P301",
+    "accountNumber": "123456789",
+    "reference": "FT123",
+    "transactionDateTime": "2025-01-15T08:10:00+07:00",
+    "currency": "VND",
+    "paymentLinkId": "pl_01JABCDE",
+    "code": "00",
+    "desc": "Thành công"
+  }
+}
+```
+- Server xác thực payload bằng `payOS.webhooks.verify()` từ SDK NodeJS rồi cập nhật `Payment`/`Bill`. Đây là cùng cơ chế được mô tả trong tài liệu PayOS SDK ([docs](https://payos.vn/docs/sdks/back-end/node)).
+- Phản hồi mặc định: `{ "success": true }`. PayOS yêu cầu HTTP 200 để xem như webhook thành công.

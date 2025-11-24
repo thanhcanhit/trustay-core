@@ -457,6 +457,23 @@ export class NotificationsService {
 		return this.createNotification(notification);
 	}
 
+	async notifyPaymentCompleted(
+		tenantId: string,
+		data: {
+			amount: number;
+			paymentType: string;
+			roomName: string;
+			paidDate: string;
+			paymentId: string;
+		},
+	) {
+		const notification = this.notificationFactory.createPaymentCompletedNotification(
+			tenantId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
 	async notifyPaymentFailed(
 		tenantId: string,
 		data: {

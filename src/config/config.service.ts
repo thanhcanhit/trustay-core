@@ -110,4 +110,14 @@ export class AppConfigService {
 			serviceKey: this.configService.get<string>('supabase.serviceKey'),
 		};
 	}
+
+	get payosConfig() {
+		return {
+			clientId: this.configService.get<string>('payos.clientId') ?? '',
+			apiKey: this.configService.get<string>('payos.apiKey') ?? '',
+			checksumKey: this.configService.get<string>('payos.checksumKey') ?? '',
+			returnUrl: this.configService.get<string>('payos.returnUrl') ?? '',
+			cancelUrl: this.configService.get<string>('payos.cancelUrl') ?? '',
+		};
+	}
 }
