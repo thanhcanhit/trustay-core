@@ -70,11 +70,12 @@ export class PayosService {
 	 */
 	async createPaymentLink(payload: PayosPaymentLinkPayload): Promise<PayosPaymentLinkResult> {
 		const { cancelUrl, returnUrl } = this.resolveRedirectUrls(payload);
+		const sanitizedDescription = this.truncateDescription(payload.description);
 		try {
 			const response = await this.payosClient.paymentRequests.create({
 				orderCode: payload.orderCode,
 				amount: payload.amount,
-				description: payload.description,
+				description: sanitizedDescription,
 				cancelUrl,
 				returnUrl,
 				items: payload.items && payload.items.length > 0 ? payload.items : undefined,
@@ -94,6 +95,18 @@ export class PayosService {
 				'Unable to create PayOS payment link right now, please try again later.',
 			);
 		}
+	}
+
+	private truncateDescription(description: string): string {
+		const MAX_LENGTH = 25;
+		const fallback = 'Trustay payment';
+		if (!description || description.trim().length === 0) {
+			return fallback;
+		}
+		if (description.length <= MAX_LENGTH) {
+			return description;
+		}
+		return `${description.slice(0, MAX_LENGTH - 3)}...`;
 	}
 
 	private resolveRedirectUrls(payload: PayosPaymentLinkPayload): {
