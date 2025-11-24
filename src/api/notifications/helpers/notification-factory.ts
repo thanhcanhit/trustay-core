@@ -275,6 +275,19 @@ export class NotificationFactory {
 		return this.createFromTemplate(landlordId, NotificationType.PAYMENT_RECEIVED, data);
 	}
 
+	createPaymentCompletedNotification(
+		tenantId: string,
+		data: {
+			amount: number;
+			paymentType: string;
+			roomName: string;
+			paidDate: string;
+			paymentId: string;
+		},
+	) {
+		return this.createFromTemplate(tenantId, NotificationType.PAYMENT_COMPLETED, data);
+	}
+
 	createPaymentFailedNotification(
 		tenantId: string,
 		data: {

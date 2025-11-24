@@ -46,4 +46,11 @@ export const validationSchema = Joi.object({
 	SUPABASE_URL: Joi.string().uri().optional(),
 	SUPABASE_ANON_KEY: Joi.string().optional(),
 	SUPABASE_SERVICE_KEY: Joi.string().optional(),
+
+	// PayOS
+	PAYOS_CLIENT_ID: Joi.string().required(),
+	PAYOS_API_KEY: Joi.string().required(),
+	PAYOS_CHECKSUM_KEY: Joi.string().required(),
+	PAYOS_RETURN_URL: Joi.string().uri().required(),
+	PAYOS_CANCEL_URL: Joi.string().uri().required(),
 });

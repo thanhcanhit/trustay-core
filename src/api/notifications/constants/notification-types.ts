@@ -30,6 +30,7 @@ export enum NotificationType {
 	// Payment & Billing
 	MONTHLY_BILL_CREATED = 'monthly_bill_created',
 	PAYMENT_RECEIVED = 'payment_received',
+	PAYMENT_COMPLETED = 'payment_completed',
 	PAYMENT_FAILED = 'payment_failed',
 	PAYMENT_OVERDUE = 'payment_overdue',
 	PAYMENT_REMINDER = 'payment_reminder',

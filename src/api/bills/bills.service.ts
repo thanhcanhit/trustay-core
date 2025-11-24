@@ -4,17 +4,27 @@ import {
 	Injectable,
 	NotFoundException,
 } from '@nestjs/common';
-import { BillStatus, UserRole } from '@prisma/client';
+import {
+	BillStatus,
+	PaymentMethod,
+	PaymentStatus,
+	PaymentType,
+	Prisma,
+	UserRole,
+} from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PayosService } from '../payments/payos.service';
 import { RentalsService } from '../rentals/rentals.service';
 import {
 	BillResponseDto,
 	CreateBillDto,
 	CreateBillForRoomDto,
+	CreatePayosPaymentLinkDto,
 	MeterDataDto,
 	PaginatedBillResponseDto,
+	PayosPaymentLinkResponseDto,
 	PreviewBuildingBillDto,
 	QueryBillDto,
 	QueryBillsForLandlordDto,
@@ -28,6 +38,7 @@ export class BillsService {
 		private readonly prisma: PrismaService,
 		private readonly notificationsService: NotificationsService,
 		private readonly rentalsService: RentalsService,
+		private readonly payosService: PayosService,
 	) {}
 
 	async createBill(userId: string, dto: CreateBillDto): Promise<BillResponseDto> {
@@ -1527,6 +1538,8 @@ export class BillsService {
 								room: true,
 							},
 						},
+						tenant: true,
+						owner: true,
 					},
 				},
 				billItems: true,
@@ -1534,6 +1547,345 @@ export class BillsService {
 		});
 
 		return this.transformToResponseDto(updatedBill);
+	}
+
+	async applyAutomaticPayment(params: {
+		billId: string;
+		amount: number;
+		paymentDate: Date;
+		transaction?: Prisma.TransactionClient;
+	}): Promise<BillResponseDto> {
+		const prismaClient = params.transaction ?? this.prisma;
+		const bill = await prismaClient.bill.findUnique({
+			where: { id: params.billId },
+			include: {
+				rental: {
+					include: {
+						tenant: true,
+						owner: true,
+						roomInstance: {
+							include: {
+								room: true,
+							},
+						},
+					},
+				},
+				billItems: true,
+			},
+		});
+
+		if (!bill) {
+			throw new NotFoundException('Bill not found');
+		}
+
+		const totalAmount = this.convertDecimalToNumber(bill.totalAmount);
+		const currentPaidAmount = this.convertDecimalToNumber(bill.paidAmount);
+		const paymentValue = this.convertDecimalToNumber(params.amount);
+		const updatedPaidAmount = Math.min(totalAmount, currentPaidAmount + paymentValue);
+		const remainingAmount = Math.max(0, totalAmount - updatedPaidAmount);
+		const newStatus = remainingAmount === 0 ? BillStatus.paid : BillStatus.pending;
+
+		const updatedBill = await prismaClient.bill.update({
+			where: { id: params.billId },
+			data: {
+				paidAmount: updatedPaidAmount,
+				remainingAmount,
+				status: newStatus,
+				paidDate: newStatus === BillStatus.paid ? params.paymentDate : bill.paidDate,
+			},
+			include: {
+				rental: {
+					include: {
+						tenant: true,
+						owner: true,
+						roomInstance: {
+							include: {
+								room: true,
+							},
+						},
+					},
+				},
+				billItems: true,
+			},
+		});
+
+		return this.transformToResponseDto(updatedBill);
+	}
+
+	async createPayosPaymentLink(
+		billId: string,
+		userId: string,
+		dto: CreatePayosPaymentLinkDto,
+	): Promise<PayosPaymentLinkResponseDto> {
+		const bill = await this.prisma.bill.findUnique({
+			where: { id: billId },
+			include: {
+				rental: {
+					include: {
+						tenant: true,
+						owner: true,
+						roomInstance: {
+							include: {
+								room: true,
+							},
+						},
+					},
+				},
+				billItems: true,
+			},
+		});
+
+		if (!bill) {
+			throw new NotFoundException('Bill not found');
+		}
+
+		if (bill.rental.tenantId !== userId && bill.rental.ownerId !== userId) {
+			throw new ForbiddenException('Not authorized to request payment link for this bill');
+		}
+
+		if (!bill.rental.tenantId) {
+			throw new BadRequestException('Bill does not have a tenant assigned');
+		}
+
+		if (bill.status === BillStatus.paid) {
+			throw new BadRequestException('Bill has been paid');
+		}
+
+		const remainingAmount = this.convertDecimalToNumber(bill.remainingAmount);
+		if (remainingAmount <= 0) {
+			throw new BadRequestException('Bill does not have any outstanding amount');
+		}
+
+		const orderCode = this.generatePayosOrderCode();
+		const roomName = bill.rental.roomInstance?.room?.name ?? '';
+		const roomNumber = bill.rental.roomInstance?.roomNumber ?? '';
+		const roomLabel = roomName ? `${roomName}${roomNumber ? ` - ${roomNumber}` : ''}` : '';
+		const descriptionParts = [`Thanh toán hóa đơn ${bill.billingPeriod}`];
+		if (roomLabel) {
+			descriptionParts.push(roomLabel);
+		}
+		const paymentDescription = descriptionParts.join(' | ');
+		const currency = bill.billItems?.[0]?.currency ?? 'VND';
+
+		const payosResult = await this.payosService.createPaymentLink({
+			orderCode,
+			amount: remainingAmount,
+			description: paymentDescription,
+			items:
+				bill.billItems
+					?.map((item) => ({
+						name: item.itemName,
+						quantity: 1,
+						price: this.convertDecimalToNumber(item.amount),
+					}))
+					.filter((item) => item.price > 0) ?? [],
+			returnUrl: dto.returnUrl,
+			cancelUrl: dto.cancelUrl,
+			buyerName: bill.rental.tenant
+				? `${bill.rental.tenant.firstName} ${bill.rental.tenant.lastName}`.trim()
+				: undefined,
+			buyerEmail: bill.rental.tenant?.email ?? undefined,
+			buyerPhone: bill.rental.tenant?.phone ?? undefined,
+		});
+
+		await this.upsertPendingPaymentRecord({
+			billId: bill.id,
+			rentalId: bill.rentalId,
+			tenantId: bill.rental.tenantId,
+			amount: remainingAmount,
+			currency,
+			description: paymentDescription,
+			transactionReference: `payos:${payosResult.orderCode}`,
+			dueDate: bill.dueDate,
+		});
+
+		return payosResult;
+	}
+
+	async processPayosPaymentSuccess(params: {
+		transactionReference: string;
+		paymentDate: Date;
+		providerReference?: string;
+	}): Promise<void> {
+		await this.prisma.$transaction(async (tx) => {
+			const payment = await tx.payment.findFirst({
+				where: { transactionReference: params.transactionReference },
+				include: {
+					bill: {
+						include: {
+							rental: {
+								include: {
+									owner: true,
+									tenant: true,
+									roomInstance: {
+										include: {
+											room: true,
+										},
+									},
+								},
+							},
+						},
+					},
+					rental: {
+						include: {
+							owner: true,
+							tenant: true,
+							roomInstance: {
+								include: {
+									room: true,
+								},
+							},
+						},
+					},
+				},
+			});
+
+			if (!payment) {
+				return;
+			}
+
+			if (payment.paymentStatus !== PaymentStatus.completed) {
+				const updatedPayment = await tx.payment.update({
+					where: { id: payment.id },
+					data: {
+						paymentStatus: PaymentStatus.completed,
+						paymentDate: params.paymentDate,
+						transactionReference: params.providerReference || payment.transactionReference,
+					},
+					include: {
+						rental: {
+							include: {
+								owner: true,
+								tenant: true,
+								roomInstance: {
+									include: {
+										room: true,
+									},
+								},
+							},
+						},
+					},
+				});
+
+				if (payment.billId && payment.bill) {
+					await this.applyAutomaticPayment({
+						billId: payment.bill.id,
+						amount: this.convertDecimalToNumber(payment.amount),
+						paymentDate: params.paymentDate,
+						transaction: tx,
+					});
+				}
+
+				await this.notifyPaymentSuccess(updatedPayment, params.paymentDate);
+				return;
+			}
+
+			await this.notifyPaymentSuccess(payment, params.paymentDate);
+		});
+	}
+
+	async processPayosPaymentFailure(params: {
+		transactionReference: string;
+		providerReference?: string;
+		reason?: string;
+	}): Promise<void> {
+		const payment = await this.prisma.payment.findFirst({
+			where: { transactionReference: params.transactionReference },
+			include: {
+				rental: {
+					include: {
+						tenant: true,
+						roomInstance: {
+							include: {
+								room: true,
+							},
+						},
+					},
+				},
+			},
+		});
+
+		if (!payment || payment.paymentStatus === PaymentStatus.completed) {
+			return;
+		}
+
+		const failedPayment = await this.prisma.payment.update({
+			where: { id: payment.id },
+			data: {
+				paymentStatus: PaymentStatus.failed,
+				transactionReference: params.providerReference || payment.transactionReference,
+			},
+			include: {
+				rental: {
+					include: {
+						tenant: true,
+						roomInstance: {
+							include: {
+								room: true,
+							},
+						},
+					},
+				},
+			},
+		});
+
+		await this.notifyPaymentFailure(failedPayment, params.reason || 'Thanh toán thất bại');
+	}
+
+	private async upsertPendingPaymentRecord(params: {
+		billId: string;
+		rentalId: string;
+		tenantId: string;
+		amount: number;
+		currency: string;
+		description: string;
+		transactionReference: string;
+		dueDate: Date;
+	}): Promise<void> {
+		const existingPayment = await this.prisma.payment.findFirst({
+			where: {
+				billId: params.billId,
+				payerId: params.tenantId,
+				paymentStatus: PaymentStatus.pending,
+				paymentMethod: PaymentMethod.bank_transfer,
+			},
+		});
+
+		const data = {
+			rentalId: params.rentalId,
+			billId: params.billId,
+			payerId: params.tenantId,
+			paymentType: PaymentType.rent,
+			amount: params.amount,
+			currency: params.currency,
+			paymentMethod: PaymentMethod.bank_transfer,
+			paymentStatus: PaymentStatus.pending,
+			dueDate: params.dueDate,
+			description: params.description,
+			transactionReference: params.transactionReference,
+		};
+
+		if (existingPayment) {
+			await this.prisma.payment.update({
+				where: { id: existingPayment.id },
+				data: {
+					amount: params.amount,
+					currency: params.currency,
+					description: params.description,
+					transactionReference: params.transactionReference,
+					dueDate: params.dueDate,
+				},
+			});
+			return;
+		}
+
+		await this.prisma.payment.create({ data });
+	}
+
+	private generatePayosOrderCode(): number {
+		const base = Math.floor(Date.now() / 1000) * 1000;
+		const randomOffset = Math.floor(Math.random() * 1000);
+		return base + randomOffset;
 	}
 
 	private convertDecimalToNumber(value: any): number {
@@ -1572,6 +1924,80 @@ export class BillsService {
 		}
 		const num = Number(value);
 		return Number.isNaN(num) ? 0 : num;
+	}
+
+	private async notifyPaymentSuccess(payment: any, paymentDate: Date): Promise<void> {
+		const amount = this.convertDecimalToNumber(payment.amount);
+		const roomLabel = this.buildRoomLabel(
+			payment.rental.roomInstance?.room?.name,
+			payment.rental.roomInstance?.roomNumber,
+		);
+		const tenantName = this.buildTenantName(
+			payment.rental.tenant?.firstName,
+			payment.rental.tenant?.lastName,
+		);
+
+		if (payment.rental.ownerId) {
+			await this.notificationsService.notifyPaymentReceived(payment.rental.ownerId, {
+				amount,
+				paymentType: payment.paymentType ?? PaymentType.rent,
+				roomName: roomLabel ?? 'Room',
+				tenantName: tenantName ?? 'Tenant',
+				paymentId: payment.id,
+			});
+		}
+
+		if (payment.rental.tenantId) {
+			await this.notificationsService.notifyPaymentCompleted(payment.rental.tenantId, {
+				amount,
+				paymentType: payment.paymentType ?? PaymentType.rent,
+				roomName: roomLabel ?? 'Room',
+				paidDate: this.formatDate(paymentDate),
+				paymentId: payment.id,
+			});
+		}
+	}
+
+	private async notifyPaymentFailure(payment: any, reason: string): Promise<void> {
+		const amount = this.convertDecimalToNumber(payment.amount);
+		const roomLabel = this.buildRoomLabel(
+			payment.rental.roomInstance?.room?.name,
+			payment.rental.roomInstance?.roomNumber,
+		);
+
+		if (payment.rental.tenantId) {
+			await this.notificationsService.notifyPaymentFailed(payment.rental.tenantId, {
+				amount,
+				paymentType: payment.paymentType ?? PaymentType.rent,
+				roomName: roomLabel ?? 'Room',
+				reason,
+				paymentId: payment.id,
+			});
+		}
+	}
+
+	private buildRoomLabel(roomName?: string | null, roomNumber?: string | null): string | undefined {
+		if (roomName && roomNumber) {
+			return `${roomName} - ${roomNumber}`;
+		}
+		if (roomName) {
+			return roomName;
+		}
+		return roomNumber ?? undefined;
+	}
+
+	private buildTenantName(firstName?: string | null, lastName?: string | null): string | undefined {
+		const parts = [firstName, lastName].filter(
+			(part) => !!part && part.trim().length > 0,
+		) as string[];
+		if (parts.length === 0) {
+			return undefined;
+		}
+		return parts.join(' ').trim();
+	}
+
+	private formatDate(date: Date): string {
+		return date.toLocaleString('vi-VN');
 	}
 
 	private async transformToResponseDto(bill: any): Promise<BillResponseDto> {

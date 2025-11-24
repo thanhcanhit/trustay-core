@@ -20,8 +20,10 @@ import {
 	BillResponseDto,
 	CreateBillDto,
 	CreateBillForRoomDto,
+	CreatePayosPaymentLinkDto,
 	MeterDataDto,
 	PaginatedBillResponseDto,
+	PayosPaymentLinkResponseDto,
 	PreviewBuildingBillDto,
 	QueryBillDto,
 	QueryBillsForLandlordDto,
@@ -210,6 +212,23 @@ export class BillsController {
 		@CurrentUser('id') userId: string,
 	): Promise<BillResponseDto> {
 		return this.billsService.markBillAsPaid(billId, userId);
+	}
+
+	@Post(':id/payos-link')
+	@Roles(UserRole.tenant, UserRole.landlord)
+	@ApiOperation({ summary: 'Tạo link thanh toán PayOS cho hóa đơn' })
+	@ApiParam({ name: 'id', description: 'ID của hóa đơn' })
+	@ApiResponse({
+		status: 201,
+		description: 'Link thanh toán PayOS được tạo thành công',
+		type: PayosPaymentLinkResponseDto,
+	})
+	async createPayosPaymentLink(
+		@Param('id') billId: string,
+		@CurrentUser('id') userId: string,
+		@Body() dto: CreatePayosPaymentLinkDto,
+	): Promise<PayosPaymentLinkResponseDto> {
+		return this.billsService.createPayosPaymentLink(billId, userId, dto);
 	}
 
 	@Post(':id/meter-data')
