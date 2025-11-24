@@ -91,9 +91,10 @@ export class PayosWebhookDto {
 	@IsString()
 	desc: string;
 
-	@ApiProperty()
+	@ApiProperty({ required: false, description: 'Optional success flag from PayOS' })
+	@IsOptional()
 	@IsBoolean()
-	success: boolean;
+	success?: boolean;
 
 	@ApiProperty()
 	@IsString()
