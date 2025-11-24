@@ -37,7 +37,8 @@ export class PayosWebhookService {
 	}
 
 	private isSuccessfulWebhook(payload: PayosWebhookDto, data: WebhookData): boolean {
-		if (!payload.success || payload.code !== '00') {
+		const topLevelSuccess = payload.success ?? true;
+		if (!topLevelSuccess || payload.code !== '00') {
 			return false;
 		}
 		return data?.code === '00';
