@@ -20,6 +20,7 @@ import { ReferenceModule } from './api/reference/reference.module';
 import { RentalsModule } from './api/rentals/rentals.module';
 import { RoomBookingsModule } from './api/room-booking/room-booking.module';
 import { RoomInvitationsModule } from './api/room-invitations/room-invitations.module';
+import { RoomIssuesModule } from './api/room-issues/room-issues.module';
 import { RoomSeekingPostModule } from './api/room-seeking-post/room-seeking-post.module';
 import { RoommateApplicationModule } from './api/roommate-application/roommate-application.module';
 import { RoommateSeekingPostModule } from './api/roommate-seeking-post/roommate-seeking-post.module';
@@ -80,6 +81,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 		RatingModule,
 		RentalsModule,
 		RoomInvitationsModule,
+		RoomIssuesModule,
 		RoomsModule,
 		RoomSeekingPostModule,
 		RoommateSeekingPostModule,

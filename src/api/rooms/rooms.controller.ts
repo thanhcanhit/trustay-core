@@ -29,7 +29,9 @@ import { RoomDetailOutputDto } from '../../common/dto/room-output.dto';
 import {
 	BulkUpdateRoomInstanceStatusDto,
 	CreateRoomDto,
+	FindRoomInstanceQueryDto,
 	RoomDetailWithMetaResponseDto,
+	RoomInstanceSearchResultDto,
 	UpdateRoomDto,
 	UpdateRoomInstanceStatusDto,
 } from './dto';
@@ -756,5 +758,54 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 		const result = await this.roomsService.getRoomInstancesByStatus(userId, roomId, status);
 
 		return ApiResponseDto.success(result, 'Room instances retrieved successfully');
+	}
+
+	@Get('instances/search')
+	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
+	@ApiOperation({
+		summary: 'Tìm room instances với payload đơn giản',
+		description: `Tìm kiếm room instances dựa trên 2 trường:
+- **buildingId**: UUID của building (optional)
+- **search**: Text dùng để tìm kiếm. Nếu là UUID sẽ tìm theo ID (roomInstanceId/roomId/buildingId). Nếu không, hệ thống sẽ tìm theo tên tòa nhà, tên phòng, tên chủ nhà hoặc số phòng.
+
+**Lưu ý:**
+- Ít nhất một trong hai trường phải có dữ liệu
+- Search không phân biệt hoa thường
+- Luôn trả về tối đa 20 kết quả mới nhất`,
+	})
+	@ApiResponse({
+		status: HttpStatus.OK,
+		description: 'Danh sách room instances phù hợp',
+		type: ApiResponseDto<RoomInstanceSearchResultDto[]>,
+		schema: {
+			example: {
+				success: true,
+				message: 'Room instances found',
+				data: [
+					{
+						id: 'uuid-room-instance-id',
+						roomNumber: 'A101',
+						roomId: 'uuid-room-id',
+						roomName: 'Phòng VIP',
+						buildingId: 'uuid-building-id',
+						buildingName: 'Nhà trọ Minh Phát',
+						ownerId: 'uuid-owner-id',
+						ownerName: 'Nguyễn Văn Minh',
+					},
+				],
+				timestamp: '2025-01-01T00:00:00.000Z',
+			},
+		},
+	})
+	@ApiResponse({
+		status: HttpStatus.BAD_REQUEST,
+		description: 'Thiếu tiêu chí tìm kiếm',
+	})
+	async findRoomInstanceByCriteria(
+		@Query() query: FindRoomInstanceQueryDto,
+	): Promise<ApiResponseDto<RoomInstanceSearchResultDto[]>> {
+		const result = await this.roomsService.searchRoomInstances(query);
+		return ApiResponseDto.success(result, 'Room instances found');
 	}
 }

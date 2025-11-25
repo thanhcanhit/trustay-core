@@ -1,4 +1,5 @@
 export * from './create-room.dto';
+export * from './find-room-instance.dto';
 export * from './room-detail.dto';
 export * from './room-detail-with-meta.dto';
 export * from './room-response.dto';

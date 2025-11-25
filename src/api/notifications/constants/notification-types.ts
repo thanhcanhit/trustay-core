@@ -48,6 +48,7 @@ export enum NotificationType {
 	// Property Related
 	ROOM_STATUS_CHANGED = 'room_status_changed',
 	NEW_ROOM_AVAILABLE = 'new_room_available',
+	ROOM_ISSUE_REPORTED = 'room_issue_reported',
 
 	// System
 	SYSTEM_MAINTENANCE = 'system_maintenance',
