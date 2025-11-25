@@ -32,6 +32,9 @@ class OperationsSummaryDto {
 
 	@ApiProperty({ example: 5 })
 	readonly contractAlerts: number;
+
+	@ApiProperty({ example: 2 })
+	readonly roomIssues: number;
 }
 
 class OperationsQueueDto {
@@ -46,6 +49,9 @@ class OperationsQueueDto {
 
 	@ApiProperty({ type: () => OperationItemDto, isArray: true })
 	readonly contracts: OperationItemDto[];
+
+	@ApiProperty({ type: () => OperationItemDto, isArray: true })
+	readonly roomIssues: OperationItemDto[];
 }
 
 /**
