@@ -246,6 +246,9 @@ model User {
   overallRating Decimal? @default(0) @map("overall_rating") @db.Decimal(3, 2)
   totalRatings  Int      @default(0) @map("total_ratings")
 
+  // Account balance for landlords (money received from payments)
+  balance       Decimal  @default(0) @map("balance") @db.Decimal(15, 2)
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

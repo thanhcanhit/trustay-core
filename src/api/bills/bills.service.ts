@@ -1776,6 +1776,19 @@ export class BillsService {
 					});
 				}
 
+				// Increment landlord balance when payment is completed and payer is tenant
+				if (payment.payerId === payment.rental.tenantId) {
+					const amountNumber = this.convertDecimalToNumber(payment.amount);
+					await tx.user.update({
+						where: { id: payment.rental.ownerId },
+						data: {
+							balance: {
+								increment: amountNumber,
+							},
+						},
+					});
+				}
+
 				await this.notifyPaymentSuccess(updatedPayment, params.paymentDate);
 				return;
 			}

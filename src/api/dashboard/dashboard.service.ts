@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
 	BillStatus,
+	ContractStatus,
 	PaymentStatus,
 	Prisma,
 	RentalStatus,
@@ -348,7 +349,7 @@ export class DashboardService {
 			}),
 			this.prisma.contract.count({
 				where: {
-					status: { in: ['pending_signature', 'partially_signed'] },
+					status: { in: [ContractStatus.pending_signature, ContractStatus.partially_signed] },
 					landlordId,
 					roomInstance: this.buildRoomInstanceWhere(landlordId, buildingId),
 					endDate: {
@@ -494,7 +495,13 @@ export class DashboardService {
 		const roomInstanceWhere = this.buildRoomInstanceWhere(landlordId, buildingId);
 		const where: Prisma.ContractWhereInput = {
 			landlordId,
-			status: { in: ['draft', 'pending_signature', 'partially_signed'] },
+			status: {
+				in: [
+					ContractStatus.draft,
+					ContractStatus.pending_signature,
+					ContractStatus.partially_signed,
+				],
+			},
 			roomInstance: roomInstanceWhere,
 		};
 		const [total, items] = await Promise.all([
