@@ -104,11 +104,8 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 	@SubscribeMessage(REALTIME_EVENT.HEARTBEAT_PONG)
 	public async handlePong(@MessageBody() _payload: unknown, client: Socket): Promise<void> {
 		if (!client || !client.id) {
-			this.logger.warn('Received pong from invalid client');
 			return;
 		}
-
-		this.logger.log(`PONG received from ${client.id}`);
 		await this.realtimeService.handlePong(client);
 	}
 }

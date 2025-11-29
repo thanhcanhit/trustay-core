@@ -52,6 +52,13 @@ export class RealtimeService {
 		this.emitToUser(userId, REALTIME_EVENT.CONNECTED, { socketId: socket.id });
 
 		// Mark user online and update lastActiveAt
+		const userExists = await this.prisma.user.findUnique({
+			where: { id: userId },
+			select: { id: true },
+		});
+		if (!userExists) {
+			return;
+		}
 		try {
 			await this.prisma.user.update({
 				where: { id: userId },
@@ -86,6 +93,13 @@ export class RealtimeService {
 
 		// If no more sockets for this user, mark offline; otherwise keep online
 		const remaining = this.userIdToSockets.get(userId)?.size ?? 0;
+		const userExists = await this.prisma.user.findUnique({
+			where: { id: userId },
+			select: { id: true },
+		});
+		if (!userExists) {
+			return;
+		}
 		try {
 			await this.prisma.user.update({
 				where: { id: userId },
@@ -120,17 +134,21 @@ export class RealtimeService {
 
 	public async handlePong(socket: Socket): Promise<void> {
 		if (!socket || !socket.id) {
-			this.logger.warn('Received pong from invalid socket');
 			return;
 		}
-
 		this.markAlive(socket.id);
 		const userId = this.socketIdToUserId.get(socket.id);
 		if (!userId) {
-			this.logger.warn(`Received pong from unregistered socket: ${socket.id}`);
 			return;
 		}
 
+		const userExists = await this.prisma.user.findUnique({
+			where: { id: userId },
+			select: { id: true },
+		});
+		if (!userExists) {
+			return;
+		}
 		try {
 			await this.prisma.user.update({
 				where: { id: userId },

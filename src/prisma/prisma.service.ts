@@ -67,6 +67,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 		}
 
 		this.$on('error' as never, (e: PrismaErrorEvent) => {
+			// Skip logging "record not found" errors for user updates (common in realtime service)
+			if (e.message.includes('No record was found') && e.target?.includes('user.update')) {
+				return;
+			}
 			this.logger.error(`Database error: ${e.message}`, e.target, 'Database');
 		});
 
