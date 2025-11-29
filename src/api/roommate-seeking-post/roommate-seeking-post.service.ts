@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PaginatedResponseDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { RoommatePostStatus } from '../../common/enums/roommate-post-status.enum';
-import { generateSlug, generateUniqueSlug } from '../../common/utils';
+import { convertDecimalToNumber, generateSlug, generateUniqueSlug } from '../../common/utils';
 import { maskPhone, maskText } from '../../common/utils/mask.utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ElasticsearchQueueService } from '../../queue/services/elasticsearch-queue.service';
@@ -384,11 +384,11 @@ export class RoommateSeekingPostService {
 			externalProvinceId: post.externalProvinceId,
 			externalDistrictId: post.externalDistrictId,
 			externalWardId: post.externalWardId,
-			monthlyRent: Number(post.monthlyRent),
+			monthlyRent: convertDecimalToNumber(post.monthlyRent),
 			currency: post.currency,
-			depositAmount: Number(post.depositAmount),
+			depositAmount: convertDecimalToNumber(post.depositAmount),
 			utilityCostPerPerson: post.utilityCostPerPerson
-				? Number(post.utilityCostPerPerson)
+				? convertDecimalToNumber(post.utilityCostPerPerson)
 				: undefined,
 			seekingCount: post.seekingCount,
 			approvedCount: post.approvedCount,

@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
-import { generateBuildingSlug, generateUniqueSlug } from '@/common/utils';
+import { convertDecimalToNumber, generateBuildingSlug, generateUniqueSlug } from '@/common/utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
 	BuildingQuickItemDto,
@@ -436,18 +436,6 @@ export class BuildingsService {
 				return count + availableInstances;
 			}, 0) || undefined;
 
-		// Helper function to safely convert Decimal values to numbers
-		const safeDecimalToNumber = (value: any): number | undefined => {
-			if (value === null || value === undefined) {
-				return undefined;
-			}
-			try {
-				return parseFloat(value.toString());
-			} catch {
-				return undefined;
-			}
-		};
-
 		// Build owner object manually to avoid Decimal issues
 		const owner = building.owner
 			? {
@@ -460,8 +448,10 @@ export class BuildingsService {
 			: undefined;
 
 		// Safely handle undefined values for Decimal fields and exclude rooms array
-		const latitudeValue = safeDecimalToNumber(building.latitude);
-		const longitudeValue = safeDecimalToNumber(building.longitude);
+		const latitudeValue = building.latitude ? convertDecimalToNumber(building.latitude) : undefined;
+		const longitudeValue = building.longitude
+			? convertDecimalToNumber(building.longitude)
+			: undefined;
 		const safeBuilding: any = {
 			id: building.id,
 			slug: building.slug,

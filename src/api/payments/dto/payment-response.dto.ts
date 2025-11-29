@@ -1,6 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { PaymentMethod, PaymentStatus, PaymentType } from '@prisma/client';
-import { Decimal } from '@prisma/client/runtime/library';
 
 export class PaymentResponseDto {
 	@ApiProperty({ description: 'ID thanh toán' })
@@ -19,7 +18,7 @@ export class PaymentResponseDto {
 	paymentType: PaymentType;
 
 	@ApiProperty({ description: 'Số tiền thanh toán' })
-	amount: Decimal;
+	amount: number;
 
 	@ApiProperty({ description: 'Loại tiền tệ' })
 	currency: string;
@@ -59,7 +58,7 @@ export class PaymentResponseDto {
 	@ApiProperty({ description: 'Thông tin rental', required: false })
 	rental?: {
 		id: string;
-		monthlyRent: Decimal;
+		monthlyRent: number;
 		roomInstance: {
 			roomNumber: string;
 			room: {

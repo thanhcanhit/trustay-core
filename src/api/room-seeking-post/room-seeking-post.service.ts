@@ -9,7 +9,7 @@ import { plainToInstance } from 'class-transformer';
 import { BreadcrumbDto, SeoDto } from '../../common/dto';
 import { PaginatedResponseDto, PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { PersonPublicView } from '../../common/serialization/person.view';
-import { generateSlug, generateUniqueSlug } from '../../common/utils';
+import { convertDecimalToNumber, generateSlug, generateUniqueSlug } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ElasticsearchQueueService } from '../../queue/services/elasticsearch-queue.service';
 import { CreateRoomSeekingPostDto, RoomRoomSeekingPostDto, UpdateRoomSeekingPostDto } from './dto';
@@ -120,11 +120,11 @@ export class RoomSeekingPostService {
 		// Get budget info
 		let budgetText = '';
 		if (minBudget && maxBudget) {
-			budgetText = `từ ${(Number(minBudget) / 1000000).toFixed(1)} triệu đến ${(Number(maxBudget) / 1000000).toFixed(1)} triệu`;
+			budgetText = `từ ${(convertDecimalToNumber(minBudget) / 1000000).toFixed(1)} triệu đến ${(convertDecimalToNumber(maxBudget) / 1000000).toFixed(1)} triệu`;
 		} else if (minBudget) {
-			budgetText = `từ ${(Number(minBudget) / 1000000).toFixed(1)} triệu`;
+			budgetText = `từ ${(convertDecimalToNumber(minBudget) / 1000000).toFixed(1)} triệu`;
 		} else if (maxBudget) {
-			budgetText = `dưới ${(Number(maxBudget) / 1000000).toFixed(1)} triệu`;
+			budgetText = `dưới ${(convertDecimalToNumber(maxBudget) / 1000000).toFixed(1)} triệu`;
 		}
 
 		// Build title

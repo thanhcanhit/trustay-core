@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { BillStatus } from '@prisma/client';
 import { Expose, Transform } from 'class-transformer';
+import { convertDecimalToNumber } from '../../../common/utils';
 
 export class BillItemResponseDto {
 	@ApiProperty({ description: 'ID của bill item' })
@@ -145,20 +146,21 @@ export class BillResponseDto {
 
 	@ApiPropertyOptional({ description: 'Thông tin rental' })
 	@Expose()
-	@Transform(({ obj }) =>
-		obj.rental
-			? {
-					id: obj.rental.id,
-					monthlyRent: obj.rental.monthlyRent,
-					roomInstance: {
-						roomNumber: obj.rental.roomInstance?.roomNumber,
-						room: {
-							name: obj.rental.roomInstance?.room?.name,
-						},
-					},
-				}
-			: undefined,
-	)
+	@Transform(({ obj }) => {
+		if (!obj.rental) {
+			return undefined;
+		}
+		return {
+			id: obj.rental.id,
+			monthlyRent: convertDecimalToNumber(obj.rental.monthlyRent),
+			roomInstance: {
+				roomNumber: obj.rental.roomInstance?.roomNumber,
+				room: {
+					name: obj.rental.roomInstance?.room?.name,
+				},
+			},
+		};
+	})
 	rental?: {
 		id: string;
 		monthlyRent: number;

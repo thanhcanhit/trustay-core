@@ -5,6 +5,7 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import { RequestStatus, UserRole } from '@prisma/client';
+import { convertDecimalToNumber } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RentalsService } from '../rentals/rentals.service';
@@ -430,8 +431,12 @@ export class BookingRequestsService {
 			}
 
 			// Get pricing from room pricing
-			const monthlyRent = roomBooking.room.pricing?.basePriceMonthly || 0;
-			const depositAmount = roomBooking.room.pricing?.depositAmount || 0;
+			const monthlyRent = roomBooking.room.pricing?.basePriceMonthly
+				? convertDecimalToNumber(roomBooking.room.pricing.basePriceMonthly)
+				: 0;
+			const depositAmount = roomBooking.room.pricing?.depositAmount
+				? convertDecimalToNumber(roomBooking.room.pricing.depositAmount)
+				: 0;
 
 			// Tạo Rental và update RoomInstance status trong transaction
 			rental = await this.prisma.$transaction(async (tx) => {

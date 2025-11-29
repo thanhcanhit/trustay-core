@@ -10,7 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import { RequestStatus } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { RoommatePostStatus } from '../../common/enums/roommate-post-status.enum';
-import { generateSlug, generateUniqueSlug } from '../../common/utils';
+import { convertDecimalToNumber, generateSlug, generateUniqueSlug } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RentalsService } from '../rentals/rentals.service';
@@ -1920,7 +1920,7 @@ export class RoommateApplicationService {
 			roommateSeekingPost: application.roommateSeekingPost
 				? {
 						...application.roommateSeekingPost,
-						monthlyRent: Number(application.roommateSeekingPost.monthlyRent),
+						monthlyRent: convertDecimalToNumber(application.roommateSeekingPost.monthlyRent),
 					}
 				: undefined,
 		};

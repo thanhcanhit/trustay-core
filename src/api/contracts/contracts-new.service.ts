@@ -9,6 +9,7 @@ import { ContractStatus, SignerRole } from '@prisma/client';
 import * as crypto from 'crypto';
 import { EmailService } from '../../auth/services/email.service';
 import { AuthCacheService } from '../../cache/services/auth-cache.service';
+import { convertDecimalToNumber } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { SignContractDto } from './dto/sign-contract.dto';
@@ -180,8 +181,8 @@ export class ContractsNewService {
 
 		// Tự động tạo contractData từ rental
 		const contractData = {
-			monthlyRent: rental.monthlyRent.toNumber(),
-			depositAmount: rental.depositPaid.toNumber(),
+			monthlyRent: convertDecimalToNumber(rental.monthlyRent),
+			depositAmount: convertDecimalToNumber(rental.depositPaid),
 			roomNumber: rental.roomInstance.roomNumber,
 			roomName: rental.roomInstance.room.name,
 			buildingName: rental.roomInstance.room.building.name,

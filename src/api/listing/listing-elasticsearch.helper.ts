@@ -3,6 +3,7 @@ import { plainToInstance } from 'class-transformer';
 import { BreadcrumbDto, SeoDto } from '../../common/dto';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
 import { PersonPublicView } from '../../common/serialization/person.view';
+import { convertDecimalToNumber } from '../../common/utils';
 import { formatRoomListItem, getOwnerStats } from '../../common/utils/room-formatter.utils';
 import { ElasticsearchSearchService } from '../../elasticsearch/services/elasticsearch-search.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -351,8 +352,8 @@ export class ListingElasticsearchHelper {
 			preferredDistrictId: item.preferredDistrictId,
 			preferredWardId: item.preferredWardId,
 			preferredProvinceId: item.preferredProvinceId,
-			minBudget: item.minBudget !== null ? Number(item.minBudget) : undefined,
-			maxBudget: item.maxBudget !== null ? Number(item.maxBudget) : undefined,
+			minBudget: item.minBudget !== null ? convertDecimalToNumber(item.minBudget) : undefined,
+			maxBudget: item.maxBudget !== null ? convertDecimalToNumber(item.maxBudget) : undefined,
 			currency: item.currency,
 			preferredRoomType: item.preferredRoomType,
 			occupancy: item.occupancy,
@@ -449,7 +450,7 @@ export class ListingElasticsearchHelper {
 			title: post.title,
 			description: post.description,
 			slug: post.slug,
-			maxBudget: Number(post.monthlyRent),
+			maxBudget: convertDecimalToNumber(post.monthlyRent),
 			currency: post.currency,
 			occupancy: post.seekingCount,
 			moveInDate: post.availableFromDate,
@@ -518,12 +519,12 @@ export class ListingElasticsearchHelper {
 					minPrice:
 						query.minPrice ||
 						(userPreferences.minBudget
-							? Math.floor(Number(userPreferences.minBudget) * 0.8)
+							? Math.floor(convertDecimalToNumber(userPreferences.minBudget) * 0.8)
 							: undefined),
 					maxPrice:
 						query.maxPrice ||
 						(userPreferences.maxBudget
-							? Math.ceil(Number(userPreferences.maxBudget) * 1.2)
+							? Math.ceil(convertDecimalToNumber(userPreferences.maxBudget) * 1.2)
 							: undefined),
 					roomType:
 						query.roomType ||

@@ -5,6 +5,7 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import { RequestStatus, UserRole } from '@prisma/client';
+import { convertDecimalToNumber } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RentalsService } from '../rentals/rentals.service';
@@ -21,8 +22,8 @@ export class RoomInvitationsService {
 	private transformToResponseDto(invitation: any): any {
 		return {
 			...invitation,
-			monthlyRent: invitation.monthlyRent ? invitation.monthlyRent.toString() : '0',
-			depositAmount: invitation.depositAmount ? invitation.depositAmount.toString() : '0',
+			monthlyRent: convertDecimalToNumber(invitation.monthlyRent),
+			depositAmount: convertDecimalToNumber(invitation.depositAmount),
 		};
 	}
 
@@ -140,7 +141,7 @@ export class RoomInvitationsService {
 				roomId: dto.roomId,
 				moveInDate: moveInDate,
 				message: dto.invitationMessage,
-				monthlyRent: dto.proposedRent ? parseFloat(dto.proposedRent) : 0,
+				monthlyRent: dto.proposedRent ? convertDecimalToNumber(dto.proposedRent) : 0,
 				depositAmount: 0, // Will be calculated based on monthly rent
 				rentalMonths,
 				...(dto.roomSeekingPostId && { roomSeekingPostId: dto.roomSeekingPostId }),
@@ -494,8 +495,8 @@ export class RoomInvitationsService {
 										invitation.rentalMonths * 30 * 24 * 60 * 60 * 1000,
 								)
 							: null,
-						monthlyRent: invitation.monthlyRent,
-						depositPaid: invitation.depositAmount,
+						monthlyRent: convertDecimalToNumber(invitation.monthlyRent),
+						depositPaid: convertDecimalToNumber(invitation.depositAmount),
 						status: 'active',
 					},
 				});

@@ -10,6 +10,7 @@ import { plainToInstance } from 'class-transformer';
 import { EmailService } from '../../auth/services/email.service';
 import { PersonPublicView } from '../../common/serialization/person.view';
 import { UploadService } from '../../common/services/upload.service';
+import { convertDecimalToNumber } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RatingService } from '../rating/rating.service';
@@ -48,7 +49,7 @@ export class UsersService {
 	private transformUserResponse(user: any): any {
 		return {
 			...user,
-			overallRating: user.overallRating ? parseFloat(user.overallRating.toString()) : 0,
+			overallRating: convertDecimalToNumber(user.overallRating),
 		};
 	}
 
@@ -856,7 +857,7 @@ export class UsersService {
 			isVerifiedEmail: user.isVerifiedEmail,
 			isVerifiedIdentity: user.isVerifiedIdentity,
 			isVerifiedBank: user.isVerifiedBank,
-			overallRating: user.overallRating ? parseFloat(user.overallRating.toString()) : 0,
+			overallRating: convertDecimalToNumber(user.overallRating),
 			totalRatings: user.totalRatings,
 			createdAt: user.createdAt,
 			updatedAt: user.updatedAt,
