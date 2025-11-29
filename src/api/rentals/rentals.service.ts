@@ -25,8 +25,8 @@ export class RentalsService {
 	private transformToResponseDto(rental: any): any {
 		return {
 			...rental,
-			monthlyRent: rental.monthlyRent ? rental.monthlyRent.toString() : '0',
-			depositPaid: rental.depositPaid ? rental.depositPaid.toString() : '0',
+			monthlyRent: convertDecimalToNumber(rental.monthlyRent),
+			depositPaid: convertDecimalToNumber(rental.depositPaid),
 		};
 	}
 

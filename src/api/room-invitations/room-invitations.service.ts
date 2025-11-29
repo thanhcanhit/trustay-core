@@ -141,7 +141,7 @@ export class RoomInvitationsService {
 				roomId: dto.roomId,
 				moveInDate: moveInDate,
 				message: dto.invitationMessage,
-				monthlyRent: dto.proposedRent ? parseFloat(dto.proposedRent) : 0,
+				monthlyRent: dto.proposedRent ? convertDecimalToNumber(dto.proposedRent) : 0,
 				depositAmount: 0, // Will be calculated based on monthly rent
 				rentalMonths,
 				...(dto.roomSeekingPostId && { roomSeekingPostId: dto.roomSeekingPostId }),
@@ -495,8 +495,8 @@ export class RoomInvitationsService {
 										invitation.rentalMonths * 30 * 24 * 60 * 60 * 1000,
 								)
 							: null,
-						monthlyRent: invitation.monthlyRent,
-						depositPaid: invitation.depositAmount,
+						monthlyRent: convertDecimalToNumber(invitation.monthlyRent),
+						depositPaid: convertDecimalToNumber(invitation.depositAmount),
 						status: 'active',
 					},
 				});
