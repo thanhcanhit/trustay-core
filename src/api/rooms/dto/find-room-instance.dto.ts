@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { RoomStatus } from '@prisma/client';
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class FindRoomInstanceQueryDto {
 	@ApiPropertyOptional({
@@ -12,12 +13,21 @@ export class FindRoomInstanceQueryDto {
 
 	@ApiPropertyOptional({
 		description:
-			'Search text. If matches UUID format, the search will target IDs (roomInstanceId/roomId). Otherwise it searches by building name, room name, owner name, or room number',
+			'Search text. If matches UUID format, the search will target IDs (roomInstanceId/roomId/buildingId). Otherwise it searches by room number, room name, building name, owner name/email/phone, tenant name/email/phone, address (province/district/ward), or room notes',
 		example: 'Phòng VIP',
 	})
 	@IsOptional()
 	@IsString()
 	search?: string;
+
+	@ApiPropertyOptional({
+		description: 'Filter by room instance status',
+		enum: RoomStatus,
+		example: 'occupied',
+	})
+	@IsOptional()
+	@IsEnum(RoomStatus)
+	status?: RoomStatus;
 }
 
 export class RoomInstanceSearchResultDto {

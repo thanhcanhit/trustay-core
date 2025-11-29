@@ -8,7 +8,15 @@
   - `buildingId` *(optional, UUID)* – restrict search to a specific building.
   - `search` *(optional, string)* – single text input.
     - If the value looks like a UUID, the API tries to match `roomInstanceId`, `roomId`, or `buildingId`.
-    - Otherwise it performs case-insensitive partial matches against room number, room name, building name, and owner first/last name.
+    - Otherwise it performs case-insensitive partial matches against:
+      - Room number (`roomNumber`)
+      - Room name (`roomName`)
+      - Building name (`buildingName`)
+      - Owner name/email/phone (`owner`)
+      - Tenant name/email/phone (`tenant` - via active rentals)
+      - Address: province/district/ward names
+      - Room notes (`notes`)
+  - `status` *(optional, enum)* – filter by room status: `available`, `occupied`, `maintenance`, `reserved`, `unavailable`
 - **Behavior:** At least one of the parameters must be provided. Returns up to 20 newest matches.
 
 ```http
