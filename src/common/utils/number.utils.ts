@@ -10,11 +10,9 @@ export const convertDecimalToNumber = (value: unknown): number => {
 		return value;
 	}
 	if (typeof value === 'object') {
-		if (
-			'toNumber' in (value as { toNumber?: () => number }) &&
-			typeof value.toNumber === 'function'
-		) {
-			return value.toNumber();
+		const decimalObject = value as { toNumber?: () => number };
+		if ('toNumber' in decimalObject && typeof decimalObject.toNumber === 'function') {
+			return decimalObject.toNumber();
 		}
 		const decimalLike = value as { d?: number[]; e?: number; s?: number };
 		if (Array.isArray(decimalLike.d) && typeof decimalLike.s === 'number') {
