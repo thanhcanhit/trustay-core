@@ -37,8 +37,14 @@
             {
               "key": "search",
               "value": "phòng",
-              "description": "Search term for room number or name",
+              "description": "Search term for room number, name, owner/tenant info, address, or notes",
               "disabled": false
+            },
+            {
+              "key": "status",
+              "value": "occupied",
+              "description": "Filter by room status: available, occupied, maintenance, reserved, unavailable",
+              "disabled": true
             }
           ]
         },

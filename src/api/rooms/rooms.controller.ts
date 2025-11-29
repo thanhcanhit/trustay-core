@@ -765,12 +765,20 @@ Sau khi tạo thành công, hệ thống sẽ tự động:
 	@ApiBearerAuth()
 	@ApiOperation({
 		summary: 'Tìm room instances với payload đơn giản',
-		description: `Tìm kiếm room instances dựa trên 2 trường:
+		description: `Tìm kiếm room instances dựa trên các trường:
 - **buildingId**: UUID của building (optional)
-- **search**: Text dùng để tìm kiếm. Nếu là UUID sẽ tìm theo ID (roomInstanceId/roomId/buildingId). Nếu không, hệ thống sẽ tìm theo tên tòa nhà, tên phòng, tên chủ nhà hoặc số phòng.
+- **search**: Text dùng để tìm kiếm. Nếu là UUID sẽ tìm theo ID (roomInstanceId/roomId/buildingId). Nếu không, hệ thống sẽ tìm theo:
+  - Số phòng (roomNumber)
+  - Tên phòng (roomName)
+  - Tên tòa nhà (buildingName)
+  - Tên/email/phone chủ nhà (owner)
+  - Tên/email/phone người thuê (tenant - qua active rentals)
+  - Địa chỉ (province/district/ward name)
+  - Ghi chú phòng (notes)
+- **status**: Lọc theo trạng thái phòng (available, occupied, maintenance, reserved, unavailable)
 
 **Lưu ý:**
-- Ít nhất một trong hai trường phải có dữ liệu
+- Ít nhất một trong các trường phải có dữ liệu
 - Search không phân biệt hoa thường
 - Luôn trả về tối đa 20 kết quả mới nhất`,
 	})

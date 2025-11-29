@@ -1957,17 +1957,21 @@ export class RoomsService {
 	async searchRoomInstances(
 		query: FindRoomInstanceQueryDto,
 	): Promise<RoomInstanceSearchResultDto[]> {
-		const { buildingId, search } = query;
+		const { buildingId, search, status } = query;
 
-		if (!buildingId && !search) {
+		if (!buildingId && !search && !status) {
 			throw new BadRequestException(
-				'At least one criteria (buildingId or search) must be provided',
+				'At least one criteria (buildingId, search, or status) must be provided',
 			);
 		}
 
 		const where: Prisma.RoomInstanceWhereInput = {
 			isActive: true,
 		};
+
+		if (status) {
+			where.status = status;
+		}
 
 		if (buildingId) {
 			where.room = {
@@ -1991,14 +1995,56 @@ export class RoomsService {
 				const textCondition = { contains: search, mode: 'insensitive' as const };
 				where.OR = [
 					{ roomNumber: textCondition },
+					{ notes: textCondition },
 					{ room: { name: textCondition } },
 					{ room: { building: { name: textCondition } } },
 					{
 						room: {
 							building: {
 								owner: {
-									OR: [{ firstName: textCondition }, { lastName: textCondition }],
+									OR: [
+										{ firstName: textCondition },
+										{ lastName: textCondition },
+										{ email: textCondition },
+										{ phone: textCondition },
+									],
 								},
+							},
+						},
+					},
+					{
+						rentals: {
+							some: {
+								status: { in: ['active', 'pending_renewal'] },
+								tenant: {
+									OR: [
+										{ firstName: textCondition },
+										{ lastName: textCondition },
+										{ email: textCondition },
+										{ phone: textCondition },
+									],
+								},
+							},
+						},
+					},
+					{
+						room: {
+							building: {
+								province: { name: textCondition },
+							},
+						},
+					},
+					{
+						room: {
+							building: {
+								district: { name: textCondition },
+							},
+						},
+					},
+					{
+						room: {
+							building: {
+								ward: { name: textCondition },
 							},
 						},
 					},
