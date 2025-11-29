@@ -5,6 +5,7 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import { RequestStatus, UserRole } from '@prisma/client';
+import { convertDecimalToNumber } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RentalsService } from '../rentals/rentals.service';
@@ -21,8 +22,8 @@ export class RoomInvitationsService {
 	private transformToResponseDto(invitation: any): any {
 		return {
 			...invitation,
-			monthlyRent: invitation.monthlyRent ? invitation.monthlyRent.toString() : '0',
-			depositAmount: invitation.depositAmount ? invitation.depositAmount.toString() : '0',
+			monthlyRent: convertDecimalToNumber(invitation.monthlyRent),
+			depositAmount: convertDecimalToNumber(invitation.depositAmount),
 		};
 	}
 

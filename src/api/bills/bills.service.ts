@@ -537,7 +537,10 @@ export class BillsService {
 			);
 
 			// Calculate totals
-			const subtotal = billItems.reduce((sum, item) => sum + Number(item.amount), 0);
+			const subtotal = billItems.reduce(
+				(sum, item) => sum + convertDecimalToNumber(item.amount),
+				0,
+			);
 			const totalAmount = subtotal;
 
 			// Check if metered costs exist
@@ -926,7 +929,10 @@ export class BillsService {
 		});
 
 		// Calculate new totals
-		const subtotal = newBillItems.reduce((sum, item) => sum + Number(item.amount), 0);
+		const subtotal = newBillItems.reduce(
+			(sum, item) => sum + convertDecimalToNumber(item.amount),
+			0,
+		);
 		const totalAmount = subtotal;
 
 		// Check if room has metered costs
@@ -1245,7 +1251,7 @@ export class BillsService {
 				...(dto.taxAmount !== undefined && { taxAmount: dto.taxAmount }),
 				...(dto.totalAmount !== undefined && {
 					totalAmount: dto.totalAmount,
-					remainingAmount: dto.totalAmount - Number(existingBill.paidAmount),
+					remainingAmount: dto.totalAmount - convertDecimalToNumber(existingBill.paidAmount),
 				}),
 				...(dto.dueDate && { dueDate: new Date(dto.dueDate) }),
 				...(dto.notes !== undefined && { notes: dto.notes }),

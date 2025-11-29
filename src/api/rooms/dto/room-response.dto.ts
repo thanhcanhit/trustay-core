@@ -1,16 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RoomStatus, RoomType } from '@prisma/client';
 import { Expose, Transform, Type } from 'class-transformer';
+import { convertDecimalToNumber } from '../../../common/utils';
 
 export class RoomPricingResponseDto {
 	@ApiProperty({ example: 3500000 })
 	@Expose()
-	@Transform(({ value }) => (value ? parseFloat(value.toString()) : 0))
+	@Transform(({ value }) => convertDecimalToNumber(value) || 0)
 	basePriceMonthly: number;
 
 	@ApiProperty({ example: 7000000 })
 	@Expose()
-	@Transform(({ value }) => (value ? parseFloat(value.toString()) : 0))
+	@Transform(({ value }) => convertDecimalToNumber(value) || 0)
 	depositAmount: number;
 
 	@ApiProperty({ example: 2 })
@@ -23,17 +24,17 @@ export class RoomPricingResponseDto {
 
 	@ApiPropertyOptional({ example: 500000 })
 	@Expose()
-	@Transform(({ value }) => (value ? parseFloat(value.toString()) : null))
+	@Transform(({ value }) => (value ? convertDecimalToNumber(value) : null))
 	utilityCostMonthly?: number;
 
 	@ApiPropertyOptional({ example: 200000 })
 	@Expose()
-	@Transform(({ value }) => (value ? parseFloat(value.toString()) : null))
+	@Transform(({ value }) => (value ? convertDecimalToNumber(value) : null))
 	cleaningFee?: number;
 
 	@ApiPropertyOptional({ example: 5.0 })
 	@Expose()
-	@Transform(({ value }) => (value ? parseFloat(value.toString()) : null))
+	@Transform(({ value }) => (value ? convertDecimalToNumber(value) : null))
 	serviceFeePercentage?: number;
 
 	@ApiProperty({ example: 3 })
@@ -104,17 +105,17 @@ export class RoomCostResponseDto {
 
 	@ApiPropertyOptional({ example: 50000 })
 	@Expose()
-	@Transform(({ value }) => (value ? parseFloat(value.toString()) : null))
+	@Transform(({ value }) => (value ? convertDecimalToNumber(value) : null))
 	baseRate?: number;
 
 	@ApiPropertyOptional({ example: 3500 })
 	@Expose()
-	@Transform(({ value }) => (value ? parseFloat(value.toString()) : null))
+	@Transform(({ value }) => (value ? convertDecimalToNumber(value) : null))
 	unitPrice?: number;
 
 	@ApiPropertyOptional({ example: 100000 })
 	@Expose()
-	@Transform(({ value }) => (value ? parseFloat(value.toString()) : null))
+	@Transform(({ value }) => (value ? convertDecimalToNumber(value) : null))
 	fixedAmount?: number;
 
 	@ApiPropertyOptional({ example: 'kWh' })
@@ -123,12 +124,12 @@ export class RoomCostResponseDto {
 
 	@ApiPropertyOptional({ example: 50000 })
 	@Expose()
-	@Transform(({ value }) => (value ? parseFloat(value.toString()) : null))
+	@Transform(({ value }) => (value ? convertDecimalToNumber(value) : null))
 	minimumCharge?: number;
 
 	@ApiPropertyOptional({ example: 500000 })
 	@Expose()
-	@Transform(({ value }) => (value ? parseFloat(value.toString()) : null))
+	@Transform(({ value }) => (value ? convertDecimalToNumber(value) : null))
 	maximumCharge?: number;
 
 	@ApiProperty({ example: false })
@@ -257,11 +258,7 @@ export class RoomResponseDto {
 		if (value === null || value === undefined) {
 			return undefined;
 		}
-		try {
-			return parseFloat(value.toString());
-		} catch {
-			return undefined;
-		}
+		return convertDecimalToNumber(value) || undefined;
 	})
 	areaSqm?: number;
 
@@ -287,7 +284,7 @@ export class RoomResponseDto {
 
 	@ApiPropertyOptional({ example: 4.5 })
 	@Expose()
-	@Transform(({ value }) => (value ? parseFloat(value.toString()) : 0))
+	@Transform(({ value }) => convertDecimalToNumber(value) || 0)
 	overallRating?: number;
 
 	@ApiProperty({ example: 25 })

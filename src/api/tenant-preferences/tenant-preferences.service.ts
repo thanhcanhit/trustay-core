@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { convertDecimalToNumber } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
 	CreateRoommatePreferencesDto,
@@ -164,8 +165,8 @@ export class TenantPreferencesService {
 			tenantId: preferences.tenantId,
 			preferredProvinceIds: preferences.preferredProvinceIds,
 			preferredDistrictIds: preferences.preferredDistrictIds,
-			minBudget: preferences.minBudget ? Number(preferences.minBudget) : undefined,
-			maxBudget: Number(preferences.maxBudget),
+			minBudget: preferences.minBudget ? convertDecimalToNumber(preferences.minBudget) : undefined,
+			maxBudget: convertDecimalToNumber(preferences.maxBudget),
 			currency: preferences.currency,
 			preferredRoomTypes: preferences.preferredRoomTypes,
 			maxOccupancy: preferences.maxOccupancy,

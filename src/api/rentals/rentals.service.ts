@@ -6,6 +6,7 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import { RentalStatus, RequestStatus, UserRole } from '@prisma/client';
+import { convertDecimalToNumber } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ContractsNewService } from '../contracts/contracts-new.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -147,8 +148,8 @@ export class RentalsService {
 				ownerId: ownerId,
 				contractStartDate: contractStartDate,
 				contractEndDate: contractEndDate,
-				monthlyRent: parseFloat(dto.monthlyRent),
-				depositPaid: parseFloat(dto.depositPaid),
+				monthlyRent: convertDecimalToNumber(dto.monthlyRent),
+				depositPaid: convertDecimalToNumber(dto.depositPaid),
 				contractDocumentUrl: dto.contractDocumentUrl,
 				status: RentalStatus.active,
 			},

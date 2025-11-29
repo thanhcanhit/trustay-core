@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Expose, Transform } from 'class-transformer';
+import { convertDecimalToNumber } from '../../../common/utils';
 
 export class BuildingLocationDto {
 	@ApiProperty({ example: 'Phường 1' })
@@ -69,11 +70,7 @@ export class BuildingResponseDto {
 		if (value === null || value === undefined) {
 			return undefined;
 		}
-		try {
-			return parseFloat(value.toString());
-		} catch {
-			return undefined;
-		}
+		return convertDecimalToNumber(value) || undefined;
 	})
 	latitude?: number;
 
@@ -83,11 +80,7 @@ export class BuildingResponseDto {
 		if (value === null || value === undefined) {
 			return undefined;
 		}
-		try {
-			return parseFloat(value.toString());
-		} catch {
-			return undefined;
-		}
+		return convertDecimalToNumber(value) || undefined;
 	})
 	longitude?: number;
 

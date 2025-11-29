@@ -1,6 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { RoomType } from '@prisma/client';
-import { Decimal } from '@prisma/client/runtime/library';
 
 export enum ContractStatus {
 	DRAFT = 'draft',
@@ -55,7 +54,7 @@ export class ContractPropertyDto {
 	roomType: RoomType;
 
 	@ApiProperty({ description: 'Diện tích (m²)' })
-	areaSqm?: Decimal;
+	areaSqm?: number;
 
 	@ApiProperty({ description: 'Địa chỉ đầy đủ' })
 	fullAddress: string;
@@ -66,19 +65,19 @@ export class ContractPropertyDto {
 
 export class ContractFinancialTermsDto {
 	@ApiProperty({ description: 'Tiền thuê hàng tháng' })
-	monthlyRent: Decimal;
+	monthlyRent: number;
 
 	@ApiProperty({ description: 'Tiền đặt cọc' })
-	depositAmount: Decimal;
+	depositAmount: number;
 
 	@ApiProperty({ description: 'Loại tiền tệ' })
 	currency: string;
 
 	@ApiProperty({ description: 'Tiền điện (VND/kWh)' })
-	electricityRate?: Decimal;
+	electricityRate?: number;
 
 	@ApiProperty({ description: 'Tiền nước (VND/m³)' })
-	waterRate?: Decimal;
+	waterRate?: number;
 
 	@ApiProperty({ description: 'Chi phí dịch vụ khác' })
 	otherFees?: Record<string, number>;

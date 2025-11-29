@@ -121,7 +121,7 @@ export class RoomsService {
 		}
 
 		// Get price info
-		const price = pricing?.basePriceMonthly ? Number(pricing.basePriceMonthly) : 0;
+		const price = pricing?.basePriceMonthly ? convertDecimalToNumber(pricing.basePriceMonthly) : 0;
 		const priceText = price > 0 ? `${(price / 1000000).toFixed(1)} triệu/tháng` : '';
 
 		// Build title
