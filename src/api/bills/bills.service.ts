@@ -13,6 +13,7 @@ import {
 	UserRole,
 } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
+import { convertDecimalToNumber } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PayosService } from '../payments/payos.service';
@@ -1578,9 +1579,9 @@ export class BillsService {
 			throw new NotFoundException('Bill not found');
 		}
 
-		const totalAmount = this.convertDecimalToNumber(bill.totalAmount);
-		const currentPaidAmount = this.convertDecimalToNumber(bill.paidAmount);
-		const paymentValue = this.convertDecimalToNumber(params.amount);
+		const totalAmount = convertDecimalToNumber(bill.totalAmount);
+		const currentPaidAmount = convertDecimalToNumber(bill.paidAmount);
+		const paymentValue = convertDecimalToNumber(params.amount);
 		const updatedPaidAmount = Math.min(totalAmount, currentPaidAmount + paymentValue);
 		const remainingAmount = Math.max(0, totalAmount - updatedPaidAmount);
 		const newStatus = remainingAmount === 0 ? BillStatus.paid : BillStatus.pending;
@@ -1651,7 +1652,7 @@ export class BillsService {
 			throw new BadRequestException('Bill has been paid');
 		}
 
-		const remainingAmount = this.convertDecimalToNumber(bill.remainingAmount);
+		const remainingAmount = convertDecimalToNumber(bill.remainingAmount);
 		if (remainingAmount <= 0) {
 			throw new BadRequestException('Bill does not have any outstanding amount');
 		}
@@ -1676,7 +1677,7 @@ export class BillsService {
 					?.map((item) => ({
 						name: item.itemName,
 						quantity: 1,
-						price: this.convertDecimalToNumber(item.amount),
+						price: convertDecimalToNumber(item.amount),
 					}))
 					.filter((item) => item.price > 0) ?? [],
 			returnUrl: dto.returnUrl,
@@ -1770,9 +1771,22 @@ export class BillsService {
 				if (payment.billId && payment.bill) {
 					await this.applyAutomaticPayment({
 						billId: payment.bill.id,
-						amount: this.convertDecimalToNumber(payment.amount),
+						amount: convertDecimalToNumber(payment.amount),
 						paymentDate: params.paymentDate,
 						transaction: tx,
+					});
+				}
+
+				// Increment landlord balance when payment is completed and payer is tenant
+				if (payment.payerId === payment.rental.tenantId) {
+					const amountNumber = convertDecimalToNumber(payment.amount);
+					await tx.user.update({
+						where: { id: payment.rental.ownerId },
+						data: {
+							balance: {
+								increment: amountNumber,
+							},
+						},
 					});
 				}
 
@@ -1927,7 +1941,7 @@ export class BillsService {
 	}
 
 	private async notifyPaymentSuccess(payment: any, paymentDate: Date): Promise<void> {
-		const amount = this.convertDecimalToNumber(payment.amount);
+		const amount = convertDecimalToNumber(payment.amount);
 		const roomLabel = this.buildRoomLabel(
 			payment.rental.roomInstance?.room?.name,
 			payment.rental.roomInstance?.roomNumber,
@@ -1959,7 +1973,7 @@ export class BillsService {
 	}
 
 	private async notifyPaymentFailure(payment: any, reason: string): Promise<void> {
-		const amount = this.convertDecimalToNumber(payment.amount);
+		const amount = convertDecimalToNumber(payment.amount);
 		const roomLabel = this.buildRoomLabel(
 			payment.rental.roomInstance?.room?.name,
 			payment.rental.roomInstance?.roomNumber,
@@ -2068,7 +2082,7 @@ export class BillsService {
 					const lastMonthReadingRecord = lastMonthReadingsMap.get(cost.id);
 
 					if (lastMonthReadingRecord?.meterReading) {
-						lastMonthReading = this.convertDecimalToNumber(lastMonthReadingRecord.meterReading);
+						lastMonthReading = convertDecimalToNumber(lastMonthReadingRecord.meterReading);
 					} else if (lastMonthBill.billItems?.length > 0) {
 						const lastMonthBillItem = lastMonthBill.billItems.find(
 							(item: any) =>
@@ -2077,9 +2091,9 @@ export class BillsService {
 						);
 
 						if (lastMonthBillItem?.quantity) {
-							const lastMonthUsage = this.convertDecimalToNumber(lastMonthBillItem.quantity);
+							const lastMonthUsage = convertDecimalToNumber(lastMonthBillItem.quantity);
 							const currentReading = cost.meterReading
-								? this.convertDecimalToNumber(cost.meterReading)
+								? convertDecimalToNumber(cost.meterReading)
 								: null;
 							if (currentReading !== null && currentReading >= lastMonthUsage) {
 								lastMonthReading = currentReading - lastMonthUsage;
@@ -2090,7 +2104,7 @@ export class BillsService {
 
 				if (lastMonthReading === null) {
 					lastMonthReading = cost.lastMeterReading
-						? this.convertDecimalToNumber(cost.lastMeterReading)
+						? convertDecimalToNumber(cost.lastMeterReading)
 						: null;
 				}
 
@@ -2098,9 +2112,9 @@ export class BillsService {
 					roomCostId: cost.id,
 					name: cost.costTypeTemplate?.name || 'Unknown',
 					unit: cost.unit || '',
-					unitPrice: this.convertDecimalToNumber(cost.unitPrice),
+					unitPrice: convertDecimalToNumber(cost.unitPrice),
 					currency: cost.currency || 'VND',
-					currentReading: cost.meterReading ? this.convertDecimalToNumber(cost.meterReading) : null,
+					currentReading: cost.meterReading ? convertDecimalToNumber(cost.meterReading) : null,
 					lastReading: lastMonthReading,
 					lastMonthReading: lastMonthReading,
 					requiresInput: !cost.meterReading || lastMonthReading === null,
@@ -2118,12 +2132,12 @@ export class BillsService {
 			billingYear: bill.billingYear,
 			periodStart: bill.periodStart,
 			periodEnd: bill.periodEnd,
-			subtotal: this.convertDecimalToNumber(bill.subtotal),
-			discountAmount: this.convertDecimalToNumber(bill.discountAmount),
-			taxAmount: this.convertDecimalToNumber(bill.taxAmount),
-			totalAmount: this.convertDecimalToNumber(bill.totalAmount),
-			paidAmount: this.convertDecimalToNumber(bill.paidAmount),
-			remainingAmount: this.convertDecimalToNumber(bill.remainingAmount),
+			subtotal: convertDecimalToNumber(bill.subtotal),
+			discountAmount: convertDecimalToNumber(bill.discountAmount),
+			taxAmount: convertDecimalToNumber(bill.taxAmount),
+			totalAmount: convertDecimalToNumber(bill.totalAmount),
+			paidAmount: convertDecimalToNumber(bill.paidAmount),
+			remainingAmount: convertDecimalToNumber(bill.remainingAmount),
 			status: bill.status,
 			dueDate: bill.dueDate,
 			paidDate: bill.paidDate,
@@ -2135,9 +2149,9 @@ export class BillsService {
 				itemType: item.itemType,
 				itemName: item.itemName,
 				description: item.description,
-				quantity: this.convertDecimalToNumber(item.quantity),
-				unitPrice: this.convertDecimalToNumber(item.unitPrice),
-				amount: this.convertDecimalToNumber(item.amount),
+				quantity: convertDecimalToNumber(item.quantity),
+				unitPrice: convertDecimalToNumber(item.unitPrice),
+				amount: convertDecimalToNumber(item.amount),
 				currency: item.currency,
 				notes: item.notes,
 				createdAt: item.createdAt,
@@ -2145,7 +2159,7 @@ export class BillsService {
 			rental: bill.rental
 				? {
 						id: bill.rental.id,
-						monthlyRent: this.convertDecimalToNumber(bill.rental.monthlyRent),
+						monthlyRent: convertDecimalToNumber(bill.rental.monthlyRent),
 						roomInstance: {
 							roomNumber: bill.rental.roomInstance.roomNumber,
 							room: {

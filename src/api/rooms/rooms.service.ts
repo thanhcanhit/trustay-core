@@ -4,7 +4,7 @@ import {
 	Injectable,
 	NotFoundException,
 } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import { BreadcrumbDto, SeoDto } from '../../common/dto';
 import { RoomDetailOutputDto, RoomListItemOutputDto } from '../../common/dto/room-output.dto';
 import { UploadService } from '../../common/services/upload.service';
@@ -19,6 +19,8 @@ import { ElasticsearchQueueService } from '../../queue/services/elasticsearch-qu
 import {
 	BulkUpdateRoomInstanceStatusDto,
 	CreateRoomDto,
+	FindRoomInstanceQueryDto,
+	RoomInstanceSearchResultDto,
 	RoomResponseDto,
 	UpdateRoomDto,
 	UpdateRoomInstanceStatusDto,
@@ -1950,6 +1952,108 @@ export class RoomsService {
 			instances,
 			statusCounts: statusCountsMap,
 		};
+	}
+
+	async searchRoomInstances(
+		query: FindRoomInstanceQueryDto,
+	): Promise<RoomInstanceSearchResultDto[]> {
+		const { buildingId, search } = query;
+
+		if (!buildingId && !search) {
+			throw new BadRequestException(
+				'At least one criteria (buildingId or search) must be provided',
+			);
+		}
+
+		const where: Prisma.RoomInstanceWhereInput = {
+			isActive: true,
+		};
+
+		if (buildingId) {
+			where.room = {
+				buildingId,
+			};
+		}
+
+		if (search) {
+			const isUuidSearch = this.isUuid(search);
+			if (isUuidSearch) {
+				where.OR = [
+					{ id: search },
+					{ roomId: search },
+					{
+						room: {
+							buildingId: search,
+						},
+					},
+				];
+			} else {
+				const textCondition = { contains: search, mode: 'insensitive' as const };
+				where.OR = [
+					{ roomNumber: textCondition },
+					{ room: { name: textCondition } },
+					{ room: { building: { name: textCondition } } },
+					{
+						room: {
+							building: {
+								owner: {
+									OR: [{ firstName: textCondition }, { lastName: textCondition }],
+								},
+							},
+						},
+					},
+				];
+			}
+		}
+
+		const roomInstances = await this.prisma.roomInstance.findMany({
+			where,
+			include: {
+				room: {
+					include: {
+						building: {
+							include: {
+								owner: {
+									select: {
+										id: true,
+										firstName: true,
+										lastName: true,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			orderBy: { updatedAt: 'desc' },
+			take: 20,
+		});
+
+		return roomInstances.map((roomInstance) => {
+			const ownerFullName = [
+				roomInstance.room.building.owner.firstName,
+				roomInstance.room.building.owner.lastName,
+			]
+				.filter(Boolean)
+				.join(' ')
+				.trim();
+
+			return {
+				id: roomInstance.id,
+				roomNumber: roomInstance.roomNumber,
+				roomId: roomInstance.roomId,
+				roomName: roomInstance.room.name,
+				buildingId: roomInstance.room.buildingId,
+				buildingName: roomInstance.room.building.name,
+				ownerId: roomInstance.room.building.owner.id,
+				ownerName: ownerFullName || 'Unknown',
+			};
+		});
+	}
+
+	private isUuid(value: string): boolean {
+		const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+		return uuidRegex.test(value);
 	}
 
 	private async validateStatusTransition(

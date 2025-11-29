@@ -215,6 +215,21 @@ enum SignerRole {
   witness // Người làm chứng
 }
 
+enum RoomIssueCategory {
+  facility
+  utility
+  neighbor
+  noise
+  security
+  other
+}
+
+enum RoomIssueStatus {
+  new
+  in_progress
+  resolved
+}
+
 // ========================================
 // USER MANAGEMENT
 // ========================================
@@ -246,6 +261,9 @@ model User {
   overallRating Decimal? @default(0) @map("overall_rating") @db.Decimal(3, 2)
   totalRatings  Int      @default(0) @map("total_ratings")
 
+  // Account balance for landlords (money received from payments)
+  balance       Decimal  @default(0) @map("balance") @db.Decimal(15, 2)
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -274,6 +292,7 @@ model User {
   contractsAsTenant    Contract[]                 @relation("TenantContracts")
   contractSignatures   ContractSignature[]
   contractAuditLogs    ContractAuditLog[]
+  reportedIssues       RoomIssue[]                @relation("RoomIssueReporter")
 
   @@map("users")
 }
@@ -450,6 +469,7 @@ model RoomInstance {
   contracts            Contract[]
   roommateSeekingPosts RoommateSeekingPost[]
   meterReadings        RoomInstanceMeterReading[]
+  roomIssues           RoomIssue[]
 
   @@unique([roomId, roomNumber]) // Unique room number within same room type
   @@index([roomId])
@@ -649,6 +669,30 @@ model RoomInstanceMeterReading {
   @@index([roomInstanceId])
   @@index([roomCostId])
   @@map("room_instance_meter_readings")
+}
+
+// ========================================
+// ROOM ISSUE MANAGEMENT
+// ========================================
+
+model RoomIssue {
+  id             String             @id @default(uuid())
+  roomInstanceId String             @map("room_instance_id")
+  reporterId     String             @map("reporter_id")
+  title          String
+  category       RoomIssueCategory
+  status         RoomIssueStatus    @default(new)
+  imageUrls      String[]           @map("image_urls")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  roomInstance RoomInstance @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
+  reporter     User         @relation("RoomIssueReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@index([roomInstanceId])
+  @@index([reporterId])
+  @@index([createdAt])
+  @@map("room_issues")
 }
 
 // ========================================

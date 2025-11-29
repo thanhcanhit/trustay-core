@@ -421,6 +421,20 @@ export class NotificationFactory {
 		return this.createFromTemplate(tenantId, NotificationType.NEW_ROOM_AVAILABLE, data);
 	}
 
+	createRoomIssueReportedNotification(
+		landlordId: string,
+		data: {
+			roomName: string;
+			roomNumber: string;
+			tenantName: string;
+			issueId: string;
+			category: string;
+			title: string;
+		},
+	) {
+		return this.createFromTemplate(landlordId, NotificationType.ROOM_ISSUE_REPORTED, data);
+	}
+
 	// System Notifications
 	createSystemMaintenanceNotification(
 		userId: string,

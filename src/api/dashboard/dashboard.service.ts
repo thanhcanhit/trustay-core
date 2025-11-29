@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import {
 	BillStatus,
+	ContractStatus,
 	PaymentStatus,
 	Prisma,
 	RentalStatus,
 	RequestStatus,
+	RoomIssueStatus,
 	RoomStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -23,6 +25,10 @@ const OPERATION_QUEUE_LIMIT = 5;
 const EXPIRING_WINDOW_DAYS = 30;
 const DUE_SOON_WINDOW_DAYS = 7;
 const MAX_BUILDINGS_IN_CHART = 5;
+const OPEN_ROOM_ISSUE_STATUSES: RoomIssueStatus[] = [
+	RoomIssueStatus.new,
+	RoomIssueStatus.in_progress,
+];
 
 interface BuildingSummary {
 	total: number;
@@ -148,24 +154,28 @@ export class DashboardService {
 		query: DashboardFilterQueryDto,
 	): Promise<DashboardOperationsResponseDto> {
 		const { buildingId } = query;
-		const [bookingQueue, invitationQueue, roommateQueue, contractQueue] = await Promise.all([
-			this.getBookingQueue(landlordId, buildingId),
-			this.getInvitationQueue(landlordId, buildingId),
-			this.getRoommateQueue(landlordId, buildingId),
-			this.getContractQueue(landlordId, buildingId),
-		]);
+		const [bookingQueue, invitationQueue, roommateQueue, contractQueue, roomIssueQueue] =
+			await Promise.all([
+				this.getBookingQueue(landlordId, buildingId),
+				this.getInvitationQueue(landlordId, buildingId),
+				this.getRoommateQueue(landlordId, buildingId),
+				this.getContractQueue(landlordId, buildingId),
+				this.getRoomIssueQueue(landlordId, buildingId),
+			]);
 		return {
 			summary: {
 				pendingBookings: bookingQueue.total,
 				pendingInvitations: invitationQueue.total,
 				roommateApplications: roommateQueue.total,
 				contractAlerts: contractQueue.total,
+				roomIssues: roomIssueQueue.total,
 			},
 			queues: {
 				bookings: bookingQueue.items,
 				invitations: invitationQueue.items,
 				roommateApplications: roommateQueue.items,
 				contracts: contractQueue.items,
+				roomIssues: roomIssueQueue.items,
 			},
 		};
 	}
@@ -348,7 +358,7 @@ export class DashboardService {
 			}),
 			this.prisma.contract.count({
 				where: {
-					status: { in: ['pending_signature', 'partially_signed'] },
+					status: { in: [ContractStatus.pending_signature, ContractStatus.partially_signed] },
 					landlordId,
 					roomInstance: this.buildRoomInstanceWhere(landlordId, buildingId),
 					endDate: {
@@ -494,7 +504,13 @@ export class DashboardService {
 		const roomInstanceWhere = this.buildRoomInstanceWhere(landlordId, buildingId);
 		const where: Prisma.ContractWhereInput = {
 			landlordId,
-			status: { in: ['draft', 'pending_signature', 'partially_signed'] },
+			status: {
+				in: [
+					ContractStatus.draft,
+					ContractStatus.pending_signature,
+					ContractStatus.partially_signed,
+				],
+			},
 			roomInstance: roomInstanceWhere,
 		};
 		const [total, items] = await Promise.all([
@@ -522,6 +538,48 @@ export class DashboardService {
 			status: contract.status,
 			requesterName: this.buildFullName(contract.tenant?.firstName, contract.tenant?.lastName),
 			targetDate: contract.endDate ?? undefined,
+		}));
+		return {
+			total,
+			items: mappedItems,
+		};
+	}
+
+	private async getRoomIssueQueue(landlordId: string, buildingId?: string): Promise<QueueResult> {
+		const where: Prisma.RoomIssueWhereInput = {
+			status: { in: OPEN_ROOM_ISSUE_STATUSES },
+			roomInstance: {
+				room: {
+					building: this.buildBuildingWhere(landlordId, buildingId),
+				},
+			},
+		};
+		const [total, items] = await Promise.all([
+			this.prisma.roomIssue.count({ where }),
+			this.prisma.roomIssue.findMany({
+				where,
+				orderBy: { createdAt: 'asc' },
+				take: OPERATION_QUEUE_LIMIT,
+				include: {
+					reporter: true,
+					roomInstance: {
+						include: {
+							room: {
+								include: {
+									building: true,
+								},
+							},
+						},
+					},
+				},
+			}),
+		]);
+		const mappedItems = items.map<OperationItem>((issue) => ({
+			id: issue.id,
+			type: 'roomIssue',
+			title: `${issue.roomInstance?.room?.name ?? 'Room'} - ${issue.roomInstance?.room?.building.name ?? 'Building'}`,
+			status: issue.status,
+			requesterName: this.buildFullName(issue.reporter?.firstName, issue.reporter?.lastName),
 		}));
 		return {
 			total,

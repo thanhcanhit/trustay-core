@@ -1,0 +1,181 @@
+{
+  "info": {
+    "name": "Room Issues",
+    "description": "API collection for Room Issue Reporting",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "issueId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Tenant - Report Issue",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"roomInstanceId\": \"f3d9f525-8d4a-45d1-9501-893e3627ef4f\",\n  \"title\": \"Rò rỉ nước trong nhà vệ sinh\",\n  \"category\": \"utility\",\n  \"imageUrls\": [\n    \"https://cdn.trustay.vn/issues/leak.jpg\"\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/room-issues",
+          "host": ["{{baseUrl}}"],
+          "path": ["room-issues"]
+        },
+        "description": "Tenant báo cáo sự cố phòng đang thuê"
+      }
+    },
+    {
+      "name": "Tenant - List My Issues",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/room-issues/me?page=1&limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["room-issues", "me"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1",
+              "description": "Page number (>=1)",
+              "disabled": false
+            },
+            {
+              "key": "limit",
+              "value": "20",
+              "description": "Items per page (1-50)",
+              "disabled": false
+            },
+            {
+              "key": "roomInstanceId",
+              "value": "",
+              "description": "Filter by room instance",
+              "disabled": true
+            },
+            {
+              "key": "category",
+              "value": "",
+              "description": "Filter by category (facility, utility, neighbor, noise, security, other)",
+              "disabled": true
+            },
+            {
+              "key": "status",
+              "value": "",
+              "description": "Filter by status (new, in_progress, resolved). If empty, returns only open issues (new + in_progress)",
+              "disabled": true
+            }
+          ]
+        },
+        "description": "Tenant xem danh sách sự cố đã báo"
+      }
+    },
+    {
+      "name": "Landlord - List Issues",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/room-issues/landlord?page=1&limit=20",
+          "host": ["{{baseUrl}}"],
+          "path": ["room-issues", "landlord"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1",
+              "description": "Page number (>=1)",
+              "disabled": false
+            },
+            {
+              "key": "limit",
+              "value": "20",
+              "description": "Items per page (1-50)",
+              "disabled": false
+            },
+            {
+              "key": "roomInstanceId",
+              "value": "",
+              "description": "Filter by room instance",
+              "disabled": true
+            },
+            {
+              "key": "category",
+              "value": "",
+              "description": "Filter by category (facility, utility, neighbor, noise, security, other)",
+              "disabled": true
+            },
+            {
+              "key": "status",
+              "value": "",
+              "description": "Filter by status (new, in_progress, resolved). If empty, returns only open issues (new + in_progress)",
+              "disabled": true
+            },
+            {
+              "key": "reporterId",
+              "value": "",
+              "description": "Filter by tenant who reported the issue",
+              "disabled": true
+            }
+          ]
+        },
+        "description": "Landlord xem sự cố trong tài sản của mình"
+      }
+    },
+    {
+      "name": "Get Issue Detail",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/room-issues/{{issueId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["room-issues", "{{issueId}}"]
+        },
+        "description": "Xem chi tiết sự cố (Tenant hoặc Landlord)"
+      }
+    }
+  ]
+}

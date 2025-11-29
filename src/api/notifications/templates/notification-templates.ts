@@ -237,6 +237,14 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		expiresInDays: 7,
 	},
 
+	[NotificationType.ROOM_ISSUE_REPORTED]: {
+		type: NotificationType.ROOM_ISSUE_REPORTED,
+		title: 'Tenant báo cáo sự cố mới',
+		message:
+			'{{tenantName}} báo cáo sự cố "{{title}}" ({{category}}) cho phòng {{roomName}} - {{roomNumber}}',
+		expiresInDays: 7,
+	},
+
 	// System
 	[NotificationType.SYSTEM_MAINTENANCE]: {
 		type: NotificationType.SYSTEM_MAINTENANCE,

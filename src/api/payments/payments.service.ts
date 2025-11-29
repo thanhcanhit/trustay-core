@@ -111,6 +111,11 @@ export class PaymentsService {
 			});
 		}
 
+		// Increment landlord balance when payment is completed and payer is tenant
+		if (payment.paymentStatus === PaymentStatus.completed && payerId === rental.tenantId) {
+			await this.incrementLandlordBalance(rental.ownerId, payment.amount);
+		}
+
 		return this.transformToResponseDto(payment);
 	}
 
@@ -282,7 +287,7 @@ export class PaymentsService {
 			},
 		});
 
-		// If payment status changed to completed and it's from tenant, notify landlord
+		// If payment status changed to completed and it's from tenant, notify landlord and increment balance
 		if (
 			dto.paymentStatus === PaymentStatus.completed &&
 			existingPayment.paymentStatus !== PaymentStatus.completed
@@ -295,6 +300,7 @@ export class PaymentsService {
 					tenantName: `${updatedPayment.payer.firstName} ${updatedPayment.payer.lastName}`,
 					paymentId: updatedPayment.id,
 				});
+				await this.incrementLandlordBalance(updatedPayment.rental.ownerId, updatedPayment.amount);
 			}
 		}
 
@@ -323,6 +329,24 @@ export class PaymentsService {
 
 		await this.prisma.payment.delete({
 			where: { id: paymentId },
+		});
+	}
+
+	/**
+	 * Increments the balance of a landlord when they receive a payment from a tenant.
+	 * @param landlordId The ID of the landlord receiving the payment.
+	 * @param amount The payment amount to add to the balance (can be Decimal or number).
+	 */
+	private async incrementLandlordBalance(landlordId: string, amount: any): Promise<void> {
+		const amountNumber =
+			typeof amount === 'object' && 'toNumber' in amount ? amount.toNumber() : Number(amount);
+		await this.prisma.user.update({
+			where: { id: landlordId },
+			data: {
+				balance: {
+					increment: amountNumber,
+				},
+			},
 		});
 	}
 

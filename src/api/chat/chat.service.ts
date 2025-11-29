@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { RentalStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeService } from '../../realtime/realtime.service';
 import { REALTIME_EVENT } from '../../realtime/realtime.types';
@@ -134,6 +135,17 @@ export class ChatService {
 				},
 			},
 		});
+		const counterpartIds = conversations
+			.map((conversation) => {
+				const counterpart =
+					conversation.userAId === userId ? conversation.userB : conversation.userA;
+				return counterpart?.id;
+			})
+			.filter((id): id is string => Boolean(id));
+		const rentalDetails = await this.findActiveRentalsByTenantIds({
+			ownerId: userId,
+			tenantIds: counterpartIds,
+		});
 		const withUnread = await Promise.all(
 			conversations.map(async (c) => {
 				const counterpart = c.userAId === userId ? c.userB : c.userA;
@@ -150,9 +162,83 @@ export class ChatService {
 					counterpart,
 					lastMessage,
 					unreadCount,
+					counterpartDisplayName: counterpart
+						? this.buildCounterpartDisplayName({
+								firstName: counterpart.firstName,
+								lastName: counterpart.lastName,
+								rentalInfo: rentalDetails.get(counterpart.id),
+							})
+						: '',
 				};
 			}),
 		);
 		return withUnread;
 	}
+
+	private async findActiveRentalsByTenantIds(params: { ownerId: string; tenantIds: string[] }) {
+		if (params.tenantIds.length === 0) {
+			return new Map<string, RentalDisplayInfo>();
+		}
+		const rentals = await this.prisma.rental.findMany({
+			where: {
+				ownerId: params.ownerId,
+				status: RentalStatus.active,
+				tenantId: { in: params.tenantIds },
+			},
+			orderBy: { updatedAt: 'desc' },
+			select: {
+				tenantId: true,
+				roomInstance: {
+					select: {
+						roomNumber: true,
+						room: {
+							select: {
+								building: { select: { name: true } },
+							},
+						},
+					},
+				},
+			},
+		});
+		const map = new Map<string, RentalDisplayInfo>();
+		rentals.forEach((rental) => {
+			if (!rental.roomInstance || !rental.roomInstance.room.building) {
+				return;
+			}
+			if (map.has(rental.tenantId)) {
+				return;
+			}
+			map.set(rental.tenantId, {
+				roomNumber: rental.roomInstance.roomNumber,
+				buildingName: rental.roomInstance.room.building.name,
+			});
+		});
+		return map;
+	}
+
+	private buildCounterpartDisplayName(params: BuildCounterpartDisplayNameParams) {
+		const baseName =
+			[params.firstName, params.lastName].filter(Boolean).join(' ').trim() || 'Unknown';
+		if (!params.rentalInfo) {
+			return baseName;
+		}
+		const sanitizedBuildingName = this.sanitizeBuildingName(params.rentalInfo.buildingName);
+		return `${baseName} - ${params.rentalInfo.roomNumber} - ${sanitizedBuildingName}`;
+	}
+
+	private sanitizeBuildingName(buildingName: string) {
+		const cleaned = buildingName.replace(/dãy\s*trọ\s*/gi, '').trim();
+		return cleaned.length > 0 ? cleaned : buildingName.trim();
+	}
+}
+
+interface RentalDisplayInfo {
+	readonly roomNumber: string;
+	readonly buildingName: string;
+}
+
+interface BuildCounterpartDisplayNameParams {
+	readonly firstName: string | null;
+	readonly lastName: string | null;
+	readonly rentalInfo?: RentalDisplayInfo;
 }
