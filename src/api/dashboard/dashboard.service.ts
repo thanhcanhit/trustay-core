@@ -9,6 +9,7 @@ import {
 	RoomIssueStatus,
 	RoomStatus,
 } from '@prisma/client';
+import { convertDecimalToNumber } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ChartResponseDto } from './dto/chart-response.dto';
 import { DashboardFilterQueryDto } from './dto/dashboard-filter-query.dto';
@@ -319,7 +320,9 @@ export class DashboardService {
 		for (const rental of rentals) {
 			if (!tenantMap.has(rental.tenantId)) {
 				tenantMap.set(rental.tenantId, {
-					rating: rental.tenant?.overallRating ? Number(rental.tenant.overallRating) : undefined,
+					rating: rental.tenant?.overallRating
+						? convertDecimalToNumber(rental.tenant.overallRating)
+						: undefined,
 					verified: Boolean(rental.tenant?.isVerifiedIdentity),
 				});
 			}
@@ -1019,7 +1022,7 @@ export class DashboardService {
 	}
 
 	private toNumber(value?: Prisma.Decimal | null | number): number {
-		return value ? Number(value) : 0;
+		return convertDecimalToNumber(value);
 	}
 
 	private buildFullName(firstName?: string | null, lastName?: string | null): string {

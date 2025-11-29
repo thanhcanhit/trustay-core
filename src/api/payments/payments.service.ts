@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PaymentStatus, UserRole } from '@prisma/client';
 import { PaginatedResponseDto } from '../../common/dto/pagination.dto';
+import { convertDecimalToNumber } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -103,7 +104,7 @@ export class PaymentsService {
 		// Send notification to landlord when tenant makes payment
 		if (payerId === rental.tenantId) {
 			await this.notificationsService.notifyPaymentReceived(rental.ownerId, {
-				amount: Number(payment.amount),
+				amount: convertDecimalToNumber(payment.amount),
 				paymentType: payment.paymentType,
 				roomName: `${payment.rental.roomInstance.room.name} - ${payment.rental.roomInstance.roomNumber}`,
 				tenantName: `${payment.payer.firstName} ${payment.payer.lastName}`,
@@ -294,7 +295,7 @@ export class PaymentsService {
 		) {
 			if (userId === updatedPayment.rental.tenantId) {
 				await this.notificationsService.notifyPaymentReceived(updatedPayment.rental.ownerId, {
-					amount: Number(updatedPayment.amount),
+					amount: convertDecimalToNumber(updatedPayment.amount),
 					paymentType: updatedPayment.paymentType,
 					roomName: `${updatedPayment.rental.roomInstance.room.name} - ${updatedPayment.rental.roomInstance.roomNumber}`,
 					tenantName: `${updatedPayment.payer.firstName} ${updatedPayment.payer.lastName}`,
@@ -338,8 +339,7 @@ export class PaymentsService {
 	 * @param amount The payment amount to add to the balance (can be Decimal or number).
 	 */
 	private async incrementLandlordBalance(landlordId: string, amount: any): Promise<void> {
-		const amountNumber =
-			typeof amount === 'object' && 'toNumber' in amount ? amount.toNumber() : Number(amount);
+		const amountNumber = convertDecimalToNumber(amount);
 		await this.prisma.user.update({
 			where: { id: landlordId },
 			data: {
@@ -357,7 +357,7 @@ export class PaymentsService {
 			billId: payment.billId,
 			payerId: payment.payerId,
 			paymentType: payment.paymentType,
-			amount: payment.amount,
+			amount: convertDecimalToNumber(payment.amount),
 			currency: payment.currency,
 			paymentMethod: payment.paymentMethod,
 			paymentStatus: payment.paymentStatus,
@@ -378,7 +378,7 @@ export class PaymentsService {
 			rental: payment.rental
 				? {
 						id: payment.rental.id,
-						monthlyRent: payment.rental.monthlyRent,
+						monthlyRent: convertDecimalToNumber(payment.rental.monthlyRent),
 						roomInstance: {
 							roomNumber: payment.rental.roomInstance.roomNumber,
 							room: {

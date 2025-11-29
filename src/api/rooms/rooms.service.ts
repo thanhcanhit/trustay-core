@@ -8,7 +8,7 @@ import { Prisma, UserRole } from '@prisma/client';
 import { BreadcrumbDto, SeoDto } from '../../common/dto';
 import { RoomDetailOutputDto, RoomListItemOutputDto } from '../../common/dto/room-output.dto';
 import { UploadService } from '../../common/services/upload.service';
-import { generateRoomSlug, generateUniqueSlug } from '../../common/utils';
+import { convertDecimalToNumber, generateRoomSlug, generateUniqueSlug } from '../../common/utils';
 import {
 	formatRoomDetail,
 	formatRoomListItem,
@@ -650,23 +650,21 @@ export class RoomsService {
 		const occupiedInstancesCount =
 			room.roomInstances?.filter((instance: any) => instance.status === 'occupied').length || 0;
 
-		// Helper function to safely convert Decimal values
-		const safeDecimal = (value: any) => {
-			if (value === null || value === undefined) {
-				return null;
-			}
-			return value;
-		};
-
 		// Clean up pricing data to avoid Decimal errors
 		const cleanPricing = room.pricing
 			? {
 					...room.pricing,
-					basePriceMonthly: safeDecimal(room.pricing.basePriceMonthly) || 0,
-					depositAmount: safeDecimal(room.pricing.depositAmount) || 0,
-					utilityCostMonthly: safeDecimal(room.pricing.utilityCostMonthly),
-					cleaningFee: safeDecimal(room.pricing.cleaningFee),
-					serviceFeePercentage: safeDecimal(room.pricing.serviceFeePercentage),
+					basePriceMonthly: convertDecimalToNumber(room.pricing.basePriceMonthly) || 0,
+					depositAmount: convertDecimalToNumber(room.pricing.depositAmount) || 0,
+					utilityCostMonthly: room.pricing.utilityCostMonthly
+						? convertDecimalToNumber(room.pricing.utilityCostMonthly)
+						: null,
+					cleaningFee: room.pricing.cleaningFee
+						? convertDecimalToNumber(room.pricing.cleaningFee)
+						: null,
+					serviceFeePercentage: room.pricing.serviceFeePercentage
+						? convertDecimalToNumber(room.pricing.serviceFeePercentage)
+						: null,
 				}
 			: null;
 
@@ -674,17 +672,19 @@ export class RoomsService {
 		const cleanCosts =
 			room.costs?.map((cost: any) => ({
 				...cost,
-				unitPrice: safeDecimal(cost.unitPrice),
-				fixedAmount: safeDecimal(cost.fixedAmount),
-				perPersonAmount: safeDecimal(cost.perPersonAmount),
-				meterReading: safeDecimal(cost.meterReading),
-				lastMeterReading: safeDecimal(cost.lastMeterReading),
+				unitPrice: cost.unitPrice ? convertDecimalToNumber(cost.unitPrice) : null,
+				fixedAmount: cost.fixedAmount ? convertDecimalToNumber(cost.fixedAmount) : null,
+				perPersonAmount: cost.perPersonAmount ? convertDecimalToNumber(cost.perPersonAmount) : null,
+				meterReading: cost.meterReading ? convertDecimalToNumber(cost.meterReading) : null,
+				lastMeterReading: cost.lastMeterReading
+					? convertDecimalToNumber(cost.lastMeterReading)
+					: null,
 			})) || [];
 
 		// Clean up main room data
 		const cleanRoom = {
 			...room,
-			areaSqm: safeDecimal(room.areaSqm),
+			areaSqm: room.areaSqm ? convertDecimalToNumber(room.areaSqm) : null,
 			pricing: cleanPricing,
 			costs: cleanCosts,
 			building: room.building,

@@ -121,7 +121,7 @@ export class BillsService {
 			month: bill.billingMonth,
 			year: bill.billingYear,
 			roomName: `${rental.roomInstance.room.name} - ${rental.roomInstance.roomNumber}`,
-			amount: Number(bill.totalAmount),
+			amount: convertDecimalToNumber(bill.totalAmount),
 			billId: bill.id,
 			dueDate: bill.dueDate,
 			landlordName: `${rental.owner.firstName} ${rental.owner.lastName}`,
@@ -271,7 +271,7 @@ export class BillsService {
 		);
 
 		// Calculate totals
-		const subtotal = billItems.reduce((sum, item) => sum + Number(item.amount), 0);
+		const subtotal = billItems.reduce((sum, item) => sum + convertDecimalToNumber(item.amount), 0);
 		const totalAmount = subtotal;
 
 		const bill = await this.prisma.bill.create({
@@ -318,7 +318,7 @@ export class BillsService {
 			month: bill.billingMonth,
 			year: bill.billingYear,
 			roomName: `${roomInstance.room.name} - ${roomInstance.roomNumber}`,
-			amount: Number(bill.totalAmount),
+			amount: convertDecimalToNumber(bill.totalAmount),
 			billId: bill.id,
 			dueDate: bill.dueDate,
 			landlordName: `${rental.owner.firstName} ${rental.owner.lastName}`,
@@ -956,7 +956,7 @@ export class BillsService {
 				occupancyCount: occupancyCount,
 				subtotal,
 				totalAmount,
-				remainingAmount: totalAmount - Number(bill.paidAmount),
+				remainingAmount: totalAmount - convertDecimalToNumber(bill.paidAmount),
 				requiresMeterData: false,
 				status: newStatus,
 				billItems: {
@@ -995,7 +995,7 @@ export class BillsService {
 					month: updatedBill.billingMonth,
 					year: updatedBill.billingYear,
 					roomName: updatedBill.rental.roomInstance.room.name,
-					amount: Number(updatedBill.totalAmount),
+					amount: convertDecimalToNumber(updatedBill.totalAmount),
 					billId: updatedBill.id,
 					dueDate: updatedBill.dueDate,
 					landlordName:
@@ -1022,7 +1022,7 @@ export class BillsService {
 
 		// Add rent as first item (prorated)
 		if (roomPricing) {
-			const rentAmount = Number(roomPricing.basePriceMonthly) * prorationFactor;
+			const rentAmount = convertDecimalToNumber(roomPricing.basePriceMonthly) * prorationFactor;
 			if (rentAmount > 0) {
 				billItems.push({
 					itemType: 'rent',
@@ -1051,13 +1051,14 @@ export class BillsService {
 			switch (cost.costType) {
 				case 'fixed':
 					// Fixed costs are prorated
-					amount = Number(cost.fixedAmount || 0) * prorationFactor;
+					amount = convertDecimalToNumber(cost.fixedAmount || 0) * prorationFactor;
 					description = `${cost.notes || ''} (${Math.round(prorationFactor * 100)}% tháng)`.trim();
 					break;
 
 				case 'per_person':
 					// Per person costs are prorated and multiplied by occupancy
-					amount = Number(cost.perPersonAmount || 0) * occupancyCount * prorationFactor;
+					amount =
+						convertDecimalToNumber(cost.perPersonAmount || 0) * occupancyCount * prorationFactor;
 					quantity = occupancyCount;
 					itemName += ` (${occupancyCount} người)`;
 					description = `${cost.notes || ''} (${Math.round(prorationFactor * 100)}% tháng)`.trim();
@@ -1066,10 +1067,10 @@ export class BillsService {
 				case 'metered':
 					// Metered costs need meter readings
 					if (cost.meterReading !== null && cost.lastMeterReading !== null) {
-						const currentReading = Number(cost.meterReading);
-						const lastReading = Number(cost.lastMeterReading);
+						const currentReading = convertDecimalToNumber(cost.meterReading);
+						const lastReading = convertDecimalToNumber(cost.lastMeterReading);
 						const usage = Math.max(0, currentReading - lastReading);
-						amount = usage * Number(cost.unitPrice || 0);
+						amount = usage * convertDecimalToNumber(cost.unitPrice || 0);
 						quantity = usage;
 						itemName += ` (${usage} ${cost.unit || 'đơn vị'})`;
 						description = `${cost.notes || ''} - Sử dụng: ${usage} ${cost.unit || 'đơn vị'}`.trim();
@@ -1424,7 +1425,10 @@ export class BillsService {
 			where: { billId: billId },
 		});
 
-		const subtotal = newBillItems.reduce((sum, item) => sum + Number(item.amount), 0);
+		const subtotal = newBillItems.reduce(
+			(sum, item) => sum + convertDecimalToNumber(item.amount),
+			0,
+		);
 		const totalAmount = subtotal;
 
 		// Check if room has metered costs
@@ -1452,7 +1456,7 @@ export class BillsService {
 			data: {
 				subtotal,
 				totalAmount,
-				remainingAmount: totalAmount - Number(bill.paidAmount),
+				remainingAmount: totalAmount - convertDecimalToNumber(bill.paidAmount),
 				requiresMeterData: false,
 				status: newStatus,
 				billItems: {
@@ -1491,7 +1495,7 @@ export class BillsService {
 					month: updatedBill.billingMonth,
 					year: updatedBill.billingYear,
 					roomName: updatedBill.rental.roomInstance.room.name,
-					amount: Number(updatedBill.totalAmount),
+					amount: convertDecimalToNumber(updatedBill.totalAmount),
 					billId: updatedBill.id,
 					dueDate: updatedBill.dueDate,
 					landlordName:
@@ -1900,44 +1904,6 @@ export class BillsService {
 		const base = Math.floor(Date.now() / 1000) * 1000;
 		const randomOffset = Math.floor(Math.random() * 1000);
 		return base + randomOffset;
-	}
-
-	private convertDecimalToNumber(value: any): number {
-		if (value === null || value === undefined) {
-			return 0;
-		}
-		if (typeof value === 'number') {
-			return value;
-		}
-		if (typeof value === 'object') {
-			if ('toNumber' in value && typeof value.toNumber === 'function') {
-				return value.toNumber();
-			}
-			if ('d' in value && Array.isArray(value.d) && 'e' in value && 's' in value) {
-				const sign = value.s || 1;
-				const digits = value.d || [];
-				if (digits.length === 0) {
-					return 0;
-				}
-				if (digits.length === 1 && typeof digits[0] === 'number') {
-					return digits[0] * sign;
-				}
-				const numStr = digits.join('');
-				const num = parseFloat(numStr) || 0;
-				return num * sign;
-			}
-			if ('toString' in value && typeof value.toString === 'function') {
-				try {
-					const str = value.toString();
-					const num = Number(str);
-					return Number.isNaN(num) ? 0 : num;
-				} catch {
-					return 0;
-				}
-			}
-		}
-		const num = Number(value);
-		return Number.isNaN(num) ? 0 : num;
 	}
 
 	private async notifyPaymentSuccess(payment: any, paymentDate: Date): Promise<void> {
