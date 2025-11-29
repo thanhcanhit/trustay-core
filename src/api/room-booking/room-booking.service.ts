@@ -362,6 +362,7 @@ export class BookingRequestsService {
 			where: { id: roomBookingId },
 			data: {
 				status: RequestStatus.accepted, // Keep as accepted since rental will be created
+				isConfirmedByTenant: true,
 				confirmedAt: new Date(),
 			},
 			include: {
