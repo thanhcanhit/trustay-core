@@ -177,17 +177,25 @@ export class RentalsService {
 		});
 
 		// Send notifications
-		await this.notificationsService.notifyRentalCreated(dto.tenantId, {
-			roomName: `${roomInstance.room.name} - ${roomInstance.roomNumber}`,
-			startDate: contractStartDate.toISOString(),
-			rentalId: rental.id,
-		});
+		try {
+			await this.notificationsService.notifyRentalCreated(dto.tenantId, {
+				roomName: `${roomInstance.room.name} - ${roomInstance.roomNumber}`,
+				startDate: contractStartDate.toISOString(),
+				rentalId: rental.id,
+			});
 
-		await this.notificationsService.notifyRentalCreated(ownerId, {
-			roomName: `${roomInstance.room.name} - ${roomInstance.roomNumber}`,
-			startDate: contractStartDate.toISOString(),
-			rentalId: rental.id,
-		});
+			await this.notificationsService.notifyRentalCreated(ownerId, {
+				roomName: `${roomInstance.room.name} - ${roomInstance.roomNumber}`,
+				startDate: contractStartDate.toISOString(),
+				rentalId: rental.id,
+			});
+		} catch (error) {
+			// Log error but don't fail the rental creation
+			this.logger.error(
+				`Failed to send rental created notification: ${error.message}`,
+				error.stack,
+			);
+		}
 
 		// Auto-create contract when rental is created (new contracts flow)
 		try {

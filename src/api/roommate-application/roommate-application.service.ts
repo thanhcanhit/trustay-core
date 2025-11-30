@@ -2,6 +2,7 @@ import {
 	BadRequestException,
 	ForbiddenException,
 	Injectable,
+	Logger,
 	NotFoundException,
 	UnauthorizedException,
 } from '@nestjs/common';
@@ -30,6 +31,8 @@ import {
 
 @Injectable()
 export class RoommateApplicationService {
+	private readonly logger = new Logger(RoommateApplicationService.name);
+
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly notificationsService: NotificationsService,
@@ -1072,33 +1075,41 @@ export class RoommateApplicationService {
 			// Send notifications
 			const roomName = roomInstance.room.name;
 
-			// Notify user being added - they were directly added (equivalent to approved without application)
-			// This makes it clear they were accepted/approved to join the room
-			await this.notificationsService.notifyRoommateApplicationApproved(userIdToAdd, {
-				roomName,
-				applicationId: newRental.id, // Use rental ID as identifier
-			});
+			try {
+				// Notify user being added - they were directly added (equivalent to approved without application)
+				// This makes it clear they were accepted/approved to join the room
+				await this.notificationsService.notifyRoommateApplicationApproved(userIdToAdd, {
+					roomName,
+					applicationId: newRental.id, // Use rental ID as identifier
+				});
 
-			// Also notify rental created so they know rental details
-			await this.notificationsService.notifyRentalCreated(userIdToAdd, {
-				roomName,
-				rentalId: newRental.id,
-				startDate: moveInDate.toISOString(),
-			});
+				// Also notify rental created so they know rental details
+				await this.notificationsService.notifyRentalCreated(userIdToAdd, {
+					roomName,
+					rentalId: newRental.id,
+					startDate: moveInDate.toISOString(),
+				});
 
-			// Notify tenant - they added someone to their room
-			await this.notificationsService.notifyRentalCreated(post.tenantId, {
-				roomName,
-				rentalId: newRental.id,
-				startDate: moveInDate.toISOString(),
-			});
+				// Notify tenant - they added someone to their room
+				await this.notificationsService.notifyRentalCreated(post.tenantId, {
+					roomName,
+					rentalId: newRental.id,
+					startDate: moveInDate.toISOString(),
+				});
 
-			// Notify landlord - someone was added to their property
-			await this.notificationsService.notifyRentalCreated(roomInstance.room.building.ownerId, {
-				roomName,
-				rentalId: newRental.id,
-				startDate: moveInDate.toISOString(),
-			});
+				// Notify landlord - someone was added to their property
+				await this.notificationsService.notifyRentalCreated(roomInstance.room.building.ownerId, {
+					roomName,
+					rentalId: newRental.id,
+					startDate: moveInDate.toISOString(),
+				});
+			} catch (error) {
+				// Log error but don't fail the rental creation
+				this.logger.error(
+					`Failed to send rental created notifications: ${error.message}`,
+					error.stack,
+				);
+			}
 		});
 	}
 
@@ -1829,32 +1840,40 @@ export class RoommateApplicationService {
 		// Gửi notifications
 		const roomName = roomInstance.room.name;
 
-		// Notify applicant về confirm và rental created
-		await this.notificationsService.notifyRoommateApplicationConfirmed(application.applicantId, {
-			roomName,
-			applicationId: application.id,
-		});
+		try {
+			// Notify applicant về confirm và rental created
+			await this.notificationsService.notifyRoommateApplicationConfirmed(application.applicantId, {
+				roomName,
+				applicationId: application.id,
+			});
 
-		await this.notificationsService.notifyRentalCreated(application.applicantId, {
-			roomName,
-			rentalId: rental.id,
-			startDate: application.moveInDate.toISOString(),
-		});
-
-		// Notify tenant
-		await this.notificationsService.notifyRentalCreated(post.tenantId, {
-			roomName,
-			rentalId: rental.id,
-			startDate: application.moveInDate.toISOString(),
-		});
-
-		// Notify landlord if platform room
-		if (post.roomInstanceId) {
-			await this.notificationsService.notifyRentalCreated(roomInstance.room.building.ownerId, {
+			await this.notificationsService.notifyRentalCreated(application.applicantId, {
 				roomName,
 				rentalId: rental.id,
 				startDate: application.moveInDate.toISOString(),
 			});
+
+			// Notify tenant
+			await this.notificationsService.notifyRentalCreated(post.tenantId, {
+				roomName,
+				rentalId: rental.id,
+				startDate: application.moveInDate.toISOString(),
+			});
+
+			// Notify landlord if platform room
+			if (post.roomInstanceId) {
+				await this.notificationsService.notifyRentalCreated(roomInstance.room.building.ownerId, {
+					roomName,
+					rentalId: rental.id,
+					startDate: application.moveInDate.toISOString(),
+				});
+			}
+		} catch (error) {
+			// Log error but don't fail the rental creation
+			this.logger.error(
+				`Failed to send rental created notifications: ${error.message}`,
+				error.stack,
+			);
 		}
 
 		// Return updated application

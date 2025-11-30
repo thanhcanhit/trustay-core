@@ -2,6 +2,7 @@ import {
 	BadRequestException,
 	ForbiddenException,
 	Injectable,
+	Logger,
 	NotFoundException,
 } from '@nestjs/common';
 import { RequestStatus, UserRole } from '@prisma/client';
@@ -13,6 +14,8 @@ import { CreateRoomInvitationDto, QueryRoomInvitationDto, UpdateRoomInvitationDt
 
 @Injectable()
 export class RoomInvitationsService {
+	private readonly logger = new Logger(RoomInvitationsService.name);
+
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly notificationsService: NotificationsService,
@@ -514,54 +517,70 @@ export class RoomInvitationsService {
 		}
 
 		// Gửi notification cho tenant về việc landlord confirm
-		if (invitation.recipientId) {
-			await this.notificationsService.notifyInvitationConfirmed(invitation.recipientId, {
-				roomName: invitation.room.name,
-				invitationId: invitation.id,
-			});
-		}
-
-		if (rental) {
-			// SUCCESS: Gửi notification cho cả 2 bên về rental được tạo
+		try {
 			if (invitation.recipientId) {
-				await this.notificationsService.notifyRentalCreated(invitation.recipientId, {
+				await this.notificationsService.notifyInvitationConfirmed(invitation.recipientId, {
+					roomName: invitation.room.name,
+					invitationId: invitation.id,
+				});
+			}
+
+			if (rental) {
+				// SUCCESS: Gửi notification cho cả 2 bên về rental được tạo
+				if (invitation.recipientId) {
+					await this.notificationsService.notifyRentalCreated(invitation.recipientId, {
+						roomName: invitation.room.name,
+						rentalId: rental.id,
+						startDate: (invitation.moveInDate || new Date()).toISOString(),
+					});
+				}
+
+				await this.notificationsService.notifyRentalCreated(invitation.room.building.ownerId, {
 					roomName: invitation.room.name,
 					rentalId: rental.id,
 					startDate: (invitation.moveInDate || new Date()).toISOString(),
 				});
 			}
+		} catch (error) {
+			// Log error but don't fail the rental creation
+			this.logger.error(
+				`Failed to send rental created notifications: ${error.message}`,
+				error.stack,
+			);
+		}
 
-			await this.notificationsService.notifyRentalCreated(invitation.room.building.ownerId, {
-				roomName: invitation.room.name,
-				rentalId: rental.id,
-				startDate: (invitation.moveInDate || new Date()).toISOString(),
-			});
-
+		if (rental) {
 			return this.transformToResponseDto(updatedInvitation);
 		} else {
 			// FAILED: Thông báo cho cả 2 bên
+			try {
+				// Notify tenant
+				if (invitation.recipientId) {
+					await this.notificationsService.notifyRentalCreationFailedInvitation(
+						invitation.recipientId,
+						{
+							roomName: invitation.room.name,
+							error: rentalCreationError,
+							invitationId: invitation.id,
+						},
+					);
+				}
 
-			// Notify tenant
-			if (invitation.recipientId) {
+				// Notify landlord
 				await this.notificationsService.notifyRentalCreationFailedInvitation(
-					invitation.recipientId,
+					invitation.room.building.ownerId,
 					{
 						roomName: invitation.room.name,
 						error: rentalCreationError,
 						invitationId: invitation.id,
 					},
 				);
+			} catch (error) {
+				this.logger.error(
+					`Failed to send rental creation failed notifications: ${error.message}`,
+					error.stack,
+				);
 			}
-
-			// Notify landlord
-			await this.notificationsService.notifyRentalCreationFailedInvitation(
-				invitation.room.building.ownerId,
-				{
-					roomName: invitation.room.name,
-					error: rentalCreationError,
-					invitationId: invitation.id,
-				},
-			);
 
 			// Return invitation without rental, with error info
 			return {

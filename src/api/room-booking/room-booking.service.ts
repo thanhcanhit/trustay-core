@@ -2,6 +2,7 @@ import {
 	BadRequestException,
 	ForbiddenException,
 	Injectable,
+	Logger,
 	NotFoundException,
 } from '@nestjs/common';
 import { RequestStatus, UserRole } from '@prisma/client';
@@ -18,6 +19,8 @@ import {
 
 @Injectable()
 export class BookingRequestsService {
+	private readonly logger = new Logger(BookingRequestsService.name);
+
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly notificationsService: NotificationsService,
@@ -105,11 +108,34 @@ export class BookingRequestsService {
 				tenant: true,
 				room: {
 					include: {
-						building: true,
+						building: {
+							include: {
+								owner: true,
+							},
+						},
 					},
 				},
 			},
 		});
+
+		// Notify landlord about new booking request
+		try {
+			const tenantName =
+				`${roomBooking.tenant.firstName || ''} ${roomBooking.tenant.lastName || ''}`.trim() ||
+				roomBooking.tenant.email;
+			await this.notificationsService.notifyBookingRequest(roomBooking.room.building.ownerId, {
+				roomName: roomBooking.room.name,
+				tenantName,
+				bookingId: roomBooking.id,
+				roomId: roomBooking.roomId,
+			});
+		} catch (error) {
+			// Log error but don't fail the booking creation
+			this.logger.error(
+				`Failed to send booking request notification: ${error.message}`,
+				error.stack,
+			);
+		}
 
 		return roomBooking;
 	}
@@ -468,25 +494,39 @@ export class BookingRequestsService {
 		}
 
 		// Gửi notification cho landlord về việc tenant confirm
-		await this.notificationsService.notifyBookingConfirmed(roomBooking.room.building.ownerId, {
-			roomName: roomBooking.room.name,
-			tenantName: `${roomBooking.tenant.firstName} ${roomBooking.tenant.lastName}`,
-			bookingId: roomBooking.id,
-		});
+		try {
+			await this.notificationsService.notifyBookingConfirmed(roomBooking.room.building.ownerId, {
+				roomName: roomBooking.room.name,
+				tenantName: `${roomBooking.tenant.firstName} ${roomBooking.tenant.lastName}`,
+				bookingId: roomBooking.id,
+			});
+		} catch (error) {
+			this.logger.error(
+				`Failed to send booking confirmed notification: ${error.message}`,
+				error.stack,
+			);
+		}
 
 		if (rental) {
 			// SUCCESS: Gửi notification cho cả 2 bên về rental được tạo
-			await this.notificationsService.notifyRentalCreated(tenantId, {
-				roomName: roomBooking.room.name,
-				rentalId: rental.id,
-				startDate: roomBooking.moveInDate.toISOString(),
-			});
+			try {
+				await this.notificationsService.notifyRentalCreated(tenantId, {
+					roomName: roomBooking.room.name,
+					rentalId: rental.id,
+					startDate: roomBooking.moveInDate.toISOString(),
+				});
 
-			await this.notificationsService.notifyRentalCreated(roomBooking.room.building.ownerId, {
-				roomName: roomBooking.room.name,
-				rentalId: rental.id,
-				startDate: roomBooking.moveInDate.toISOString(),
-			});
+				await this.notificationsService.notifyRentalCreated(roomBooking.room.building.ownerId, {
+					roomName: roomBooking.room.name,
+					rentalId: rental.id,
+					startDate: roomBooking.moveInDate.toISOString(),
+				});
+			} catch (error) {
+				this.logger.error(
+					`Failed to send rental created notification: ${error.message}`,
+					error.stack,
+				);
+			}
 
 			// Return booking với rental info
 			return {
@@ -495,23 +535,29 @@ export class BookingRequestsService {
 			};
 		} else {
 			// FAILED: Thông báo cho cả 2 bên về lỗi
-
-			// Notify tenant
-			await this.notificationsService.notifyRentalCreationFailed(tenantId, {
-				roomName: roomBooking.room.name,
-				error: rentalCreationError,
-				bookingId: roomBooking.id,
-			});
-
-			// Notify landlord
-			await this.notificationsService.notifyRentalCreationFailed(
-				roomBooking.room.building.ownerId,
-				{
+			try {
+				// Notify tenant
+				await this.notificationsService.notifyRentalCreationFailed(tenantId, {
 					roomName: roomBooking.room.name,
 					error: rentalCreationError,
 					bookingId: roomBooking.id,
-				},
-			);
+				});
+
+				// Notify landlord
+				await this.notificationsService.notifyRentalCreationFailed(
+					roomBooking.room.building.ownerId,
+					{
+						roomName: roomBooking.room.name,
+						error: rentalCreationError,
+						bookingId: roomBooking.id,
+					},
+				);
+			} catch (error) {
+				this.logger.error(
+					`Failed to send rental creation failed notification: ${error.message}`,
+					error.stack,
+				);
+			}
 
 			// Return booking without rental, with error info
 			return {
