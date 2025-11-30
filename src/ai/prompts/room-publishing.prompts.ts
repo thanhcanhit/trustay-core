@@ -36,6 +36,97 @@ export function buildUtilitySuggestionPrompt(): string {
 	return '💡 Mẹo: Tin đăng có chi tiết giá điện, nước và tiện ích (Wifi, máy lạnh...) thường được thuê nhanh hơn 30%. Bạn có muốn bổ sung không?';
 }
 
+/**
+ * Build a natural, conversational prompt to ask for missing essential information
+ * Strategy: Ask in a friendly, human-like way, combining all missing info in one question
+ * @deprecated Use buildConversationalResponsePrompt instead for AI-generated responses
+ */
+export function buildNaturalMissingInfoPrompt(
+	missingFields: RoomPublishingFieldRequirement[],
+): string {
+	const needsLocation = missingFields.some((f) => f.key === 'building.location');
+	const needsPrice = missingFields.some((f) => f.key === 'room.pricing.basePriceMonthly');
+	const needsBoth = needsLocation && needsPrice;
+	if (needsBoth) {
+		return `Phòng mình ở quận mấy vậy bạn? À cho mình xin giá thuê mỗi tháng luôn để khách dễ hình dung nhé!`;
+	}
+	if (needsLocation) {
+		return `Phòng mình ở quận/huyện nào vậy bạn?`;
+	}
+	if (needsPrice) {
+		return `Giá thuê mỗi tháng là bao nhiêu vậy bạn?`;
+	}
+	// Fallback for other missing fields
+	const fieldLabels = missingFields.map((f) => f.label).join(', ');
+	return `Mình cần thêm thông tin về ${fieldLabels} để hoàn tất đăng phòng cho bạn.`;
+}
+
+/**
+ * Tạo prompt để LLM đóng vai trợ lý, tự sinh câu hỏi tiếp theo dựa trên ngữ cảnh
+ * Thay thế hoàn toàn các logic if/else cứng nhắc.
+ * Strategy: AI-Native conversation generation
+ */
+export function buildConversationalResponsePrompt(params: RoomPublishingExtractionParams): string {
+	const { userMessage, currentDraft, missingFields, userName = 'bạn' } = params;
+
+	// 1. Tóm tắt trạng thái hiện tại cho AI hiểu
+	const contextSummary = JSON.stringify(
+		{
+			user_just_said: userMessage,
+			we_have: {
+				location:
+					currentDraft.building.locationHint || currentDraft.building.name ? 'Đã có' : 'Chưa có',
+				price: currentDraft.room.pricing.basePriceMonthly ? 'Đã có' : 'Chưa có',
+				room_type: currentDraft.room.roomType || 'Chưa rõ',
+			},
+			missing_info_needed: missingFields.map((f) => ({
+				key: f.key,
+				description: f.description, // VD: "Giá thuê phòng"
+				priority: ['room.pricing.basePriceMonthly', 'building.location'].includes(f.key)
+					? 'HIGH'
+					: 'LOW',
+			})),
+		},
+		null,
+		2,
+	);
+
+	// 2. Prompt tập trung vào kỹ năng giao tiếp (Soft Skills)
+	return `SYSTEM ROLE:
+Bạn là Trustay - Trợ lý ảo hỗ trợ đăng tin phòng trọ thân thiện, nhiệt tình và thông minh.
+Bạn đang nói chuyện với người dùng tên là "${userName}".
+
+CONTEXT & GOAL:
+
+Bạn vừa phân tích tin nhắn của người dùng. Dưới đây là trạng thái hiện tại của hồ sơ:
+
+${contextSummary}
+
+NHIỆM VỤ CỦA BẠN:
+
+Hãy viết câu phản hồi tiếp theo (Response Message) gửi cho người dùng.
+
+NGUYÊN TẮC GIAO TIẾP (QUAN TRỌNG):
+
+1. **Xác nhận thông tin (Acknowledge):** Nếu người dùng vừa cung cấp thông tin gì đó, hãy xác nhận nhẹ nhàng là bạn đã hiểu. (VD: "Dạ, em đã lưu giá phòng là 3 triệu rồi ạ.")
+
+2. **Hỏi thông tin thiếu (Ask Missing Info):** Dựa vào danh sách "missing_info_needed", hãy chọn ra 1-2 thông tin quan trọng nhất (Priority HIGH) để hỏi tiếp.
+   - ĐỪNG hỏi quá 2 câu hỏi cùng lúc (người dùng sẽ bị ngợp).
+   - ĐỪNG hỏi lại những gì đã có ("we_have": "Đã có").
+
+3. **Văn phong tự nhiên (Natural Tone):**
+   - Dùng từ ngữ đời thường, gần gũi của người Việt (dạ, vâng, nhé, ạ, à, ơi).
+   - Tránh văn mẫu kiểu robot ("Vui lòng nhập...", "Bạn hãy cung cấp...").
+
+4. **Xử lý tình huống:**
+   - Nếu thiếu Giá & Địa chỉ (quan trọng nhất): Hãy hỏi khéo léo. (VD: "Phòng mình ở khu vực nào thế ạ? Cho em xin giá thuê luôn để khách dễ tìm nhé!")
+   - Nếu chỉ còn thiếu thông tin phụ (ảnh, mô tả): Hãy gợi ý nhẹ nhàng.
+
+OUTPUT FORMAT:
+
+Chỉ trả về text câu trả lời (string). Không có JSON, không có markdown.`;
+}
+
 export function buildImageSuggestionPrompt(): string {
 	return 'Bạn có thể gửi hình ảnh phòng để mình thêm vào phần hình ảnh của phòng.';
 }

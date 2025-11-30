@@ -1,6 +1,7 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { OptionalJwtAuthGuard } from '../../auth/guards/optional-jwt-auth.guard';
+import { TeachKnowledgeDto } from './dto/teach-knowledge.dto';
 import { KnowledgeService } from './knowledge.service';
 import { SchemaIngestionService } from './schema-ingestion.service';
 
@@ -72,6 +73,28 @@ export class KnowledgeController {
 			message: 'Golden QA saved successfully',
 			chunkId: result.chunkId,
 			sqlQAId: result.sqlQAId,
+		};
+	}
+
+	@Post('teach')
+	@ApiOperation({
+		summary: 'Admin endpoint to teach the AI system with question and SQL pairs',
+		description:
+			'Allows admin to actively teach the system by providing question-SQL pairs. The system will learn from these examples and use them for future queries.',
+	})
+	async teachKnowledge(@Body() dto: TeachKnowledgeDto) {
+		const result = await this.knowledge.saveQAInteraction({
+			question: dto.question,
+			sql: dto.sql,
+			sessionId: dto.sessionId,
+			userId: dto.userId,
+		});
+		return {
+			success: true,
+			message: 'Knowledge taught successfully',
+			chunkId: result.chunkId,
+			sqlQAId: result.sqlQAId,
+			question: dto.question,
 		};
 	}
 }
