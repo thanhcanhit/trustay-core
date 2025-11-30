@@ -380,6 +380,9 @@ export class RoomSeekingPostService {
 			...roomRequestData,
 			moveInDate: this.convertToDate(roomRequestData.moveInDate),
 			expiresAt: this.convertToDate(roomRequestData.expiresAt),
+			// Ensure Decimal fields are not undefined (Prisma requires null or valid value)
+			minBudget: roomRequestData.minBudget != null ? roomRequestData.minBudget : null,
+			maxBudget: roomRequestData.maxBudget,
 		};
 
 		// Tạo room request với amenities
@@ -602,11 +605,16 @@ export class RoomSeekingPostService {
 		}
 
 		// Convert date strings to Date objects
-		const processedUpdateData = {
+		const processedUpdateData: any = {
 			...updateData,
 			moveInDate: this.convertToDate(updateData.moveInDate),
 			expiresAt: this.convertToDate(updateData.expiresAt),
 		};
+		// Ensure Decimal fields are not undefined (Prisma requires null or valid value)
+		if ('minBudget' in processedUpdateData) {
+			processedUpdateData.minBudget =
+				processedUpdateData.minBudget != null ? processedUpdateData.minBudget : null;
+		}
 
 		// Cập nhật room request
 		let updatedRequest: any;
@@ -797,8 +805,9 @@ export class RoomSeekingPostService {
 			preferredDistrictId: roomRequest.preferredDistrictId,
 			preferredWardId: roomRequest.preferredWardId,
 			preferredProvinceId: roomRequest.preferredProvinceId,
-			minBudget: roomRequest.minBudget,
-			maxBudget: roomRequest.maxBudget,
+			minBudget:
+				roomRequest.minBudget != null ? convertDecimalToNumber(roomRequest.minBudget) : undefined,
+			maxBudget: convertDecimalToNumber(roomRequest.maxBudget),
 			currency: roomRequest.currency,
 			preferredRoomType: roomRequest.preferredRoomType,
 			occupancy: roomRequest.occupancy,

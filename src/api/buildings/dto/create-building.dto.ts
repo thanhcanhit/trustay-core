@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
 import {
 	IsBoolean,
 	IsDecimal,
@@ -11,7 +10,6 @@ import {
 	Min,
 	MinLength,
 } from 'class-validator';
-import { convertDecimalToNumber } from '../../../common/utils';
 
 export class CreateBuildingDto {
 	@ApiProperty({
@@ -95,7 +93,6 @@ export class CreateBuildingDto {
 		example: 10.7626,
 	})
 	@IsOptional()
-	@Transform(({ value }) => (value ? convertDecimalToNumber(value) : undefined))
 	@IsDecimal({ decimal_digits: '1,7' })
 	latitude?: number;
 
@@ -104,7 +101,6 @@ export class CreateBuildingDto {
 		example: 106.6834,
 	})
 	@IsOptional()
-	@Transform(({ value }) => (value ? convertDecimalToNumber(value) : undefined))
 	@IsDecimal({ decimal_digits: '1,7' })
 	longitude?: number;
 
