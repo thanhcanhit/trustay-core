@@ -187,26 +187,47 @@ export class BillsService {
 			throw new BadRequestException('Bill already exists for this period');
 		}
 
-		// Update meter readings for metered costs (lưu theo room instance)
-		for (const meterReading of dto.meterReadings) {
-			await (this.prisma as any).roomInstanceMeterReading.upsert({
+		// Validate meter readings: check if roomCostIds exist and belong to this room
+		if (dto.meterReadings && dto.meterReadings.length > 0) {
+			const roomCostIds = dto.meterReadings.map((mr) => mr.roomCostId);
+			const validRoomCosts = await this.prisma.roomCost.findMany({
 				where: {
-					roomInstanceId_roomCostId: {
-						roomInstanceId: roomInstance.id,
-						roomCostId: meterReading.roomCostId,
-					},
-				},
-				update: {
-					meterReading: meterReading.currentReading,
-					lastMeterReading: meterReading.lastReading,
-				},
-				create: {
-					roomInstanceId: roomInstance.id,
-					roomCostId: meterReading.roomCostId,
-					meterReading: meterReading.currentReading,
-					lastMeterReading: meterReading.lastReading,
+					id: { in: roomCostIds },
+					roomId: roomInstance.room.id,
+					isActive: true,
 				},
 			});
+
+			const validRoomCostIds = new Set(validRoomCosts.map((rc) => rc.id));
+			const invalidRoomCostIds = roomCostIds.filter((id) => !validRoomCostIds.has(id));
+
+			if (invalidRoomCostIds.length > 0) {
+				throw new BadRequestException(
+					`Invalid roomCostIds: ${invalidRoomCostIds.join(', ')}. These costs do not exist or do not belong to this room.`,
+				);
+			}
+
+			// Update meter readings for metered costs (lưu theo room instance)
+			for (const meterReading of dto.meterReadings) {
+				await (this.prisma as any).roomInstanceMeterReading.upsert({
+					where: {
+						roomInstanceId_roomCostId: {
+							roomInstanceId: roomInstance.id,
+							roomCostId: meterReading.roomCostId,
+						},
+					},
+					update: {
+						meterReading: meterReading.currentReading,
+						lastMeterReading: meterReading.lastReading,
+					},
+					create: {
+						roomInstanceId: roomInstance.id,
+						roomCostId: meterReading.roomCostId,
+						meterReading: meterReading.currentReading,
+						lastMeterReading: meterReading.lastReading,
+					},
+				});
+			}
 		}
 
 		// Get updated room costs
@@ -838,26 +859,47 @@ export class BillsService {
 			throw new BadRequestException('Cannot update paid bills');
 		}
 
-		// Update meter readings for metered costs (lưu theo room instance)
-		for (const meterData of dto.meterData) {
-			await (this.prisma as any).roomInstanceMeterReading.upsert({
+		// Validate meter data: check if roomCostIds exist and belong to this room
+		if (dto.meterData && dto.meterData.length > 0) {
+			const roomCostIds = dto.meterData.map((md) => md.roomCostId);
+			const validRoomCosts = await this.prisma.roomCost.findMany({
 				where: {
-					roomInstanceId_roomCostId: {
-						roomInstanceId: bill.roomInstanceId,
-						roomCostId: meterData.roomCostId,
-					},
-				},
-				update: {
-					meterReading: meterData.currentReading,
-					lastMeterReading: meterData.lastReading,
-				},
-				create: {
-					roomInstanceId: bill.roomInstanceId,
-					roomCostId: meterData.roomCostId,
-					meterReading: meterData.currentReading,
-					lastMeterReading: meterData.lastReading,
+					id: { in: roomCostIds },
+					roomId: bill.rental.roomInstance.room.id,
+					isActive: true,
 				},
 			});
+
+			const validRoomCostIds = new Set(validRoomCosts.map((rc) => rc.id));
+			const invalidRoomCostIds = roomCostIds.filter((id) => !validRoomCostIds.has(id));
+
+			if (invalidRoomCostIds.length > 0) {
+				throw new BadRequestException(
+					`Invalid roomCostIds: ${invalidRoomCostIds.join(', ')}. These costs do not exist or do not belong to this room.`,
+				);
+			}
+
+			// Update meter readings for metered costs (lưu theo room instance)
+			for (const meterData of dto.meterData) {
+				await (this.prisma as any).roomInstanceMeterReading.upsert({
+					where: {
+						roomInstanceId_roomCostId: {
+							roomInstanceId: bill.roomInstanceId,
+							roomCostId: meterData.roomCostId,
+						},
+					},
+					update: {
+						meterReading: meterData.currentReading,
+						lastMeterReading: meterData.lastReading,
+					},
+					create: {
+						roomInstanceId: bill.roomInstanceId,
+						roomCostId: meterData.roomCostId,
+						meterReading: meterData.currentReading,
+						lastMeterReading: meterData.lastReading,
+					},
+				});
+			}
 		}
 
 		// Get updated room costs
@@ -1349,26 +1391,47 @@ export class BillsService {
 			throw new BadRequestException('Cannot update paid bills');
 		}
 
-		// Update meter readings in room costs (lưu theo room instance)
-		for (const meter of meterData) {
-			await (this.prisma as any).roomInstanceMeterReading.upsert({
+		// Validate meter data: check if roomCostIds exist and belong to this room
+		if (meterData && meterData.length > 0) {
+			const roomCostIds = meterData.map((md) => md.roomCostId);
+			const validRoomCosts = await this.prisma.roomCost.findMany({
 				where: {
-					roomInstanceId_roomCostId: {
-						roomInstanceId: bill.roomInstanceId,
-						roomCostId: meter.roomCostId,
-					},
-				},
-				update: {
-					meterReading: meter.currentReading,
-					lastMeterReading: meter.lastReading,
-				},
-				create: {
-					roomInstanceId: bill.roomInstanceId,
-					roomCostId: meter.roomCostId,
-					meterReading: meter.currentReading,
-					lastMeterReading: meter.lastReading,
+					id: { in: roomCostIds },
+					roomId: bill.roomInstance.room.id,
+					isActive: true,
 				},
 			});
+
+			const validRoomCostIds = new Set(validRoomCosts.map((rc) => rc.id));
+			const invalidRoomCostIds = roomCostIds.filter((id) => !validRoomCostIds.has(id));
+
+			if (invalidRoomCostIds.length > 0) {
+				throw new BadRequestException(
+					`Invalid roomCostIds: ${invalidRoomCostIds.join(', ')}. These costs do not exist or do not belong to this room.`,
+				);
+			}
+
+			// Update meter readings in room costs (lưu theo room instance)
+			for (const meter of meterData) {
+				await (this.prisma as any).roomInstanceMeterReading.upsert({
+					where: {
+						roomInstanceId_roomCostId: {
+							roomInstanceId: bill.roomInstanceId,
+							roomCostId: meter.roomCostId,
+						},
+					},
+					update: {
+						meterReading: meter.currentReading,
+						lastMeterReading: meter.lastReading,
+					},
+					create: {
+						roomInstanceId: bill.roomInstanceId,
+						roomCostId: meter.roomCostId,
+						meterReading: meter.currentReading,
+						lastMeterReading: meter.lastReading,
+					},
+				});
+			}
 		}
 
 		// Recalculate bill items with updated meter data
