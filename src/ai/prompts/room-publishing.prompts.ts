@@ -70,16 +70,56 @@ export function buildConversationalResponsePrompt(params: RoomPublishingExtracti
 	const { userMessage, currentDraft, missingFields, userName = 'bạn' } = params;
 
 	// 1. Tóm tắt trạng thái hiện tại cho AI hiểu
+	// QUAN TRỌNG: Location chỉ coi là "Đã có" khi có districtId VÀ provinceId, không phải chỉ locationHint
+	const hasLocationResolved = !!(
+		currentDraft.building.districtId && currentDraft.building.provinceId
+	);
+	const hasLocationHint = !!(currentDraft.building.locationHint || currentDraft.building.name);
+	const locationLookupFailed = currentDraft.building.locationLookupFailed === true;
+	const locationHintText = currentDraft.building.locationHint || currentDraft.building.name || '';
+
+	// Xác định status location một cách chi tiết để AI hiểu rõ tình huống
+	let locationStatus: string;
+	if (hasLocationResolved) {
+		locationStatus = 'Đã có (đã xác định quận/huyện và tỉnh/thành)';
+	} else if (locationLookupFailed && hasLocationHint) {
+		locationStatus = `Đã có text nhưng không tìm được ID (địa chỉ: "${locationHintText}") - Cần xử lý thông minh`;
+	} else if (hasLocationHint) {
+		locationStatus = 'Đang xử lý (đã có địa chỉ nhưng chưa xác định quận/huyện)';
+	} else {
+		locationStatus = 'Chưa có';
+	}
+
+	// Filter out location field nếu đã có locationHint (đang được xử lý)
+	// QUAN TRỌNG: Nếu đã có text địa chỉ (locationHint) dù chưa có ID, vẫn coi như đã có
+	const filteredMissingFields = missingFields.filter((f) => {
+		// Nếu hệ thống báo thiếu Location, nhưng trong draft đã có text "Quận..." -> Bỏ qua, không hỏi nữa
+		if (f.key === 'building.location' && hasLocationHint && locationHintText.length > 3) {
+			// Đã có locationHint (text) → đang được xử lý để map sang ID, không hỏi lại
+			return false;
+		}
+		// Nếu hệ thống báo thiếu Giá, nhưng draft đã có số > 0 -> Bỏ qua
+		if (
+			f.key === 'room.pricing.basePriceMonthly' &&
+			currentDraft.room.pricing.basePriceMonthly &&
+			currentDraft.room.pricing.basePriceMonthly > 0
+		) {
+			return false;
+		}
+		return true;
+	});
+
 	const contextSummary = JSON.stringify(
 		{
 			user_just_said: userMessage,
 			we_have: {
-				location:
-					currentDraft.building.locationHint || currentDraft.building.name ? 'Đã có' : 'Chưa có',
+				location: locationStatus,
+				location_hint_text: locationHintText || null,
+				location_lookup_failed: locationLookupFailed,
 				price: currentDraft.room.pricing.basePriceMonthly ? 'Đã có' : 'Chưa có',
 				room_type: currentDraft.room.roomType || 'Chưa rõ',
 			},
-			missing_info_needed: missingFields.map((f) => ({
+			missing_info_needed: filteredMissingFields.map((f) => ({
 				key: f.key,
 				description: f.description, // VD: "Giá thuê phòng"
 				priority: ['room.pricing.basePriceMonthly', 'building.location'].includes(f.key)
@@ -113,12 +153,23 @@ NGUYÊN TẮC GIAO TIẾP (QUAN TRỌNG):
 2. **Hỏi thông tin thiếu (Ask Missing Info):** Dựa vào danh sách "missing_info_needed", hãy chọn ra 1-2 thông tin quan trọng nhất (Priority HIGH) để hỏi tiếp.
    - ĐỪNG hỏi quá 2 câu hỏi cùng lúc (người dùng sẽ bị ngợp).
    - ĐỪNG hỏi lại những gì đã có ("we_have": "Đã có").
+   - ĐỪNG hỏi lại location nếu status là "Đang xử lý" (đã có địa chỉ, đang được xử lý tự động).
 
 3. **Văn phong tự nhiên (Natural Tone):**
    - Dùng từ ngữ đời thường, gần gũi của người Việt (dạ, vâng, nhé, ạ, à, ơi).
    - Tránh văn mẫu kiểu robot ("Vui lòng nhập...", "Bạn hãy cung cấp...").
 
-4. **Xử lý tình huống:**
+4. **Xử lý tình huống đặc biệt - Location lookup failed (QUAN TRỌNG):**
+   - Nếu \`location_lookup_failed: true\` và có \`location_hint_text\`:
+     * **KHÔNG hỏi lại địa chỉ** (user đã cung cấp rồi)
+     * **Xác nhận địa chỉ** user đã cung cấp một cách tự nhiên (VD: "Dạ, em đã lưu địa chỉ [location_hint_text] rồi ạ")
+     * **Đưa ra giải pháp thông minh:**
+       - Nếu địa chỉ có vẻ hợp lý (có tên Quận/Huyện): "Địa chỉ này có thể chưa có trong hệ thống, nhưng không sao, mình sẽ lưu tạm và admin sẽ xử lý sau. Bây giờ mình cần thêm..."
+       - Nếu địa chỉ mơ hồ: "Địa chỉ này hơi mơ hồ, bạn có thể cho mình biết rõ hơn Quận/Huyện và Tỉnh/Thành được không?"
+     * **Tiếp tục hỏi các thông tin còn thiếu** (giá, loại phòng, etc.) một cách tự nhiên
+     * **Tạo cảm giác tích cực** - không để user cảm thấy lỗi do họ
+
+5. **Xử lý tình huống thông thường:**
    - Nếu thiếu Giá & Địa chỉ (quan trọng nhất): Hãy hỏi khéo léo. (VD: "Phòng mình ở khu vực nào thế ạ? Cho em xin giá thuê luôn để khách dễ tìm nhé!")
    - Nếu chỉ còn thiếu thông tin phụ (ảnh, mô tả): Hãy gợi ý nhẹ nhàng.
 
@@ -154,6 +205,7 @@ export interface RoomPublishingExtractionParams {
 			locationHint?: string;
 			districtId?: number;
 			provinceId?: number;
+			locationLookupFailed?: boolean;
 		};
 		room: {
 			name?: string;
@@ -274,25 +326,54 @@ PROCESSING LOGIC (SUY LUẬN THÔNG MINH):
 
 Dù người dùng nói ngắn gọn, bạn phải hiểu sâu các ý sau để điền JSON chính xác:
 
-1. **Phân loại phòng (Room Type Logic):**
+1. **CHIẾN THUẬT BẮT ĐỊA CHỈ (QUAN TRỌNG NHẤT):**
+   - **Ưu tiên 1 (Metadata):** Tìm dòng bắt đầu bằng "Địa chỉ:", "Vị trí & bản đồ", "Location:", "Địa chỉ cụ thể:".
+     - Ví dụ text: "Vị trí & bản đồ\n Địa chỉ: 33a Đường Ngô Quyền..." -> LẤY NGAY "33a Đường Ngô Quyền..." làm \`building.location\`.
+     - Đây là địa chỉ chính xác nhất, bỏ qua các địa chỉ chi nhánh khác trong bài viết.
+   - **Ưu tiên 2 (Body):** Nếu không có metadata, mới tìm trong nội dung bài viết.
+   - **Lưu ý:** Nếu bài viết liệt kê nhiều cơ sở (Cơ sở 1, Cơ sở 2...), hãy lấy địa chỉ của cơ sở được nhắc đến trong phần "Địa chỉ:" hoặc cơ sở đầu tiên.
+   - **TUYỆT ĐỐI KHÔNG TRẢ VỀ NULL** nếu trong text có xuất hiện tên Quận/Huyện. Thà trả về string thô còn hơn là null.
+
+   - **CHUẨN HÓA ĐỊA CHỈ (BẮT BUỘC TRƯỚC KHI TRẢ VỀ):**
+     * **Quận/Huyện:** "Q9", "Q.9", "Q 9", "quận 9" -> CHUẨN HÓA thành "Quận 9"
+     * **Thành phố:** "HCM", "TP.HCM", "TP HCM", "Hồ Chí Minh" -> CHUẨN HÓA thành "Hồ Chí Minh" hoặc "Thành phố Hồ Chí Minh"
+     * **Tỉnh:** "Bình Dương", "BD" -> CHUẨN HÓA thành "Tỉnh Bình Dương" (nếu là tỉnh)
+     * **Quy tắc:**
+       - Luôn viết hoa chữ cái đầu: "Quận", "Huyện", "Thành phố", "Tỉnh"
+       - Số quận/huyện: "Q1" -> "Quận 1", "Q12" -> "Quận 12"
+       - Tên quận/huyện: "Gò Vấp" -> "Quận Gò Vấp" (nếu là quận), "Củ Chi" -> "Huyện Củ Chi" (nếu là huyện)
+     * **Ví dụ chuẩn hóa:**
+       - Input: "Q9, HCM" -> Output: "Quận 9, Hồ Chí Minh"
+       - Input: "Gò Vấp TP.HCM" -> Output: "Quận Gò Vấp, Thành phố Hồ Chí Minh"
+       - Input: "33a Ngô Quyền, Q.9, HCM" -> Output: "33a Đường Ngô Quyền, Quận 9, Hồ Chí Minh"
+       - Input: "Quận 9, Hồ Chí Minh" -> Output: "Quận 9, Hồ Chí Minh" (giữ nguyên nếu đã chuẩn)
+
+2. **XỬ LÝ GIÁ THUÊ (PHỨC TẠP):**
+   - Bài viết có thể có giá theo tuần (600k/tuần) và theo tháng (1.75 triệu/tháng).
+   - Logic: Luôn ưu tiên **GIÁ THEO THÁNG** làm \`basePriceMonthly\`.
+   - Tìm cụm từ: "tháng", "/tháng", "30 ngày", "mỗi tháng".
+   - Ví dụ: "1.75 triệu/tháng" -> \`basePriceMonthly\` = 1750000.
+   - Các giá theo tuần/ngày -> Bỏ qua hoặc đưa vào \`description\`.
+
+3. **Phân loại phòng (Room Type Logic):**
    - User nói: "chung cư mini", "ccmn", "căn hộ" -> Output: "apartment"
    - User nói: "giường tầng", "homestay", "sleepbox" -> Output: "dormitory" hoặc "sleepbox"
    - User nói: "nguyên căn" -> Output: "whole_house"
    - Mặc định: "boarding_house"
 
-2. **Chuẩn hóa Giá & Đơn vị (Unit Normalization):**
+4. **Chuẩn hóa Giá & Đơn vị (Unit Normalization):**
    - Luôn đổi về VNĐ số nguyên (Ví dụ: "3 triệu 5" -> 3500000).
    - Xử lý nhập nhằng số liệu (Ambiguity Handling):
      - Nếu context là giá điện/nước: "3 nghìn", "3k", "số 3" -> 3000.
      - Nếu context là giá phòng: "3", "3 đồng" (cách nói tắt) -> 3000000.
    - Hiểu các đơn vị lóng: "củ" = triệu, "lít" = trăm nghìn, "k" = nghìn.
 
-3. **Tự động điền thiếu (Smart Autofill):**
+5. **Tự động điền thiếu (Smart Autofill):**
    - Nếu thiếu tên tòa nhà: Tự tạo chuỗi "Trọ + [Tên chủ/Khu vực]".
    - Nếu thiếu mô tả (description): Tự viết 1 đoạn HTML ngắn (<ul><li>) liệt kê các tiện ích và giá đã trích xuất được.
    - Nếu user nói "Full đồ": Tự động map vào các amenity IDs của Giường, Tủ, Điều hòa trong <SystemReference>.
 
-4. **Mapping Chi phí (Cost Mapping):**
+6. **Mapping Chi phí (Cost Mapping):**
    - So khớp từ khóa user với "names" trong <SystemReference>.
    - User nói "điện giá dân", "nước nhà nước" -> costType: "metered" (theo công tơ), unit: "per_kwh" / "per_m3".
    - User nói "bao điện nước", "miễn phí wifi" -> Tạo cost với value = 0 hoặc includedInRent = true.

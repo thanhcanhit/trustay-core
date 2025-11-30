@@ -444,6 +444,7 @@ export class AiService {
 						);
 
 						// Ưu tiên districts (vì thường có district + province)
+						// Nếu không tìm được, lấy item đầu tiên (fallback)
 						if (searchResult.results.districts.length > 0) {
 							const district = searchResult.results.districts[0];
 							data = [
@@ -460,6 +461,7 @@ export class AiService {
 								`[TOOL CALL] LOOKUP_LOCATION - Selected district: ${district.name} (id=${district.id})`,
 							);
 						} else if (searchResult.results.provinces.length > 0) {
+							// Fallback: Lấy province đầu tiên nếu không có district
 							const province = searchResult.results.provinces[0];
 							data = [
 								{
@@ -470,7 +472,13 @@ export class AiService {
 							];
 							this.logInfo(
 								'ROOM_FLOW',
-								`[TOOL CALL] LOOKUP_LOCATION - Selected province: ${province.name} (id=${province.id})`,
+								`[TOOL CALL] LOOKUP_LOCATION - Selected province (fallback): ${province.name} (id=${province.id})`,
+							);
+						} else {
+							// Không tìm được gì cả - sẽ được xử lý bởi applyLocationResults (set locationLookupFailed = true)
+							this.logInfo(
+								'ROOM_FLOW',
+								`[TOOL CALL] LOOKUP_LOCATION - No results found for "${action.params.locationQuery}"`,
 							);
 						}
 					}

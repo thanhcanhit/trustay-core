@@ -151,8 +151,19 @@ export function listMissingBuildingFields(
 	if (!building.name) {
 		missing.push(BUILDING_REQUIREMENTS[0]);
 	}
+	// Nếu đã có locationHint (text) nhưng lookup failed, vẫn cho phép tiếp tục (không bắt buộc ID)
+	// Chỉ báo thiếu location nếu không có cả text và ID
 	if (!building.districtId || !building.provinceId) {
-		missing.push(BUILDING_REQUIREMENTS[1]);
+		// Nếu đã có locationHint và lookup đã fail → cho phép tạo với text, không bắt buộc ID
+		if (building.locationHint && building.locationLookupFailed) {
+			// Có text nhưng lookup fail → không bắt buộc ID, có thể tạo với text
+			return missing;
+		}
+		// Nếu chưa có locationHint → bắt buộc phải có
+		if (!building.locationHint) {
+			missing.push(BUILDING_REQUIREMENTS[1]);
+		}
+		// Nếu có locationHint nhưng chưa lookup fail (đang pending) → không hỏi lại
 	}
 	return missing;
 }

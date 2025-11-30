@@ -19,6 +19,7 @@ export interface BuildingDraftState {
 	locationHint?: string;
 	locationResolved?: LocationResolutionResult;
 	locationCacheKey?: string;
+	locationLookupFailed?: boolean; // Flag để biết lookup location đã fail
 	notes?: string;
 	isExisting?: boolean;
 	candidates?: BuildingCandidate[];
