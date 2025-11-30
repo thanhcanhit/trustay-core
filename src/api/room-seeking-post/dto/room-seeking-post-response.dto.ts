@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AmenityCategory, RoomType, SearchPostStatus } from '@prisma/client';
+import { Transform } from 'class-transformer';
 import { PersonPublicView } from '../../../common/serialization/person.view';
+import { convertDecimalToNumber } from '../../../common/utils';
 
 export class RoomRoomSeekingPostDto {
 	@ApiProperty({ description: 'ID của bài đăng' })

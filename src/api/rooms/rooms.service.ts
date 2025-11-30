@@ -1993,6 +1993,26 @@ export class RoomsService {
 				];
 			} else {
 				const textCondition = { contains: search, mode: 'insensitive' as const };
+				// Split search term into words for full name search
+				const searchWords = search.trim().split(/\s+/).filter(Boolean);
+				const tenantSearchConditions: any[] = [
+					{ firstName: textCondition },
+					{ lastName: textCondition },
+					{ email: textCondition },
+					{ phone: textCondition },
+				];
+				// If search term has multiple words, try to match full name
+				// Example: "Nguyen Van A" -> firstName contains "Nguyen" AND lastName contains "Van A"
+				if (searchWords.length >= 2) {
+					const firstWord = searchWords[0];
+					const remainingWords = searchWords.slice(1).join(' ');
+					tenantSearchConditions.push({
+						AND: [
+							{ firstName: { contains: firstWord, mode: 'insensitive' } },
+							{ lastName: { contains: remainingWords, mode: 'insensitive' } },
+						],
+					});
+				}
 				where.OR = [
 					{ roomNumber: textCondition },
 					{ notes: textCondition },
@@ -2017,12 +2037,7 @@ export class RoomsService {
 							some: {
 								status: { in: ['active', 'pending_renewal'] },
 								tenant: {
-									OR: [
-										{ firstName: textCondition },
-										{ lastName: textCondition },
-										{ email: textCondition },
-										{ phone: textCondition },
-									],
+									OR: tenantSearchConditions,
 								},
 							},
 						},

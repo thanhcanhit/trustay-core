@@ -100,15 +100,23 @@ export class RoommateSeekingPostService {
 		// Calculate remaining slots
 		const remainingSlots = createDto.seekingCount;
 
+		// Prepare data ensuring Decimal fields are not undefined (Prisma requires null or valid value)
+		const postData = {
+			...createDto,
+			slug,
+			tenantId,
+			remainingSlots,
+			availableFromDate: new Date(createDto.availableFromDate),
+			expiresAt: createDto.expiresAt ? new Date(createDto.expiresAt) : undefined,
+			// Ensure Decimal fields are properly set
+			monthlyRent: createDto.monthlyRent,
+			depositAmount: createDto.depositAmount,
+			utilityCostPerPerson:
+				createDto.utilityCostPerPerson != null ? createDto.utilityCostPerPerson : null,
+		};
+
 		const post = await this.prisma.roommateSeekingPost.create({
-			data: {
-				...createDto,
-				slug,
-				tenantId,
-				remainingSlots,
-				availableFromDate: new Date(createDto.availableFromDate),
-				expiresAt: createDto.expiresAt ? new Date(createDto.expiresAt) : undefined,
-			},
+			data: postData,
 			include: this.getIncludeOptions(),
 		});
 
@@ -218,16 +226,30 @@ export class RoommateSeekingPostService {
 			remainingSlots = Math.max(0, post.remainingSlots + changeInSeeking);
 		}
 
+		// Prepare update data ensuring Decimal fields are not undefined
+		const updateData: any = {
+			...updateDto,
+			remainingSlots,
+			availableFromDate: updateDto.availableFromDate
+				? new Date(updateDto.availableFromDate)
+				: undefined,
+			expiresAt: updateDto.expiresAt ? new Date(updateDto.expiresAt) : undefined,
+		};
+		// Ensure Decimal fields are properly set (null instead of undefined)
+		if ('monthlyRent' in updateData) {
+			updateData.monthlyRent = updateData.monthlyRent != null ? updateData.monthlyRent : null;
+		}
+		if ('depositAmount' in updateData) {
+			updateData.depositAmount = updateData.depositAmount != null ? updateData.depositAmount : null;
+		}
+		if ('utilityCostPerPerson' in updateData) {
+			updateData.utilityCostPerPerson =
+				updateData.utilityCostPerPerson != null ? updateData.utilityCostPerPerson : null;
+		}
+
 		const updatedPost = await this.prisma.roommateSeekingPost.update({
 			where: { id },
-			data: {
-				...updateDto,
-				remainingSlots,
-				availableFromDate: updateDto.availableFromDate
-					? new Date(updateDto.availableFromDate)
-					: undefined,
-				expiresAt: updateDto.expiresAt ? new Date(updateDto.expiresAt) : undefined,
-			},
+			data: updateData,
 			include: this.getIncludeOptions(),
 		});
 

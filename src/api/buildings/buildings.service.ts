@@ -75,8 +75,8 @@ export class BuildingsService {
 				districtId: createBuildingDto.districtId,
 				provinceId: createBuildingDto.provinceId,
 				country: createBuildingDto.country || 'Vietnam',
-				latitude: createBuildingDto.latitude,
-				longitude: createBuildingDto.longitude,
+				latitude: createBuildingDto.latitude != null ? createBuildingDto.latitude : null,
+				longitude: createBuildingDto.longitude != null ? createBuildingDto.longitude : null,
 				isActive: createBuildingDto.isActive ?? true,
 			},
 			include: {
@@ -240,12 +240,20 @@ export class BuildingsService {
 		}
 
 		// Update building
+		const updateData: any = {
+			...(newSlug !== existingBuilding.slug && { slug: newSlug }),
+			...updateBuildingDto,
+		};
+		// Ensure Decimal fields are not undefined (Prisma requires null or valid value)
+		if ('latitude' in updateData) {
+			updateData.latitude = updateData.latitude != null ? updateData.latitude : null;
+		}
+		if ('longitude' in updateData) {
+			updateData.longitude = updateData.longitude != null ? updateData.longitude : null;
+		}
 		const building = await this.prisma.building.update({
 			where: { id: buildingId },
-			data: {
-				...(newSlug !== existingBuilding.slug && { slug: newSlug }),
-				...updateBuildingDto,
-			},
+			data: updateData,
 			include: {
 				owner: {
 					select: {

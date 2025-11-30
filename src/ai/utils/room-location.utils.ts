@@ -22,6 +22,59 @@ export function normalizeText(value: string): string {
 		.toLowerCase();
 }
 
+/**
+ * Chuẩn hóa địa chỉ từ các format viết tắt sang format chuẩn
+ * Ví dụ: "Q9, HCM" -> "Quận 9, Hồ Chí Minh"
+ * Mục đích: Tăng tỷ lệ tìm được ID khi lookup
+ */
+export function normalizeLocationText(locationText: string): string {
+	if (!locationText || locationText.trim().length === 0) {
+		return locationText;
+	}
+
+	let normalized = locationText.trim();
+
+	// Chuẩn hóa Quận/Huyện: Q1, Q.1, Q 1, q1 -> Quận 1
+	normalized = normalized.replace(/\b[Qq]\.?\s*(\d+)\b/g, (_match, num) => {
+		return `Quận ${num}`;
+	});
+
+	// Chuẩn hóa HCM, TP.HCM, TP HCM -> Hồ Chí Minh hoặc Thành phố Hồ Chí Minh
+	normalized = normalized.replace(/\b(TP\.?\s*)?HCM\b/gi, 'Hồ Chí Minh');
+
+	// Chuẩn hóa các thành phố phổ biến
+	const cityMappings: Record<string, string> = {
+		HN: 'Hà Nội',
+		DN: 'Đà Nẵng',
+		CT: 'Cần Thơ',
+		HP: 'Hải Phòng',
+		BD: 'Bình Dương',
+		KH: 'Khánh Hòa',
+		LA: 'Long An',
+		AG: 'An Giang',
+		'BR-VT': 'Bà Rịa - Vũng Tàu',
+		BRVT: 'Bà Rịa - Vũng Tàu',
+	};
+
+	for (const [abbrev, fullName] of Object.entries(cityMappings)) {
+		const regex = new RegExp(`\\b${abbrev}\\b`, 'gi');
+		normalized = normalized.replace(regex, fullName);
+	}
+
+	// Chuẩn hóa viết hoa chữ cái đầu cho các từ khóa địa chỉ
+	normalized = normalized.replace(/\b(quận|huyện|thành phố|tỉnh|phường|xã)\s+/gi, (match) => {
+		return `${match.charAt(0).toUpperCase()}${match.slice(1).toLowerCase()} `;
+	});
+
+	// Chuẩn hóa "Đường" nếu thiếu
+	normalized = normalized.replace(/\b(đ|đường)\s+([A-Z][a-zàáảãạâăêôơưđ]+)/gi, 'Đường $2');
+
+	// Loại bỏ khoảng trắng thừa
+	normalized = normalized.replace(/\s+/g, ' ').trim();
+
+	return normalized;
+}
+
 export function extractLocationHints(freeformText: string): {
 	districtKeyword?: string;
 	provinceKeyword?: string;

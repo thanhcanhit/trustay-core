@@ -24,6 +24,7 @@ import {
 } from '../types/room-publishing.types';
 import {
 	mapBuildingCandidates,
+	normalizeLocationText,
 	normalizeText,
 	resolveLocationFromRow,
 } from '../utils/room-location.utils';
@@ -249,6 +250,20 @@ export class RoomPublishingService {
 			return `Đang xử lý thông tin...`;
 		}
 
+		// Xử lý trường hợp location lookup failed nhưng vẫn có locationHint
+		if (
+			draft.building.locationLookupFailed &&
+			draft.building.locationHint &&
+			!draft.building.districtId &&
+			!draft.building.provinceId
+		) {
+			// Lookup failed nhưng có text → cho phép tiếp tục với text, không hỏi lại
+			this.logger.debug(
+				`[PROMPT_GEN] Location lookup failed but has locationHint - allowing continuation with text`,
+			);
+			// Không hỏi lại location, chỉ hỏi các thông tin còn thiếu khác
+		}
+
 		// Fallback: Nếu không có missing fields và không có execution plan, có thể đang trong quá trình xử lý
 		// Note: Conversational response sẽ được generate bởi generateConversationalResponseAsync
 		return `Đang xử lý thông tin phòng trọ của bạn...`;
@@ -301,6 +316,7 @@ export class RoomPublishingService {
 						locationHint: draft.building.locationHint,
 						districtId: draft.building.districtId,
 						provinceId: draft.building.provinceId,
+						locationLookupFailed: draft.building.locationLookupFailed,
 					},
 					room: {
 						name: draft.room.name,
@@ -412,19 +428,35 @@ export class RoomPublishingService {
 				}
 				break;
 			case 'building.location': {
+				// QUAN TRỌNG: Chỉ lookup khi KHÔNG có buildingId (nếu có buildingId thì đã có địa chỉ rồi)
+				if (draft.building.id) {
+					// Đã có buildingId → không cần lookup, chỉ lưu locationHint để hiển thị
+					if (trimmed) {
+						draft.building.locationHint = trimmed;
+						parsed = true;
+					}
+					break;
+				}
 				if (this.shouldSkipLocationLookup(draft, trimmed)) {
 					parsed = true;
 					break;
 				}
 				if (trimmed) {
-					draft.building.locationHint = trimmed;
+					// Chuẩn hóa địa chỉ trước khi lookup (Q9 -> Quận 9, HCM -> Hồ Chí Minh)
+					const normalizedLocation = normalizeLocationText(trimmed);
+					draft.building.locationHint = normalizedLocation;
+					this.logger.debug(`[LOCATION] Normalized location`, {
+						original: trimmed,
+						normalized: normalizedLocation,
+						hasBuildingId: !!draft.building.id,
+					});
 					actions.push({
 						type: 'LOOKUP_LOCATION',
 						params: {
-							locationQuery: trimmed,
+							locationQuery: normalizedLocation, // Dùng text đã chuẩn hóa để lookup
 						},
-						description: `Resolve location for "${trimmed}"`,
-						cacheKey: normalizeText(trimmed),
+						description: `Resolve location for "${normalizedLocation}"`,
+						cacheKey: normalizeText(normalizedLocation),
 					});
 					parsed = true;
 				}
@@ -691,21 +723,30 @@ export class RoomPublishingService {
 					}
 				}
 				// Cập nhật location nếu có trong extracted và chưa được resolve
+				// QUAN TRỌNG: Chỉ lookup khi KHÔNG có buildingId (nếu có buildingId thì đã có địa chỉ rồi)
 				if (
 					extracted.building.location !== null &&
 					extracted.building.location !== undefined &&
+					!draft.building.id && // Chỉ lookup khi không có buildingId
 					!draft.building.districtId &&
 					!draft.building.provinceId
 				) {
 					if (!this.shouldSkipLocationLookup(draft, extracted.building.location)) {
-						draft.building.locationHint = extracted.building.location;
+						// Chuẩn hóa địa chỉ trước khi lookup (Q9 -> Quận 9, HCM -> Hồ Chí Minh)
+						const normalizedLocation = normalizeLocationText(extracted.building.location);
+						draft.building.locationHint = normalizedLocation;
+						this.logger.debug(`[LOCATION] Normalized location from extraction`, {
+							original: extracted.building.location,
+							normalized: normalizedLocation,
+							hasBuildingId: !!draft.building.id,
+						});
 						actions.push({
 							type: 'LOOKUP_LOCATION',
 							params: {
-								locationQuery: extracted.building.location,
+								locationQuery: normalizedLocation, // Dùng text đã chuẩn hóa để lookup
 							},
-							description: `Resolve location for "${extracted.building.location}"`,
-							cacheKey: normalizeText(extracted.building.location),
+							description: `Resolve location for "${normalizedLocation}"`,
+							cacheKey: normalizeText(normalizedLocation),
 						});
 					}
 				}
@@ -1069,11 +1110,52 @@ export class RoomPublishingService {
 		const hasPendingActions = actions.length > 0;
 		const executionPlan = buildExecutionPlan(draft);
 
+		// Filter missing fields: Nếu đã có locationHint (text) dù chưa có districtId/provinceId (ID),
+		// thì KHÔNG hỏi lại location (đang được xử lý để map text -> ID)
+		// QUAN TRỌNG: Đây là chốt chặn để tránh vòng lặp vô tận
+		const hasLocationLookupPending = actions.some((a) => a.type === 'LOOKUP_LOCATION');
+		const hasLocationHint = !!(draft.building.locationHint || draft.building.name);
+		const locationHintText = draft.building.locationHint || draft.building.name || '';
+		const hasLocationResolved = !!(draft.building.districtId && draft.building.provinceId);
+		const locationLookupFailed = draft.building.locationLookupFailed === true;
+		const filteredMissingFields = allMissingFields.filter((f) => {
+			// Nếu hệ thống báo thiếu Location, nhưng trong draft đã có text "Quận..." -> Bỏ qua, không hỏi nữa
+			if (f.key === 'building.location' && hasLocationHint && locationHintText.length > 3) {
+				// Đã có locationHint (text) → đang được xử lý để map sang ID, không hỏi lại
+				// TRỪ KHI lookup đã fail → cần hỏi user xác nhận lại hoặc cho phép tạo với text
+				if (locationLookupFailed && !hasLocationResolved) {
+					// Lookup đã fail, nhưng vẫn có locationHint → có thể cho phép tạo với text hoặc hỏi xác nhận
+					this.logger.debug(
+						`[PROMPT_GEN] Location lookup failed but has locationHint - will allow creation with text or ask confirmation`,
+					);
+					// Không filter out → sẽ hỏi user xác nhận hoặc cho phép tiếp tục
+					return true;
+				}
+				this.logger.debug(
+					`[PROMPT_GEN] Filtering out location field - already has locationHint: "${locationHintText.substring(0, 50)}"`,
+				);
+				return false;
+			}
+			// Nếu hệ thống báo thiếu Giá, nhưng draft đã có số > 0 -> Bỏ qua
+			if (
+				f.key === 'room.pricing.basePriceMonthly' &&
+				draft.room.pricing.basePriceMonthly &&
+				draft.room.pricing.basePriceMonthly > 0
+			) {
+				this.logger.debug(
+					`[PROMPT_GEN] Filtering out price field - already has basePriceMonthly: ${draft.room.pricing.basePriceMonthly}`,
+				);
+				return false;
+			}
+			return true;
+		});
+
 		// Generate prompt: Use AI-Native conversational response if we have user message and missing fields
+		// QUAN TRỌNG: Nếu location lookup failed, vẫn dùng AI để đưa ra giải pháp hợp lý
 		let prompt: string;
 		const shouldUseAI =
 			userMessage &&
-			allMissingFields.length > 0 &&
+			(filteredMissingFields.length > 0 || locationLookupFailed) && // Cho phép AI xử lý khi lookup failed
 			!executionPlan &&
 			!hasPendingActions &&
 			missingField?.key !== 'building.selection';
@@ -1082,18 +1164,27 @@ export class RoomPublishingService {
 			shouldUseAI,
 			hasUserMessage: !!userMessage,
 			missingFieldsCount: allMissingFields.length,
+			filteredMissingFieldsCount: filteredMissingFields.length,
 			hasExecutionPlan: !!executionPlan,
 			hasPendingActions,
+			hasLocationLookupPending,
+			hasLocationHint,
+			hasLocationResolved,
+			locationLookupFailed,
 			missingFieldKey: missingField?.key,
 		});
 
 		if (shouldUseAI) {
 			// Use LLM to generate natural conversational response
 			this.logger.debug(`[PROMPT_GEN] Using AI-Native conversational response generation`);
+			// Nếu location lookup failed, vẫn truyền missingFields gốc để AI biết context đầy đủ
+			const fieldsForAI = locationLookupFailed
+				? allMissingFields // Cho AI biết đầy đủ context khi lookup failed
+				: filteredMissingFields;
 			const aiResponse = await this.generateConversationalResponseAsync(
 				draft,
 				userMessage,
-				allMissingFields,
+				fieldsForAI,
 				userId,
 			);
 			if (aiResponse) {
@@ -1105,12 +1196,12 @@ export class RoomPublishingService {
 			} else {
 				// Fallback to default prompt if AI generation fails
 				this.logger.warn(`[PROMPT_GEN] AI generation failed, falling back to default prompt`);
-				prompt = this.composePrompt(draft, missingField, allMissingFields, hasPendingActions);
+				prompt = this.composePrompt(draft, missingField, filteredMissingFields, hasPendingActions);
 			}
 		} else {
 			// Use default prompt for special cases (execution plan, building selection, pending actions)
 			this.logger.debug(`[PROMPT_GEN] Using default prompt (special case)`);
-			prompt = this.composePrompt(draft, missingField, allMissingFields, hasPendingActions);
+			prompt = this.composePrompt(draft, missingField, filteredMissingFields, hasPendingActions);
 		}
 
 		draft.pendingConfirmation = missingField?.key;
@@ -1205,15 +1296,32 @@ export class RoomPublishingService {
 		action: RoomPublishingAction,
 	): void {
 		if (!rows.length) {
+			// LOOKUP_LOCATION failed - không tìm được ID
 			draft.building.locationResolved = undefined;
+			this.logger.warn(
+				`[LOCATION_LOOKUP] Failed to resolve location for "${action.params?.locationQuery || 'unknown'}"`,
+				{
+					locationHint: draft.building.locationHint,
+					actionType: action.type,
+				},
+			);
+			// Lưu flag để biết lookup đã fail (để có thể hỏi user xác nhận lại hoặc cho phép tạo với text)
+			draft.building.locationLookupFailed = true;
 			return;
 		}
+		// LOOKUP_LOCATION success
 		const resolved = resolveLocationFromRow(rows[0]);
 		draft.building.districtId = resolved.districtId ?? draft.building.districtId;
 		draft.building.provinceId = resolved.provinceId ?? draft.building.provinceId;
 		draft.building.wardId = resolved.wardId ?? draft.building.wardId;
 		draft.building.locationResolved = resolved;
 		draft.building.locationCacheKey = action.cacheKey;
+		draft.building.locationLookupFailed = false;
+		this.logger.debug(`[LOCATION_LOOKUP] Successfully resolved location`, {
+			districtId: resolved.districtId,
+			provinceId: resolved.provinceId,
+			locationHint: draft.building.locationHint,
+		});
 	}
 
 	private applyBuildingCandidates(
