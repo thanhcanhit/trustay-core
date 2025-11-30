@@ -33,6 +33,28 @@ export class ContractsNewService {
 			throw new ForbiddenException('You are not authorized to create this contract');
 		}
 
+		const startDate = new Date(dto.startDate);
+		if (!(startDate instanceof Date) || !Number.isFinite(startDate.getTime())) {
+			throw new BadRequestException('Invalid startDate format. Expected YYYY-MM-DD format.');
+		}
+
+		// Validate and normalize endDate - default to 1 year from startDate if not provided
+		let endDate: Date;
+		if (dto.endDate && dto.endDate.trim() !== '') {
+			endDate = new Date(dto.endDate);
+			if (!(endDate instanceof Date) || !Number.isFinite(endDate.getTime())) {
+				throw new BadRequestException('Invalid endDate format. Expected YYYY-MM-DD format.');
+			}
+			// Validate endDate must be after startDate
+			if (endDate <= startDate) {
+				throw new BadRequestException('endDate must be after startDate');
+			}
+		} else {
+			// Default to 1 year from startDate
+			endDate = new Date(startDate);
+			endDate.setFullYear(endDate.getFullYear() + 1);
+		}
+
 		// Verify roomInstance exists
 		const roomInstance = await this.prisma.roomInstance.findUnique({
 			where: { id: dto.roomInstanceId },
@@ -98,8 +120,8 @@ export class ContractsNewService {
 				contractType: dto.contractType || 'monthly_rental',
 				status: ContractStatus.draft,
 				contractData: dto.contractData as any,
-				startDate: new Date(dto.startDate),
-				endDate: dto.endDate ? new Date(dto.endDate) : null,
+				startDate,
+				endDate,
 				legalMetadata: {
 					createdBy: userId,
 					ipAddress: 'unknown',
@@ -191,6 +213,7 @@ export class ContractsNewService {
 		};
 
 		// Tạo contract
+		// Nếu rental.contractEndDate là null, sẽ được default thành 1 năm trong createContract
 		return this.createContract(
 			{
 				rentalId: rental.id,
@@ -199,7 +222,7 @@ export class ContractsNewService {
 				roomInstanceId: rental.roomInstanceId,
 				contractType: 'monthly_rental',
 				startDate: rental.contractStartDate.toISOString(),
-				endDate: rental.contractEndDate?.toISOString(),
+				endDate: rental.contractEndDate?.toISOString() || undefined,
 				contractData,
 			},
 			userId,

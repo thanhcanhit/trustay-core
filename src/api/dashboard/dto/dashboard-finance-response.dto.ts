@@ -18,6 +18,9 @@ class RevenueSnapshotDto {
 
 	@ApiProperty({ example: 3000000 })
 	readonly outstandingAmount: number;
+
+	@ApiProperty({ example: 50000000, description: 'Số dư tài khoản hiện tại' })
+	readonly accountBalance: number;
 }
 
 class BillAlertItemDto {

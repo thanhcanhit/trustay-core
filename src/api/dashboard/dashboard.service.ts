@@ -82,6 +82,7 @@ interface RevenueSnapshot {
 	totalBilled: number;
 	totalPaid: number;
 	outstandingAmount: number;
+	accountBalance: number;
 }
 
 interface BillAlertSummary {
@@ -605,7 +606,7 @@ export class DashboardService {
 			paymentDate: { gte: reference.start, lte: reference.end },
 			rental: this.buildRentalWhere(landlordId, buildingId),
 		};
-		const [billAggregate, paymentAggregate] = await Promise.all([
+		const [billAggregate, paymentAggregate, landlord] = await Promise.all([
 			this.prisma.bill.aggregate({
 				where: billWhere,
 				_sum: { totalAmount: true },
@@ -614,13 +615,19 @@ export class DashboardService {
 				where: paymentWhere,
 				_sum: { amount: true },
 			}),
+			this.prisma.user.findUnique({
+				where: { id: landlordId },
+				select: { balance: true },
+			}),
 		]);
 		const totalBilled = this.toNumber(billAggregate._sum.totalAmount);
 		const totalPaid = this.toNumber(paymentAggregate._sum.amount);
+		const accountBalance = this.toNumber(landlord?.balance);
 		return {
 			totalBilled,
 			totalPaid,
 			outstandingAmount: Number((totalBilled - totalPaid).toFixed(2)),
+			accountBalance,
 		};
 	}
 
