@@ -73,7 +73,7 @@ export class CreateContractDto {
 		example: '2026-01-01',
 	})
 	@IsOptional()
-	@IsDateString()
+	@IsDateString({}, { message: 'endDate must be a valid date string in format YYYY-MM-DD' })
 	endDate?: string;
 
 	@ApiProperty({ type: ContractDataDto, description: 'Dữ liệu hợp đồng (JSON)' })
