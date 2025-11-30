@@ -1,5 +1,5 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { OptionalJwtAuthGuard } from '../../auth/guards/optional-jwt-auth.guard';
 import { TeachKnowledgeDto } from './dto/teach-knowledge.dto';
 import { KnowledgeService } from './knowledge.service';
@@ -78,9 +78,36 @@ export class KnowledgeController {
 
 	@Post('teach')
 	@ApiOperation({
-		summary: 'Admin endpoint to teach the AI system with question and SQL pairs',
-		description:
-			'Allows admin to actively teach the system by providing question-SQL pairs. The system will learn from these examples and use them for future queries.',
+		summary: 'Dạy hệ thống AI với cặp câu hỏi và SQL',
+		description: `API cho phép admin chủ động dạy hệ thống AI bằng cách nạp các cặp câu hỏi và SQL tương ứng.
+		
+**Cách sử dụng:**
+1. Nhập câu hỏi bằng tiếng Việt mà người dùng có thể hỏi
+2. Nhập câu lệnh SQL tương ứng (PostgreSQL syntax)
+3. Hệ thống sẽ lưu vào vector store để học và sử dụng cho các truy vấn tương tự sau này
+
+**Lưu ý:**
+- SQL phải sử dụng đúng cú pháp PostgreSQL
+- Câu hỏi nên rõ ràng, mô tả đúng ý định của SQL
+- Hệ thống sẽ tự động phát hiện và bỏ qua các cặp Q&A trùng lặp`,
+	})
+	@ApiResponse({
+		status: HttpStatus.CREATED,
+		description: 'Dạy thành công',
+		schema: {
+			type: 'object',
+			properties: {
+				success: { type: 'boolean', example: true },
+				message: { type: 'string', example: 'Knowledge taught successfully' },
+				chunkId: { type: 'number', example: 12345, description: 'ID của chunk trong vector store' },
+				sqlQAId: { type: 'number', example: 67890, description: 'ID của SQL QA entry' },
+				question: { type: 'string', example: 'Tìm tất cả các phòng có giá dưới 5 triệu ở quận 1' },
+			},
+		},
+	})
+	@ApiResponse({
+		status: HttpStatus.BAD_REQUEST,
+		description: 'Dữ liệu đầu vào không hợp lệ',
 	})
 	async teachKnowledge(@Body() dto: TeachKnowledgeDto) {
 		const result = await this.knowledge.saveQAInteraction({
