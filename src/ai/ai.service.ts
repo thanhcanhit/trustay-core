@@ -486,7 +486,7 @@ export class AiService {
 						'ROOM_FLOW',
 						`[TOOL CALL] roomPublishingService.applyActionResult(action=${action.type})`,
 					);
-					stepResult = this.roomPublishingService.applyActionResult(
+					stepResult = await this.roomPublishingService.applyActionResult(
 						session,
 						action,
 						normalizedRows,

@@ -7,6 +7,7 @@ import { ReferenceService } from '../../api/reference/reference.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
 	buildBuildingSelectionPrompt,
+	buildConversationalResponsePrompt,
 	buildImageSuggestionPrompt,
 	buildRoomPublishingExtractionPrompt,
 	parseAIJsonResult,
@@ -90,6 +91,17 @@ export class RoomPublishingService {
 		images?: string[],
 		buildingId?: string,
 	): Promise<RoomPublishingStepResult> {
+		const startTime = Date.now();
+		this.logger.log(`[ROOM_PUBLISH] Handling user message`, {
+			userMessage: userMessage.substring(0, 100),
+			messageLength: userMessage.length,
+			hasImages: !!(images && images.length > 0),
+			imagesCount: images?.length || 0,
+			buildingId,
+			sessionId: session.sessionId,
+			userId: session.userId,
+		});
+
 		const draft = this.ensureDraft(session);
 		// Nếu có buildingId từ frontend (có thể là UUID hoặc slug), lookup để lấy UUID thực sự và địa chỉ
 		if (buildingId) {
@@ -149,20 +161,45 @@ export class RoomPublishingService {
 			}));
 		}
 		// Parse tất cả thông tin từ message ngay lập tức
+		this.logger.debug(`[ROOM_PUBLISH] Starting field extraction and parsing`);
 		const actions = await this.applyAnswer(draft, userMessage, session.userId);
+		this.logger.debug(`[ROOM_PUBLISH] Field extraction completed`, {
+			actionsCount: actions.length,
+			actionTypes: actions.map((a) => a.type),
+		});
+
 		// Áp dụng defaults và cập nhật stage
 		applyRoomDefaults(draft.room);
 		determineNextStage(draft);
 		markSqlReadiness(draft);
 		markExecutionReadiness(draft);
-		return this.composeStepResult(session, draft, actions);
+
+		this.logger.debug(`[ROOM_PUBLISH] Composing step result`);
+		const result = await this.composeStepResult(
+			session,
+			draft,
+			actions,
+			userMessage,
+			session.userId,
+		);
+
+		const totalDuration = Date.now() - startTime;
+		this.logger.log(`[ROOM_PUBLISH] User message handling completed`, {
+			totalDuration: `${totalDuration}ms`,
+			status: result.status,
+			stage: result.stage,
+			hasExecutionPlan: !!result.executionPlan,
+			hasActions: !!(result.actions && result.actions.length > 0),
+		});
+
+		return result;
 	}
 
-	applyActionResult(
+	async applyActionResult(
 		session: ChatSession,
 		action: RoomPublishingAction,
 		rows: Array<Record<string, unknown>>,
-	): RoomPublishingStepResult {
+	): Promise<RoomPublishingStepResult> {
 		const draft = this.ensureDraft(session);
 		switch (action.type) {
 			case 'LOOKUP_LOCATION':
@@ -174,7 +211,7 @@ export class RoomPublishingService {
 			default:
 				break;
 		}
-		return this.composeStepResult(session, draft, []);
+		return this.composeStepResult(session, draft, [], undefined, session.userId);
 	}
 
 	private composePrompt(
@@ -212,48 +249,119 @@ export class RoomPublishingService {
 			return `Đang xử lý thông tin...`;
 		}
 
-		// CHỈ hỏi những field thật sự cần thiết: giá cả, vị trí (chỉ khi không có buildingId)
-		const essentialFields = (allMissingFields || []).filter((field) => {
-			if (
-				field.key === 'room.pricing.basePriceMonthly' ||
-				field.key === 'building.location' // Chỉ hỏi location nếu không có buildingId
-			) {
-				switch (field.key) {
-					case 'building.location':
-						return !draft.building.id && (!draft.building.districtId || !draft.building.provinceId);
-					case 'room.pricing.basePriceMonthly':
-						return !draft.room.pricing.basePriceMonthly;
-					default:
-						return true;
-				}
-			}
-			return false;
+		// Fallback: Nếu không có missing fields và không có execution plan, có thể đang trong quá trình xử lý
+		// Note: Conversational response sẽ được generate bởi generateConversationalResponseAsync
+		return `Đang xử lý thông tin phòng trọ của bạn...`;
+	}
+
+	/**
+	 * Generate conversational response using LLM (AI-Native approach)
+	 * Replaces hardcoded if-else logic with intelligent conversation generation
+	 */
+	private async generateConversationalResponseAsync(
+		draft: RoomPublishingDraft,
+		userMessage: string,
+		allMissingFields: RoomPublishingFieldRequirement[],
+		userId?: string,
+	): Promise<string | null> {
+		const startTime = Date.now();
+		this.logger.debug(`[CONVERSATION_GEN] Starting AI conversational response generation`, {
+			userMessage: userMessage.substring(0, 100),
+			missingFieldsCount: allMissingFields.length,
+			missingFields: allMissingFields.map((f) => f.key),
+			userId,
 		});
 
-		// Nếu thiếu thông tin, hỏi TẤT CẢ trong 1 lần duy nhất (câu hỏi đầu tiên về thông tin phòng trọ)
-		if (essentialFields.length > 0) {
-			const missingInfo: string[] = [];
-			if (essentialFields.some((f) => f.key === 'building.location')) {
-				missingInfo.push('địa điểm (quận/huyện và tỉnh/thành)');
+		try {
+			// Lấy tên người dùng
+			let userName: string | undefined;
+			if (userId) {
+				try {
+					const user = await this.prisma.user.findUnique({
+						where: { id: userId },
+						select: { firstName: true, lastName: true },
+					});
+					if (user) {
+						userName = [user.firstName, user.lastName].filter(Boolean).join(' ') || undefined;
+						this.logger.debug(`[CONVERSATION_GEN] Fetched user name: ${userName}`);
+					}
+				} catch (error) {
+					this.logger.warn(
+						'[CONVERSATION_GEN] Failed to fetch user name for conversational response',
+						error,
+					);
+				}
 			}
-			if (essentialFields.some((f) => f.key === 'room.pricing.basePriceMonthly')) {
-				missingInfo.push('giá thuê mỗi tháng');
-			}
 
-			return `Mình cần thêm ${missingInfo.join(' và ')} để hoàn tất đăng phòng cho bạn.\n\nBạn có thể trả lời đơn giản như:\n- "Gò Vấp Hồ Chí Minh, 2 triệu"\n- "Quận 1 TP.HCM, phòng 2.5 triệu"\n- "2 triệu, ở Gò Vấp"`;
+			const conversationalPrompt = buildConversationalResponsePrompt({
+				userMessage,
+				currentDraft: {
+					building: {
+						name: draft.building.name,
+						locationHint: draft.building.locationHint,
+						districtId: draft.building.districtId,
+						provinceId: draft.building.provinceId,
+					},
+					room: {
+						name: draft.room.name,
+						roomType: draft.room.roomType,
+						totalRooms: draft.room.totalRooms,
+						pricing: {
+							basePriceMonthly: draft.room.pricing.basePriceMonthly,
+							depositAmount: draft.room.pricing.depositAmount,
+						},
+						costs: draft.room.costs.map((c) => ({
+							costType: c.costType,
+							value: c.value,
+							unit: c.unit,
+						})),
+					},
+				},
+				missingFields: allMissingFields.map((f) => ({
+					key: f.key,
+					label: f.label,
+					description: f.description,
+				})),
+				userName,
+			});
+
+			this.logger.debug(`[CONVERSATION_GEN] Calling LLM for conversational response`, {
+				model: this.AI_CONFIG.model,
+				temperature: 0.7,
+				maxTokens: 500,
+			});
+
+			const llmStartTime = Date.now();
+			const { text } = await generateText({
+				model: google(this.AI_CONFIG.model),
+				prompt: conversationalPrompt,
+				temperature: 0.7, // Slightly higher temperature for more natural conversation
+				maxOutputTokens: 500, // Shorter response for conversation
+			});
+			const llmDuration = Date.now() - llmStartTime;
+
+			const response = text.trim();
+			const totalDuration = Date.now() - startTime;
+
+			this.logger.log(`[CONVERSATION_GEN] Successfully generated conversational response`, {
+				duration: `${totalDuration}ms`,
+				llmDuration: `${llmDuration}ms`,
+				responseLength: response.length,
+				responsePreview: response.substring(0, 150),
+			});
+
+			return response;
+		} catch (error) {
+			const duration = Date.now() - startTime;
+			this.logger.warn(
+				`[CONVERSATION_GEN] Failed to generate conversational response, falling back to default`,
+				{
+					error: error instanceof Error ? error.message : String(error),
+					duration: `${duration}ms`,
+				},
+			);
+			return null;
 		}
-
-		// Nếu không thiếu field bắt buộc nhưng chưa có execution plan và không có actions
-		// Có thể là do thiếu thông tin không bắt buộc hoặc đang trong quá trình xử lý
-		// Trả về message rõ ràng hơn
-		if (allMissingFields && allMissingFields.length > 0) {
-			// Có missing fields nhưng không phải essential -> có thể là optional fields
-			const missingLabels = allMissingFields.map((f) => f.label).join(', ');
-			return `Mình đã nhận được thông tin của bạn. Để hoàn tất, bạn có thể cung cấp thêm: ${missingLabels}.`;
-		}
-
-		// Fallback: Nếu không có missing fields và không có execution plan, có thể đang trong quá trình xử lý
-		return `Đang xử lý thông tin phòng trọ của bạn...`;
 	}
 
 	private async applyAnswer(
@@ -380,11 +488,23 @@ export class RoomPublishingService {
 		userId?: string,
 		actions: RoomPublishingAction[] = [],
 	): Promise<void> {
+		const startTime = Date.now();
+		this.logger.debug(`[EXTRACTION] Starting field extraction from user message`, {
+			messageLength: message.length,
+			messagePreview: message.substring(0, 100),
+		});
+
 		try {
 			const missingFields = getAllMissingFields(draft);
 			if (missingFields.length === 0) {
+				this.logger.debug(`[EXTRACTION] No missing fields, skipping extraction`);
 				return;
 			}
+
+			this.logger.debug(`[EXTRACTION] Missing fields detected`, {
+				count: missingFields.length,
+				fields: missingFields.map((f) => f.key),
+			});
 
 			// Lấy tên người dùng để tạo tên building nếu cần
 			let userName: string | undefined;
@@ -553,6 +673,7 @@ export class RoomPublishingService {
 			// LLM có thể không trả về tất cả fields, nên ta chỉ cập nhật những gì có trong extracted
 
 			// Apply extracted building information
+			this.logger.debug(`[EXTRACTION] Applying extracted data to draft`);
 			if (extracted.building) {
 				// Cập nhật tên tòa nhà nếu có trong extracted (kể cả khi đã có trong draft)
 				if (extracted.building.name !== null && extracted.building.name !== undefined) {
@@ -898,8 +1019,24 @@ export class RoomPublishingService {
 					}
 				}
 			}
+
+			const totalDuration = Date.now() - startTime;
+			this.logger.log(`[EXTRACTION] Field extraction completed successfully`, {
+				totalDuration: `${totalDuration}ms`,
+				extractedFields: {
+					building: extracted.building ? Object.keys(extracted.building).length : 0,
+					room: extracted.room ? Object.keys(extracted.room).length : 0,
+					costs: extracted.room?.costs?.length || 0,
+					amenities: extracted.room?.amenities?.length || 0,
+					rules: extracted.room?.rules?.length || 0,
+				},
+			});
 		} catch (error) {
-			this.logger.warn('Failed to parse fields using LLM', error);
+			const duration = Date.now() - startTime;
+			this.logger.warn(`[EXTRACTION] Failed to parse fields using LLM`, {
+				error: error instanceof Error ? error.message : String(error),
+				duration: `${duration}ms`,
+			});
 		}
 	}
 
@@ -916,11 +1053,13 @@ export class RoomPublishingService {
 		return Number.parseInt(digits, 10);
 	}
 
-	private composeStepResult(
+	private async composeStepResult(
 		session: ChatSession,
 		draft: RoomPublishingDraft,
 		actions: RoomPublishingAction[] = [],
-	): RoomPublishingStepResult {
+		userMessage?: string,
+		userId?: string,
+	): Promise<RoomPublishingStepResult> {
 		applyRoomDefaults(draft.room);
 		markSqlReadiness(draft);
 		markExecutionReadiness(draft);
@@ -928,11 +1067,55 @@ export class RoomPublishingService {
 		const missingField = getNextMandatoryQuestion(draft);
 		const allMissingFields = getAllMissingFields(draft);
 		const hasPendingActions = actions.length > 0;
-		const prompt = this.composePrompt(draft, missingField, allMissingFields, hasPendingActions);
+		const executionPlan = buildExecutionPlan(draft);
+
+		// Generate prompt: Use AI-Native conversational response if we have user message and missing fields
+		let prompt: string;
+		const shouldUseAI =
+			userMessage &&
+			allMissingFields.length > 0 &&
+			!executionPlan &&
+			!hasPendingActions &&
+			missingField?.key !== 'building.selection';
+
+		this.logger.debug(`[PROMPT_GEN] Determining prompt generation strategy`, {
+			shouldUseAI,
+			hasUserMessage: !!userMessage,
+			missingFieldsCount: allMissingFields.length,
+			hasExecutionPlan: !!executionPlan,
+			hasPendingActions,
+			missingFieldKey: missingField?.key,
+		});
+
+		if (shouldUseAI) {
+			// Use LLM to generate natural conversational response
+			this.logger.debug(`[PROMPT_GEN] Using AI-Native conversational response generation`);
+			const aiResponse = await this.generateConversationalResponseAsync(
+				draft,
+				userMessage,
+				allMissingFields,
+				userId,
+			);
+			if (aiResponse) {
+				prompt = aiResponse;
+				this.logger.debug(`[PROMPT_GEN] Using AI-generated prompt`, {
+					promptLength: prompt.length,
+					promptPreview: prompt.substring(0, 100),
+				});
+			} else {
+				// Fallback to default prompt if AI generation fails
+				this.logger.warn(`[PROMPT_GEN] AI generation failed, falling back to default prompt`);
+				prompt = this.composePrompt(draft, missingField, allMissingFields, hasPendingActions);
+			}
+		} else {
+			// Use default prompt for special cases (execution plan, building selection, pending actions)
+			this.logger.debug(`[PROMPT_GEN] Using default prompt (special case)`);
+			prompt = this.composePrompt(draft, missingField, allMissingFields, hasPendingActions);
+		}
+
 		draft.pendingConfirmation = missingField?.key;
 		draft.lastActions = actions;
 		session.context = { activeFlow: 'room-publishing', roomPublishing: draft };
-		const executionPlan = buildExecutionPlan(draft);
 
 		// Xác định status rõ ràng:
 		// 1. Nếu có execution plan -> READY_TO_CREATE
@@ -943,7 +1126,7 @@ export class RoomPublishingService {
 			? RoomPublishingStatus.READY_TO_CREATE
 			: RoomPublishingStatus.NEED_MORE_INFO;
 
-		return {
+		const result: RoomPublishingStepResult = {
 			stage: draft.stage,
 			status,
 			prompt,
@@ -952,6 +1135,20 @@ export class RoomPublishingService {
 			actions: actions.length > 0 ? actions : undefined,
 			executionPlan: executionPlan || undefined,
 		};
+
+		this.logger.log(`[STEP_RESULT] Composed step result`, {
+			stage: result.stage,
+			status: result.status,
+			promptLength: result.prompt.length,
+			promptPreview: result.prompt.substring(0, 100),
+			hasMissingField: !!result.missingField,
+			missingFieldKey: result.missingField?.key,
+			hasActions: !!(result.actions && result.actions.length > 0),
+			actionsCount: result.actions?.length || 0,
+			hasExecutionPlan: !!result.executionPlan,
+		});
+
+		return result;
 	}
 
 	private shouldSkipLocationLookup(draft: RoomPublishingDraft, locationInput: string): boolean {
