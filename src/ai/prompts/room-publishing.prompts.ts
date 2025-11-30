@@ -106,8 +106,8 @@ export interface RoomPublishingExtractionParams {
 }
 
 /**
- * Build prompt for LLM to extract information from user message and auto-generate missing fields
- * Strategy: Only ask for essential info (price, location, images), auto-generate the rest
+ * Build prompt for LLM to extract information with Reasoning Capabilities
+ * Strategy: Chain-of-Thought analysis -> Semantic Mapping -> JSON Construction
  */
 export function buildRoomPublishingExtractionPrompt(
 	params: RoomPublishingExtractionParams,
@@ -121,7 +121,7 @@ export function buildRoomPublishingExtractionPrompt(
 		systemRules = [],
 	} = params;
 
-	// Serialize data để tiết kiệm token và dễ đọc hơn cho LLM
+	// Serialize data reference
 	const contextData = JSON.stringify(
 		{
 			current_building: {
@@ -139,7 +139,6 @@ export function buildRoomPublishingExtractionPrompt(
 			},
 			defaults: {
 				userName: userName || 'Chủ nhà',
-				roomType: 'boarding_house',
 				currency: 'VND',
 			},
 		},
@@ -149,164 +148,150 @@ export function buildRoomPublishingExtractionPrompt(
 
 	const referenceData = JSON.stringify(
 		{
-			valid_cost_types: systemCostTypes.map((c) => ({
+			cost_types: systemCostTypes.map((c) => ({
 				id: c.id,
 				names: [c.name],
 				category: c.category,
 				default_unit: c.defaultUnit,
 			})),
-			valid_amenities: systemAmenities.map((a) => ({
+			amenities: systemAmenities.map((a) => ({
 				id: a.id,
 				name: a.name,
-				category: a.category,
 			})),
-			valid_rules: systemRules.map((r) => ({
+			rules: systemRules.map((r) => ({
 				id: r.id,
 				name: r.name,
-				category: r.category,
 			})),
 		},
 		null,
 		2,
 	);
 
-	return `Bạn là AI Assistant chuyên trích xuất thông tin đăng phòng trọ.
-Nhiệm vụ: Phân tích tin nhắn người dùng, kết hợp với dữ liệu hiện có để tạo ra JSON cập nhật.
+	return `SYSTEM ROLE:
+Bạn là một "Data Extraction Engine" thông minh. Nhiệm vụ của bạn là chuyển đổi ngôn ngữ tự nhiên thành JSON cấu trúc.
+KHÔNG được trả lời bằng văn bản. KHÔNG giải thích. CHỈ trả về JSON.
 
-### INPUT DATA
+CONTEXT DATA:
 
-<user_message>
-"${userMessage}"
-</user_message>
+<UserMessage>${userMessage}</UserMessage>
 
-<current_state>
-${contextData}
-</current_state>
+<CurrentState>${contextData}</CurrentState>
 
-<reference_system_data>
-${referenceData}
-</reference_system_data>
+<SystemReference>${referenceData}</SystemReference>
 
-### HƯỚNG DẪN XỬ LÝ (PROCESSING RULES)
+PROCESSING LOGIC (SUY LUẬN THÔNG MINH):
 
-1. **Nguyên tắc trích xuất:**
-   - Ưu tiên thông tin mới nhất từ <user_message>.
-   - Nếu <user_message> không có, giữ nguyên thông tin từ <current_state>.
-   - Nếu cả hai đều không có, sử dụng logic "Tự động tạo" (Autofill) dưới đây.
+Dù người dùng nói ngắn gọn, bạn phải hiểu sâu các ý sau để điền JSON chính xác:
 
-2. **Autofill & Defaults (Chỉ khi thiếu thông tin):**
-   - \`room.roomType\`: Mặc định là "boarding_house".
-   - \`room.totalRooms\`: Mặc định là 1.
-   - \`building.name\`: Tự tạo theo format "Trọ + [Địa điểm] + [Tên chủ]" hoặc "Nhà trọ + [Địa điểm] - [Tên chủ]".
-   - \`room.name\`: Tự tạo theo format "Phòng trọ + [Mã/Tên Building]".
-   - \`room.description\`: Tự viết một đoạn HTML ngắn (200-300 từ) quảng cáo phòng dựa trên các thông tin đã có (giá, địa điểm, tiện ích). Dùng thẻ <h3>, <p>, <ul>, <li>, <strong>, <em>.
-   - \`room.pricing.depositAmount\`: Nếu không có, mặc định = \`basePriceMonthly\`.
-   - Các trường khác: maxOccupancy=2, floorNumber=1, depositMonths=1, minimumStayMonths=1, priceNegotiable=false, utilityIncluded=false.
+1. **Phân loại phòng (Room Type Logic):**
+   - User nói: "chung cư mini", "ccmn", "căn hộ" -> Output: "apartment"
+   - User nói: "giường tầng", "homestay", "sleepbox" -> Output: "dormitory" hoặc "sleepbox"
+   - User nói: "nguyên căn" -> Output: "whole_house"
+   - Mặc định: "boarding_house"
 
-3. **Xử lý Tiền tệ & Đơn vị:**
-   - Mọi số tiền phải quy đổi về VNĐ (số nguyên). Ví dụ: "3 triệu" -> 3000000, "500k" -> 500000, "2.5 triệu" -> 2500000.
-   - Các đơn vị (k, tr, củ, nghìn) phải được hiểu đúng theo văn nói tiếng Việt.
-   - LƯU Ý: PHẢI trả về số VNĐ đầy đủ, KHÔNG trả về số nhỏ (ví dụ: "5 triệu" phải là 5000000, KHÔNG phải 5).
+2. **Chuẩn hóa Giá & Đơn vị (Unit Normalization):**
+   - Luôn đổi về VNĐ số nguyên (Ví dụ: "3 triệu 5" -> 3500000).
+   - Xử lý nhập nhằng số liệu (Ambiguity Handling):
+     - Nếu context là giá điện/nước: "3 nghìn", "3k", "số 3" -> 3000.
+     - Nếu context là giá phòng: "3", "3 đồng" (cách nói tắt) -> 3000000.
+   - Hiểu các đơn vị lóng: "củ" = triệu, "lít" = trăm nghìn, "k" = nghìn.
 
-4. **Mapping Logic (Quan trọng):**
-   - **Costs:** Dựa vào <reference_system_data>. Tìm cost type có tên gần đúng nhất với input (fuzzy matching).
-     - *Lưu ý về costType và unit:*
-       - Nếu user nói "điện 3k", "điện 3.5k", "điện 3k/số" → hiểu là giá theo kWh (metered, per_kwh).
-       - Nếu user nói "điện 200k/tháng" → hiểu là giá cố định theo tháng (fixed, per_month).
-       - Nếu user nói "nước 50k", "nước 50k/người", "nước 50k 1 người" → hiểu là giá theo đầu người (per_unit, per_person).
-       - Nếu user nói "nước 100k/tháng" → hiểu là giá cố định theo tháng (fixed, per_month).
-       - Các chi phí khác (internet, gửi xe, rác) → thường là fixed, per_month.
-     - CHỈ tạo cost nếu tìm thấy systemCostTypeId hợp lệ trong <reference_system_data>. Nếu không tìm thấy → bỏ qua (không báo lỗi).
-   
-   - **Amenities:** Fuzzy match từ khóa trong user message với danh sách trong <reference_system_data>.
-     - Ví dụ: "có điều hòa" → tìm amenity có name chứa "điều hòa" hoặc "máy lạnh".
-     - CHỈ tạo amenity nếu tìm thấy systemAmenityId hợp lệ. Nếu không tìm thấy → bỏ qua.
-   
-   - **Rules:** Fuzzy match từ khóa trong user message với danh sách trong <reference_system_data>.
-     - Ví dụ: "không hút thuốc" → tìm rule có name chứa "hút thuốc" hoặc "smoking".
-     - CHỈ tạo rule nếu tìm thấy systemRuleId hợp lệ. Nếu không tìm thấy → bỏ qua.
+3. **Tự động điền thiếu (Smart Autofill):**
+   - Nếu thiếu tên tòa nhà: Tự tạo chuỗi "Trọ + [Tên chủ/Khu vực]".
+   - Nếu thiếu mô tả (description): Tự viết 1 đoạn HTML ngắn (<ul><li>) liệt kê các tiện ích và giá đã trích xuất được.
+   - Nếu user nói "Full đồ": Tự động map vào các amenity IDs của Giường, Tủ, Điều hòa trong <SystemReference>.
 
-5. **Xử lý các cách viết khác nhau:**
-   - Địa điểm: "Quận 1", "Q.1", "Gò Vấp", "Gò vấp Hồ Chí Minh", "TP.HCM", "HCM", "gò vấp hồ chí minh", "Ở gò vấp"
-   - Tên tòa nhà: "toà nhà Kahn", "tòa nhà ABC", "nhà trọ XYZ", "Kahn"
-   - Giá: "2 triệu", "2tr", "2000000", "2M", "phòng 2 triệu", "giá 2 triệu/tháng", "2.5 triệu"
-   - Cọc: "cọc 1 triệu", "tiền cọc 1tr", "deposit 1 triệu"
-   - Điện: "điện 3k", "điện 3.5k", "điện 3000", "điện 3k/số", "điện 3 nghìn", "Điện 3k", "điện 200k/tháng"
-   - Nước: "nước 50k", "nước 50000", "nước 50k/người", "nước 50 nghìn", "Nước 5k", "nước 50k 1 người", "nước 100k/tháng"
-   - Số phòng: "1 phòng", "5 phòng", "một phòng", "phòng bình thường" (có thể là 1 phòng)
-   - Loại phòng: "phòng trọ" → boarding_house, "phòng bình thường" → boarding_house
+4. **Mapping Chi phí (Cost Mapping):**
+   - So khớp từ khóa user với "names" trong <SystemReference>.
+   - User nói "điện giá dân", "nước nhà nước" -> costType: "metered" (theo công tơ), unit: "per_kwh" / "per_m3".
+   - User nói "bao điện nước", "miễn phí wifi" -> Tạo cost với value = 0 hoặc includedInRent = true.
 
-### OUTPUT FORMAT
+OUTPUT SCHEMA (BẮT BUỘC):
 
-Trả về **duy nhất** một JSON object hợp lệ (không markdown, không text dẫn dắt).
+Trả về 1 JSON object duy nhất khớp hoàn toàn với cấu trúc sau (giữ nguyên các key tiếng Anh).
 
-Cấu trúc JSON bắt buộc tuân thủ interface sau:
+LƯU Ý QUAN TRỌNG:
+
+- Với "systemCostTypeId", "systemAmenityId", "systemRuleId": CHỈ ĐƯỢC dùng ID có trong <SystemReference>. Nếu không khớp ID nào, hãy BỎ QUA item đó, KHÔNG được tự bịa ID mới.
+
+- Các trường số (number) phải là số nguyên (Integer), không dùng string "3000000". Ví dụ: 3000000 (đúng), "3000000" (sai).
+
+- Các trường boolean phải là true/false (không phải "true"/"false" string).
 
 \`\`\`json
 {
   "building": {
-    "name": "string (bắt buộc, tự tạo nếu thiếu)",
-    "location": "string | null (trích xuất địa điểm thô từ text, null nếu không có)"
+    "name": "string (Tự tạo nếu thiếu)",
+    "location": "string | null"
   },
   "room": {
-    "name": "string (bắt buộc, tự tạo nếu thiếu)",
-    "roomType": "boarding_house" | "dormitory" | "apartment" | "sleepbox" | "whole_house",
-    "totalRooms": "number (>= 1, mặc định 1)",
-    "areaSqm": "number | null (optional)",
-    "maxOccupancy": "number | null (optional, mặc định 2)",
-    "floorNumber": "number | null (optional, mặc định 1)",
-    "description": "string | null (HTML, optional, tự tạo nếu thiếu)",
+    "name": "string (Tự tạo nếu thiếu)",
+    "roomType": "boarding_house | dormitory | apartment | sleepbox | whole_house",
+    "totalRooms": "number",
+    "areaSqm": "number | null",
+    "maxOccupancy": "number | null",
+    "floorNumber": "number | null",
+    "description": "string (HTML content)",
     "pricing": {
-      "basePriceMonthly": "number | null (VNĐ, null nếu chưa có thông tin)",
-      "depositAmount": "number | null (VNĐ, optional)",
-      "depositMonths": "number | null (optional, mặc định 1)",
-      "utilityIncluded": "boolean | null (optional, mặc định false)",
-      "utilityCostMonthly": "number | null (VNĐ, optional)",
-      "minimumStayMonths": "number | null (optional, mặc định 1)",
-      "maximumStayMonths": "number | null (optional)",
-      "priceNegotiable": "boolean | null (optional, mặc định false)"
+      "basePriceMonthly": "number | null",
+      "depositAmount": "number | null",
+      "depositMonths": "number | null",
+      "utilityIncluded": "boolean | null",
+      "utilityCostMonthly": "number | null",
+      "minimumStayMonths": "number | null",
+      "maximumStayMonths": "number | null",
+      "priceNegotiable": "boolean | null"
     },
     "costs": [
       {
-        "systemCostTypeId": "string (BẮT BUỘC, ID từ reference_system_data)",
-        "value": "number (VNĐ, >= 0)",
-        "costType": "fixed" | "per_unit" | "metered" | "percentage" | "tiered",
-        "unit": "string (ví dụ: per_kwh, per_person, per_month)",
-        "billingCycle": "daily" | "weekly" | "monthly" | "quarterly" | "yearly" | "per_use" | null (mặc định monthly)",
-        "includedInRent": "boolean | null (optional, mặc định false)",
-        "isOptional": "boolean | null (optional, mặc định false)",
-        "notes": "string | null (optional)"
+        "systemCostTypeId": "string (Lấy ID chính xác từ Reference)",
+        "value": "number",
+        "costType": "fixed | per_unit | metered | percentage | tiered",
+        "unit": "string",
+        "billingCycle": "monthly | daily | null",
+        "includedInRent": "boolean | null",
+        "isOptional": "boolean | null",
+        "notes": "string | null"
       }
     ],
     "amenities": [
       {
-        "systemAmenityId": "string (BẮT BUỘC, ID từ reference_system_data)",
-        "customValue": "string | null (optional)",
-        "notes": "string | null (optional)"
+        "systemAmenityId": "string (Lấy ID chính xác từ Reference)",
+        "customValue": "string | null",
+        "notes": "string | null"
       }
     ],
     "rules": [
       {
-        "systemRuleId": "string (BẮT BUỘC, ID từ reference_system_data)",
-        "customValue": "string | null (optional)",
-        "isEnforced": "boolean | null (optional, mặc định true)",
-        "notes": "string | null (optional)"
+        "systemRuleId": "string (Lấy ID chính xác từ Reference)",
+        "customValue": "string | null",
+        "isEnforced": "boolean | null",
+        "notes": "string | null"
       }
     ]
   }
 }
 \`\`\`
 
-### QUAN TRỌNG
+FINAL INSTRUCTION:
 
-- TẤT CẢ các field phải đúng kiểu dữ liệu (string, number, boolean, array, object).
-- Các field bắt buộc KHÔNG được null hoặc undefined.
-- Các field optional có thể null hoặc không có trong JSON.
-- Enum values PHẢI đúng với các giá trị được định nghĩa.
-- Numbers PHẢI là số nguyên hoặc số thập phân hợp lệ (không có dấu phẩy, không có ký tự).
-- Arrays PHẢI là mảng hợp lệ (có thể rỗng []).
-- CHỈ trả về JSON, KHÔNG có text giải thích.
-- Đảm bảo JSON hợp lệ, có thể parse được.
+Phân tích kỹ lưỡng <UserMessage>, áp dụng PROCESSING LOGIC, sau đó điền vào OUTPUT SCHEMA.
+Chỉ trả về JSON thuần.`;
+}
 
-JSON:`;
+/**
+ * Helper function to safely parse AI JSON response
+ * Removes markdown code blocks and handles parsing errors gracefully
+ */
+export function parseAIJsonResult(aiResponse: string): any {
+	try {
+		// 1. Xóa markdown code blocks nếu có (```json ... ```)
+		const cleanString = aiResponse.replace(/```json\n?|```/g, '').trim();
+		// 2. Parse JSON
+		return JSON.parse(cleanString);
+	} catch (err) {
+		console.error('AI output invalid JSON:', aiResponse, err);
+		// Fallback: Trả về null để app không crash
+		return null;
+	}
 }

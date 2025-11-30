@@ -9,6 +9,7 @@ import {
 	buildBuildingSelectionPrompt,
 	buildImageSuggestionPrompt,
 	buildRoomPublishingExtractionPrompt,
+	parseAIJsonResult,
 } from '../prompts/room-publishing.prompts';
 import { ChatSession } from '../types/chat.types';
 import {
@@ -494,14 +495,14 @@ export class RoomPublishingService {
 				maxOutputTokens: this.AI_CONFIG.maxTokens,
 			});
 
-			// Parse JSON response
-			const jsonMatch = text.match(/\{[\s\S]*\}/);
-			if (!jsonMatch) {
-				this.logger.warn('Failed to extract JSON from LLM response');
+			// Parse JSON response using safe helper function
+			const parsedResult = parseAIJsonResult(text);
+			if (!parsedResult) {
+				this.logger.warn('Failed to parse JSON from LLM response', { text });
 				return;
 			}
 
-			const extracted = JSON.parse(jsonMatch[0]) as {
+			const extracted = parsedResult as {
 				building?: {
 					name?: string | null;
 					location?: string | null;
