@@ -245,6 +245,14 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTempla
 		expiresInDays: 7,
 	},
 
+	[NotificationType.ROOM_ISSUE_STATUS_UPDATED]: {
+		type: NotificationType.ROOM_ISSUE_STATUS_UPDATED,
+		title: 'Trạng thái xử lý sự cố đã cập nhật',
+		message:
+			'Trạng thái xử lý sự cố phòng {{roomName}} - {{roomNumber}} đã chuyển thành {{status}}. {{note}}',
+		expiresInDays: 7,
+	},
+
 	// System
 	[NotificationType.SYSTEM_MAINTENANCE]: {
 		type: NotificationType.SYSTEM_MAINTENANCE,

@@ -216,18 +216,18 @@ enum SignerRole {
 }
 
 enum RoomIssueCategory {
-  facility
-  utility
-  neighbor
-  noise
-  security
-  other
+  facility // Sự cố về cơ sở vật chất (tường, cửa, sàn...)
+  utility // Sự cố về tiện ích (điện, nước, wifi...)
+  neighbor // Sự cố về hàng xóm (ồn ào, vệ sinh...)
+  noise // Sự cố về tiếng ồn
+  security // Sự cố về an ninh
+  other // Khác
 }
 
 enum RoomIssueStatus {
-  new
-  in_progress
-  resolved
+  new // Mới tạo
+  in_progress // Đang xử lý
+  resolved // Đã xử lý
 }
 
 // ========================================
@@ -683,6 +683,7 @@ model RoomIssue {
   category       RoomIssueCategory
   status         RoomIssueStatus    @default(new)
   imageUrls      String[]           @map("image_urls")
+  landlordNote   String?            @map("landlord_note")
   createdAt      DateTime           @default(now()) @map("created_at")
   updatedAt      DateTime           @updatedAt @map("updated_at")
 

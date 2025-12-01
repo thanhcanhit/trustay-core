@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RoomIssueCategory, RoomIssueStatus } from '@prisma/client';
 
 class RoomIssueReporterDto {
@@ -61,6 +61,11 @@ export class RoomIssueResponseDto {
 
 	@ApiProperty({ enum: RoomIssueStatus })
 	status: RoomIssueStatus;
+
+	@ApiPropertyOptional({
+		description: 'Latest note from landlord about how the issue is being handled',
+	})
+	landlordNote?: string | null;
 
 	@ApiProperty({ type: [String] })
 	imageUrls: string[];
