@@ -8,6 +8,7 @@ import {
 	LandlordRoomIssueQueryDto,
 	RoomIssueQueryDto,
 	RoomIssueResponseDto,
+	UpdateRoomIssueStatusDto,
 } from './dto';
 
 const DEFAULT_OPEN_STATUSES: readonly RoomIssueStatus[] = [
@@ -15,7 +16,7 @@ const DEFAULT_OPEN_STATUSES: readonly RoomIssueStatus[] = [
 	RoomIssueStatus.in_progress,
 ] as const;
 
-const roomIssueRelations = {
+const roomIssueRelations = Prisma.validator<Prisma.RoomIssueInclude>()({
 	reporter: {
 		select: {
 			id: true,
@@ -45,7 +46,7 @@ const roomIssueRelations = {
 			},
 		},
 	},
-} satisfies Prisma.RoomIssueInclude;
+}) satisfies Prisma.RoomIssueInclude;
 
 type RoomIssueWithRelations = Prisma.RoomIssueGetPayload<{
 	include: typeof roomIssueRelations;
@@ -171,12 +172,42 @@ export class RoomIssuesService {
 		return this.mapIssue(issue);
 	}
 
+	async updateIssueStatusAsLandlord(
+		userId: string,
+		issueId: string,
+		dto: UpdateRoomIssueStatusDto,
+	): Promise<RoomIssueResponseDto> {
+		const issue = await this.prisma.roomIssue.findUnique({
+			where: { id: issueId },
+			include: roomIssueRelations,
+		});
+		if (!issue) {
+			throw new NotFoundException('Room issue not found');
+		}
+		const ownerId = issue.roomInstance.room.building.ownerId;
+		if (ownerId !== userId) {
+			throw new ForbiddenException('Only property owner can update this issue');
+		}
+		const updatedIssue = await this.prisma.roomIssue.update({
+			where: { id: issueId },
+			data: {
+				status: dto.status,
+				...(dto.note && { landlordNote: dto.note }),
+			},
+			include: roomIssueRelations,
+		});
+		await this.notifyTenantIssueStatusUpdated(updatedIssue, dto);
+		return this.mapIssue(updatedIssue);
+	}
+
 	private mapIssue(issue: RoomIssueWithRelations): RoomIssueResponseDto {
+		const issueWithNote = issue as RoomIssueWithRelations & { landlordNote?: string | null };
 		return {
 			id: issue.id,
 			title: issue.title,
 			category: issue.category,
 			status: issue.status,
+			landlordNote: issueWithNote.landlordNote ?? null,
 			imageUrls: issue.imageUrls,
 			createdAt: issue.createdAt,
 			updatedAt: issue.updatedAt,
@@ -224,6 +255,24 @@ export class RoomIssuesService {
 			issueId: issue.id,
 			category: issue.category,
 			title: issue.title,
+		});
+	}
+
+	private async notifyTenantIssueStatusUpdated(
+		issue: RoomIssueWithRelations,
+		dto: UpdateRoomIssueStatusDto,
+	): Promise<void> {
+		const tenantId = issue.reporter.id;
+		const roomName = issue.roomInstance.room.name;
+		const roomNumber = issue.roomInstance.roomNumber;
+		const status = issue.status;
+		const note = dto.note ?? '';
+		await this.notificationsService.notifyRoomIssueStatusUpdated(tenantId, {
+			roomName,
+			roomNumber,
+			status,
+			issueId: issue.id,
+			note,
 		});
 	}
 }

@@ -50,6 +50,8 @@ export enum NotificationType {
 	NEW_ROOM_AVAILABLE = 'new_room_available',
 	ROOM_ISSUE_REPORTED = 'room_issue_reported',
 
+	ROOM_ISSUE_STATUS_UPDATED = 'room_issue_status_updated',
+
 	// System
 	SYSTEM_MAINTENANCE = 'system_maintenance',
 	SYSTEM_ANNOUNCEMENT = 'system_announcement',

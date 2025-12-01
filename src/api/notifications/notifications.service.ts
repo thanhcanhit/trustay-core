@@ -637,6 +637,23 @@ export class NotificationsService {
 		return this.createNotification(notification);
 	}
 
+	async notifyRoomIssueStatusUpdated(
+		tenantId: string,
+		data: {
+			roomName: string;
+			roomNumber: string;
+			status: string;
+			issueId: string;
+			note?: string;
+		},
+	) {
+		const notification = this.notificationFactory.createRoomIssueStatusUpdatedNotification(
+			tenantId,
+			data,
+		);
+		return this.createNotification(notification);
+	}
+
 	async notifyNewRoomAvailable(
 		tenantId: string,
 		data: {

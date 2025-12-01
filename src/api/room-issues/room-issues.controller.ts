@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -9,6 +9,7 @@ import {
 	LandlordRoomIssueQueryDto,
 	RoomIssueQueryDto,
 	RoomIssueResponseDto,
+	UpdateRoomIssueStatusDto,
 } from './dto';
 import { RoomIssuesService } from './room-issues.service';
 
@@ -84,5 +85,24 @@ export class RoomIssuesController {
 	): Promise<ApiResponseDto<RoomIssueResponseDto>> {
 		const issue = await this.roomIssuesService.getIssueDetail(issueId, userId);
 		return ApiResponseDto.success(issue, 'Room issue retrieved successfully');
+	}
+
+	@Patch('landlord/:issueId')
+	@UseGuards(JwtAuthGuard)
+	@ApiBearerAuth()
+	@ApiOperation({ summary: 'Landlord cập nhật trạng thái + ghi chú cho sự cố phòng' })
+	@ApiParam({ name: 'issueId', description: 'Room issue identifier' })
+	@ApiResponse({
+		status: 200,
+		description: 'Cập nhật trạng thái sự cố thành công',
+		type: ApiResponseDto<RoomIssueResponseDto>,
+	})
+	async updateIssueStatusAsLandlord(
+		@CurrentUser('id') userId: string,
+		@Param('issueId') issueId: string,
+		@Body() dto: UpdateRoomIssueStatusDto,
+	): Promise<ApiResponseDto<RoomIssueResponseDto>> {
+		const issue = await this.roomIssuesService.updateIssueStatusAsLandlord(userId, issueId, dto);
+		return ApiResponseDto.success(issue, 'Room issue status updated successfully');
 	}
 }

@@ -435,6 +435,19 @@ export class NotificationFactory {
 		return this.createFromTemplate(landlordId, NotificationType.ROOM_ISSUE_REPORTED, data);
 	}
 
+	createRoomIssueStatusUpdatedNotification(
+		tenantId: string,
+		data: {
+			roomName: string;
+			roomNumber: string;
+			status: string;
+			issueId: string;
+			note?: string;
+		},
+	) {
+		return this.createFromTemplate(tenantId, NotificationType.ROOM_ISSUE_STATUS_UPDATED, data);
+	}
+
 	// System Notifications
 	createSystemMaintenanceNotification(
 		userId: string,
