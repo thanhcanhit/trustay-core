@@ -69,16 +69,18 @@ export class PayosService {
 	 * @param payload Input data required to build the payment link.
 	 */
 	async createPaymentLink(payload: PayosPaymentLinkPayload): Promise<PayosPaymentLinkResult> {
+		const normalizedAmount = this.normalizeAmount(payload.amount);
+		const normalizedItems = this.normalizeItems(payload.items);
 		const { cancelUrl, returnUrl } = this.resolveRedirectUrls(payload);
 		const sanitizedDescription = this.truncateDescription(payload.description);
 		try {
 			const response = await this.payosClient.paymentRequests.create({
 				orderCode: payload.orderCode,
-				amount: payload.amount,
+				amount: normalizedAmount,
 				description: sanitizedDescription,
 				cancelUrl,
 				returnUrl,
-				items: payload.items && payload.items.length > 0 ? payload.items : undefined,
+				items: normalizedItems.length > 0 ? normalizedItems : undefined,
 				buyerName: payload.buyerName,
 				buyerEmail: payload.buyerEmail,
 				buyerPhone: payload.buyerPhone,
@@ -95,6 +97,33 @@ export class PayosService {
 				'Unable to create PayOS payment link right now, please try again later.',
 			);
 		}
+	}
+
+	private normalizeAmount(amount: number): number {
+		const roundedAmount = Math.round(amount);
+		if (!Number.isFinite(roundedAmount) || roundedAmount <= 0) {
+			throw new BadRequestException('Payment amount must be a positive integer greater than 0.');
+		}
+		return roundedAmount;
+	}
+
+	private normalizeItems(items?: PaymentLinkItem[]): PaymentLinkItem[] {
+		if (!items || items.length === 0) {
+			return [];
+		}
+		const normalizedItems = items
+			.map((item) => {
+				const roundedPrice = Math.round(item.price);
+				if (!Number.isFinite(roundedPrice) || roundedPrice <= 0) {
+					return null;
+				}
+				return {
+					...item,
+					price: roundedPrice,
+				};
+			})
+			.filter((item): item is PaymentLinkItem => item !== null);
+		return normalizedItems;
 	}
 
 	private truncateDescription(description: string): string {
