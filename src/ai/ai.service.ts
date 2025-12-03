@@ -12,6 +12,7 @@ import { SqlGenerationAgent } from './agents/sql-generation-agent';
 import { KnowledgeService } from './knowledge/knowledge.service';
 import { buildOneForAllPrompt } from './prompts/simple-system-one-for-all';
 import { VIETNAMESE_LOCALE_SYSTEM_PROMPT } from './prompts/system.prompt';
+import { AiProcessingLogService } from './services/ai-processing-log.service';
 import { generateErrorResponse } from './services/error-handler.service';
 import {
 	RoomPublishingService,
@@ -73,6 +74,7 @@ export class AiService {
 		private readonly buildingsService: BuildingsService,
 		private readonly roomsService: RoomsService,
 		private readonly addressService: AddressService,
+		private readonly processingLogService: AiProcessingLogService,
 	) {
 		// Initialize orchestrator agent with Prisma and KnowledgeService
 		this.orchestratorAgent = new OrchestratorAgent(this.prisma, this.knowledge);
@@ -899,6 +901,22 @@ export class AiService {
 		// Lưu câu hỏi của người dùng vào session
 		this.addMessageToSession(session, 'user', query);
 
+		// Track processing data để lưu vào 1 log duy nhất (append ở từng bước)
+		const processingLogData: {
+			orchestratorData?: any;
+			sqlGenerationAttempts?: any[];
+			validatorData?: any;
+			responseGeneratorData?: any;
+			ragContext?: any;
+			response?: string;
+			status?: string;
+			error?: string;
+			tokenUsage?: any;
+			totalDuration?: number;
+		} = {
+			sqlGenerationAttempts: [],
+		};
+
 		try {
 			this.logDebug(
 				'SESSION',
@@ -913,7 +931,7 @@ export class AiService {
 			// - Read business context via RAG (limit=8, threshold=0.6)
 			// - Decide readiness for SQL
 			// - Derive intent hints: ENTITY/FILTERS/MODE
-			const startTime = Date.now();
+			const orchestratorStartTime = Date.now();
 			this.logInfo(
 				'ORCHESTRATOR',
 				'START | classify role & type | read business RAG | derive intents',
@@ -923,7 +941,7 @@ export class AiService {
 				session,
 				this.AI_CONFIG,
 			);
-			const orchestratorTime = Date.now() - startTime;
+			const orchestratorDuration = Date.now() - orchestratorStartTime;
 			this.logInfo(
 				'ORCHESTRATOR',
 				`END | readyForSql=${orchestratorResponse.readyForSql} | requestType=${orchestratorResponse.requestType} | userRole=${orchestratorResponse.userRole}` +
@@ -931,8 +949,49 @@ export class AiService {
 					`${orchestratorResponse.relationshipsHint ? ` | relationshipsHint=${orchestratorResponse.relationshipsHint}` : ''}` +
 					`${orchestratorResponse.intentModeHint ? ` | modeHint=${orchestratorResponse.intentModeHint}` : ''}` +
 					`${orchestratorResponse.entityHint ? ` | entityHint=${orchestratorResponse.entityHint}` : ''}` +
-					` | took=${orchestratorTime}ms`,
+					` | took=${orchestratorDuration}ms`,
 			);
+
+			// Update processing log với orchestrator data
+			processingLogData.orchestratorData = {
+				requestType: orchestratorResponse.requestType,
+				userRole: orchestratorResponse.userRole,
+				readyForSql: orchestratorResponse.readyForSql,
+				entityHint: orchestratorResponse.entityHint,
+				filtersHint: orchestratorResponse.filtersHint,
+				tablesHint: orchestratorResponse.tablesHint,
+				relationshipsHint: orchestratorResponse.relationshipsHint,
+				intentModeHint: orchestratorResponse.intentModeHint,
+				intentAction: orchestratorResponse.intentAction,
+				missingParams: orchestratorResponse.missingParams,
+				tokenUsage: orchestratorResponse.tokenUsage,
+				duration: orchestratorDuration,
+			};
+			// Capture RAG context
+			if (orchestratorResponse.businessContext) {
+				const businessCtx = orchestratorResponse.businessContext;
+				if (typeof businessCtx === 'object' && businessCtx !== null) {
+					processingLogData.ragContext = {
+						businessContext: businessCtx,
+						schemaChunks: (businessCtx as any).schemaBlock
+							? String((businessCtx as any).schemaBlock).split('\n').length
+							: 0,
+						businessChunks: (businessCtx as any).businessBlock
+							? String((businessCtx as any).businessBlock).split('\n').length
+							: 0,
+						qaChunks: (businessCtx as any).qaBlock
+							? String((businessCtx as any).qaBlock).split('\n').length
+							: 0,
+					};
+				} else {
+					processingLogData.ragContext = {
+						businessContext: businessCtx,
+						schemaChunks: 0,
+						businessChunks: 0,
+						qaChunks: 0,
+					};
+				}
+			}
 
 			// SKIP LOGIC: Nếu không phải QUERY, return ngay (CLARIFICATION, GENERAL_CHAT, GREETING)
 			if (orchestratorResponse.requestType !== RequestType.QUERY) {
@@ -956,6 +1015,17 @@ export class AiService {
 						message: messageText,
 						payload: { mode: 'CLARIFY', questions: [] },
 					};
+
+					// Save single log entry
+					processingLogData.response = messageText;
+					processingLogData.status = 'completed';
+					processingLogData.tokenUsage = orchestratorResponse.tokenUsage;
+					processingLogData.totalDuration = Date.now() - pipelineStartAt;
+					await this.processingLogService.saveProcessingLog({
+						question: query,
+						...processingLogData,
+					});
+
 					this.logPipelineEnd(
 						session.sessionId,
 						response.kind,
@@ -977,6 +1047,17 @@ export class AiService {
 						message: cleanedMessage,
 						payload: { mode: 'CONTENT' },
 					};
+
+					// Save single log entry
+					processingLogData.response = cleanedMessage;
+					processingLogData.status = 'completed';
+					processingLogData.tokenUsage = orchestratorResponse.tokenUsage;
+					processingLogData.totalDuration = Date.now() - pipelineStartAt;
+					await this.processingLogService.saveProcessingLog({
+						question: query,
+						...processingLogData,
+					});
+
 					this.logPipelineEnd(
 						session.sessionId,
 						response.kind,
@@ -1015,6 +1096,17 @@ export class AiService {
 						),
 					},
 				};
+
+				// Save single log entry
+				processingLogData.response = clarificationMessage;
+				processingLogData.status = 'completed';
+				processingLogData.tokenUsage = orchestratorResponse.tokenUsage;
+				processingLogData.totalDuration = Date.now() - pipelineStartAt;
+				await this.processingLogService.saveProcessingLog({
+					question: query,
+					...processingLogData,
+				});
+
 				this.logPipelineEnd(
 					session.sessionId,
 					response.kind,
@@ -1117,11 +1209,20 @@ export class AiService {
 					this.AI_CONFIG,
 					orchestratorResponse.businessContext,
 				);
-				const sqlTime = Date.now() - sqlStartTime;
+				const sqlDuration = Date.now() - sqlStartTime;
 				this.logInfo(
 					'SQL_AGENT',
-					`END | sqlPreview=${sqlResult.sql.substring(0, 50)}... | results=${sqlResult.count} | took=${sqlTime}ms`,
+					`END | sqlPreview=${sqlResult.sql.substring(0, 50)}... | results=${sqlResult.count} | took=${sqlDuration}ms`,
 				);
+
+				// Append SQL generation attempt vào processing log
+				processingLogData.sqlGenerationAttempts!.push({
+					sql: sqlResult.sql,
+					count: sqlResult.count,
+					tokenUsage: sqlResult.tokenUsage,
+					error: (sqlResult as any).error,
+					duration: sqlDuration,
+				});
 
 				// Full SQL banner for debugging
 				try {
@@ -1160,10 +1261,10 @@ export class AiService {
 						this.AI_CONFIG,
 					),
 				]);
-				const parallelTime = Date.now() - parallelStartTime;
+				const parallelDuration = Date.now() - parallelStartTime;
 				this.logInfo(
 					'PARALLEL',
-					`END | completed in ${parallelTime}ms | validator.isValid=${validation.isValid} | severity=${validation.severity || 'N/A'}`,
+					`END | completed in ${parallelDuration}ms | validator.isValid=${validation.isValid} | severity=${validation.severity || 'N/A'}`,
 				);
 				this.logDebug(
 					'VALIDATOR',
@@ -1172,6 +1273,20 @@ export class AiService {
 
 				// Parse responseText để tách message và structured data
 				const parsedResponse = parseResponseText(responseText);
+
+				// Update processing log với validator và response generator data
+				processingLogData.validatorData = {
+					isValid: validation.isValid,
+					reason: validation.reason,
+					severity: validation.severity,
+					violations: validation.violations,
+					tokenUsage: validation.tokenUsage,
+					duration: parallelDuration, // Parallel duration cho cả validator và response generator
+				};
+				processingLogData.responseGeneratorData = {
+					tokenUsage: parsedResponse.meta?.tokenUsage,
+					duration: parallelDuration, // Shared duration với validator
+				};
 
 				// Enrich TABLE rows with clickable path using entity-route map
 				try {
@@ -1286,6 +1401,17 @@ export class AiService {
 					message: parsedResponse.message,
 					payload: dataPayload,
 				};
+
+				// Save single log entry với tất cả data đã được append ở từng bước
+				processingLogData.response = parsedResponse.message;
+				processingLogData.status = 'completed';
+				processingLogData.tokenUsage = totalTokenUsage;
+				processingLogData.totalDuration = Date.now() - pipelineStartAt;
+				await this.processingLogService.saveProcessingLog({
+					question: query,
+					...processingLogData,
+				});
+
 				this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt, totalTokenUsage);
 				return response;
 			} else {
@@ -1307,6 +1433,18 @@ export class AiService {
 					message: cleanedMessage,
 					payload: { mode: 'CONTENT' },
 				};
+
+				// Save single log entry for edge case
+				processingLogData.response = cleanedMessage;
+				processingLogData.status = 'partial';
+				processingLogData.error = 'QUERY but readyForSql=false';
+				processingLogData.tokenUsage = orchestratorResponse.tokenUsage;
+				processingLogData.totalDuration = Date.now() - pipelineStartAt;
+				await this.processingLogService.saveProcessingLog({
+					question: query,
+					...processingLogData,
+				});
+
 				this.logPipelineEnd(
 					session.sessionId,
 					response.kind,
@@ -1336,6 +1474,17 @@ export class AiService {
 				message: messageText,
 				payload: { mode: 'ERROR', details: (error as Error).message },
 			};
+
+			// Save single log entry for error case
+			processingLogData.response = messageText;
+			processingLogData.status = 'failed';
+			processingLogData.error = (error as Error).message || 'Unknown error';
+			processingLogData.totalDuration = Date.now() - pipelineStartAt;
+			await this.processingLogService.saveProcessingLog({
+				question: query,
+				...processingLogData,
+			});
+
 			this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt);
 			return response;
 		}

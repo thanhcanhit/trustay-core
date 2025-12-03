@@ -1218,6 +1218,44 @@ model ErrorLog {
 }
 
 // ========================================
+// AI PROCESSING LOG
+// ========================================
+
+model AiProcessingLog {
+  id        String   @id @default(uuid())
+  question  String   @db.Text
+  response  String?  @db.Text
+  
+  // Orchestrator Agent data
+  orchestratorData Json? @map("orchestrator_data")
+  
+  // SQL Generation Agent data (array vì có thể retry nhiều lần)
+  sqlGenerationAttempts Json[] @map("sql_generation_attempts")
+  
+  // Result Validator Agent data
+  validatorData Json? @map("validator_data")
+  
+  // RAG Context từ vector DB
+  ragContext Json? @map("rag_context")
+  
+  // Token usage tổng hợp
+  tokenUsage Json? @map("token_usage")
+  
+  // Timing (milliseconds)
+  totalDuration Int? @map("total_duration") // Tổng thời gian xử lý
+  
+  // Flow status
+  status    String   @default("completed") // completed, failed, partial
+  error     String?  @db.Text
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  @@index([status])
+  @@index([createdAt])
+  @@map("ai_processing_logs")
+}
+
+// ========================================
 // TENANT PREFERENCES (OPTIMIZED FOR MATCHING)
 // ========================================
 
