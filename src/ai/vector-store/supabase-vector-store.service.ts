@@ -289,7 +289,7 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 					.eq('db_key', entry.dbKey || this.config.dbKey)
 					.eq('sql_template', normalizedTemplate)
 					.maybeSingle();
-				if (existing && existing.id) {
+				if (existing?.id) {
 					await this.supabaseClient
 						.from('sql_qa')
 						.update({ last_used_at: new Date().toISOString() })
@@ -468,5 +468,218 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 			return ids.map((id) => id.toString());
 		}
 		throw new Error('Invalid documents format. Use addChunks with collection property.');
+	}
+
+	/**
+	 * Get canonical SQL QA list with pagination, search, and sorting
+	 * @param params - Query parameters
+	 * @returns Paginated list of SQL QA entries
+	 */
+	async getCanonicalList(params: {
+		search?: string;
+		limit?: number;
+		offset?: number;
+	}): Promise<{ items: any[]; total: number; limit: number; offset: number }> {
+		try {
+			const limit = params.limit || 20;
+			const offset = params.offset || 0;
+			const tenantId = this.config.tenantId;
+			const dbKey = this.config.dbKey;
+
+			let queryBuilder = this.supabaseClient
+				.from('sql_qa')
+				.select('*', { count: 'exact' })
+				.eq('tenant_id', tenantId)
+				.eq('db_key', dbKey);
+
+			if (params.search) {
+				queryBuilder = queryBuilder.ilike('question', `%${params.search}%`);
+			}
+
+			const { data, error, count } = await queryBuilder
+				.order('created_at', { ascending: false })
+				.range(offset, offset + limit - 1);
+
+			if (error) {
+				throw new Error(`Failed to get canonical list: ${error.message}`);
+			}
+
+			const items = (data || []).map((item: any) => ({
+				id: item.id,
+				question: item.question,
+				sqlCanonical: item.sql_canonical,
+				sqlTemplate: item.sql_template,
+				parameters: item.parameters,
+				createdAt: item.created_at,
+				updatedAt: item.updated_at,
+				lastUsedAt: item.last_used_at,
+			}));
+
+			return {
+				items,
+				total: count || 0,
+				limit,
+				offset,
+			};
+		} catch (error) {
+			this.logger.error('Error getting canonical list:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Get AI chunks list with pagination, search, filter, and sorting
+	 * @param params - Query parameters
+	 * @returns Paginated list of AI chunks
+	 */
+	async getChunksList(params: {
+		search?: string;
+		collection?: AiChunkCollection;
+		limit?: number;
+		offset?: number;
+	}): Promise<{ items: any[]; total: number; limit: number; offset: number }> {
+		try {
+			const limit = params.limit || 20;
+			const offset = params.offset || 0;
+			const tenantId = this.config.tenantId;
+			const dbKey = this.config.dbKey;
+
+			let queryBuilder = this.supabaseClient
+				.from('ai_chunks')
+				.select('id, collection, content, created_at, updated_at', { count: 'exact' })
+				.eq('tenant_id', tenantId)
+				.eq('db_key', dbKey);
+
+			if (params.collection) {
+				queryBuilder = queryBuilder.eq('collection', params.collection);
+			}
+
+			if (params.search) {
+				queryBuilder = queryBuilder.ilike('content', `%${params.search}%`);
+			}
+
+			const { data, error, count } = await queryBuilder
+				.order('created_at', { ascending: false })
+				.range(offset, offset + limit - 1);
+
+			if (error) {
+				throw new Error(`Failed to get chunks list: ${error.message}`);
+			}
+
+			const items = (data || []).map((item: any) => ({
+				id: item.id,
+				collection: item.collection,
+				content: item.content,
+				createdAt: item.created_at,
+				updatedAt: item.updated_at,
+			}));
+
+			return {
+				items,
+				total: count || 0,
+				limit,
+				offset,
+			};
+		} catch (error) {
+			this.logger.error('Error getting chunks list:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Get single chunk by ID
+	 * @param id - Chunk ID
+	 * @returns Chunk data or null
+	 */
+	async getChunkById(id: number): Promise<any | null> {
+		try {
+			const { data, error } = await this.supabaseClient
+				.from('ai_chunks')
+				.select('id, collection, content, created_at, updated_at')
+				.eq('id', id)
+				.eq('tenant_id', this.config.tenantId)
+				.eq('db_key', this.config.dbKey)
+				.single();
+
+			if (error) {
+				if (error.code === 'PGRST116') {
+					return null;
+				}
+				throw new Error(`Failed to get chunk: ${error.message}`);
+			}
+
+			return {
+				id: data.id,
+				collection: data.collection,
+				content: data.content,
+				createdAt: data.created_at,
+				updatedAt: data.updated_at,
+			};
+		} catch (error) {
+			this.logger.error(`Error getting chunk by id: ${id}`, error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Update SQL QA entry
+	 * @param id - SQL QA ID
+	 * @param data - Update data
+	 * @returns Updated SQL QA entry
+	 */
+	async updateSqlQA(
+		id: number,
+		data: {
+			question?: string;
+			sqlCanonical?: string;
+			sqlTemplate?: string;
+			parameters?: Record<string, unknown>;
+		},
+	): Promise<any> {
+		try {
+			const updatePayload: any = {
+				updated_at: new Date().toISOString(),
+			};
+
+			if (data.question !== undefined) {
+				updatePayload.question = data.question;
+			}
+			if (data.sqlCanonical !== undefined) {
+				updatePayload.sql_canonical = data.sqlCanonical;
+			}
+			if (data.sqlTemplate !== undefined) {
+				updatePayload.sql_template = data.sqlTemplate;
+			}
+			if (data.parameters !== undefined) {
+				updatePayload.parameters = data.parameters;
+			}
+
+			const { data: updated, error } = await this.supabaseClient
+				.from('sql_qa')
+				.update(updatePayload)
+				.eq('id', id)
+				.eq('tenant_id', this.config.tenantId)
+				.eq('db_key', this.config.dbKey)
+				.select()
+				.single();
+
+			if (error) {
+				throw new Error(`Failed to update SQL QA: ${error.message}`);
+			}
+
+			return {
+				id: updated.id,
+				question: updated.question,
+				sqlCanonical: updated.sql_canonical,
+				sqlTemplate: updated.sql_template,
+				parameters: updated.parameters,
+				createdAt: updated.created_at,
+				updatedAt: updated.updated_at,
+				lastUsedAt: updated.last_used_at,
+			};
+		} catch (error) {
+			this.logger.error(`Error updating SQL QA: ${id}`, error);
+			throw error;
+		}
 	}
 }

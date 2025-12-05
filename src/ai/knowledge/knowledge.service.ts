@@ -647,4 +647,102 @@ export class KnowledgeService {
 		].join('\n');
 		return [amenitySection, costTypeSection, ruleSection].join('\n\n');
 	}
+
+	/**
+	 * Get canonical SQL QA list with pagination and search
+	 * @param params - Query parameters
+	 * @returns Paginated list of SQL QA entries
+	 */
+	async getCanonicalList(params: {
+		search?: string;
+		limit?: number;
+		offset?: number;
+	}): Promise<{ items: any[]; total: number; limit: number; offset: number }> {
+		return await this.vectorStore.getCanonicalList(params);
+	}
+
+	/**
+	 * Get AI chunks list with pagination, search, and filter
+	 * @param params - Query parameters
+	 * @returns Paginated list of AI chunks
+	 */
+	async getChunksList(params: {
+		search?: string;
+		collection?: string;
+		limit?: number;
+		offset?: number;
+	}): Promise<{ items: any[]; total: number; limit: number; offset: number }> {
+		return await this.vectorStore.getChunksList({
+			...params,
+			collection: params.collection as AiChunkCollection | undefined,
+		});
+	}
+
+	/**
+	 * Teach new knowledge or update existing knowledge
+	 * @param params - Teaching parameters
+	 * @returns Result with chunkId, sqlQAId, and isUpdate flag
+	 */
+	async teachOrUpdateKnowledge(params: {
+		id?: number;
+		question: string;
+		sql: string;
+		sessionId?: string;
+		userId?: string;
+	}): Promise<{ chunkId: number; sqlQAId: number; isUpdate: boolean }> {
+		if (params.id) {
+			// Update existing SQL QA entry
+			await this.vectorStore.updateSqlQA(params.id, {
+				question: params.question,
+				sqlCanonical: params.sql,
+			});
+			// Build SQL template from the updated SQL
+			const templated = this.buildSqlTemplate(params.sql, params.question);
+			// Update template and parameters if needed
+			if (templated.sqlTemplate || templated.parameters) {
+				await this.vectorStore.updateSqlQA(params.id, {
+					sqlTemplate: templated.sqlTemplate,
+					parameters: templated.parameters,
+				});
+			}
+			// Find associated chunk if exists
+			const normalized = this.normalizeQuestion(params.question);
+			const exact = await this.vectorStore.searchSqlQA(normalized, {
+				limit: 1,
+				tenantId: this.tenantId,
+				dbKey: this.dbKey,
+			});
+			const exactHit = exact.find((x) => this.normalizeQuestion(x.question) === normalized);
+			let chunkId = 0;
+			if (exactHit?.id) {
+				// Try to find associated chunk in ai_chunks
+				const results = await this.vectorStore.similaritySearch(params.question, 'qa', {
+					limit: 1,
+					tenantId: this.tenantId,
+					dbKey: this.dbKey,
+				});
+				if (results[0]?.id) {
+					chunkId = Number(results[0].id);
+				}
+			}
+			return {
+				chunkId,
+				sqlQAId: params.id,
+				isUpdate: true,
+			};
+		} else {
+			// Add new knowledge (same as saveQAInteraction)
+			const result = await this.saveQAInteraction({
+				question: params.question,
+				sql: params.sql,
+				sessionId: params.sessionId,
+				userId: params.userId,
+			});
+			return {
+				chunkId: result.chunkId,
+				sqlQAId: result.sqlQAId,
+				isUpdate: false,
+			};
+		}
+	}
 }
