@@ -1,0 +1,202 @@
+﻿[
+  {
+    "question": "How many rooms are currently available?",
+    "sql": "SELECT COUNT(*) AS available_rooms\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.status = \u0027available\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "List all rooms in building \"Nha tro Minh Phat Quan 9\".",
+    "sql": "SELECT r.*, rp.base_price_monthly\nFROM rooms r\nLEFT JOIN room_pricing rp ON rp.room_id = r.id\nJOIN buildings b ON b.id = r.building_id\nWHERE b.name = \u0027Nha tro Minh Phat Quan 9\u0027\n  AND b.owner_id = :owner_id\nORDER BY r.name;"
+  },
+  {
+    "question": "Show rooms under maintenance.",
+    "sql": "SELECT b.name AS building_name, r.name AS room_name, ri.room_number\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.status = \u0027maintenance\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Which building has the most available rooms?",
+    "sql": "SELECT b.id, b.name, COUNT(*) AS available_rooms\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.status = \u0027available\u0027\n  AND b.owner_id = :owner_id\nGROUP BY b.id, b.name\nORDER BY available_rooms DESC\nLIMIT 1;"
+  },
+  {
+    "question": "What is the status of room 101 in building \"Toa nha A\"?",
+    "sql": "SELECT ri.status, ri.is_active, ri.updated_at\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.room_number = \u0027101\u0027\n  AND b.name = \u0027Toa nha A\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "How many room types are \"sleepbox\"?",
+    "sql": "SELECT COUNT(*) AS sleepbox_room_types\nFROM rooms r\nJOIN buildings b ON b.id = r.building_id\nWHERE r.room_type = \u0027sleepbox\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Rooms with rent under 3,000,000.",
+    "sql": "SELECT b.name AS building_name, r.name AS room_name, ri.room_number, rp.base_price_monthly\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nJOIN room_pricing rp ON rp.room_id = r.id\nWHERE rp.base_price_monthly \u003c 3000000\n  AND b.owner_id = :owner_id\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027);"
+  },
+  {
+    "question": "Rooms with area greater than 25 sqm.",
+    "sql": "SELECT b.name AS building_name, r.name AS room_name, r.area_sqm\nFROM rooms r\nJOIN buildings b ON b.id = r.building_id\nWHERE r.area_sqm \u003e 25\n  AND b.owner_id = :owner_id\nORDER BY r.area_sqm DESC;"
+  },
+  {
+    "question": "Rooms reserved (deposit placed, tenant not moved in).",
+    "sql": "SELECT b.name AS building_name, r.name AS room_name, ri.room_number\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.status = \u0027reserved\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Total number of room instances managed by this landlord.",
+    "sql": "SELECT COUNT(*) AS total_room_instances\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Who is renting room 205?",
+    "sql": "SELECT u.id AS tenant_id, u.first_name, u.last_name, u.phone, rnt.status\nFROM rentals rnt\nJOIN users u ON u.id = rnt.tenant_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027205\u0027\n  AND rnt.status = \u0027active\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Phone number of tenant named \"Nguyen Van A\" (only within this landlord\u0027s properties).",
+    "sql": "SELECT DISTINCT u.first_name, u.last_name, u.phone, u.email\nFROM users u\nJOIN rentals rnt ON rnt.tenant_id = u.id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE u.role = \u0027tenant\u0027\n  AND (u.first_name || \u0027 \u0027 || u.last_name) ILIKE \u0027%Nguyen Van A%\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Count male vs female tenants (scoped to this landlord).",
+    "sql": "SELECT u.gender, COUNT(DISTINCT u.id) AS tenant_count\nFROM users u\nJOIN rentals rnt ON rnt.tenant_id = u.id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rnt.status = \u0027active\u0027\n  AND b.owner_id = :owner_id\nGROUP BY u.gender;"
+  },
+  {
+    "question": "Tenants without verified identity (scoped to this landlord).",
+    "sql": "SELECT DISTINCT u.id, u.first_name, u.last_name, u.email, u.phone\nFROM users u\nJOIN rentals rnt ON rnt.tenant_id = u.id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE u.role = \u0027tenant\u0027\n  AND u.is_verified_identity = FALSE\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Which tenant has stayed the longest (active rentals only)?",
+    "sql": "SELECT u.id, u.first_name, u.last_name, rnt.contract_start_date,\n       AGE(current_date, rnt.contract_start_date) AS stay_duration\nFROM rentals rnt\nJOIN users u ON u.id = rnt.tenant_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rnt.status = \u0027active\u0027\n  AND b.owner_id = :owner_id\nORDER BY rnt.contract_start_date ASC\nLIMIT 1;"
+  },
+  {
+    "question": "Tenants with home address in \"Nghe An\" (scoped to this landlord).",
+    "sql": "SELECT DISTINCT u.id, u.first_name, u.last_name, u.email, u.phone\nFROM users u\nJOIN user_addresses ua ON ua.user_id = u.id\nJOIN provinces p ON p.id = ua.province_id\nJOIN rentals rnt ON rnt.tenant_id = u.id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE u.role = \u0027tenant\u0027\n  AND p.name ILIKE \u0027%Nghe An%\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "How many tenants moved in this month?",
+    "sql": "SELECT COUNT(*) AS new_tenants_this_month\nFROM rentals rnt\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rnt.contract_start_date \u003e= date_trunc(\u0027month\u0027, current_date)\n  AND rnt.contract_start_date \u003c (date_trunc(\u0027month\u0027, current_date) + INTERVAL \u00271 month\u0027)\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Tenants sharing room 301 (active).",
+    "sql": "SELECT rnt.id AS rental_id, u.first_name, u.last_name, u.phone, rnt.status\nFROM rentals rnt\nJOIN users u ON u.id = rnt.tenant_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027301\u0027\n  AND rnt.status = \u0027active\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Total number of active tenants across all buildings.",
+    "sql": "SELECT COUNT(*) AS active_tenants\nFROM rentals rnt\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rnt.status = \u0027active\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Contact info of contract representative for room 402.",
+    "sql": "SELECT u.id AS tenant_id, u.first_name, u.last_name, u.email, u.phone\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nJOIN users u ON u.id = c.tenant_id\nWHERE ri.room_number = \u0027402\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Total revenue last month.",
+    "sql": "SELECT COALESCE(SUM(p.amount), 0) AS revenue_last_month\nFROM payments p\nJOIN rentals rnt ON rnt.id = p.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE p.payment_status = \u0027completed\u0027\n  AND p.payment_date \u003e= date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\n  AND p.payment_date \u003c date_trunc(\u0027month\u0027, current_date)\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Rooms that have not fully paid this month\u0027s rent.",
+    "sql": "SELECT ri.room_number, rm.name AS room_name, b.name AS building_name,\n       bll.total_amount, bll.paid_amount, (bll.total_amount - bll.paid_amount) AS outstanding\nFROM bills bll\nJOIN rentals rnt ON rnt.id = bll.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE bll.billing_month = EXTRACT(MONTH FROM current_date)\n  AND bll.billing_year = EXTRACT(YEAR FROM current_date)\n  AND bll.paid_amount \u003c bll.total_amount\n  AND bll.status \u003c\u003e \u0027paid\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Outstanding amount for room 105.",
+    "sql": "SELECT ri.room_number, COALESCE(SUM(bll.remaining_amount), 0) AS remaining_amount\nFROM bills bll\nJOIN rentals rnt ON rnt.id = bll.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027105\u0027\n  AND bll.status IN (\u0027pending\u0027, \u0027overdue\u0027)\n  AND b.owner_id = :owner_id\nGROUP BY ri.room_number;"
+  },
+  {
+    "question": "Total electricity charges to collect in November 2025.",
+    "sql": "SELECT COALESCE(SUM(bi.amount), 0) AS electricity_amount\nFROM bill_items bi\nJOIN bills bll ON bll.id = bi.bill_id\nJOIN rentals rnt ON rnt.id = bll.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE bll.billing_month = 11\n  AND bll.billing_year = 2025\n  AND bi.item_type = \u0027utility\u0027\n  AND (bi.item_name ILIKE \u0027%dien%\u0027 OR bi.item_name ILIKE \u0027%electric%\u0027)\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Which invoices are overdue?",
+    "sql": "SELECT bll.id, bll.billing_period, ri.room_number, u.first_name, u.last_name,\n       bll.total_amount, bll.remaining_amount\nFROM bills bll\nJOIN rentals rnt ON rnt.id = bll.rental_id\nJOIN users u ON u.id = rnt.tenant_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE bll.status = \u0027overdue\u0027\n  AND b.owner_id = :owner_id\nORDER BY bll.due_date ASC;"
+  },
+  {
+    "question": "Which customers paid by bank transfer today?",
+    "sql": "SELECT DISTINCT u.id, u.first_name, u.last_name, u.phone, p.amount\nFROM payments p\nJOIN rentals rnt ON rnt.id = p.rental_id\nJOIN users u ON u.id = rnt.tenant_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE p.payment_status = \u0027completed\u0027\n  AND p.payment_method = \u0027bank_transfer\u0027\n  AND p.payment_date::date = current_date\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Total deposit currently held for active rentals.",
+    "sql": "SELECT COALESCE(SUM(rnt.deposit_paid), 0) AS total_deposit_held\nFROM rentals rnt\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rnt.status = \u0027active\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Compare revenue this month vs last month.",
+    "sql": "WITH revenue AS (\n  SELECT \u0027current_month\u0027 AS period, COALESCE(SUM(p.amount), 0) AS amount\n  FROM payments p\n  JOIN rentals rnt ON rnt.id = p.rental_id\n  JOIN room_instances ri ON ri.id = rnt.room_instance_id\n  JOIN rooms rm ON rm.id = ri.room_id\n  JOIN buildings b ON b.id = rm.building_id\n  WHERE p.payment_status = \u0027completed\u0027\n    AND p.payment_date \u003e= date_trunc(\u0027month\u0027, current_date)\n    AND p.payment_date \u003c date_trunc(\u0027month\u0027, current_date) + INTERVAL \u00271 month\u0027\n    AND b.owner_id = :owner_id\n  UNION ALL\n  SELECT \u0027last_month\u0027 AS period, COALESCE(SUM(p.amount), 0) AS amount\n  FROM payments p\n  JOIN rentals rnt ON rnt.id = p.rental_id\n  JOIN room_instances ri ON ri.id = rnt.room_instance_id\n  JOIN rooms rm ON rm.id = ri.room_id\n  JOIN buildings b ON b.id = rm.building_id\n  WHERE p.payment_status = \u0027completed\u0027\n    AND p.payment_date \u003e= date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\n    AND p.payment_date \u003c date_trunc(\u0027month\u0027, current_date)\n    AND b.owner_id = :owner_id\n)\nSELECT *\nFROM revenue;"
+  },
+  {
+    "question": "Payment history for room 201 in the last 3 months.",
+    "sql": "SELECT p.id AS payment_id, p.amount, p.payment_method, p.payment_status, p.payment_date\nFROM payments p\nJOIN rentals rnt ON rnt.id = p.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027201\u0027\n  AND p.payment_date \u003e= current_date - INTERVAL \u00273 months\u0027\n  AND b.owner_id = :owner_id\nORDER BY p.payment_date DESC;"
+  },
+  {
+    "question": "How many electronic bills are still draft/pending?",
+    "sql": "SELECT COUNT(*) AS unsent_bills\nFROM bills bll\nJOIN rentals rnt ON rnt.id = bll.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE bll.status IN (\u0027draft\u0027, \u0027pending\u0027)\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "What was last month\u0027s electricity meter reading for room 303?",
+    "sql": "SELECT rimr.last_meter_reading, rimr.meter_reading, rimr.created_at\nFROM room_instance_meter_readings rimr\nJOIN room_instances ri ON ri.id = rimr.room_instance_id\nJOIN room_costs rc ON rc.id = rimr.room_cost_id\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027303\u0027\n  AND ct.name ILIKE \u0027%dien%\u0027\n  AND date_trunc(\u0027month\u0027, rimr.created_at) = date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\n  AND b.owner_id = :owner_id\nORDER BY rimr.created_at DESC\nLIMIT 1;"
+  },
+  {
+    "question": "Which room used the most water last month?",
+    "sql": "SELECT ri.room_number, b.name AS building_name,\n       (COALESCE(rimr.meter_reading, 0) - COALESCE(rimr.last_meter_reading, 0)) AS water_usage\nFROM room_instance_meter_readings rimr\nJOIN room_instances ri ON ri.id = rimr.room_instance_id\nJOIN room_costs rc ON rc.id = rimr.room_cost_id\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ct.name ILIKE \u0027%nuoc%\u0027\n  AND date_trunc(\u0027month\u0027, rimr.created_at) = date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\n  AND b.owner_id = :owner_id\nORDER BY water_usage DESC NULLS LAST\nLIMIT 1;"
+  },
+  {
+    "question": "Current electricity unit price for building \"Toa nha B\".",
+    "sql": "SELECT DISTINCT rc.unit_price, rc.unit, ct.name AS cost_type\nFROM room_costs rc\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nJOIN rooms rm ON rm.id = rc.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE b.name = \u0027Toa nha B\u0027\n  AND ct.name ILIKE \u0027%dien%\u0027\n  AND rc.is_active = TRUE\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Rooms missing utility meter readings this month.",
+    "sql": "SELECT ri.room_number, b.name AS building_name\nFROM room_instances ri\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nJOIN room_costs rc ON rc.room_id = rm.id AND rc.cost_type = \u0027metered\u0027 AND rc.is_active = TRUE\nLEFT JOIN room_instance_meter_readings rimr\n  ON rimr.room_instance_id = ri.id\n  AND rimr.room_cost_id = rc.id\n  AND date_trunc(\u0027month\u0027, rimr.created_at) = date_trunc(\u0027month\u0027, current_date)\nWHERE ri.is_active = TRUE\n  AND b.owner_id = :owner_id\nGROUP BY ri.room_number, b.name\nHAVING COUNT(rimr.id) = 0;"
+  },
+  {
+    "question": "Monthly service costs (trash, wifi, cleaning) for room 101.",
+    "sql": "SELECT ri.room_number, b.name AS building_name,\n       SUM(COALESCE(rc.fixed_amount, 0) + COALESCE(rc.per_person_amount, 0)) AS monthly_service_cost\nFROM room_costs rc\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nJOIN rooms rm ON rm.id = rc.room_id\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027101\u0027\n  AND ct.category = \u0027service\u0027\n  AND rc.is_active = TRUE\n  AND b.owner_id = :owner_id\nGROUP BY ri.room_number, b.name;"
+  },
+  {
+    "question": "Any rooms with unusually low electricity usage this month vs last month?",
+    "sql": "WITH usage_monthly AS (\n  SELECT ri.id AS room_instance_id, ri.room_number,\n         date_trunc(\u0027month\u0027, rimr.created_at) AS month,\n         COALESCE(rimr.meter_reading, 0) - COALESCE(rimr.last_meter_reading, 0) AS usage_kwh,\n         b.owner_id\n  FROM room_instance_meter_readings rimr\n  JOIN room_instances ri ON ri.id = rimr.room_instance_id\n  JOIN room_costs rc ON rc.id = rimr.room_cost_id\n  JOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\n  JOIN rooms rm ON rm.id = ri.room_id\n  JOIN buildings b ON b.id = rm.building_id\n  WHERE ct.name ILIKE \u0027%dien%\u0027\n    AND b.owner_id = :owner_id\n)\nSELECT curr.room_number, curr.usage_kwh AS usage_this_month, prev.usage_kwh AS usage_last_month\nFROM usage_monthly curr\nJOIN usage_monthly prev\n  ON prev.room_instance_id = curr.room_instance_id\n  AND prev.month = date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\nWHERE curr.month = date_trunc(\u0027month\u0027, current_date)\n  AND curr.usage_kwh \u003c (prev.usage_kwh * 0.5);"
+  },
+  {
+    "question": "Contracts expiring within the next 30 days.",
+    "sql": "SELECT c.contract_code, ri.room_number, u.first_name, u.last_name, c.end_date\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nJOIN users u ON u.id = c.tenant_id\nWHERE c.end_date BETWEEN current_date AND (current_date + INTERVAL \u002730 days\u0027)\n  AND c.status IN (\u0027active\u0027, \u0027fully_signed\u0027)\n  AND b.owner_id = :owner_id\nORDER BY c.end_date ASC;"
+  },
+  {
+    "question": "How many contracts are pending signature?",
+    "sql": "SELECT COUNT(*) AS pending_signature_contracts\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE c.status = \u0027pending_signature\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Duration of the contract for room 501.",
+    "sql": "SELECT c.contract_code, c.start_date, c.end_date, (c.end_date - c.start_date) AS duration_days\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027501\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Find contract of tenant named \"Tran Thi B\".",
+    "sql": "SELECT c.contract_code, c.status, c.start_date, c.end_date, ri.room_number, b.name AS building_name\nFROM contracts c\nJOIN users u ON u.id = c.tenant_id\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE (u.first_name || \u0027 \u0027 || u.last_name) ILIKE \u0027%Tran Thi B%\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Contracts terminated early this year.",
+    "sql": "SELECT c.contract_code, ri.room_number, c.start_date, c.end_date, c.terminated_at\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE c.status = \u0027terminated\u0027\n  AND c.terminated_at IS NOT NULL\n  AND c.terminated_at \u003c c.end_date\n  AND DATE_PART(\u0027year\u0027, c.terminated_at) = DATE_PART(\u0027year\u0027, current_date)\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Show PDF file for room 102 contract.",
+    "sql": "SELECT c.contract_code, c.pdf_url\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027102\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Tenants who have not renewed their contract.",
+    "sql": "SELECT DISTINCT u.id, u.first_name, u.last_name, ri.room_number, c.end_date\nFROM contracts c\nJOIN users u ON u.id = c.tenant_id\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE c.status = \u0027expired\u0027\n  AND c.end_date \u003c current_date\n  AND NOT EXISTS (\n    SELECT 1\n    FROM contracts c2\n    WHERE c2.tenant_id = c.tenant_id\n      AND c2.room_instance_id = c.room_instance_id\n      AND c2.status IN (\u0027active\u0027, \u0027fully_signed\u0027, \u0027pending_signature\u0027)\n      AND c2.start_date \u003e c.end_date\n  )\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "How many new issues are unprocessed?",
+    "sql": "SELECT COUNT(*) AS new_issues\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rmi.status = \u0027new\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "What issues are reported for room 202?",
+    "sql": "SELECT ri.room_number, rmi.title, rmi.category, rmi.status, rmi.created_at\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027202\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "List issues related to electricity or water.",
+    "sql": "SELECT rmi.id, ri.room_number, b.name AS building_name, rmi.title, rmi.status, rmi.created_at\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE (rmi.category = \u0027utility\u0027 OR rmi.title ILIKE \u0027%dien%\u0027 OR rmi.title ILIKE \u0027%nuoc%\u0027)\n  AND b.owner_id = :owner_id\nORDER BY rmi.created_at DESC;"
+  },
+  {
+    "question": "Who reported the noise issue on floor 3?",
+    "sql": "SELECT rmi.id, u.first_name, u.last_name, u.phone, ri.room_number, r.floor_number\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nJOIN users u ON u.id = rmi.reporter_id\nWHERE rmi.category = \u0027noise\u0027\n  AND r.floor_number = 3\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Which building has the most issues this month?",
+    "sql": "SELECT b.id, b.name, COUNT(*) AS issue_count\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE date_trunc(\u0027month\u0027, rmi.created_at) = date_trunc(\u0027month\u0027, current_date)\n  AND b.owner_id = :owner_id\nGROUP BY b.id, b.name\nORDER BY issue_count DESC\nLIMIT 1;"
+  },
+  {
+    "question": "Has the water faucet issue in room 104 been resolved?",
+    "sql": "SELECT rmi.id, rmi.status, rmi.updated_at\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027104\u0027\n  AND rmi.title ILIKE \u0027%voi nuoc%\u0027\n  AND b.owner_id = :owner_id;"
+  },
+  {
+    "question": "Low ratings (\u003c3 stars) related to this landlord\u0027s rentals.",
+    "sql": "SELECT r.rating, r.content, r.created_at,\n       CASE r.target_type\n         WHEN \u0027tenant\u0027 THEN \u0027Tenant\u0027\n         WHEN \u0027landlord\u0027 THEN \u0027Landlord\u0027\n         WHEN \u0027room\u0027 THEN \u0027Room\u0027\n       END AS target_type,\n       r.target_id,\n       u.first_name AS reviewer_first_name,\n       u.last_name AS reviewer_last_name\nFROM ratings r\nJOIN rentals rnt ON rnt.id = r.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nJOIN users u ON u.id = r.reviewer_id\nWHERE r.rating \u003c 3\n  AND b.owner_id = :owner_id\nORDER BY r.rating ASC, r.created_at DESC;"
+  }
+]
