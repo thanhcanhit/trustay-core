@@ -4,7 +4,12 @@ import { generateText } from 'ai';
 import { PrismaService } from '../../prisma/prisma.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import { buildSqlPrompt } from '../prompts/sql-agent.prompt';
-import { ChatSession, SqlGenerationResult } from '../types/chat.types';
+import {
+	ChatSession,
+	SqlGenerationAttempt,
+	SqlGenerationResult,
+	TokenUsage,
+} from '../types/chat.types';
 import { getCompleteDatabaseSchema } from '../utils/schema-provider';
 import { serializeBigInt } from '../utils/serializer';
 import { isAggregateQuery, validateSqlSafety } from '../utils/sql-safety';
@@ -120,6 +125,11 @@ export class SqlGenerationAgent {
 			});
 			userRole = user?.role ?? undefined;
 		}
+		const attemptLogs: SqlGenerationAttempt[] = [];
+		let tablesHint: string | undefined;
+		let relationshipsHint: string | undefined;
+		let filtersHint: string | undefined;
+		let intentAction: 'search' | 'own' | 'stats' | undefined;
 		// Step A: RAG Retrieval - Get relevant schema and QA chunks
 		let ragContext = '';
 		let canonicalDecision: any = null;
@@ -147,8 +157,8 @@ export class SqlGenerationAgent {
 				// Step 1: always fetch schema context
 				// Enhance query with table hints from orchestrator if available
 				// This helps vector search match with table_complete chunks (1 chunk per table)
-				const tablesHint = this.extractTablesHint(session);
-				const relationshipsHint = this.extractRelationshipsHint(session);
+				tablesHint = this.extractTablesHint(session);
+				relationshipsHint = this.extractRelationshipsHint(session);
 				// Enhanced query: add table names to help vector search find relevant table_complete chunks
 				// Format: "query table1 table2 table3" - helps match table_name field in chunks
 				const enhancedQuery = tablesHint

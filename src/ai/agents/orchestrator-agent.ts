@@ -358,6 +358,10 @@ export class OrchestratorAgent {
 				requestType,
 				userRole,
 				userId,
+				prompt: orchestratorPrompt,
+				rawResponse: response,
+				recentMessages,
+				currentPageContext,
 				businessContext: businessContext || undefined,
 				readyForSql,
 				needsClarification:
@@ -385,6 +389,7 @@ export class OrchestratorAgent {
 				requestType: RequestType.GENERAL_CHAT,
 				userRole,
 				userId,
+				prompt: orchestratorPrompt,
 				businessContext: businessContext || undefined,
 				readyForSql: false,
 				needsClarification: true,

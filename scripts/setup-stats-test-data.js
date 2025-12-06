@@ -792,10 +792,11 @@ async function setupStatsTestData() {
 		}
 	}
 
-	// Create bills for the last 3 months
-	console.log('\n📄 Creating bills for the last 3 months...');
+	// Create bills for the last 3 months with more realistic states and payments
+	console.log('\ndY\", Creating bills for the last 3 months...');
 	const currentDate = new Date();
 	const billsCreated = [];
+	const paymentsCreated = [];
 
 	for (let monthOffset = 2; monthOffset >= 0; monthOffset--) {
 		const billDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - monthOffset, 1);
@@ -805,13 +806,8 @@ async function setupStatsTestData() {
 
 		for (let i = 0; i < createdRentals.length; i++) {
 			const rental = createdRentals[i];
+			const tenant = await prisma.user.findUnique({ where: { id: rental.tenantId } });
 
-			// Get tenant for this rental
-			const tenant = await prisma.user.findUnique({
-				where: { id: rental.tenantId },
-			});
-
-			// Check if bill already exists
 			const existingBill = await prisma.bill.findUnique({
 				where: {
 					rentalId_billingPeriod: {
@@ -822,40 +818,36 @@ async function setupStatsTestData() {
 			});
 
 			if (existingBill) {
-				console.log(`   ⏭️  Bill for ${billingPeriod} (Room ${i + 1}) already exists`);
+				console.log(`   ??-?,?  Bill for ${billingPeriod} (Room ${i + 1}) already exists`);
 				billsCreated.push(existingBill);
 				continue;
 			}
 
-			// Get room data from room instance
 			const roomInstance = await prisma.roomInstance.findUnique({
 				where: { id: rental.roomInstanceId },
 				include: { room: true },
 			});
 
 			if (!roomInstance) {
-				console.log(`   ⚠️  Room instance not found for rental ${rental.id}, skipping bill`);
+				console.log(`   ?s??,?  Room instance not found for rental ${rental.id}, skipping bill`);
 				continue;
 			}
 
-			// Find matching room data
 			const roomData = roomsData.find((rd) => rd.name === roomInstance.room.name);
-
 			if (!roomData) {
-				console.log(`   ⚠️  Room data not found for ${roomInstance.room.name}, using default`);
+				console.log(`   ?s??,?  Room data not found for ${roomInstance.room.name}, using default`);
 				continue;
 			}
 
-			// Calculate bill amounts - mỗi phòng có giá khác nhau
+			// Calculate bill amounts - varied by room and month
 			const rentAmount = roomData.basePrice;
 			const internetAmount = roomData.hasInternet ? roomData.internetPrice : 0;
 			const managementAmount = roomData.managementPrice;
 			const airConditionerAmount = roomData.hasAirConditioner ? roomData.airConditionerPrice : 0;
 			const washingMachineAmount = roomData.hasWashingMachine ? roomData.washingMachinePrice : 0;
 			const trashAmount = roomData.trashPrice;
-			// Điện nước theo đồng hồ (metered) - usage khác nhau cho mỗi phòng (đa dạng hơn)
-			const electricityUsage = 40 + (i % 6) * 8 + monthOffset * 5; // kWh (varied by room and month)
-			const waterUsage = 4 + (i % 6) + monthOffset * 0.5; // m³ (varied)
+			const electricityUsage = 38 + (i % 6) * 7 + monthOffset * 4; // kWh
+			const waterUsage = 3.5 + (i % 6) * 0.9 + monthOffset * 0.4; // m3
 			const electricityAmount = electricityUsage * roomData.electricityUnitPrice;
 			const waterAmount = waterUsage * roomData.waterUnitPrice;
 
@@ -870,12 +862,36 @@ async function setupStatsTestData() {
 				waterAmount;
 			const totalAmount = subtotal;
 
-			// Create bill
+			// Scenario per month: current = mixed pending/overdue, previous = mostly paid, older = paid
+			const billScenario =
+				monthOffset === 0
+					? {
+							status: i % 3 === 2 ? 'overdue' : 'pending',
+							dueShiftDays: i % 3 === 0 ? 5 : i % 3 === 1 ? 2 : -3,
+							paidRatio: i % 4 === 1 ? 0.35 : 0,
+						}
+					: monthOffset === 1
+						? {
+								status: i % 4 === 3 ? 'overdue' : 'paid',
+								dueShiftDays: -4,
+								paidRatio: i % 4 === 3 ? 0.6 : 1,
+							}
+						: { status: 'paid', dueShiftDays: -10, paidRatio: 1 };
+
 			const periodStart = new Date(billingYear, billingMonth - 1, 1);
 			const periodEnd = new Date(billingYear, billingMonth, 0);
-			const dueDate = new Date(billingYear, billingMonth, 5);
+			const baseDueDate = new Date(billingYear, billingMonth - 1, 5);
+			const dueDate = new Date(baseDueDate);
+			if (monthOffset === 0) {
+				dueDate.setFullYear(
+					currentDate.getFullYear(),
+					currentDate.getMonth(),
+					currentDate.getDate() + billScenario.dueShiftDays,
+				);
+			} else {
+				dueDate.setDate(Math.max(1, baseDueDate.getDate() + billScenario.dueShiftDays));
+			}
 
-			// Calculate rental period within billing period
 			const rentalStartInPeriod =
 				rental.contractStartDate > periodStart ? rental.contractStartDate : periodStart;
 			const rentalEndInPeriod =
@@ -892,56 +908,38 @@ async function setupStatsTestData() {
 					billingYear,
 					periodStart,
 					periodEnd,
-					rentalStartDate: rentalStartInPeriod, // Ngày bắt đầu rental trong kỳ
-					rentalEndDate: rentalEndInPeriod, // Ngày kết thúc rental trong kỳ
+					rentalStartDate: rentalStartInPeriod,
+					rentalEndDate: rentalEndInPeriod,
 					subtotal,
-					discountAmount: 0, // Không có giảm giá
-					taxAmount: 0, // Không có thuế
+					discountAmount: 0,
+					taxAmount: 0,
 					totalAmount,
-					paidAmount: 0, // Chưa trả, sẽ cập nhật sau khi có payment
+					paidAmount: 0,
 					remainingAmount: totalAmount,
 					dueDate,
-					// Đa dạng trạng thái: một số đã trả, một số chưa trả, một số quá hạn
-					status:
-						monthOffset === 0
-							? i % 3 === 0
-								? 'pending'
-								: i % 3 === 1
-									? 'overdue'
-									: 'pending' // Current month: mixed status
-							: i % 5 === 0
-								? 'paid'
-								: i % 5 === 1
-									? 'paid'
-									: i % 5 === 2
-										? 'paid'
-										: i % 5 === 3
-											? 'overdue'
-											: 'paid', // Past months: mostly paid, some overdue
+					status: billScenario.status,
 					occupancyCount: roomData.maxOccupancy,
 				},
 			});
 
-			// Create bill items
 			await prisma.billItem.create({
 				data: {
 					billId: bill.id,
 					itemType: 'rent',
-					itemName: 'Tiền thuê phòng',
-					description: `Tiền thuê phòng tháng ${billingMonth}/${billingYear}`,
+					itemName: 'Tien thue phong',
+					description: `Tien thue phong thang ${billingMonth}/${billingYear}`,
 					amount: rentAmount,
 					currency: 'VND',
 				},
 			});
 
-			// Chỉ tạo bill item cho internet nếu phòng có internet
 			if (roomData.hasInternet && internetAmount > 0) {
 				await prisma.billItem.create({
 					data: {
 						billId: bill.id,
 						itemType: 'utility',
-						itemName: 'Phí Internet',
-						description: 'Phí Internet hàng tháng',
+						itemName: 'Phi Internet',
+						description: 'Phi Internet hang thang',
 						amount: internetAmount,
 						currency: 'VND',
 					},
@@ -952,49 +950,46 @@ async function setupStatsTestData() {
 				data: {
 					billId: bill.id,
 					itemType: 'service',
-					itemName: 'Phí quản lý',
-					description: 'Phí quản lý tòa nhà',
+					itemName: 'Phi quan ly',
+					description: 'Phi quan ly toa nha',
 					amount: managementAmount,
 					currency: 'VND',
 				},
 			});
 
-			// Máy lạnh - chỉ cho phòng có máy lạnh
 			if (roomData.hasAirConditioner && airConditionerAmount > 0) {
 				await prisma.billItem.create({
 					data: {
 						billId: bill.id,
 						itemType: 'utility',
-						itemName: 'Phí máy lạnh',
-						description: 'Phí máy lạnh hàng tháng (+200k)',
+						itemName: 'Phi may lanh',
+						description: 'Phi may lanh hang thang (+200k)',
 						amount: airConditionerAmount,
 						currency: 'VND',
 					},
 				});
 			}
 
-			// Máy giặt - 100k/phòng
 			if (roomData.hasWashingMachine && washingMachineAmount > 0) {
 				await prisma.billItem.create({
 					data: {
 						billId: bill.id,
 						itemType: 'service',
-						itemName: 'Phí máy giặt',
-						description: 'Phí máy giặt hàng tháng (100k/phòng)',
+						itemName: 'Phi may giat',
+						description: 'Phi may giat hang thang (100k/phong)',
 						amount: washingMachineAmount,
 						currency: 'VND',
 					},
 				});
 			}
 
-			// Rác - 30k/phòng
 			if (trashAmount > 0) {
 				await prisma.billItem.create({
 					data: {
 						billId: bill.id,
 						itemType: 'service',
-						itemName: 'Phí thu gom rác',
-						description: 'Phí thu gom rác hàng tháng (30k/phòng)',
+						itemName: 'Phi thu gom rac',
+						description: 'Phi thu gom rac hang thang (30k/phong)',
 						amount: trashAmount,
 						currency: 'VND',
 					},
@@ -1005,8 +1000,8 @@ async function setupStatsTestData() {
 				data: {
 					billId: bill.id,
 					itemType: 'utility',
-					itemName: 'Điện',
-					description: `Điện: ${electricityUsage.toFixed(1)} kWh`,
+					itemName: 'Dien',
+					description: `Dien: ${electricityUsage.toFixed(1)} kWh`,
 					quantity: electricityUsage,
 					unitPrice: roomData.electricityUnitPrice,
 					amount: electricityAmount,
@@ -1018,8 +1013,8 @@ async function setupStatsTestData() {
 				data: {
 					billId: bill.id,
 					itemType: 'utility',
-					itemName: 'Nước',
-					description: `Nước: ${waterUsage.toFixed(1)} m³`,
+					itemName: 'Nuoc',
+					description: `Nuoc: ${waterUsage.toFixed(1)} m3`,
 					quantity: waterUsage,
 					unitPrice: roomData.waterUnitPrice,
 					amount: waterAmount,
@@ -1027,11 +1022,48 @@ async function setupStatsTestData() {
 				},
 			});
 
-			// Create payment for past months - đa dạng hơn
-			if (monthOffset > 0 && tenant && bill.status === 'paid') {
-				// Một số thanh toán đúng hạn, một số trễ
-				const paymentDay = i % 3 === 0 ? 5 : i % 3 === 1 ? 10 : 15; // Thanh toán vào ngày 5, 10, hoặc 15
+			let paidAmount = 0;
+			let paidDate = null;
+			const paymentMethod =
+				i % 4 === 0
+					? 'bank_transfer'
+					: i % 4 === 1
+						? 'cash'
+						: i % 4 === 2
+							? 'e_wallet'
+							: 'bank_transfer';
+
+			if (tenant && billScenario.paidRatio > 0) {
+				const paymentAmount = Number((totalAmount * billScenario.paidRatio).toFixed(0));
+				const paymentDate =
+					monthOffset === 0
+						? new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() - 1)
+						: new Date(billingYear, billingMonth - 1, 8 + (i % 3) * 2);
 				const payment = await prisma.payment.create({
+					data: {
+						rentalId: rental.id,
+						billId: bill.id,
+						payerId: tenant.id,
+						paymentType: 'rent',
+						amount: paymentAmount,
+						currency: 'VND',
+						paymentMethod,
+						paymentStatus: 'completed',
+						paymentDate,
+						dueDate,
+						description:
+							billScenario.paidRatio < 1
+								? `Thanh toan ${Math.round(billScenario.paidRatio * 100)}% hoa don thang ${billingMonth}/${billingYear}`
+								: `Thanh toan hoa don thang ${billingMonth}/${billingYear}`,
+					},
+				});
+				paymentsCreated.push(payment);
+				paidAmount = paymentAmount;
+				paidDate = paymentDate;
+			}
+
+			if (tenant && billScenario.status === 'pending' && billScenario.paidRatio === 0) {
+				const pendingPayment = await prisma.payment.create({
 					data: {
 						rentalId: rental.id,
 						billId: bill.id,
@@ -1039,64 +1071,38 @@ async function setupStatsTestData() {
 						paymentType: 'rent',
 						amount: totalAmount,
 						currency: 'VND',
-						paymentMethod:
-							i % 4 === 0
-								? 'bank_transfer'
-								: i % 4 === 1
-									? 'cash'
-									: i % 4 === 2
-										? 'e_wallet'
-										: 'bank_transfer',
-						paymentStatus: 'completed',
-						paymentDate: new Date(billingYear, billingMonth - 1, paymentDay),
-						description: `Thanh toán hóa đơn tháng ${billingMonth}/${billingYear}`,
+						paymentMethod,
+						paymentStatus: 'pending',
+						dueDate,
+						description: `Cho thanh toan hoa don thang ${billingMonth}/${billingYear}`,
 					},
 				});
-
-				// Update bill status
-				await prisma.bill.update({
-					where: { id: bill.id },
-					data: {
-						status: 'paid',
-						paidAmount: totalAmount,
-						remainingAmount: 0,
-						paidDate: payment.paymentDate,
-					},
-				});
-			} else if (monthOffset > 0 && tenant && bill.status === 'overdue') {
-				// Một số hóa đơn quá hạn - thanh toán một phần hoặc chưa thanh toán
-				if (i % 2 === 0) {
-					// Thanh toán một phần (50%)
-					const partialAmount = totalAmount * 0.5;
-					const payment = await prisma.payment.create({
-						data: {
-							rentalId: rental.id,
-							billId: bill.id,
-							payerId: tenant.id,
-							paymentType: 'rent',
-							amount: partialAmount,
-							currency: 'VND',
-							paymentMethod: 'bank_transfer',
-							paymentStatus: 'completed',
-							paymentDate: new Date(billingYear, billingMonth - 1, 20), // Thanh toán trễ
-							description: `Thanh toán một phần hóa đơn tháng ${billingMonth}/${billingYear}`,
-						},
-					});
-
-					await prisma.bill.update({
-						where: { id: bill.id },
-						data: {
-							paidAmount: partialAmount,
-							remainingAmount: totalAmount - partialAmount,
-							paidDate: payment.paymentDate,
-						},
-					});
-				}
+				paymentsCreated.push(pendingPayment);
 			}
+
+			const remainingAmount = totalAmount - paidAmount;
+			const finalStatus =
+				remainingAmount <= 0
+					? 'paid'
+					: billScenario.status === 'paid'
+						? 'paid'
+						: billScenario.status === 'overdue'
+							? 'overdue'
+							: 'pending';
+
+			await prisma.bill.update({
+				where: { id: bill.id },
+				data: {
+					status: finalStatus,
+					paidAmount,
+					remainingAmount,
+					paidDate: paidAmount > 0 ? paidDate : null,
+				},
+			});
 
 			billsCreated.push(bill);
 			console.log(
-				`   ✅ Created bill for ${billingPeriod} (Room ${i + 1}): ${totalAmount.toLocaleString('vi-VN')} VND - Status: ${bill.status}`,
+				`   ?o. Created bill for ${billingPeriod} (Room ${i + 1}): ${totalAmount.toLocaleString('vi-VN')} VND - Status: ${finalStatus} - Paid ${paidAmount.toLocaleString('vi-VN')} VND`,
 			);
 		}
 	}
@@ -1185,6 +1191,21 @@ async function setupStatsTestData() {
 		hashedPassword,
 	});
 
+	// Sync landlord balance with completed payments and prepare payment stats
+	const pendingPaymentsCount = paymentsCreated.filter(
+		(payment) => payment.paymentStatus === 'pending',
+	).length;
+	const completedPaymentsCount = paymentsCreated.length - pendingPaymentsCount;
+	const completedPaymentAgg = await prisma.payment.aggregate({
+		where: { rental: { ownerId: landlord.id }, paymentStatus: 'completed' },
+		_sum: { amount: true },
+	});
+	const totalCompletedPayments = Number(completedPaymentAgg._sum.amount ?? 0);
+	await prisma.user.update({
+		where: { id: landlord.id },
+		data: { balance: totalCompletedPayments },
+	});
+
 	// Summary
 	console.log('\n📊 Test Data Setup Summary:');
 	console.log(`   • Landlord: ${landlord.firstName} ${landlord.lastName} (${landlord.email})`);
@@ -1205,6 +1226,13 @@ async function setupStatsTestData() {
 	console.log(`   • Tenants: ${createdTenants.length} sinh viên IUH`);
 	console.log(`   • Rentals: ${createdRentals.length}`);
 	console.log(`   • Bills: ${billsCreated.length} (3 tháng × ${createdRentals.length} phòng)`);
+	console.log(
+		`   • Payments: ${paymentsCreated.length} (completed: ${completedPaymentsCount}, pending: ${pendingPaymentsCount})`,
+	);
+	console.log(
+		`   • Landlord balance (completed payments): ${totalCompletedPayments.toLocaleString('vi-VN')} VND`,
+	);
+
 	console.log(`   • Ratings: ${createdRentals.length}`);
 	console.log(
 		'   • Dashboard sample data: bookings, invitations, roommate posts, contracts, notifications',
