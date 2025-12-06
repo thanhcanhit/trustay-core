@@ -1,8 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { PaymentMethod, PaymentType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
-import { Transform } from 'class-transformer';
-import { IsDateString, IsDecimal, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import {
+	IsDateString,
+	IsEnum,
+	IsNotEmpty,
+	IsNumber,
+	IsOptional,
+	IsString,
+	IsUUID,
+} from 'class-validator';
 
 export class CreatePaymentDto {
 	@ApiProperty({ description: 'ID của rental' })
@@ -18,9 +26,16 @@ export class CreatePaymentDto {
 	@IsEnum(PaymentType)
 	paymentType: PaymentType;
 
-	@ApiProperty({ description: 'Số tiền thanh toán' })
-	@Transform(({ value }) => new Decimal(value))
-	@IsDecimal()
+	@ApiProperty({ description: 'Số tiền thanh toán', type: 'number', example: 4021451.61 })
+	@IsNotEmpty({ message: 'amount is required' })
+	@Transform(({ value }) => {
+		// Convert to number first, then to Decimal
+		const numValue = typeof value === 'string' ? parseFloat(value) : value;
+		if (isNaN(numValue)) {
+			throw new Error('amount must be a valid number');
+		}
+		return new Decimal(numValue);
+	})
 	amount: Decimal;
 
 	@ApiProperty({ default: 'VND', description: 'Loại tiền tệ' })
