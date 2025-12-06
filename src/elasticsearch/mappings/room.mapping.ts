@@ -134,16 +134,7 @@ export const roomIndexMapping = {
 				},
 			},
 		},
-		// Add index optimization settings
 		index: {
-			// Enable field data caching for frequently accessed fields
-			fielddata: {
-				'building.provinceId': true,
-				'building.districtId': true,
-				'building.wardId': true,
-				roomType: true,
-				isVerified: true,
-			},
 			// Optimize for search performance
 			search: {
 				slowlog: {
