@@ -177,6 +177,14 @@ export interface OrchestratorAgentResponse {
 	requestType: RequestType;
 	userRole: UserRole;
 	userId?: string;
+	prompt?: string;
+	rawResponse?: string;
+	recentMessages?: string;
+	currentPageContext?: {
+		entity: string;
+		identifier: string;
+		type?: 'slug' | 'id';
+	};
 	businessContext?: string; // RAG business context from KnowledgeService
 	readyForSql: boolean;
 	needsClarification?: boolean;
@@ -194,6 +202,36 @@ export interface OrchestratorAgentResponse {
 /**
  * SQL generation result
  */
+export interface SqlGenerationAttempt {
+	attempt: number;
+	prompt?: string;
+	rawResponse?: string;
+	finalSql?: string;
+	tokenUsage?: TokenUsage;
+	durationMs?: number;
+	error?: string;
+	safetyCheck?: {
+		isValid: boolean;
+		violations?: string[];
+		enforcedSql?: string;
+		isAggregate?: boolean;
+	};
+}
+
+export interface SqlGenerationDebug {
+	ragContext?: string;
+	canonicalDecision?: any;
+	intentAction?: string;
+	filtersHint?: string;
+	tablesHint?: string;
+	relationshipsHint?: string;
+	recentMessages?: string;
+	schemaChunkCount?: number;
+	qaChunkCount?: number;
+	qaChunkSqlCount?: number;
+	attempts?: SqlGenerationAttempt[];
+}
+
 export interface SqlGenerationResult {
 	sql: string;
 	results: any;
@@ -202,6 +240,7 @@ export interface SqlGenerationResult {
 	userId?: string;
 	userRole?: string;
 	tokenUsage?: TokenUsage; // Token usage from LLM call(s)
+	debug?: SqlGenerationDebug;
 }
 
 /**
@@ -213,4 +252,18 @@ export interface ResultValidationResponse {
 	violations?: string[]; // List of validation violations
 	severity?: 'ERROR' | 'WARN'; // Severity level: ERROR blocks persistence, WARN allows but logs
 	tokenUsage?: TokenUsage; // Token usage from LLM call
+	prompt?: string;
+	rawResponse?: string;
+	resultsPreview?: string;
+}
+
+/**
+ * Response generator output (JSON envelope text + debug)
+ */
+export interface ResponseGeneratorResult {
+	responseText: string;
+	prompt: string;
+	mode: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT' | 'NONE';
+	tokenUsage?: TokenUsage;
+	structuredData?: { list: any[] | null; table: any | null; chart: any | null } | null;
 }

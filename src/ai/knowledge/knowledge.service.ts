@@ -170,6 +170,7 @@ export class KnowledgeService {
 				sqlQAId: number;
 				score: number;
 				question: string;
+				reusePreferred?: boolean;
 		  }
 		| {
 				mode: 'hint';
@@ -197,11 +198,12 @@ export class KnowledgeService {
 				sqlQAId: Number(exactHit.id),
 				score: 1,
 				question: exactHit.question,
+				reusePreferred: true, // exact match → strongly prefer reuse
 			};
 		}
 
 		// Vector similarity check
-		const results = await this.vectorStore.similaritySearch(question, 'qa', {
+		const results = await this.vectorStore.similaritySearch(normalized, 'qa', {
 			limit: 1,
 			tenantId: this.tenantId,
 			dbKey: this.dbKey,
@@ -228,6 +230,7 @@ export class KnowledgeService {
 				sqlQAId: Number(hit.id),
 				score: top.score,
 				question: hit.question,
+				reusePreferred: top.score >= 0.99, // near exact → prefer reuse
 			};
 		}
 		if (top.score >= thresholds.soft) {
@@ -284,7 +287,7 @@ export class KnowledgeService {
 		// IMPORTANT: For room-specific queries, we should check if SQL is different (different slug/id)
 		// Even if question is similar, SQL might be different (different room filter)
 		try {
-			const near = await this.vectorStore.similaritySearch(question, 'qa', {
+			const near = await this.vectorStore.similaritySearch(this.normalizeQuestion(question), 'qa', {
 				limit: 1,
 				tenantId: this.tenantId,
 				dbKey: this.dbKey,
@@ -445,7 +448,7 @@ export class KnowledgeService {
 	async buildRagContext(
 		query: string,
 		params: {
-			limit?: number;
+			schemaLimit?: number;
 			threshold?: number;
 			includeBusiness?: boolean;
 			includeQA?: boolean;
@@ -460,11 +463,14 @@ export class KnowledgeService {
 		businessCount: number;
 		qaCount: number;
 	}> {
-		const limit = params.limit ?? 8;
+		const schemaLimit = params.schemaLimit ?? 32;
 		const threshold = params.threshold ?? 0.6;
 		const qaLimit = params.qaLimit ?? 2;
 
-		const schemaResults = await this.retrieveSchemaContext(query, { limit, threshold });
+		const schemaResults = await this.retrieveSchemaContext(query, {
+			limit: schemaLimit,
+			threshold,
+		});
 		const schemaBlock = schemaResults.length
 			? `RELEVANT SCHEMA CONTEXT (from vector search):\n${schemaResults
 					.map((r) => r.content)
@@ -475,14 +481,17 @@ export class KnowledgeService {
 		let qaBlock = '';
 
 		if (params.includeBusiness) {
-			const businessResults = await this.retrieveBusinessContext(query, { limit, threshold });
+			const businessResults = await this.retrieveBusinessContext(query, {
+				limit: schemaLimit,
+				threshold,
+			});
 			businessBlock = businessResults.length
 				? `RELEVANT BUSINESS CONTEXT:\n${businessResults.map((r) => r.content).join('\n')}\n`
 				: '';
 		}
 
 		if (params.includeQA) {
-			const qaResults = await this.retrieveKnowledgeContext(query, { limit, threshold });
+			const qaResults = await this.retrieveKnowledgeContext(query, { limit: qaLimit, threshold });
 			qaBlock = qaResults.length
 				? `RELEVANT Q&A EXAMPLES:\n${qaResults
 						.slice(0, qaLimit)
@@ -530,7 +539,8 @@ export class KnowledgeService {
 		question: string,
 		threshold: number = 0.85,
 	): Promise<{ chunkId: number; sqlQAId: number } | null> {
-		const results = await this.vectorStore.similaritySearch(question, 'qa', {
+		const normalized = this.normalizeQuestion(question);
+		const results = await this.vectorStore.similaritySearch(normalized, 'qa', {
 			limit: 1,
 			tenantId: this.tenantId,
 			dbKey: this.dbKey,
@@ -556,7 +566,15 @@ export class KnowledgeService {
 	}
 
 	private normalizeQuestion(input: string): string {
-		return (input || '').toLowerCase().normalize('NFC').replace(/\s+/g, ' ').trim();
+		return (
+			(input || '')
+				.toLowerCase()
+				.normalize('NFC')
+				// Remove common punctuation (.,!?:;) to avoid minor differences
+				.replace(/[.,!?;:]+/g, ' ')
+				.replace(/\s+/g, ' ')
+				.trim()
+		);
 	}
 
 	private extractQuestionFromContent(content: string): string {
@@ -580,6 +598,20 @@ export class KnowledgeService {
 			tenantId: this.tenantId,
 			dbKey: this.dbKey,
 		});
+	}
+
+	/**
+	 * Find chunk ID linked to a SQL QA entry
+	 */
+	async findChunkBySqlQAId(sqlQAId: number): Promise<number | null> {
+		return await this.vectorStore.findChunkBySqlQAId(sqlQAId);
+	}
+
+	/**
+	 * Find SQL QA ID linked to a chunk
+	 */
+	async findSqlQAIdByChunkId(chunkId: number): Promise<number | null> {
+		return await this.vectorStore.findSqlQAIdByChunkId(chunkId);
 	}
 
 	private splitSchemaIntoChunks(schema: string): string[] {
@@ -646,5 +678,109 @@ export class KnowledgeService {
 			),
 		].join('\n');
 		return [amenitySection, costTypeSection, ruleSection].join('\n\n');
+	}
+
+	/**
+	 * Get canonical SQL QA list with pagination and search
+	 * @param params - Query parameters
+	 * @returns Paginated list of SQL QA entries
+	 */
+	async getCanonicalList(params: {
+		search?: string;
+		limit?: number;
+		offset?: number;
+	}): Promise<{ items: any[]; total: number; limit: number; offset: number }> {
+		return await this.vectorStore.getCanonicalList(params);
+	}
+
+	/**
+	 * Get AI chunks list with pagination, search, and filter
+	 * @param params - Query parameters
+	 * @returns Paginated list of AI chunks
+	 */
+	async getChunksList(params: {
+		search?: string;
+		collection?: string;
+		limit?: number;
+		offset?: number;
+	}): Promise<{ items: any[]; total: number; limit: number; offset: number }> {
+		return await this.vectorStore.getChunksList({
+			...params,
+			collection: params.collection as AiChunkCollection | undefined,
+		});
+	}
+
+	/**
+	 * Teach new knowledge or update existing knowledge
+	 * @param params - Teaching parameters
+	 * @returns Result with chunkId, sqlQAId, and isUpdate flag
+	 */
+	async teachOrUpdateKnowledge(params: {
+		id?: number;
+		question: string;
+		sql: string;
+		sessionId?: string;
+		userId?: string;
+	}): Promise<{ chunkId: number; sqlQAId: number; isUpdate: boolean }> {
+		if (params.id) {
+			// Update existing SQL QA entry
+			await this.vectorStore.updateSqlQA(params.id, {
+				question: params.question,
+				sqlCanonical: params.sql,
+			});
+			// Build SQL template from the updated SQL
+			const templated = this.buildSqlTemplate(params.sql, params.question);
+			// Update template and parameters if needed
+			if (templated.sqlTemplate || templated.parameters) {
+				await this.vectorStore.updateSqlQA(params.id, {
+					sqlTemplate: templated.sqlTemplate,
+					parameters: templated.parameters,
+				});
+			}
+			// Find associated chunk by SQL QA ID
+			const existingChunkId = await this.vectorStore.findChunkBySqlQAId(params.id);
+			let chunkId = 0;
+			if (existingChunkId) {
+				// Update existing chunk with new question content and regenerate embedding
+				const qaContent = `${params.question}`;
+				await this.vectorStore.updateChunk(existingChunkId, qaContent, {
+					model: 'text-embedding-004',
+				});
+				chunkId = existingChunkId;
+				this.logger.debug(`Updated existing chunk ${chunkId} for SQL QA ${params.id}`);
+			} else {
+				// No chunk exists, create a new one
+				const qaContent = `${params.question}`;
+				chunkId = await this.vectorStore.addChunk(
+					{
+						tenantId: this.tenantId,
+						collection: 'qa',
+						dbKey: this.dbKey,
+						content: qaContent,
+						sqlQaId: params.id,
+					},
+					{ model: 'text-embedding-004' },
+				);
+				this.logger.debug(`Created new chunk ${chunkId} for SQL QA ${params.id}`);
+			}
+			return {
+				chunkId,
+				sqlQAId: params.id,
+				isUpdate: true,
+			};
+		} else {
+			// Add new knowledge (same as saveQAInteraction)
+			const result = await this.saveQAInteraction({
+				question: params.question,
+				sql: params.sql,
+				sessionId: params.sessionId,
+				userId: params.userId,
+			});
+			return {
+				chunkId: result.chunkId,
+				sqlQAId: result.sqlQAId,
+				isUpdate: false,
+			};
+		}
 	}
 }

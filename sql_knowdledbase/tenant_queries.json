@@ -1,0 +1,202 @@
+﻿[
+  {
+    "question": "Tìm cho tôi các phòng trọ ở Quận 9 giá dưới 3 triệu.",
+    "sql": "SELECT b.name AS building_name, rm.name AS room_type_name, ri.room_number, rp.base_price_monthly\nFROM rooms rm\nJOIN buildings b ON b.id = rm.building_id\nJOIN districts d ON d.id = b.district_id\nJOIN room_pricing rp ON rp.room_id = rm.id\nJOIN room_instances ri ON ri.room_id = rm.id\nWHERE d.name ILIKE \u0027%Quận 9%\u0027\n  AND rp.base_price_monthly \u003c 3000000\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027);"
+  },
+  {
+    "question": "Có phòng nào dạng Sleepbox gần khu Công nghệ cao không?",
+    "sql": "SELECT b.name AS building_name, ri.room_number, rp.base_price_monthly\nFROM rooms rm\nJOIN buildings b ON b.id = rm.building_id\nJOIN districts d ON d.id = b.district_id\nJOIN room_pricing rp ON rp.room_id = rm.id\nJOIN room_instances ri ON ri.room_id = rm.id\nWHERE rm.room_type = \u0027sleepbox\u0027\n  AND (d.name ILIKE \u0027%công nghệ cao%\u0027 OR b.address_line1 ILIKE \u0027%công nghệ cao%\u0027 OR b.name ILIKE \u0027%công nghệ cao%\u0027)\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027);"
+  },
+  {
+    "question": "Liệt kê các phòng cho phép nuôi thú cưng (Pets allowed).",
+    "sql": "SELECT b.name AS building_name, ri.room_number, rm.name AS room_name\nFROM room_rules rr\nJOIN room_rule_templates rrt ON rrt.id = rr.rule_template_id\nJOIN rooms rm ON rm.id = rr.room_id\nJOIN buildings b ON b.id = rm.building_id\nJOIN room_instances ri ON ri.room_id = rm.id\nWHERE rrt.category = \u0027pets\u0027\n  AND rr.is_enforced = TRUE\n  AND rrt.rule_type = \u0027allowed\u0027\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027);"
+  },
+  {
+    "question": "Tìm phòng có máy lạnh và máy nước nóng (Amenities).",
+    "sql": "SELECT DISTINCT b.name AS building_name, ri.room_number\nFROM rooms rm\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nJOIN room_amenities ra1 ON ra1.room_id = rm.id\nJOIN amenities a1 ON a1.id = ra1.amenity_id\nJOIN room_amenities ra2 ON ra2.room_id = rm.id\nJOIN amenities a2 ON a2.id = ra2.amenity_id\nWHERE a1.name ILIKE \u0027%máy lạnh%\u0027   -- AC\n  AND a2.name ILIKE \u0027%nước nóng%\u0027 -- water heater\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027);"
+  },
+  {
+    "question": "Có căn hộ chung cư mini nào còn trống ở Quận 7 không?",
+    "sql": "SELECT b.name AS building_name, ri.room_number, rp.base_price_monthly\nFROM rooms rm\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nJOIN districts d ON d.id = b.district_id\nJOIN room_pricing rp ON rp.room_id = rm.id\nWHERE rm.room_type = \u0027apartment\u0027\n  AND d.name ILIKE \u0027%Quận 7%\u0027\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027);"
+  },
+  {
+    "question": "Tôi muốn tìm phòng có ban công và cửa sổ thoáng mát.",
+    "sql": "SELECT DISTINCT b.name AS building_name, ri.room_number\nFROM rooms rm\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nJOIN room_amenities ra1 ON ra1.room_id = rm.id\nJOIN amenities a1 ON a1.id = ra1.amenity_id\nJOIN room_amenities ra2 ON ra2.room_id = rm.id\nJOIN amenities a2 ON a2.id = ra2.amenity_id\nWHERE a1.name ILIKE \u0027%ban công%\u0027\n  AND a2.name ILIKE \u0027%cửa sổ%\u0027\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027);"
+  },
+  {
+    "question": "Tìm các phòng trọ giờ giấc tự do (không curfew).",
+    "sql": "SELECT b.name AS building_name, ri.room_number\nFROM room_rules rr\nJOIN room_rule_templates rrt ON rrt.id = rr.rule_template_id\nJOIN rooms rm ON rm.id = rr.room_id\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rrt.name ILIKE \u0027%giờ tự do%\u0027 OR rrt.name_en ILIKE \u0027%curfew%\u0027 OR rr.custom_value ILIKE \u0027%tự do%\u0027\n  AND rr.is_enforced = TRUE\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027);"
+  },
+  {
+    "question": "Sắp xếp các phòng trọ ở Bình Thạnh theo giá từ thấp đến cao.",
+    "sql": "SELECT b.name AS building_name, ri.room_number, rp.base_price_monthly\nFROM rooms rm\nJOIN room_pricing rp ON rp.room_id = rm.id\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nJOIN districts d ON d.id = b.district_id\nWHERE d.name ILIKE \u0027%Bình Thạnh%\u0027\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027)\nORDER BY rp.base_price_monthly ASC;"
+  },
+  {
+    "question": "Có phòng nào miễn phí tiền gửi xe (Parking cost) không?",
+    "sql": "SELECT DISTINCT b.name AS building_name, ri.room_number, rm.name AS room_name\nFROM room_costs rc\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nJOIN rooms rm ON rm.id = rc.room_id\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ct.category = \u0027parking\u0027\n  AND rc.is_active = TRUE\n  AND (rc.included_in_rent = TRUE OR COALESCE(rc.fixed_amount, 0) = 0);"
+  },
+  {
+    "question": "Tìm phòng trọ dành cho nữ (Female only) ở khu vực Cầu Giấy.",
+    "sql": "SELECT DISTINCT b.name AS building_name, ri.room_number, rm.name AS room_name\nFROM rooms rm\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nJOIN districts d ON d.id = b.district_id\nLEFT JOIN room_rules rr ON rr.room_id = rm.id\nLEFT JOIN room_rule_templates rrt ON rrt.id = rr.rule_template_id\nWHERE d.name ILIKE \u0027%Cầu Giấy%\u0027\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027)\n  AND (\n    (rrt.name ILIKE \u0027%nữ%\u0027 OR rr.custom_value ILIKE \u0027%nữ%\u0027)\n    OR (rm.description ILIKE \u0027%nữ%\u0027)\n  );"
+  },
+  {
+    "question": "Những phòng nào đang có ưu đãi giảm giá cọc (Deposit amount \u003c 1 tháng).",
+    "sql": "SELECT b.name AS building_name, ri.room_number, rp.base_price_monthly, rp.deposit_amount, rp.deposit_months\nFROM room_pricing rp\nJOIN rooms rm ON rm.id = rp.room_id\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rp.deposit_amount \u003c rp.base_price_monthly\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027);"
+  },
+  {
+    "question": "Liệt kê các phòng có diện tích lớn hơn 30m2 cho gia đình nhỏ.",
+    "sql": "SELECT b.name AS building_name, ri.room_number, rm.area_sqm, rm.max_occupancy\nFROM rooms rm\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rm.area_sqm \u003e 30\n  AND rm.max_occupancy \u003e= 3\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027);"
+  },
+  {
+    "question": "Tìm nhà nguyên căn có 3 phòng ngủ.",
+    "sql": "SELECT b.name AS building_name, rm.description, rm.total_rooms\nFROM rooms rm\nJOIN buildings b ON b.id = rm.building_id\nWHERE rm.room_type = \u0027whole_house\u0027\n  AND rm.total_rooms \u003e= 3;"
+  },
+  {
+    "question": "Phòng nào có bếp riêng (Kitchen amenity) trong phòng?",
+    "sql": "SELECT DISTINCT b.name AS building_name, ri.room_number\nFROM room_amenities ra\nJOIN amenities a ON a.id = ra.amenity_id\nJOIN rooms rm ON rm.id = ra.room_id\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nWHERE a.category = \u0027kitchen\u0027 AND (a.name ILIKE \u0027%bếp%\u0027 OR a.name_en ILIKE \u0027%kitchen%\u0027)\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027);"
+  },
+  {
+    "question": "Có phòng nào mới đăng trong 7 ngày qua không?",
+    "sql": "SELECT b.name AS building_name, ri.room_number, rm.created_at\nFROM rooms rm\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rm.created_at \u003e= (current_date - INTERVAL \u00277 days\u0027)\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027)\nORDER BY rm.created_at DESC;"
+  },
+  {
+    "question": "Tìm phòng có an ninh tốt, có camera giám sát hoặc bảo vệ.",
+    "sql": "SELECT DISTINCT b.name AS building_name, ri.room_number\nFROM room_amenities ra\nJOIN amenities a ON a.id = ra.amenity_id\nJOIN rooms rm ON rm.id = ra.room_id\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nWHERE (a.name ILIKE \u0027%camera%\u0027 OR a.name ILIKE \u0027%bảo vệ%\u0027 OR a.category = \u0027safety\u0027)\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027);"
+  },
+  {
+    "question": "Cho tôi xem các phòng được đánh giá 5 sao bởi những người thuê trước.",
+    "sql": "SELECT DISTINCT b.name AS building_name, ri.room_number, AVG(rt.rating) AS avg_rating\nFROM ratings rt\nJOIN rooms rm ON rm.id = rt.target_id AND rt.target_type = \u0027room\u0027\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nGROUP BY b.name, ri.room_number\nHAVING AVG(rt.rating) \u003e= 4.8;"
+  },
+  {
+    "question": "Có ai đang tìm nam ở ghép tại Quận 10 không?",
+    "sql": "SELECT rsp.id, rsp.title, rsp.monthly_rent, rsp.remaining_slots,\n       COALESCE(dext.name, dint.name) AS district_name\nFROM roommate_seeking_posts rsp\nLEFT JOIN districts dext ON dext.id = rsp.external_district_id\nLEFT JOIN room_instances ri ON ri.id = rsp.room_instance_id\nLEFT JOIN rooms rm ON rm.id = ri.room_id\nLEFT JOIN buildings b ON b.id = rm.building_id\nLEFT JOIN districts dint ON dint.id = b.district_id\nWHERE rsp.status = \u0027active\u0027\n  AND rsp.preferred_gender = \u0027male\u0027\n  AND COALESCE(dext.name, dint.name) ILIKE \u0027%Quận 10%\u0027;"
+  },
+  {
+    "question": "Tìm các bài đăng tìm người ở ghép giá khoảng 1.5 triệu/người.",
+    "sql": "SELECT rsp.id, rsp.title, rsp.monthly_rent, rsp.remaining_slots,\n       (rsp.monthly_rent / NULLIF(rsp.max_occupancy,0)) AS estimated_per_person\nFROM roommate_seeking_posts rsp\nWHERE rsp.status = \u0027active\u0027\n  AND (rsp.monthly_rent / NULLIF(rsp.max_occupancy,0)) \u003c= 1500000;"
+  },
+  {
+    "question": "Phòng nào đang cần tìm người ở ghép nhưng không hút thuốc?",
+    "sql": "SELECT rsp.id, rsp.title, rsp.remaining_slots, ri.room_number\nFROM roommate_seeking_posts rsp\nJOIN room_instances ri ON ri.id = rsp.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN room_rules rr ON rr.room_id = rm.id\nJOIN room_rule_templates rrt ON rrt.id = rr.rule_template_id\nWHERE rsp.status = \u0027active\u0027\n  AND rsp.remaining_slots \u003e 0\n  AND rrt.category = \u0027smoking\u0027\n  AND rrt.rule_type = \u0027forbidden\u0027;"
+  },
+  {
+    "question": "Có bài đăng tìm roommate nào yêu cầu người đi làm (công sở) không?",
+    "sql": "SELECT rsp.id, rsp.title, rsp.additional_requirements, rsp.monthly_rent\nFROM roommate_seeking_posts rsp\nWHERE rsp.status = \u0027active\u0027\n  AND (rsp.additional_requirements ILIKE \u0027%đi làm%\u0027 OR rsp.additional_requirements ILIKE \u0027%công sở%\u0027);"
+  },
+  {
+    "question": "Tìm các phòng đang thiếu 1 slot ở ghép dạng Ký túc xá (Dormitory).",
+    "sql": "SELECT rsp.id, rsp.title, rsp.remaining_slots, ri.room_number\nFROM roommate_seeking_posts rsp\nJOIN room_instances ri ON ri.id = rsp.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nWHERE rsp.status = \u0027active\u0027\n  AND rsp.remaining_slots = 1\n  AND rm.room_type = \u0027dormitory\u0027;"
+  },
+  {
+    "question": "Liệt kê các bài đăng tìm bạn cùng phòng vừa mới đăng hôm qua.",
+    "sql": "SELECT rsp.id, rsp.title, rsp.monthly_rent, rsp.created_at\nFROM roommate_seeking_posts rsp\nWHERE rsp.created_at::date = current_date - INTERVAL \u00271 day\u0027;"
+  },
+  {
+    "question": "Phòng 301 có đang tuyển thêm người ở ghép không?",
+    "sql": "SELECT rsp.id, rsp.title, rsp.remaining_slots, rsp.status\nFROM roommate_seeking_posts rsp\nJOIN room_instances ri ON ri.id = rsp.room_instance_id\nWHERE ri.room_number = \u0027301\u0027;"
+  },
+  {
+    "question": "Hóa đơn tiền nhà tháng này của tôi là bao nhiêu?",
+    "sql": "SELECT bll.id, bll.total_amount, bll.paid_amount, bll.remaining_amount\nFROM bills bll\nJOIN rentals rnt ON rnt.id = bll.rental_id\nWHERE rnt.tenant_id = :tenant_id\n  AND bll.billing_month = EXTRACT(MONTH FROM current_date)\n  AND bll.billing_year = EXTRACT(YEAR FROM current_date);"
+  },
+  {
+    "question": "Cho tôi xem chi tiết tiền điện và tiền nước tháng 11.",
+    "sql": "SELECT bi.item_name, bi.amount, bll.billing_month, bll.billing_year\nFROM bill_items bi\nJOIN bills bll ON bll.id = bi.bill_id\nJOIN rentals rnt ON rnt.id = bll.rental_id\nWHERE rnt.tenant_id = :tenant_id\n  AND bll.billing_month = 11\n  AND bi.item_type = \u0027utility\u0027\n  AND (bi.item_name ILIKE \u0027%điện%\u0027 OR bi.item_name ILIKE \u0027%nước%\u0027);"
+  },
+  {
+    "question": "Tôi còn nợ tiền phòng tháng nào chưa đóng không?",
+    "sql": "SELECT bll.billing_period, bll.total_amount, bll.paid_amount, bll.remaining_amount, bll.status\nFROM bills bll\nJOIN rentals rnt ON rnt.id = bll.rental_id\nWHERE rnt.tenant_id = :tenant_id\n  AND bll.remaining_amount \u003e 0\n  AND bll.status IN (\u0027pending\u0027, \u0027overdue\u0027);"
+  },
+  {
+    "question": "Hạn chót thanh toán của hóa đơn tháng này là ngày mấy?",
+    "sql": "SELECT bll.due_date\nFROM bills bll\nJOIN rentals rnt ON rnt.id = bll.rental_id\nWHERE rnt.tenant_id = :tenant_id\n  AND bll.billing_month = EXTRACT(MONTH FROM current_date)\n  AND bll.billing_year = EXTRACT(YEAR FROM current_date);"
+  },
+  {
+    "question": "Kiểm tra xem khoản chuyển khoản hôm qua của tôi đã được xác nhận chưa.",
+    "sql": "SELECT p.id, p.amount, p.payment_status, p.payment_date\nFROM payments p\nJOIN rentals rnt ON rnt.id = p.rental_id\nWHERE rnt.tenant_id = :tenant_id\n  AND p.payment_method = \u0027bank_transfer\u0027\n  AND p.payment_date::date = current_date - INTERVAL \u00271 day\u0027;"
+  },
+  {
+    "question": "Tháng này tôi dùng hết bao nhiêu số điện (kWh)?",
+    "sql": "SELECT SUM(COALESCE(rimr.meter_reading,0) - COALESCE(rimr.last_meter_reading,0)) AS kwh_used\nFROM room_instance_meter_readings rimr\nJOIN room_costs rc ON rc.id = rimr.room_cost_id\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nJOIN room_instances ri ON ri.id = rimr.room_instance_id\nJOIN rentals rnt ON rnt.room_instance_id = ri.id\nWHERE rnt.tenant_id = :tenant_id\n  AND ct.name ILIKE \u0027%điện%\u0027\n  AND date_trunc(\u0027month\u0027, rimr.created_at) = date_trunc(\u0027month\u0027, current_date);"
+  },
+  {
+    "question": "So sánh tiền điện tháng này với tháng trước xem có tăng không.",
+    "sql": "WITH monthly AS (\n  SELECT date_trunc(\u0027month\u0027, rimr.created_at) AS month,\n         SUM(COALESCE(rimr.meter_reading,0) - COALESCE(rimr.last_meter_reading,0)) AS usage_kwh\n  FROM room_instance_meter_readings rimr\n  JOIN room_costs rc ON rc.id = rimr.room_cost_id\n  JOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\n  JOIN room_instances ri ON ri.id = rimr.room_instance_id\n  JOIN rentals rnt ON rnt.room_instance_id = ri.id\n  WHERE rnt.tenant_id = :tenant_id\n    AND ct.name ILIKE \u0027%điện%\u0027\n    AND rimr.created_at \u003e= date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\n  GROUP BY month\n)\nSELECT curr.usage_kwh AS this_month_kwh, prev.usage_kwh AS last_month_kwh,\n       (curr.usage_kwh - prev.usage_kwh) AS diff_kwh\nFROM monthly curr\nLEFT JOIN monthly prev ON prev.month = date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\nWHERE curr.month = date_trunc(\u0027month\u0027, current_date);"
+  },
+  {
+    "question": "Giá điện hiện tại chủ nhà đang tính là bao nhiêu một số?",
+    "sql": "SELECT rc.unit_price, rc.unit\nFROM rentals rnt\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN room_costs rc ON rc.room_id = rm.id\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nWHERE rnt.tenant_id = :tenant_id\n  AND ct.name ILIKE \u0027%điện%\u0027\n  AND rc.is_active = TRUE\nLIMIT 1;"
+  },
+  {
+    "question": "Tổng số tiền tôi đã thanh toán cho chủ nhà từ đầu năm đến giờ.",
+    "sql": "SELECT COALESCE(SUM(p.amount),0) AS total_paid_ytd\nFROM payments p\nJOIN rentals rnt ON rnt.id = p.rental_id\nWHERE rnt.tenant_id = :tenant_id\n  AND p.payment_status = \u0027completed\u0027\n  AND p.payment_date \u003e= date_trunc(\u0027year\u0027, current_date);"
+  },
+  {
+    "question": "Tiền cọc của tôi đang được lưu là bao nhiêu?",
+    "sql": "SELECT rnt.deposit_paid\nFROM rentals rnt\nWHERE rnt.tenant_id = :tenant_id\n  AND rnt.status = \u0027active\u0027;"
+  },
+  {
+    "question": "Khi nào hợp đồng thuê phòng của tôi hết hạn?",
+    "sql": "SELECT c.contract_code, c.end_date\nFROM contracts c\nJOIN rentals rnt ON rnt.id = c.rental_id\nWHERE rnt.tenant_id = :tenant_id\n  AND c.status IN (\u0027active\u0027, \u0027fully_signed\u0027);"
+  },
+  {
+    "question": "Tôi muốn xem lại các điều khoản về chấm dứt hợp đồng sớm.",
+    "sql": "SELECT c.contract_code, c.contract_data\nFROM contracts c\nJOIN rentals rnt ON rnt.id = c.rental_id\nWHERE rnt.tenant_id = :tenant_id\n  AND c.status IN (\u0027active\u0027, \u0027fully_signed\u0027);"
+  },
+  {
+    "question": "Chủ nhà đã xác nhận yêu cầu gia hạn hợp đồng của tôi chưa?",
+    "sql": "SELECT rnt.id AS rental_id, rnt.status, rnt.contract_end_date, rnt.contract_start_date\nFROM rentals rnt\nWHERE rnt.tenant_id = :tenant_id\n  AND rnt.status = \u0027pending_renewal\u0027;"
+  },
+  {
+    "question": "Gửi cho tôi link file PDF hợp đồng đã ký.",
+    "sql": "SELECT c.contract_code, c.pdf_url\nFROM contracts c\nJOIN rentals rnt ON rnt.id = c.rental_id\nWHERE rnt.tenant_id = :tenant_id\n  AND c.pdf_url IS NOT NULL;"
+  },
+  {
+    "question": "Tôi cần thông tin số tài khoản ngân hàng của chủ nhà để chuyển tiền.",
+    "sql": "SELECT u.bank_account, u.bank_name, u.first_name, u.last_name, u.phone, u.email\nFROM rentals rnt\nJOIN users u ON u.id = rnt.owner_id\nWHERE rnt.tenant_id = :tenant_id;"
+  },
+  {
+    "question": "Trạng thái yêu cầu trả phòng của tôi đang thế nào?",
+    "sql": "SELECT rnt.status, rnt.termination_notice_date, rnt.termination_reason, rnt.contract_end_date\nFROM rentals rnt\nWHERE rnt.tenant_id = :tenant_id;"
+  },
+  {
+    "question": "Trạng thái cái báo cáo sửa vòi nước hôm qua tôi gửi đã xong chưa?",
+    "sql": "SELECT rmi.id, rmi.status, rmi.updated_at\nFROM room_issues rmi\nWHERE rmi.reporter_id = :tenant_id\n  AND rmi.title ILIKE \u0027%vòi nước%\u0027\n  AND rmi.created_at::date = current_date - INTERVAL \u00271 day\u0027;"
+  },
+  {
+    "question": "Tôi muốn xem lịch sử các sự cố tôi đã báo cáo.",
+    "sql": "SELECT rmi.id, rmi.title, rmi.category, rmi.status, rmi.created_at\nFROM room_issues rmi\nWHERE rmi.reporter_id = :tenant_id\nORDER BY rmi.created_at DESC;"
+  },
+  {
+    "question": "Gửi tin nhắn cho chủ nhà báo \"Mạng wifi tầng 3 bị yếu\".",
+    "sql": "-- Note: action statement for testing; in production route through messaging API instead of direct INSERT.\nINSERT INTO messages (conversation_id, sender_id, type, content, is_edited, sent_at)\nVALUES (:conversation_id, :tenant_id, \u0027text\u0027, \u0027Mạng wifi tầng 3 bị yếu\u0027, FALSE, now());"
+  },
+  {
+    "question": "Tôi muốn đánh giá (Rating) phòng trọ này 4 sao.",
+    "sql": "-- Note: action statement for testing; in production route through rating service/API instead of direct INSERT.\nINSERT INTO ratings (target_type, target_id, reviewer_id, rating, content, created_at, updated_at)\nVALUES (\u0027room\u0027, :room_id, :tenant_id, 4, \u0027Phòng ổn, wifi cần cải thiện\u0027, now(), now());"
+  },
+  {
+    "question": "Có thông báo mới nào từ chủ nhà về việc cắt điện nước không?",
+    "sql": "SELECT n.id, n.title, n.message, n.created_at\nFROM notifications n\nWHERE n.user_id = :tenant_id\n  AND (n.title ILIKE \u0027%cắt điện%\u0027 OR n.message ILIKE \u0027%cắt điện%\u0027 OR n.message ILIKE \u0027%cắt nước%\u0027)\nORDER BY n.created_at DESC\nLIMIT 10;"
+  },
+  {
+    "question": "Quy định về việc dẫn bạn bè (Visitors) về phòng như thế nào?",
+    "sql": "SELECT rrt.name, rrt.description, rr.custom_value, rr.is_enforced\nFROM room_rules rr\nJOIN room_rule_templates rrt ON rrt.id = rr.rule_template_id\nJOIN rooms rm ON rm.id = rr.room_id\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN rentals rnt ON rnt.room_instance_id = ri.id\nWHERE rnt.tenant_id = :tenant_id\n  AND rrt.category = \u0027visitors\u0027;"
+  },
+  {
+    "question": "Xem lại chỉ số điện nước lúc tôi mới nhận phòng (bàn giao).",
+    "sql": "SELECT rimr.*\nFROM room_instance_meter_readings rimr\nJOIN rentals rnt ON rnt.room_instance_id = rimr.room_instance_id\nWHERE rnt.tenant_id = :tenant_id\n  AND rimr.created_at::date \u003c= rnt.contract_start_date\nORDER BY rimr.created_at ASC\nLIMIT 1;"
+  },
+  {
+    "question": "Tôi có thể nuôi mèo trong phòng hiện tại không?",
+    "sql": "SELECT rrt.rule_type, rr.custom_value, rr.is_enforced\nFROM room_rules rr\nJOIN room_rule_templates rrt ON rrt.id = rr.rule_template_id\nJOIN rooms rm ON rm.id = rr.room_id\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN rentals rnt ON rnt.room_instance_id = ri.id\nWHERE rnt.tenant_id = :tenant_id\n  AND rrt.category = \u0027pets\u0027;"
+  },
+  {
+    "question": "Phí dịch vụ vệ sinh hành lang là bao nhiêu tiền một tháng?",
+    "sql": "SELECT rc.fixed_amount, rc.currency\nFROM room_costs rc\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nJOIN rooms rm ON rm.id = rc.room_id\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN rentals rnt ON rnt.room_instance_id = ri.id\nWHERE rnt.tenant_id = :tenant_id\n  AND ct.category = \u0027service\u0027\n  AND (ct.name ILIKE \u0027%vệ sinh%\u0027 OR ct.name ILIKE \u0027%cleaning%\u0027);"
+  },
+  {
+    "question": "Cách liên hệ nhanh nhất với bảo vệ tòa nhà hoặc chủ nhà.",
+    "sql": "SELECT u.first_name, u.last_name, u.phone, u.email\nFROM rentals rnt\nJOIN users u ON u.id = rnt.owner_id\nWHERE rnt.tenant_id = :tenant_id;"
+  }
+]

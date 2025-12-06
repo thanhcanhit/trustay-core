@@ -23,6 +23,7 @@ export class AiProcessingLogService {
 		validatorData?: any;
 		responseGeneratorData?: any;
 		ragContext?: any;
+		stepsLog?: string;
 		tokenUsage?: any;
 		totalDuration?: number;
 		status?: string;
@@ -44,6 +45,7 @@ export class AiProcessingLogService {
 					sqlGenerationAttempts: input.sqlGenerationAttempts || [],
 					validatorData: validatorDataWithResponseGen,
 					ragContext: input.ragContext,
+					stepsLog: input.stepsLog,
 					tokenUsage: input.tokenUsage,
 					totalDuration: input.totalDuration,
 					status: input.status || 'completed',
@@ -146,6 +148,77 @@ export class AiProcessingLogService {
 				partial: 0,
 				averageDuration: 0,
 				totalTokens: 0,
+			};
+		}
+	}
+
+	/**
+	 * Find processing logs with pagination, search, and filters
+	 * @param params - Query parameters
+	 * @returns Paginated list of processing logs
+	 */
+	async findMany(params: {
+		search?: string;
+		status?: string;
+		limit?: number;
+		offset?: number;
+	}): Promise<{ items: any[]; total: number; limit: number; offset: number }> {
+		try {
+			const limit = params.limit || 20;
+			const offset = params.offset || 0;
+
+			const where: any = {};
+
+			if (params.status) {
+				where.status = params.status;
+			}
+
+			if (params.search) {
+				where.question = {
+					contains: params.search,
+					mode: 'insensitive',
+				} as any;
+			}
+
+			const [items, total] = await Promise.all([
+				(this.prisma as any).aiProcessingLog.findMany({
+					where,
+					orderBy: { createdAt: 'desc' },
+					take: limit,
+					skip: offset,
+					// Trả full data để FE có đủ thông tin debug/hiển thị
+					select: {
+						id: true,
+						question: true,
+						response: true,
+						orchestratorData: true,
+						sqlGenerationAttempts: true,
+						validatorData: true,
+						ragContext: true,
+						stepsLog: true,
+						tokenUsage: true,
+						totalDuration: true,
+						status: true,
+						error: true,
+						createdAt: true,
+					},
+				}),
+				(this.prisma as any).aiProcessingLog.count({ where }),
+			]);
+
+			return {
+				items: items || [],
+				total: total || 0,
+				limit,
+				offset,
+			};
+		} catch (error) {
+			this.logger.error('Failed to find processing logs', error);
+			return {
+				items: [],
+				total: 0,
+				limit: params.limit || 20,
+				offset: params.offset || 0,
 			};
 		}
 	}

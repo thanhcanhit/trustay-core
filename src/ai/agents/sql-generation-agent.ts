@@ -4,7 +4,12 @@ import { generateText } from 'ai';
 import { PrismaService } from '../../prisma/prisma.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import { buildSqlPrompt } from '../prompts/sql-agent.prompt';
-import { ChatSession, SqlGenerationResult } from '../types/chat.types';
+import {
+	ChatSession,
+	SqlGenerationAttempt,
+	SqlGenerationResult,
+	TokenUsage,
+} from '../types/chat.types';
 import { getCompleteDatabaseSchema } from '../utils/schema-provider';
 import { serializeBigInt } from '../utils/serializer';
 import { isAggregateQuery, validateSqlSafety } from '../utils/sql-safety';
@@ -37,7 +42,7 @@ export class SqlGenerationAgent {
 	private static readonly DYNAMIC_LIMIT_BASE = 1; // Base chunks for general context (reduced from 2)
 	private static readonly DYNAMIC_LIMIT_TABLE_MULTIPLIER = 1; // 1 chunk per table (since we use table_complete chunks)
 	private static readonly DYNAMIC_LIMIT_RELATIONSHIP_MULTIPLIER = 0; // Relationships are included in table chunks
-	private static readonly DYNAMIC_LIMIT_HARD_CAP = 6; // Reduced cap to prevent token overflow (reduced from 10)
+	private static readonly DYNAMIC_LIMIT_HARD_CAP = 32; // Cap for schema RAG chunks (separate from QA/canonical limits)
 	// Preview lengths
 	private static readonly CHUNK_PREVIEW_LENGTH = 200;
 	private static readonly SQL_PREVIEW_LENGTH = 200;
@@ -58,6 +63,10 @@ export class SqlGenerationAgent {
 	private static readonly CANONICAL_MODE_HINT = 'hint';
 	// SQL commands
 	private static readonly SQL_COMMAND_SELECT = 'select';
+	// Logging previews to avoid huge payloads
+	private static readonly PROMPT_LOG_PREVIEW_LENGTH = 1200;
+	private static readonly RAW_RESPONSE_PREVIEW_LENGTH = 1200;
+	private static readonly RAG_CONTEXT_LOG_LIMIT = 4000;
 
 	constructor(private readonly knowledgeService?: KnowledgeService) {}
 
@@ -120,9 +129,17 @@ export class SqlGenerationAgent {
 			});
 			userRole = user?.role ?? undefined;
 		}
+		const attemptLogs: SqlGenerationAttempt[] = [];
+		let tablesHint: string | undefined;
+		let relationshipsHint: string | undefined;
+		let filtersHint: string | undefined;
+		let intentAction: 'search' | 'own' | 'stats' | undefined;
 		// Step A: RAG Retrieval - Get relevant schema and QA chunks
 		let ragContext = '';
 		let canonicalDecision: any = null;
+		let schemaChunkCount = 0;
+		const qaChunkCount = 0;
+		let qaChunkSqlCount = 0;
 		if (this.knowledgeService) {
 			try {
 				// Check for canonical SQL to use as hint (never execute directly)
@@ -147,8 +164,8 @@ export class SqlGenerationAgent {
 				// Step 1: always fetch schema context
 				// Enhance query with table hints from orchestrator if available
 				// This helps vector search match with table_complete chunks (1 chunk per table)
-				const tablesHint = this.extractTablesHint(session);
-				const relationshipsHint = this.extractRelationshipsHint(session);
+				tablesHint = this.extractTablesHint(session);
+				relationshipsHint = this.extractRelationshipsHint(session);
 				// Enhanced query: add table names to help vector search find relevant table_complete chunks
 				// Format: "query table1 table2 table3" - helps match table_name field in chunks
 				const enhancedQuery = tablesHint
@@ -185,6 +202,7 @@ export class SqlGenerationAgent {
 					limit: dynamicLimit,
 					threshold: SqlGenerationAgent.RAG_SCHEMA_THRESHOLD,
 				});
+				schemaChunkCount = schemaResults.length;
 
 				// Log preview of each schema chunk (first 200 chars)
 				if (schemaResults.length > 0) {
@@ -227,18 +245,23 @@ export class SqlGenerationAgent {
 				}
 
 				// Extract filters hint to check if this is a room-specific query
-				const filtersHint = this.extractFiltersHint(session);
+				filtersHint = this.extractFiltersHint(session);
 
 				// Step 2: optionally fetch QA examples when helpful (e.g., canonical hint)
 				// IMPORTANT: For room-specific queries (with filtersHint), skip QA examples
 				// because they are usually not relevant (statistics queries vs room analysis)
 				const needExamples =
 					canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT && !filtersHint; // Skip QA examples if we have a specific room filter
+				let qaChunkCount = 0;
 				if (needExamples) {
 					const qaResults = await this.knowledgeService.retrieveKnowledgeContext(query, {
 						limit: SqlGenerationAgent.QA_EXAMPLES_LIMIT,
 						threshold: SqlGenerationAgent.RAG_QA_THRESHOLD + 0.2, // Increase threshold to 0.8 for better relevance
 					});
+					qaChunkCount = qaResults.length;
+					qaChunkSqlCount = qaResults.filter(
+						(r: any) => r.sqlQaId || (r.metadata as any)?.sqlQaId,
+					).length;
 
 					// Log preview of QA chunks
 					if (qaResults.length > 0) {
@@ -272,6 +295,9 @@ export class SqlGenerationAgent {
 				) {
 					ragContext += `\nCANONICAL SQL HINT (score=${canonicalDecision.score.toFixed(2)}, REFERENCE ONLY - schema may have changed):\n`;
 					ragContext += `Original question: ${canonicalDecision.question}\nPrevious SQL (for reference only):\n${canonicalDecision.sql}\n`;
+					if (canonicalDecision?.reusePreferred) {
+						ragContext += `\nƯU TIÊN: Câu hỏi khớp hoàn toàn trước đây. Giữ nguyên cấu trúc SQL, chỉ cần thay/điền tham số phù hợp với truy vấn hiện tại.\n`;
+					}
 					ragContext += `\n⚠️ LƯU Ý QUAN TRỌNG: SQL trên chỉ là THAM KHẢO từ lần trước.\n`;
 					ragContext += `PHẢI regenerate SQL MỚI dựa trên schema HIỆN TẠI trong RAG context.\n`;
 					ragContext += `Nếu schema đã thay đổi (tên bảng/cột, relationships), PHẢI điều chỉnh SQL cho phù hợp.\n`;
@@ -296,6 +322,9 @@ export class SqlGenerationAgent {
 		let attempts = 0;
 		const maxAttempts = SqlGenerationAgent.MAX_ATTEMPTS;
 		let consecutiveSameError = 0;
+		let contextualPrompt = '';
+		let attemptTokenUsage: TokenUsage | undefined;
+		let attemptStart = Date.now();
 		let totalTokenUsage:
 			| { promptTokens: number; completionTokens: number; totalTokens: number }
 			| undefined;
@@ -314,17 +343,19 @@ export class SqlGenerationAgent {
 		while (attempts < maxAttempts) {
 			attempts++;
 			try {
+				attemptStart = Date.now();
+				attemptTokenUsage = undefined;
 				if (attempts > 1) {
 					this.logger.debug(
 						`SQL Regeneration attempt ${attempts}/${maxAttempts} (previous error: ${lastError.substring(0, 100)})`,
 					);
 				}
-				const intentAction = this.extractIntentAction(session);
-				const filtersHint = this.extractFiltersHint(session);
+				intentAction = this.extractIntentAction(session);
+				filtersHint = this.extractFiltersHint(session);
 				this.logger.debug(
 					`SQL Generation context: intentAction=${intentAction || 'none'}, filtersHint=${filtersHint || 'none'}`,
 				);
-				const contextualPrompt = buildSqlPrompt({
+				contextualPrompt = buildSqlPrompt({
 					query,
 					schema: dbSchema,
 					ragContext,
@@ -351,6 +382,11 @@ export class SqlGenerationAgent {
 					const completionTokens =
 						(usage as any).completionTokens || (usage as any).completion || 0;
 					const totalTokens = (usage as any).totalTokens || promptTokens + completionTokens;
+					attemptTokenUsage = {
+						promptTokens,
+						completionTokens,
+						totalTokens,
+					};
 					totalTokenUsage = {
 						promptTokens: (totalTokenUsage?.promptTokens || 0) + promptTokens,
 						completionTokens: (totalTokenUsage?.completionTokens || 0) + completionTokens,
@@ -401,6 +437,22 @@ export class SqlGenerationAgent {
 						`\n  - Attempts: ${attempts}`,
 				);
 
+				const attemptDuration = Date.now() - attemptStart;
+				attemptLogs.push({
+					attempt: attempts,
+					prompt: contextualPrompt.substring(0, SqlGenerationAgent.PROMPT_LOG_PREVIEW_LENGTH),
+					rawResponse: text.substring(0, SqlGenerationAgent.RAW_RESPONSE_PREVIEW_LENGTH),
+					finalSql,
+					tokenUsage: attemptTokenUsage,
+					durationMs: attemptDuration,
+					safetyCheck,
+				});
+
+				const ragContextForLog =
+					ragContext && ragContext.length > SqlGenerationAgent.RAG_CONTEXT_LOG_LIMIT
+						? `${ragContext.slice(0, SqlGenerationAgent.RAG_CONTEXT_LOG_LIMIT)}... (truncated)`
+						: ragContext;
+
 				return {
 					sql: finalSql,
 					results: serializedResults,
@@ -409,6 +461,19 @@ export class SqlGenerationAgent {
 					userId: userId,
 					userRole: userRole,
 					tokenUsage: totalTokenUsage,
+					debug: {
+						ragContext: ragContextForLog,
+						canonicalDecision,
+						intentAction,
+						filtersHint,
+						tablesHint,
+						relationshipsHint,
+						recentMessages,
+						schemaChunkCount,
+						qaChunkCount,
+						qaChunkSqlCount,
+						attempts: attemptLogs,
+					},
 				};
 			} catch (error) {
 				// Vòng phản hồi tự sửa lỗi: Lưu error và SQL cũ để truyền vào prompt lần sau
@@ -422,6 +487,18 @@ export class SqlGenerationAgent {
 				} else {
 					consecutiveSameError = 1;
 				}
+
+				// Persist attempt detail for processing log
+				const attemptDuration = Date.now() - attemptStart;
+				attemptLogs.push({
+					attempt: attempts,
+					prompt: contextualPrompt.substring(0, SqlGenerationAgent.PROMPT_LOG_PREVIEW_LENGTH),
+					rawResponse: currentError.substring(0, SqlGenerationAgent.RAW_RESPONSE_PREVIEW_LENGTH),
+					finalSql: lastSql,
+					tokenUsage: attemptTokenUsage,
+					durationMs: attemptDuration,
+					error: currentError,
+				});
 
 				// Early exit if same error repeats (AI is not learning from previous attempts)
 				if (consecutiveSameError >= SqlGenerationAgent.MAX_CONSECUTIVE_SAME_ERROR) {
