@@ -19,8 +19,8 @@ export class CreatePaymentDto {
 	paymentType: PaymentType;
 
 	@ApiProperty({ description: 'Số tiền thanh toán' })
+	@IsDecimal({ decimal_digits: '0,2' }, { message: 'amount must be a valid decimal number' })
 	@Transform(({ value }) => new Decimal(value))
-	@IsDecimal()
 	amount: Decimal;
 
 	@ApiProperty({ default: 'VND', description: 'Loại tiền tệ' })
