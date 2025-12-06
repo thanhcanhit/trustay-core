@@ -226,6 +226,9 @@ export interface SqlGenerationDebug {
 	tablesHint?: string;
 	relationshipsHint?: string;
 	recentMessages?: string;
+	schemaChunkCount?: number;
+	qaChunkCount?: number;
+	qaChunkSqlCount?: number;
 	attempts?: SqlGenerationAttempt[];
 }
 

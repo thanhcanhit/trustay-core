@@ -918,11 +918,60 @@ export class AiService {
 			sqlGenerationAttempts: [],
 		};
 		// Step-by-step textual log (readable in DB)
-		const stepLogs: string[] = [];
-		const appendStep = (title: string, detail?: string) => {
-			const idx = stepLogs.length + 1;
-			const body = detail ? `\n${detail}` : '';
-			stepLogs.push(`===STEP ${idx}=== ${title}${body}`);
+		type StepDetail = Record<string, unknown> | string | undefined;
+		const stepLogs: Array<{ title: string; detail?: StepDetail }> = [];
+		const appendStep = (title: string, detail?: StepDetail) => {
+			stepLogs.push({ title, detail });
+		};
+
+		const extractTableNames = (ragContext: string): string[] => {
+			const regex = /"table_name"\s*:\s*"([^"]+)"/g;
+			const tables = new Set<string>();
+			let m: RegExpExecArray | null;
+			while ((m = regex.exec(ragContext))) {
+				if (m[1]) tables.add(m[1]);
+			}
+			return Array.from(tables);
+		};
+
+		const formatKey = (key: string): string =>
+			key
+				.replace(/([A-Z])/g, ' $1')
+				.replace(/_/g, ' ')
+				.trim()
+				.toUpperCase();
+
+		const formatValue = (key: string, value: unknown): string => {
+			const label = `**${formatKey(key)}**`;
+			if (value === undefined || value === null) return `${label}: none`;
+			if (typeof value === 'string') {
+				const trimmed = value.trim();
+				if (trimmed.includes('\n') || trimmed.length > 160 || key.toLowerCase().includes('sql')) {
+					return `${label}:\n\`\`\`sql\n${trimmed}\n\`\`\``;
+				}
+				return `${label}: ${trimmed}`;
+			}
+			if (Array.isArray(value)) {
+				return `${label}: ${value.map((v) => String(v)).join(', ') || 'none'}`;
+			}
+			if (typeof value === 'object') {
+				return `${label}: ${JSON.stringify(value)}`;
+			}
+			return `${label}: ${String(value)}`;
+		};
+
+		const formatStepLogsToMarkdown = (entries: Array<{ title: string; detail?: StepDetail }>) => {
+			return entries
+				.map((entry, idx) => {
+					const header = `## **STEP ${idx + 1} - ${entry.title.toUpperCase()}**`;
+					if (!entry.detail) return header;
+					if (typeof entry.detail === 'string') {
+						return `${header}\n${entry.detail}`;
+					}
+					const lines = Object.entries(entry.detail).map(([k, v]) => `- ${formatValue(k, v)}`);
+					return `${header}\n${lines.join('\n')}`;
+				})
+				.join('\n\n');
 		};
 
 		try {
@@ -930,10 +979,11 @@ export class AiService {
 				'SESSION',
 				`BẮT ĐẦU XỬ LÝ | session=${session.sessionId}${currentPage ? ` | page=${currentPage}` : ''}`,
 			);
-			appendStep(
-				'SESSION START',
-				`session=${session.sessionId}${currentPage ? ` | page=${currentPage}` : ''}`,
-			);
+			appendStep('SESSION START', {
+				session: session.sessionId,
+				page: currentPage || 'none',
+				userId: session.userId || 'anonymous',
+			});
 
 			// ========================================
 			// BƯỚC 2: Agent 1 - Orchestrator Agent
@@ -963,15 +1013,15 @@ export class AiService {
 					`${orchestratorResponse.entityHint ? ` | entityHint=${orchestratorResponse.entityHint}` : ''}` +
 					` | took=${orchestratorDuration}ms`,
 			);
-			appendStep(
-				'ORCHESTRATOR DONE',
-				`readyForSql=${orchestratorResponse.readyForSql} | requestType=${orchestratorResponse.requestType} | role=${orchestratorResponse.userRole}` +
-					`${orchestratorResponse.tablesHint ? ` | tablesHint=${orchestratorResponse.tablesHint}` : ''}` +
-					`${orchestratorResponse.relationshipsHint ? ` | relationshipsHint=${orchestratorResponse.relationshipsHint}` : ''}` +
-					`${orchestratorResponse.intentModeHint ? ` | modeHint=${orchestratorResponse.intentModeHint}` : ''}` +
-					`${orchestratorResponse.entityHint ? ` | entityHint=${orchestratorResponse.entityHint}` : ''}` +
-					` | took=${orchestratorDuration}ms`,
-			);
+			appendStep('ORCHESTRATOR DONE', {
+				readyForSql: orchestratorResponse.readyForSql,
+				requestType: orchestratorResponse.requestType,
+				tablesHint: orchestratorResponse.tablesHint || 'none',
+				filtersHint: orchestratorResponse.filtersHint || 'none',
+				entityHint: orchestratorResponse.entityHint || 'none',
+				intentAction: orchestratorResponse.intentAction || 'none',
+				durationMs: orchestratorDuration,
+			});
 
 			// Update processing log với orchestrator data
 			processingLogData.orchestratorData = {
@@ -994,15 +1044,9 @@ export class AiService {
 				if (typeof businessCtx === 'object' && businessCtx !== null) {
 					processingLogData.ragContext = {
 						businessContext: businessCtx,
-						schemaChunks: (businessCtx as any).schemaBlock
-							? String((businessCtx as any).schemaBlock).split('\n').length
-							: 0,
-						businessChunks: (businessCtx as any).businessBlock
-							? String((businessCtx as any).businessBlock).split('\n').length
-							: 0,
-						qaChunks: (businessCtx as any).qaBlock
-							? String((businessCtx as any).qaBlock).split('\n').length
-							: 0,
+						schemaChunks: (businessCtx as any).schemaBlock ? 1 : 0,
+						businessChunks: (businessCtx as any).businessBlock ? 1 : 0,
+						qaChunks: (businessCtx as any).qaBlock ? 1 : 0,
 					};
 				} else {
 					processingLogData.ragContext = {
@@ -1020,7 +1064,7 @@ export class AiService {
 					'ORCHESTRATOR',
 					`Skipping SQL flow | requestType=${orchestratorResponse.requestType}`,
 				);
-				appendStep('FLOW EXIT (NON-QUERY)', `requestType=${orchestratorResponse.requestType}`);
+				appendStep('FLOW EXIT (NON-QUERY)', { requestType: orchestratorResponse.requestType });
 				if (orchestratorResponse.requestType === RequestType.CLARIFICATION) {
 					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
 					const messageText: string = cleanedMessage.trim().endsWith('?')
@@ -1043,7 +1087,11 @@ export class AiService {
 					processingLogData.status = 'completed';
 					processingLogData.tokenUsage = orchestratorResponse.tokenUsage;
 					processingLogData.totalDuration = Date.now() - pipelineStartAt;
-					processingLogData.stepsLog = stepLogs.join('\n');
+					appendStep('SUMMARY', {
+						totalDurationMs: processingLogData.totalDuration,
+						totalTokens: processingLogData.tokenUsage?.totalTokens || 0,
+					});
+					processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
 					await this.processingLogService.saveProcessingLog({
 						question: query,
 						...processingLogData,
@@ -1076,7 +1124,11 @@ export class AiService {
 					processingLogData.status = 'completed';
 					processingLogData.tokenUsage = orchestratorResponse.tokenUsage;
 					processingLogData.totalDuration = Date.now() - pipelineStartAt;
-					processingLogData.stepsLog = stepLogs.join('\n');
+					appendStep('SUMMARY', {
+						totalDurationMs: processingLogData.totalDuration,
+						totalTokens: processingLogData.tokenUsage?.totalTokens || 0,
+					});
+					processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
 					await this.processingLogService.saveProcessingLog({
 						question: query,
 						...processingLogData,
@@ -1126,6 +1178,11 @@ export class AiService {
 				processingLogData.status = 'completed';
 				processingLogData.tokenUsage = orchestratorResponse.tokenUsage;
 				processingLogData.totalDuration = Date.now() - pipelineStartAt;
+				appendStep('SUMMARY', {
+					totalDurationMs: processingLogData.totalDuration,
+					totalTokens: processingLogData.tokenUsage?.totalTokens || 0,
+				});
+				processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
 				await this.processingLogService.saveProcessingLog({
 					question: query,
 					...processingLogData,
@@ -1238,10 +1295,27 @@ export class AiService {
 					'SQL_AGENT',
 					`END | sqlPreview=${sqlResult.sql.substring(0, 50)}... | results=${sqlResult.count} | took=${sqlDuration}ms`,
 				);
-				appendStep(
-					'SQL AGENT DONE',
-					`results=${sqlResult.count} | attempts=${sqlResult.attempts || 1} | took=${sqlDuration}ms`,
-				);
+				appendStep('SQL AGENT DONE', {
+					results: sqlResult.count,
+					attempts: sqlResult.attempts || 1,
+					tookMs: sqlDuration,
+					tablesHint: processingLogData.orchestratorData?.tablesHint || 'none',
+					filtersHint: processingLogData.orchestratorData?.filtersHint || 'none',
+					canonicalMode: (sqlResult.debug?.canonicalDecision as any)?.mode || 'none',
+					canonicalSql: (sqlResult.debug?.canonicalDecision as any)?.sql
+						? (sqlResult.debug?.canonicalDecision as any)?.sql.substring(0, 400)
+						: 'none',
+					canonicalQuestion: (sqlResult.debug?.canonicalDecision as any)?.question || 'none',
+					canonicalScore: (sqlResult.debug?.canonicalDecision as any)?.score ?? 'none',
+					finalSql: sqlResult.sql,
+					attemptErrors: (sqlResult.debug?.attempts || [])
+						.filter((a: any) => a.error)
+						.map((a: any) => `try${a.attempt}:${a.error}`),
+					ragTables: extractTableNames(sqlResult.debug?.ragContext || ''),
+					ragSchemaChunks: (sqlResult.debug as any)?.schemaChunkCount ?? 'unknown',
+					ragQaChunks: (sqlResult.debug as any)?.qaChunkCount ?? 0,
+					ragQaSqlChunks: (sqlResult.debug as any)?.qaChunkSqlCount ?? 0,
+				});
 
 				// Append SQL generation attempt vào processing log (đầy đủ theo log)
 				if (sqlResult.debug?.attempts?.length) {
@@ -1312,10 +1386,6 @@ export class AiService {
 					'PARALLEL',
 					`END | completed in ${parallelDuration}ms | validator.isValid=${validation.isValid} | severity=${validation.severity || 'N/A'}`,
 				);
-				appendStep(
-					'VALIDATOR + RESPONSE GEN',
-					`validator.isValid=${validation.isValid} | severity=${validation.severity || 'N/A'} | duration=${parallelDuration}ms`,
-				);
 				this.logDebug(
 					'VALIDATOR',
 					`[STEP] Validator → isValid=${validation.isValid}, severity=${validation.severity || 'N/A'}, reason=${validation.reason || 'OK'}`,
@@ -1323,6 +1393,13 @@ export class AiService {
 
 				// Parse responseText để tách message và structured data
 				const parsedResponse = parseResponseText(responseText);
+
+				appendStep('VALIDATOR + RESPONSE GEN', {
+					validatorValid: validation.isValid,
+					severity: validation.severity || 'N/A',
+					reason: validation.reason || 'OK',
+					responsePreview: parsedResponse.message.substring(0, 180),
+				});
 
 				// Update processing log với validator và response generator data
 				processingLogData.validatorData = {
@@ -1394,7 +1471,11 @@ export class AiService {
 							context: { count: sqlResult.count, severity: validation.severity || 'OK' },
 						});
 						this.logDebug('PERSIST', 'Đã lưu Q&A thành công vào knowledge store');
-						appendStep('PERSIST KNOWLEDGE', 'Saved QA interaction to knowledge store');
+						appendStep('PERSIST KNOWLEDGE', {
+							status: 'saved',
+							count: sqlResult.count,
+							severity: validation.severity || 'OK',
+						});
 					} catch (persistErr) {
 						this.logWarn('PERSIST', 'Không thể lưu Q&A vào knowledge store', persistErr);
 						appendStep('PERSIST KNOWLEDGE FAILED', String(persistErr));
@@ -1460,7 +1541,11 @@ export class AiService {
 				processingLogData.status = 'completed';
 				processingLogData.tokenUsage = totalTokenUsage;
 				processingLogData.totalDuration = Date.now() - pipelineStartAt;
-				processingLogData.stepsLog = stepLogs.join('\n');
+				appendStep('SUMMARY', {
+					totalDurationMs: processingLogData.totalDuration,
+					totalTokens: totalTokenUsage.totalTokens || 0,
+				});
+				processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
 				await this.processingLogService.saveProcessingLog({
 					question: query,
 					...processingLogData,
@@ -1475,6 +1560,7 @@ export class AiService {
 					'ORCHESTRATOR',
 					`Edge case: QUERY but readyForSql=false | requestType=${orchestratorResponse.requestType}`,
 				);
+				appendStep('FLOW EXIT (READY=FALSE)', { requestType: orchestratorResponse.requestType });
 				const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
 				this.addMessageToSession(session, 'assistant', cleanedMessage, {
 					kind: 'CONTENT',
@@ -1494,6 +1580,11 @@ export class AiService {
 				processingLogData.error = 'QUERY but readyForSql=false';
 				processingLogData.tokenUsage = orchestratorResponse.tokenUsage;
 				processingLogData.totalDuration = Date.now() - pipelineStartAt;
+				appendStep('SUMMARY', {
+					totalDurationMs: processingLogData.totalDuration,
+					totalTokens: processingLogData.tokenUsage?.totalTokens || 0,
+				});
+				processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
 				await this.processingLogService.saveProcessingLog({
 					question: query,
 					...processingLogData,
@@ -1513,6 +1604,7 @@ export class AiService {
 			// ========================================
 			// Ghi log chi tiết để debug
 			this.logError('ERROR', `Lỗi xử lý chat (session ${session.sessionId})`, error);
+			appendStep('PIPELINE ERROR', error instanceof Error ? error.message : String(error));
 
 			// Tạo message lỗi thân thiện cho người dùng
 			const errorMessage = generateErrorResponse((error as Error).message);
@@ -1534,6 +1626,7 @@ export class AiService {
 			processingLogData.status = 'failed';
 			processingLogData.error = (error as Error).message || 'Unknown error';
 			processingLogData.totalDuration = Date.now() - pipelineStartAt;
+			processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
 			await this.processingLogService.saveProcessingLog({
 				question: query,
 				...processingLogData,

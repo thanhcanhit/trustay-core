@@ -42,7 +42,7 @@ export class SqlGenerationAgent {
 	private static readonly DYNAMIC_LIMIT_BASE = 1; // Base chunks for general context (reduced from 2)
 	private static readonly DYNAMIC_LIMIT_TABLE_MULTIPLIER = 1; // 1 chunk per table (since we use table_complete chunks)
 	private static readonly DYNAMIC_LIMIT_RELATIONSHIP_MULTIPLIER = 0; // Relationships are included in table chunks
-	private static readonly DYNAMIC_LIMIT_HARD_CAP = 6; // Reduced cap to prevent token overflow (reduced from 10)
+	private static readonly DYNAMIC_LIMIT_HARD_CAP = 32; // Cap for schema RAG chunks (separate from QA/canonical limits)
 	// Preview lengths
 	private static readonly CHUNK_PREVIEW_LENGTH = 200;
 	private static readonly SQL_PREVIEW_LENGTH = 200;
@@ -137,6 +137,9 @@ export class SqlGenerationAgent {
 		// Step A: RAG Retrieval - Get relevant schema and QA chunks
 		let ragContext = '';
 		let canonicalDecision: any = null;
+		let schemaChunkCount = 0;
+		const qaChunkCount = 0;
+		let qaChunkSqlCount = 0;
 		if (this.knowledgeService) {
 			try {
 				// Check for canonical SQL to use as hint (never execute directly)
@@ -199,6 +202,7 @@ export class SqlGenerationAgent {
 					limit: dynamicLimit,
 					threshold: SqlGenerationAgent.RAG_SCHEMA_THRESHOLD,
 				});
+				schemaChunkCount = schemaResults.length;
 
 				// Log preview of each schema chunk (first 200 chars)
 				if (schemaResults.length > 0) {
@@ -248,11 +252,16 @@ export class SqlGenerationAgent {
 				// because they are usually not relevant (statistics queries vs room analysis)
 				const needExamples =
 					canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT && !filtersHint; // Skip QA examples if we have a specific room filter
+				let qaChunkCount = 0;
 				if (needExamples) {
 					const qaResults = await this.knowledgeService.retrieveKnowledgeContext(query, {
 						limit: SqlGenerationAgent.QA_EXAMPLES_LIMIT,
 						threshold: SqlGenerationAgent.RAG_QA_THRESHOLD + 0.2, // Increase threshold to 0.8 for better relevance
 					});
+					qaChunkCount = qaResults.length;
+					qaChunkSqlCount = qaResults.filter(
+						(r: any) => r.sqlQaId || (r.metadata as any)?.sqlQaId,
+					).length;
 
 					// Log preview of QA chunks
 					if (qaResults.length > 0) {
@@ -460,6 +469,9 @@ export class SqlGenerationAgent {
 						tablesHint,
 						relationshipsHint,
 						recentMessages,
+						schemaChunkCount,
+						qaChunkCount,
+						qaChunkSqlCount,
 						attempts: attemptLogs,
 					},
 				};

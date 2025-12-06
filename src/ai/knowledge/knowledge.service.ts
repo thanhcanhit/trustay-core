@@ -448,7 +448,7 @@ export class KnowledgeService {
 	async buildRagContext(
 		query: string,
 		params: {
-			limit?: number;
+			schemaLimit?: number;
 			threshold?: number;
 			includeBusiness?: boolean;
 			includeQA?: boolean;
@@ -463,11 +463,14 @@ export class KnowledgeService {
 		businessCount: number;
 		qaCount: number;
 	}> {
-		const limit = params.limit ?? 8;
+		const schemaLimit = params.schemaLimit ?? 32;
 		const threshold = params.threshold ?? 0.6;
 		const qaLimit = params.qaLimit ?? 2;
 
-		const schemaResults = await this.retrieveSchemaContext(query, { limit, threshold });
+		const schemaResults = await this.retrieveSchemaContext(query, {
+			limit: schemaLimit,
+			threshold,
+		});
 		const schemaBlock = schemaResults.length
 			? `RELEVANT SCHEMA CONTEXT (from vector search):\n${schemaResults
 					.map((r) => r.content)
@@ -478,14 +481,17 @@ export class KnowledgeService {
 		let qaBlock = '';
 
 		if (params.includeBusiness) {
-			const businessResults = await this.retrieveBusinessContext(query, { limit, threshold });
+			const businessResults = await this.retrieveBusinessContext(query, {
+				limit: schemaLimit,
+				threshold,
+			});
 			businessBlock = businessResults.length
 				? `RELEVANT BUSINESS CONTEXT:\n${businessResults.map((r) => r.content).join('\n')}\n`
 				: '';
 		}
 
 		if (params.includeQA) {
-			const qaResults = await this.retrieveKnowledgeContext(query, { limit, threshold });
+			const qaResults = await this.retrieveKnowledgeContext(query, { limit: qaLimit, threshold });
 			qaBlock = qaResults.length
 				? `RELEVANT Q&A EXAMPLES:\n${qaResults
 						.slice(0, qaLimit)

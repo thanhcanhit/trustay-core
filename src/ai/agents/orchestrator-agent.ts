@@ -105,9 +105,10 @@ export class OrchestratorAgent {
 		let businessContext = '';
 		try {
 			const ragContext = await this.knowledge.buildRagContext(query, {
-				limit: OrchestratorAgent.RAG_BUSINESS_LIMIT,
+				schemaLimit: OrchestratorAgent.RAG_BUSINESS_LIMIT,
 				threshold: OrchestratorAgent.RAG_BUSINESS_THRESHOLD,
 				includeBusiness: true,
+				qaLimit: 2,
 			});
 			businessContext = ragContext.businessBlock || '';
 		} catch (error) {

@@ -16,6 +16,7 @@ import { OptionalJwtAuthGuard } from '../../../auth/guards/optional-jwt-auth.gua
 import { QueryCanonicalDto } from './dto/query-canonical.dto';
 import { QueryChunksDto } from './dto/query-chunks.dto';
 import { QueryLogsDto } from './dto/query-logs.dto';
+import { TeachBatchDto } from './dto/teach-batch.dto';
 import { TeachOrUpdateDto } from './dto/teach-or-update.dto';
 
 @ApiTags('Admin AI')
@@ -82,6 +83,16 @@ export class AdminAiController {
 		});
 	}
 
+	@Get('logs/:id')
+	@ApiOperation({
+		summary: 'Get AI processing log by ID',
+		description: 'Return full processing log (including steps, attempts, contexts) by log ID',
+	})
+	@ApiResponse({ status: HttpStatus.OK, description: 'Processing log detail' })
+	async getLogById(@Param('id') id: string) {
+		return await this.aiLogService.findById(id);
+	}
+
 	@Get('canonical/:id/chunk')
 	@ApiOperation({
 		summary: 'Get chunk linked to a canonical SQL QA entry',
@@ -108,6 +119,59 @@ export class AdminAiController {
 	async getCanonicalByChunk(@Param('id', ParseIntPipe) id: number) {
 		const sqlQAId = await this.knowledge.findSqlQAIdByChunkId(id);
 		return { chunkId: id, sqlQAId };
+	}
+
+	@Post('teach-json')
+	@ApiOperation({
+		summary: 'Teach knowledge from JSON payload (bulk)',
+		description: 'Nạp nhiều Q&A (question + sql) từ nội dung JSON, không cần upload file',
+	})
+	@ApiResponse({
+		status: HttpStatus.CREATED,
+		description: 'Bulk teach result',
+	})
+	async teachFromJson(@Body() dto: TeachBatchDto) {
+		const results: Array<{
+			question: string;
+			sqlQAId?: number;
+			chunkId?: number;
+			isUpdate?: boolean;
+			error?: string;
+		}> = [];
+
+		for (const item of dto.items || []) {
+			try {
+				const taught = await this.knowledge.teachOrUpdateKnowledge({
+					id: item.id ? Number(item.id) : undefined,
+					question: item.question,
+					sql: item.sql,
+					sessionId: item.sessionId,
+					userId: item.userId,
+				});
+				results.push({
+					question: item.question,
+					sqlQAId: taught.sqlQAId,
+					chunkId: taught.chunkId,
+					isUpdate: taught.isUpdate,
+				});
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				results.push({ question: item.question, error: message });
+				if (dto.failFast) {
+					return {
+						success: false,
+						message: 'Stopped due to error (failFast=true)',
+						items: results,
+					};
+				}
+			}
+		}
+
+		return {
+			success: true,
+			count: results.length,
+			items: results,
+		};
 	}
 
 	@Post('teach-or-update')
