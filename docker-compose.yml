@@ -62,8 +62,6 @@ services:
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
       - cluster.name=trustay-cluster
       - bootstrap.memory_lock=true
-      - xpack.slo.enabled=false
-      - xpack.observability.enabled=false
     ulimits:
       memlock:
         soft: -1
@@ -84,7 +82,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 120s
     networks:
       - trustay-network
 
