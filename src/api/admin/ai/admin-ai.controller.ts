@@ -9,7 +9,7 @@ import { QueryLogsDto } from './dto/query-logs.dto';
 import { TeachOrUpdateDto } from './dto/teach-or-update.dto';
 
 @ApiTags('Admin AI')
-@Controller('api/admin/ai')
+@Controller('admin/ai')
 @UseGuards(OptionalJwtAuthGuard)
 @ApiBearerAuth()
 export class AdminAiController {
