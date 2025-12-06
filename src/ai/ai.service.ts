@@ -908,6 +908,7 @@ export class AiService {
 			validatorData?: any;
 			responseGeneratorData?: any;
 			ragContext?: any;
+			stepsLog?: string;
 			response?: string;
 			status?: string;
 			error?: string;
@@ -916,11 +917,22 @@ export class AiService {
 		} = {
 			sqlGenerationAttempts: [],
 		};
+		// Step-by-step textual log (readable in DB)
+		const stepLogs: string[] = [];
+		const appendStep = (title: string, detail?: string) => {
+			const idx = stepLogs.length + 1;
+			const body = detail ? `\n${detail}` : '';
+			stepLogs.push(`===STEP ${idx}=== ${title}${body}`);
+		};
 
 		try {
 			this.logDebug(
 				'SESSION',
 				`BẮT ĐẦU XỬ LÝ | session=${session.sessionId}${currentPage ? ` | page=${currentPage}` : ''}`,
+			);
+			appendStep(
+				'SESSION START',
+				`session=${session.sessionId}${currentPage ? ` | page=${currentPage}` : ''}`,
 			);
 
 			// ========================================
@@ -945,6 +957,15 @@ export class AiService {
 			this.logInfo(
 				'ORCHESTRATOR',
 				`END | readyForSql=${orchestratorResponse.readyForSql} | requestType=${orchestratorResponse.requestType} | userRole=${orchestratorResponse.userRole}` +
+					`${orchestratorResponse.tablesHint ? ` | tablesHint=${orchestratorResponse.tablesHint}` : ''}` +
+					`${orchestratorResponse.relationshipsHint ? ` | relationshipsHint=${orchestratorResponse.relationshipsHint}` : ''}` +
+					`${orchestratorResponse.intentModeHint ? ` | modeHint=${orchestratorResponse.intentModeHint}` : ''}` +
+					`${orchestratorResponse.entityHint ? ` | entityHint=${orchestratorResponse.entityHint}` : ''}` +
+					` | took=${orchestratorDuration}ms`,
+			);
+			appendStep(
+				'ORCHESTRATOR DONE',
+				`readyForSql=${orchestratorResponse.readyForSql} | requestType=${orchestratorResponse.requestType} | role=${orchestratorResponse.userRole}` +
 					`${orchestratorResponse.tablesHint ? ` | tablesHint=${orchestratorResponse.tablesHint}` : ''}` +
 					`${orchestratorResponse.relationshipsHint ? ` | relationshipsHint=${orchestratorResponse.relationshipsHint}` : ''}` +
 					`${orchestratorResponse.intentModeHint ? ` | modeHint=${orchestratorResponse.intentModeHint}` : ''}` +
@@ -999,6 +1020,7 @@ export class AiService {
 					'ORCHESTRATOR',
 					`Skipping SQL flow | requestType=${orchestratorResponse.requestType}`,
 				);
+				appendStep('FLOW EXIT (NON-QUERY)', `requestType=${orchestratorResponse.requestType}`);
 				if (orchestratorResponse.requestType === RequestType.CLARIFICATION) {
 					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
 					const messageText: string = cleanedMessage.trim().endsWith('?')
@@ -1021,6 +1043,7 @@ export class AiService {
 					processingLogData.status = 'completed';
 					processingLogData.tokenUsage = orchestratorResponse.tokenUsage;
 					processingLogData.totalDuration = Date.now() - pipelineStartAt;
+					processingLogData.stepsLog = stepLogs.join('\n');
 					await this.processingLogService.saveProcessingLog({
 						question: query,
 						...processingLogData,
@@ -1053,6 +1076,7 @@ export class AiService {
 					processingLogData.status = 'completed';
 					processingLogData.tokenUsage = orchestratorResponse.tokenUsage;
 					processingLogData.totalDuration = Date.now() - pipelineStartAt;
+					processingLogData.stepsLog = stepLogs.join('\n');
 					await this.processingLogService.saveProcessingLog({
 						question: query,
 						...processingLogData,
@@ -1214,15 +1238,37 @@ export class AiService {
 					'SQL_AGENT',
 					`END | sqlPreview=${sqlResult.sql.substring(0, 50)}... | results=${sqlResult.count} | took=${sqlDuration}ms`,
 				);
+				appendStep(
+					'SQL AGENT DONE',
+					`results=${sqlResult.count} | attempts=${sqlResult.attempts || 1} | took=${sqlDuration}ms`,
+				);
 
-				// Append SQL generation attempt vào processing log
-				processingLogData.sqlGenerationAttempts!.push({
-					sql: sqlResult.sql,
-					count: sqlResult.count,
-					tokenUsage: sqlResult.tokenUsage,
-					error: (sqlResult as any).error,
-					duration: sqlDuration,
-				});
+				// Append SQL generation attempt vào processing log (đầy đủ theo log)
+				if (sqlResult.debug?.attempts?.length) {
+					processingLogData.sqlGenerationAttempts = sqlResult.debug.attempts;
+				} else {
+					processingLogData.sqlGenerationAttempts!.push({
+						sql: sqlResult.sql,
+						count: sqlResult.count,
+						tokenUsage: sqlResult.tokenUsage,
+						error: (sqlResult as any).error,
+						duration: sqlDuration,
+					});
+				}
+				processingLogData.ragContext = {
+					...(processingLogData.ragContext || {}),
+					schemaContext: sqlResult.debug?.ragContext,
+					schemaContextLength: sqlResult.debug?.ragContext?.length || 0,
+					canonicalDecision: sqlResult.debug?.canonicalDecision,
+					tablesHint: sqlResult.debug?.tablesHint ?? processingLogData.orchestratorData?.tablesHint,
+					relationshipsHint:
+						sqlResult.debug?.relationshipsHint ??
+						processingLogData.orchestratorData?.relationshipsHint,
+					filtersHint:
+						sqlResult.debug?.filtersHint ?? processingLogData.orchestratorData?.filtersHint,
+					intentAction: sqlResult.debug?.intentAction,
+					recentMessages: sqlResult.debug?.recentMessages,
+				};
 
 				// Full SQL banner for debugging
 				try {
@@ -1265,6 +1311,10 @@ export class AiService {
 				this.logInfo(
 					'PARALLEL',
 					`END | completed in ${parallelDuration}ms | validator.isValid=${validation.isValid} | severity=${validation.severity || 'N/A'}`,
+				);
+				appendStep(
+					'VALIDATOR + RESPONSE GEN',
+					`validator.isValid=${validation.isValid} | severity=${validation.severity || 'N/A'} | duration=${parallelDuration}ms`,
 				);
 				this.logDebug(
 					'VALIDATOR',
@@ -1344,8 +1394,10 @@ export class AiService {
 							context: { count: sqlResult.count, severity: validation.severity || 'OK' },
 						});
 						this.logDebug('PERSIST', 'Đã lưu Q&A thành công vào knowledge store');
+						appendStep('PERSIST KNOWLEDGE', 'Saved QA interaction to knowledge store');
 					} catch (persistErr) {
 						this.logWarn('PERSIST', 'Không thể lưu Q&A vào knowledge store', persistErr);
+						appendStep('PERSIST KNOWLEDGE FAILED', String(persistErr));
 					}
 				} else {
 					// Skip khi có lỗi hoặc không hợp lệ
@@ -1360,6 +1412,7 @@ export class AiService {
 						'VALIDATOR',
 						`Kết quả không đủ chất lượng, không lưu vào knowledge store (${skipReason}): ${validation.reason || 'Unknown error'}`,
 					);
+					appendStep('PERSIST SKIPPED', skipReason);
 				}
 
 				// Build data payload từ parsed structured data
@@ -1407,6 +1460,7 @@ export class AiService {
 				processingLogData.status = 'completed';
 				processingLogData.tokenUsage = totalTokenUsage;
 				processingLogData.totalDuration = Date.now() - pipelineStartAt;
+				processingLogData.stepsLog = stepLogs.join('\n');
 				await this.processingLogService.saveProcessingLog({
 					question: query,
 					...processingLogData,

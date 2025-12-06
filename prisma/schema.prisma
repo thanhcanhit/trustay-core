@@ -1237,6 +1237,9 @@ model AiProcessingLog {
   
   // RAG Context từ vector DB
   ragContext Json? @map("rag_context")
+
+  // Step-by-step log (for debugging each agent step)
+  stepsLog  String? @db.Text @map("steps_log")
   
   // Token usage tổng hợp
   tokenUsage Json? @map("token_usage")

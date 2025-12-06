@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpStatus, Post, Query, UseGuards } from '@nestjs/common';
+import {
+	Body,
+	Controller,
+	Get,
+	HttpStatus,
+	Param,
+	ParseIntPipe,
+	Post,
+	Query,
+	UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { KnowledgeService } from '../../../ai/knowledge/knowledge.service';
 import { AiProcessingLogService } from '../../../ai/services/ai-processing-log.service';
@@ -70,6 +80,34 @@ export class AdminAiController {
 			limit: query.limit,
 			offset: query.offset,
 		});
+	}
+
+	@Get('canonical/:id/chunk')
+	@ApiOperation({
+		summary: 'Get chunk linked to a canonical SQL QA entry',
+		description: 'Return chunkId (ai_chunks.id) mapped from a SQL QA canonical entry',
+	})
+	@ApiResponse({
+		status: HttpStatus.OK,
+		description: 'Chunk ID linked to canonical',
+	})
+	async getChunkByCanonical(@Param('id', ParseIntPipe) id: number) {
+		const chunkId = await this.knowledge.findChunkBySqlQAId(id);
+		return { sqlQAId: id, chunkId };
+	}
+
+	@Get('chunk/:id/canonical')
+	@ApiOperation({
+		summary: 'Get canonical SQL QA entry linked to a chunk',
+		description: 'Return sqlQAId mapped from ai_chunks',
+	})
+	@ApiResponse({
+		status: HttpStatus.OK,
+		description: 'Canonical SQL QA ID linked to chunk',
+	})
+	async getCanonicalByChunk(@Param('id', ParseIntPipe) id: number) {
+		const sqlQAId = await this.knowledge.findSqlQAIdByChunkId(id);
+		return { chunkId: id, sqlQAId };
 	}
 
 	@Post('teach-or-update')

@@ -682,4 +682,91 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 			throw error;
 		}
 	}
+
+	/**
+	 * Update AI chunk content and regenerate embedding
+	 * @param id - Chunk ID
+	 * @param content - New content
+	 * @param options - Embedding generation options
+	 * @returns Updated chunk ID
+	 */
+	async updateChunk(id: number, content: string, options?: EmbeddingOptions): Promise<number> {
+		try {
+			const embedding = await this.generateEmbedding(content, options);
+			const { data, error } = await this.supabaseClient
+				.from('ai_chunks')
+				.update({
+					content,
+					embedding,
+					updated_at: new Date().toISOString(),
+				})
+				.eq('id', id)
+				.eq('tenant_id', this.config.tenantId)
+				.eq('db_key', this.config.dbKey)
+				.select('id')
+				.single();
+
+			if (error) {
+				throw new Error(`Failed to update chunk: ${error.message}`);
+			}
+
+			this.logger.debug(`Chunk updated with ID: ${data.id}`);
+			return data.id;
+		} catch (error) {
+			this.logger.error(`Error updating chunk: ${id}`, error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Find chunk by SQL QA ID
+	 * @param sqlQAId - SQL QA ID
+	 * @returns Chunk ID or null
+	 */
+	async findChunkBySqlQAId(sqlQAId: number): Promise<number | null> {
+		try {
+			const { data, error } = await this.supabaseClient
+				.from('ai_chunks')
+				.select('id')
+				.eq('sql_qa_id', sqlQAId)
+				.eq('tenant_id', this.config.tenantId)
+				.eq('db_key', this.config.dbKey)
+				.maybeSingle();
+
+			if (error) {
+				throw new Error(`Failed to find chunk by SQL QA ID: ${error.message}`);
+			}
+
+			return data?.id ? Number(data.id) : null;
+		} catch (error) {
+			this.logger.error(`Error finding chunk by SQL QA ID: ${sqlQAId}`, error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Find SQL QA ID by chunk ID
+	 * @param chunkId - Chunk ID
+	 * @returns SQL QA ID or null
+	 */
+	async findSqlQAIdByChunkId(chunkId: number): Promise<number | null> {
+		try {
+			const { data, error } = await this.supabaseClient
+				.from('ai_chunks')
+				.select('sql_qa_id')
+				.eq('id', chunkId)
+				.eq('tenant_id', this.config.tenantId)
+				.eq('db_key', this.config.dbKey)
+				.maybeSingle();
+
+			if (error) {
+				throw new Error(`Failed to find SQL QA ID by chunk ID: ${error.message}`);
+			}
+
+			return data?.sql_qa_id ? Number(data.sql_qa_id) : null;
+		} catch (error) {
+			this.logger.error(`Error finding SQL QA ID by chunk ID: ${chunkId}`, error);
+			throw error;
+		}
+	}
 }

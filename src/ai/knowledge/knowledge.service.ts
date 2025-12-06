@@ -170,6 +170,7 @@ export class KnowledgeService {
 				sqlQAId: number;
 				score: number;
 				question: string;
+				reusePreferred?: boolean;
 		  }
 		| {
 				mode: 'hint';
@@ -197,11 +198,12 @@ export class KnowledgeService {
 				sqlQAId: Number(exactHit.id),
 				score: 1,
 				question: exactHit.question,
+				reusePreferred: true, // exact match → strongly prefer reuse
 			};
 		}
 
 		// Vector similarity check
-		const results = await this.vectorStore.similaritySearch(question, 'qa', {
+		const results = await this.vectorStore.similaritySearch(normalized, 'qa', {
 			limit: 1,
 			tenantId: this.tenantId,
 			dbKey: this.dbKey,
@@ -228,6 +230,7 @@ export class KnowledgeService {
 				sqlQAId: Number(hit.id),
 				score: top.score,
 				question: hit.question,
+				reusePreferred: top.score >= 0.99, // near exact → prefer reuse
 			};
 		}
 		if (top.score >= thresholds.soft) {
@@ -284,7 +287,7 @@ export class KnowledgeService {
 		// IMPORTANT: For room-specific queries, we should check if SQL is different (different slug/id)
 		// Even if question is similar, SQL might be different (different room filter)
 		try {
-			const near = await this.vectorStore.similaritySearch(question, 'qa', {
+			const near = await this.vectorStore.similaritySearch(this.normalizeQuestion(question), 'qa', {
 				limit: 1,
 				tenantId: this.tenantId,
 				dbKey: this.dbKey,
@@ -530,7 +533,8 @@ export class KnowledgeService {
 		question: string,
 		threshold: number = 0.85,
 	): Promise<{ chunkId: number; sqlQAId: number } | null> {
-		const results = await this.vectorStore.similaritySearch(question, 'qa', {
+		const normalized = this.normalizeQuestion(question);
+		const results = await this.vectorStore.similaritySearch(normalized, 'qa', {
 			limit: 1,
 			tenantId: this.tenantId,
 			dbKey: this.dbKey,
@@ -556,7 +560,15 @@ export class KnowledgeService {
 	}
 
 	private normalizeQuestion(input: string): string {
-		return (input || '').toLowerCase().normalize('NFC').replace(/\s+/g, ' ').trim();
+		return (
+			(input || '')
+				.toLowerCase()
+				.normalize('NFC')
+				// Remove common punctuation (.,!?:;) to avoid minor differences
+				.replace(/[.,!?;:]+/g, ' ')
+				.replace(/\s+/g, ' ')
+				.trim()
+		);
 	}
 
 	private extractQuestionFromContent(content: string): string {
@@ -580,6 +592,20 @@ export class KnowledgeService {
 			tenantId: this.tenantId,
 			dbKey: this.dbKey,
 		});
+	}
+
+	/**
+	 * Find chunk ID linked to a SQL QA entry
+	 */
+	async findChunkBySqlQAId(sqlQAId: number): Promise<number | null> {
+		return await this.vectorStore.findChunkBySqlQAId(sqlQAId);
+	}
+
+	/**
+	 * Find SQL QA ID linked to a chunk
+	 */
+	async findSqlQAIdByChunkId(chunkId: number): Promise<number | null> {
+		return await this.vectorStore.findSqlQAIdByChunkId(chunkId);
 	}
 
 	private splitSchemaIntoChunks(schema: string): string[] {
@@ -705,25 +731,31 @@ export class KnowledgeService {
 					parameters: templated.parameters,
 				});
 			}
-			// Find associated chunk if exists
-			const normalized = this.normalizeQuestion(params.question);
-			const exact = await this.vectorStore.searchSqlQA(normalized, {
-				limit: 1,
-				tenantId: this.tenantId,
-				dbKey: this.dbKey,
-			});
-			const exactHit = exact.find((x) => this.normalizeQuestion(x.question) === normalized);
+			// Find associated chunk by SQL QA ID
+			const existingChunkId = await this.vectorStore.findChunkBySqlQAId(params.id);
 			let chunkId = 0;
-			if (exactHit?.id) {
-				// Try to find associated chunk in ai_chunks
-				const results = await this.vectorStore.similaritySearch(params.question, 'qa', {
-					limit: 1,
-					tenantId: this.tenantId,
-					dbKey: this.dbKey,
+			if (existingChunkId) {
+				// Update existing chunk with new question content and regenerate embedding
+				const qaContent = `${params.question}`;
+				await this.vectorStore.updateChunk(existingChunkId, qaContent, {
+					model: 'text-embedding-004',
 				});
-				if (results[0]?.id) {
-					chunkId = Number(results[0].id);
-				}
+				chunkId = existingChunkId;
+				this.logger.debug(`Updated existing chunk ${chunkId} for SQL QA ${params.id}`);
+			} else {
+				// No chunk exists, create a new one
+				const qaContent = `${params.question}`;
+				chunkId = await this.vectorStore.addChunk(
+					{
+						tenantId: this.tenantId,
+						collection: 'qa',
+						dbKey: this.dbKey,
+						content: qaContent,
+						sqlQaId: params.id,
+					},
+					{ model: 'text-embedding-004' },
+				);
+				this.logger.debug(`Created new chunk ${chunkId} for SQL QA ${params.id}`);
 			}
 			return {
 				chunkId,

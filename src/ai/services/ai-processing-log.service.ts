@@ -23,6 +23,7 @@ export class AiProcessingLogService {
 		validatorData?: any;
 		responseGeneratorData?: any;
 		ragContext?: any;
+		stepsLog?: string;
 		tokenUsage?: any;
 		totalDuration?: number;
 		status?: string;
@@ -44,6 +45,7 @@ export class AiProcessingLogService {
 					sqlGenerationAttempts: input.sqlGenerationAttempts || [],
 					validatorData: validatorDataWithResponseGen,
 					ragContext: input.ragContext,
+					stepsLog: input.stepsLog,
 					tokenUsage: input.tokenUsage,
 					totalDuration: input.totalDuration,
 					status: input.status || 'completed',
@@ -184,13 +186,19 @@ export class AiProcessingLogService {
 					orderBy: { createdAt: 'desc' },
 					take: limit,
 					skip: offset,
+					// Trả full data để FE có đủ thông tin debug/hiển thị
 					select: {
 						id: true,
 						question: true,
 						response: true,
+						orchestratorData: true,
+						sqlGenerationAttempts: true,
+						validatorData: true,
+						ragContext: true,
+						tokenUsage: true,
+						totalDuration: true,
 						status: true,
 						error: true,
-						totalDuration: true,
 						createdAt: true,
 					},
 				}),
