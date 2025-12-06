@@ -27,10 +27,15 @@ export class CreatePaymentDto {
 	paymentType: PaymentType;
 
 	@ApiProperty({ description: 'Số tiền thanh toán', type: 'number', example: 4021451.61 })
-	@IsNotEmpty()
-	@Type(() => Number)
-	@IsNumber({ maxDecimalPlaces: 2 })
-	@Transform(({ value }) => new Decimal(value))
+	@IsNotEmpty({ message: 'amount is required' })
+	@Transform(({ value }) => {
+		// Convert to number first, then to Decimal
+		const numValue = typeof value === 'string' ? parseFloat(value) : value;
+		if (isNaN(numValue)) {
+			throw new Error('amount must be a valid number');
+		}
+		return new Decimal(numValue);
+	})
 	amount: Decimal;
 
 	@ApiProperty({ default: 'VND', description: 'Loại tiền tệ' })
