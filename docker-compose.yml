@@ -88,35 +88,33 @@ services:
     networks:
       - trustay-network
 
-  trustay-kibana:
-    image: docker.elastic.co/kibana/kibana:8.11.0
-    restart: unless-stopped
-    container_name: trustay-kibana
-    environment:
-      - ELASTICSEARCH_HOSTS=http://trustay-elasticsearch:9200
-      - SERVER_NAME=trustay-kibana
-      - SERVER_HOST=0.0.0.0
-      - XPACK_OBSERVABILITY_ENABLED=false
-      - XPACK_SLO_ENABLED=false
-    ports:
-      - "5601:5601"
-    depends_on:
-      trustay-elasticsearch:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-        reservations:
-          memory:  1G
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 90s
-    networks:
-      - trustay-network
+  # trustay-kibana:
+  #   image: docker.elastic.co/kibana/kibana:8.11.0
+  #   restart: unless-stopped
+  #   container_name: trustay-kibana
+  #   environment:
+  #     - ELASTICSEARCH_HOSTS=http://trustay-elasticsearch:9200
+  #     - SERVER_NAME=trustay-kibana
+  #     - SERVER_HOST=0.0.0.0
+  #   ports:
+  #     - "5601:5601"
+  #   depends_on:
+  #     trustay-elasticsearch:
+  #       condition: service_healthy
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 2G
+  #       reservations:
+  #         memory:  1G
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 5
+  #     start_period: 90s
+  #   networks:
+  #     - trustay-network
 
 
   trustay-pgweb:
