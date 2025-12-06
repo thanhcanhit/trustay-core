@@ -62,6 +62,8 @@ services:
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
       - cluster.name=trustay-cluster
       - bootstrap.memory_lock=true
+      - xpack.slo.enabled=false
+      - xpack.observability.enabled=false
     ulimits:
       memlock:
         soft: -1
@@ -94,8 +96,8 @@ services:
       - ELASTICSEARCH_HOSTS=http://trustay-elasticsearch:9200
       - SERVER_NAME=trustay-kibana
       - SERVER_HOST=0.0.0.0
-      - ELASTICSEARCH_USERNAME=
-      - ELASTICSEARCH_PASSWORD=
+      - XPACK_OBSERVABILITY_ENABLED=false
+      - XPACK_SLO_ENABLED=false
     ports:
       - "5601:5601"
     depends_on:
