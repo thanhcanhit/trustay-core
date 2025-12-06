@@ -195,6 +195,7 @@ export class AiProcessingLogService {
 						sqlGenerationAttempts: true,
 						validatorData: true,
 						ragContext: true,
+						stepsLog: true,
 						tokenUsage: true,
 						totalDuration: true,
 						status: true,
