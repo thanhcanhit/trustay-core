@@ -375,6 +375,11 @@ export class RoomSeekingPostService {
 		// Validate location IDs exist
 		await this.validateLocationIds(roomRequestData);
 
+		// Validate maxBudget is provided (required field)
+		if (roomRequestData.maxBudget == null) {
+			throw new BadRequestException('maxBudget is required');
+		}
+
 		// Convert date strings to Date objects
 		const processedData = {
 			...roomRequestData,
@@ -807,7 +812,7 @@ export class RoomSeekingPostService {
 			preferredProvinceId: roomRequest.preferredProvinceId,
 			minBudget:
 				roomRequest.minBudget != null ? convertDecimalToNumber(roomRequest.minBudget) : undefined,
-			maxBudget: convertDecimalToNumber(roomRequest.maxBudget),
+			maxBudget: convertDecimalToNumber(roomRequest.maxBudget ?? 0),
 			currency: roomRequest.currency,
 			preferredRoomType: roomRequest.preferredRoomType,
 			occupancy: roomRequest.occupancy,

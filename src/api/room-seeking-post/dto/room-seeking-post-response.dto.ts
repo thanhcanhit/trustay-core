@@ -30,9 +30,11 @@ export class RoomRoomSeekingPostDto {
 	preferredProvinceId: number;
 
 	@ApiPropertyOptional({ description: 'Ngân sách tối thiểu' })
+	@Transform(({ value }) => (value != null ? convertDecimalToNumber(value) : undefined))
 	minBudget?: number;
 
 	@ApiProperty({ description: 'Ngân sách tối đa' })
+	@Transform(({ value }) => convertDecimalToNumber(value ?? 0))
 	maxBudget: number;
 
 	@ApiProperty({ description: 'Đơn vị tiền tệ' })
