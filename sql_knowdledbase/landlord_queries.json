@@ -1,202 +1,202 @@
 [
   {
     "question": "Có bao nhiêu phòng đang còn trống?",
-    "sql": "SELECT COUNT(*) AS available_rooms\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.status = \u0027available\u0027\n  AND b.owner_id = :owner_id;"
+    "sql": "SELECT COUNT(*) AS available_rooms\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.status = \u0027available\u0027\n  AND ri.is_active = TRUE\n  AND r.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Liệt kê tất cả các phòng trong tòa nhà \"Nha tro Minh Phat Quan 9\".",
-    "sql": "SELECT r.*, rp.base_price_monthly\nFROM rooms r\nLEFT JOIN room_pricing rp ON rp.room_id = r.id\nJOIN buildings b ON b.id = r.building_id\nWHERE b.name = \u0027Nha tro Minh Phat Quan 9\u0027\n  AND b.owner_id = :owner_id\nORDER BY r.name;"
+    "question": "Liệt kê tất cả các phòng trong tòa nhà \"Nha tro Minh Phat Quan 9\"",
+    "sql": "SELECT r.*, rp.base_price_monthly\nFROM rooms r\nLEFT JOIN room_pricing rp ON rp.room_id = r.id\nJOIN buildings b ON b.id = r.building_id\nWHERE b.name = \u0027Nha tro Minh Phat Quan 9\u0027\n  AND r.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\nORDER BY r.name;"
   },
   {
-    "question": "Hiển thị các phòng đang bảo trì.",
-    "sql": "SELECT b.name AS building_name, r.name AS room_name, ri.room_number\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.status = \u0027maintenance\u0027\n  AND b.owner_id = :owner_id;"
+    "question": "Hiển thị các phòng đang bảo trì",
+    "sql": "SELECT b.name AS building_name, r.name AS room_name, ri.room_number\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.status = \u0027maintenance\u0027\n  AND ri.is_active = TRUE\n  AND r.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
     "question": "Tòa nhà nào có nhiều phòng trống nhất?",
-    "sql": "SELECT b.id, b.name, COUNT(*) AS available_rooms\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.status = \u0027available\u0027\n  AND b.owner_id = :owner_id\nGROUP BY b.id, b.name\nORDER BY available_rooms DESC\nLIMIT 1;"
+    "sql": "SELECT b.id, b.name, COUNT(*) AS available_rooms\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.status = \u0027available\u0027\n  AND ri.is_active = TRUE\n  AND r.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\nGROUP BY b.id, b.name\nORDER BY available_rooms DESC\nLIMIT 1;"
   },
   {
     "question": "Trạng thái của phòng 101 trong tòa nhà \"Toa nha A\" là gì?",
-    "sql": "SELECT ri.status, ri.is_active, ri.updated_at\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.room_number = \u0027101\u0027\n  AND b.name = \u0027Toa nha A\u0027\n  AND b.owner_id = :owner_id;"
+    "sql": "SELECT ri.status, ri.is_active, ri.updated_at\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.room_number = \u0027101\u0027\n  AND b.name = \u0027Toa nha A\u0027\n  AND r.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
     "question": "How many room types are \"sleepbox\"?",
-    "sql": "SELECT COUNT(*) AS sleepbox_room_types\nFROM rooms r\nJOIN buildings b ON b.id = r.building_id\nWHERE r.room_type = \u0027sleepbox\u0027\n  AND b.owner_id = :owner_id;"
+    "sql": "SELECT COUNT(*) AS sleepbox_room_types\nFROM rooms r\nJOIN buildings b ON b.id = r.building_id\nWHERE r.room_type = \u0027sleepbox\u0027\n  AND r.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Các phòng có giá thuê dưới 3,000,000.",
-    "sql": "SELECT b.name AS building_name, r.name AS room_name, ri.room_number, rp.base_price_monthly\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nJOIN room_pricing rp ON rp.room_id = r.id\nWHERE rp.base_price_monthly \u003c 3000000\n  AND b.owner_id = :owner_id\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027);"
+    "question": "Các phòng có giá thuê dưới 3,000,000",
+    "sql": "SELECT b.name AS building_name, r.name AS room_name, ri.room_number, rp.base_price_monthly\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nJOIN room_pricing rp ON rp.room_id = r.id\nWHERE rp.base_price_monthly \u003c 3000000\n  AND ri.is_active = TRUE\n  AND r.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\n  AND ri.status IN (\u0027available\u0027, \u0027reserved\u0027);"
   },
   {
-    "question": "Các phòng có diện tích lớn hơn 25 m².",
-    "sql": "SELECT b.name AS building_name, r.name AS room_name, r.area_sqm\nFROM rooms r\nJOIN buildings b ON b.id = r.building_id\nWHERE r.area_sqm \u003e 25\n  AND b.owner_id = :owner_id\nORDER BY r.area_sqm DESC;"
+    "question": "Các phòng có diện tích lớn hơn 25 m²",
+    "sql": "SELECT b.name AS building_name, r.name AS room_name, r.area_sqm\nFROM rooms r\nJOIN buildings b ON b.id = r.building_id\nWHERE r.area_sqm \u003e 25\n  AND r.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\nORDER BY r.area_sqm DESC;"
   },
   {
-    "question": "Rooms reserved (deposit placed, tenant not moved in).",
-    "sql": "SELECT b.name AS building_name, r.name AS room_name, ri.room_number\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.status = \u0027reserved\u0027\n  AND b.owner_id = :owner_id;"
+    "question": "Rooms reserved deposit placed tenant not moved in",
+    "sql": "SELECT b.name AS building_name, r.name AS room_name, ri.room_number\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.status = \u0027reserved\u0027\n  AND ri.is_active = TRUE\n  AND r.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Tổng số phòng mà chủ nhà này quản lý.",
-    "sql": "SELECT COUNT(*) AS total_room_instances\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE b.owner_id = :owner_id;"
+    "question": "Tổng số phòng mà chủ nhà này quản lý",
+    "sql": "SELECT COUNT(*) AS total_room_instances\nFROM room_instances ri\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nWHERE ri.is_active = TRUE\n  AND r.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
     "question": "Ai đang thuê phòng 205?",
-    "sql": "SELECT u.id AS tenant_id, u.first_name, u.last_name, u.phone, rnt.status\nFROM rentals rnt\nJOIN users u ON u.id = rnt.tenant_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027205\u0027\n  AND rnt.status = \u0027active\u0027\n  AND b.owner_id = :owner_id;"
+    "sql": "SELECT u.id AS tenant_id, u.first_name, u.last_name, u.phone, rnt.status\nFROM rentals rnt\nJOIN users u ON u.id = rnt.tenant_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027205\u0027\n  AND rnt.status = \u0027active\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Số điện thoại của người thuê tên \"Nguyen Van A\" (chỉ trong các tài sản của chủ nhà này).",
-    "sql": "SELECT DISTINCT u.first_name, u.last_name, u.phone, u.email\nFROM users u\nJOIN rentals rnt ON rnt.tenant_id = u.id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE u.role = \u0027tenant\u0027\n  AND (u.first_name || \u0027 \u0027 || u.last_name) ILIKE \u0027%Nguyen Van A%\u0027\n  AND b.owner_id = :owner_id;"
+    "question": "Số điện thoại của người thuê tên \"Nguyen Van A\" chỉ trong các tài sản của chủ nhà này",
+    "sql": "SELECT DISTINCT u.first_name, u.last_name, u.phone, u.email\nFROM users u\nJOIN rentals rnt ON rnt.tenant_id = u.id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE u.role = \u0027tenant\u0027\n  AND (u.first_name || \u0027 \u0027 || u.last_name) ILIKE \u0027%Nguyen Van A%\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Đếm số người thuê nam và nữ (trong phạm vi chủ nhà này).",
-    "sql": "SELECT u.gender, COUNT(DISTINCT u.id) AS tenant_count\nFROM users u\nJOIN rentals rnt ON rnt.tenant_id = u.id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rnt.status = \u0027active\u0027\n  AND b.owner_id = :owner_id\nGROUP BY u.gender;"
+    "question": "Đếm số người thuê nam và nữ trong phạm vi chủ nhà này",
+    "sql": "SELECT u.gender, COUNT(DISTINCT u.id) AS tenant_count\nFROM users u\nJOIN rentals rnt ON rnt.tenant_id = u.id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rnt.status = \u0027active\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\nGROUP BY u.gender;"
   },
   {
-    "question": "Người thuê chưa xác minh danh tính (trong phạm vi chủ nhà này).",
-    "sql": "SELECT DISTINCT u.id, u.first_name, u.last_name, u.email, u.phone\nFROM users u\nJOIN rentals rnt ON rnt.tenant_id = u.id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE u.role = \u0027tenant\u0027\n  AND u.is_verified_identity = FALSE\n  AND b.owner_id = :owner_id;"
+    "question": "Người thuê chưa xác minh danh tính trong phạm vi chủ nhà này",
+    "sql": "SELECT DISTINCT u.id, u.first_name, u.last_name, u.email, u.phone\nFROM users u\nJOIN rentals rnt ON rnt.tenant_id = u.id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE u.role = \u0027tenant\u0027\n  AND u.is_verified_identity = FALSE\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Người thuê nào đã ở lâu nhất (chỉ tính các hợp đồng đang hoạt động)?",
-    "sql": "SELECT u.id, u.first_name, u.last_name, rnt.contract_start_date,\n       AGE(current_date, rnt.contract_start_date) AS stay_duration\nFROM rentals rnt\nJOIN users u ON u.id = rnt.tenant_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rnt.status = \u0027active\u0027\n  AND b.owner_id = :owner_id\nORDER BY rnt.contract_start_date ASC\nLIMIT 1;"
+    "question": "Người thuê nào đã ở lâu nhất chỉ tính các hợp đồng đang hoạt động",
+    "sql": "SELECT u.id, u.first_name, u.last_name, rnt.contract_start_date,\n       AGE(current_date, rnt.contract_start_date) AS stay_duration\nFROM rentals rnt\nJOIN users u ON u.id = rnt.tenant_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rnt.status = \u0027active\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\nORDER BY rnt.contract_start_date ASC\nLIMIT 1;"
   },
   {
-    "question": "Tenants with home address in \"Nghe An\" (scoped to this landlord).",
-    "sql": "SELECT DISTINCT u.id, u.first_name, u.last_name, u.email, u.phone\nFROM users u\nJOIN user_addresses ua ON ua.user_id = u.id\nJOIN provinces p ON p.id = ua.province_id\nJOIN rentals rnt ON rnt.tenant_id = u.id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE u.role = \u0027tenant\u0027\n  AND p.name ILIKE \u0027%Nghe An%\u0027\n  AND b.owner_id = :owner_id;"
+    "question": "Tenants with home address in \"Nghe An\" scoped to this landlord",
+    "sql": "SELECT DISTINCT u.id, u.first_name, u.last_name, u.email, u.phone\nFROM users u\nJOIN user_addresses ua ON ua.user_id = u.id\nJOIN provinces p ON p.id = ua.province_id\nJOIN rentals rnt ON rnt.tenant_id = u.id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE u.role = \u0027tenant\u0027\n  AND p.province_name ILIKE \u0027%Nghe An%\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
     "question": "Có bao nhiêu người thuê đã dọn vào trong tháng này?",
-    "sql": "SELECT COUNT(*) AS new_tenants_this_month\nFROM rentals rnt\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rnt.contract_start_date \u003e= date_trunc(\u0027month\u0027, current_date)\n  AND rnt.contract_start_date \u003c (date_trunc(\u0027month\u0027, current_date) + INTERVAL \u00271 month\u0027)\n  AND b.owner_id = :owner_id;"
+    "sql": "SELECT COUNT(*) AS new_tenants_this_month\nFROM rentals rnt\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rnt.contract_start_date \u003e= date_trunc(\u0027month\u0027, current_date)\n  AND rnt.contract_start_date \u003c (date_trunc(\u0027month\u0027, current_date) + INTERVAL \u00271 month\u0027)\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Người thuê đang chia sẻ phòng 301 (đang hoạt động).",
-    "sql": "SELECT rnt.id AS rental_id, u.first_name, u.last_name, u.phone, rnt.status\nFROM rentals rnt\nJOIN users u ON u.id = rnt.tenant_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027301\u0027\n  AND rnt.status = \u0027active\u0027\n  AND b.owner_id = :owner_id;"
+    "question": "Người thuê đang chia sẻ phòng 301 đang hoạt động",
+    "sql": "SELECT rnt.id AS rental_id, u.first_name, u.last_name, u.phone, rnt.status\nFROM rentals rnt\nJOIN users u ON u.id = rnt.tenant_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027301\u0027\n  AND rnt.status = \u0027active\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Tổng số người thuê đang hoạt động trên tất cả các tòa nhà.",
-    "sql": "SELECT COUNT(*) AS active_tenants\nFROM rentals rnt\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rnt.status = \u0027active\u0027\n  AND b.owner_id = :owner_id;"
+    "question": "Tổng số người thuê đang hoạt động trên tất cả các tòa nhà",
+    "sql": "SELECT COUNT(*) AS active_tenants\nFROM rentals rnt\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rnt.status = \u0027active\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Thông tin liên hệ của người đại diện hợp đồng cho phòng 402.",
-    "sql": "SELECT u.id AS tenant_id, u.first_name, u.last_name, u.email, u.phone\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nJOIN users u ON u.id = c.tenant_id\nWHERE ri.room_number = \u0027402\u0027\n  AND b.owner_id = :owner_id;"
+    "question": "Thông tin liên hệ của người đại diện hợp đồng cho phòng 402",
+    "sql": "SELECT u.id AS tenant_id, u.first_name, u.last_name, u.email, u.phone\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nJOIN users u ON u.id = c.tenant_id\nWHERE ri.room_number = \u0027402\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Tổng doanh thu tháng trước.",
-    "sql": "SELECT COALESCE(SUM(p.amount), 0) AS revenue_last_month\nFROM payments p\nJOIN rentals rnt ON rnt.id = p.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE p.payment_status = \u0027completed\u0027\n  AND p.payment_date \u003e= date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\n  AND p.payment_date \u003c date_trunc(\u0027month\u0027, current_date)\n  AND b.owner_id = :owner_id;"
+    "question": "Tổng doanh thu tháng trước",
+    "sql": "SELECT COALESCE(SUM(p.amount), 0) AS revenue_last_month\nFROM payments p\nJOIN rentals rnt ON rnt.id = p.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE p.payment_status = \u0027completed\u0027\n  AND p.payment_date \u003e= date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\n  AND p.payment_date \u003c date_trunc(\u0027month\u0027, current_date)\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Các phòng chưa thanh toán đầy đủ tiền thuê tháng này.",
-    "sql": "SELECT ri.room_number, rm.name AS room_name, b.name AS building_name,\n       bll.total_amount, bll.paid_amount, (bll.total_amount - bll.paid_amount) AS outstanding\nFROM bills bll\nJOIN rentals rnt ON rnt.id = bll.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE bll.billing_month = EXTRACT(MONTH FROM current_date)\n  AND bll.billing_year = EXTRACT(YEAR FROM current_date)\n  AND bll.paid_amount \u003c bll.total_amount\n  AND bll.status \u003c\u003e \u0027paid\u0027\n  AND b.owner_id = :owner_id;"
+    "question": "Các phòng chưa thanh toán đầy đủ tiền thuê tháng này",
+    "sql": "SELECT ri.room_number, rm.name AS room_name, b.name AS building_name,\n       bll.total_amount, bll.paid_amount, (bll.total_amount - bll.paid_amount) AS outstanding\nFROM bills bll\nJOIN rentals rnt ON rnt.id = bll.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE bll.billing_month = EXTRACT(MONTH FROM current_date)\n  AND bll.billing_year = EXTRACT(YEAR FROM current_date)\n  AND bll.paid_amount \u003c bll.total_amount\n  AND bll.status != \u0027paid\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Số tiền còn nợ của phòng 105.",
-    "sql": "SELECT ri.room_number, COALESCE(SUM(bll.remaining_amount), 0) AS remaining_amount\nFROM bills bll\nJOIN rentals rnt ON rnt.id = bll.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027105\u0027\n  AND bll.status IN (\u0027pending\u0027, \u0027overdue\u0027)\n  AND b.owner_id = :owner_id\nGROUP BY ri.room_number;"
+    "question": "Số tiền còn nợ của phòng 105",
+    "sql": "SELECT ri.room_number, COALESCE(SUM(bll.remaining_amount), 0) AS remaining_amount\nFROM bills bll\nJOIN rentals rnt ON rnt.id = bll.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027105\u0027\n  AND bll.status IN (\u0027pending\u0027, \u0027overdue\u0027)\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\nGROUP BY ri.room_number;"
   },
   {
-    "question": "Tổng phí điện cần thu trong tháng 11 năm 2025.",
-    "sql": "SELECT COALESCE(SUM(bi.amount), 0) AS electricity_amount\nFROM bill_items bi\nJOIN bills bll ON bll.id = bi.bill_id\nJOIN rentals rnt ON rnt.id = bll.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE bll.billing_month = 11\n  AND bll.billing_year = 2025\n  AND bi.item_type = \u0027utility\u0027\n  AND (bi.item_name ILIKE \u0027%dien%\u0027 OR bi.item_name ILIKE \u0027%electric%\u0027)\n  AND b.owner_id = :owner_id;"
+    "question": "Tổng phí điện cần thu trong tháng 11 năm 2025",
+    "sql": "SELECT COALESCE(SUM(bi.amount), 0) AS electricity_amount\nFROM bill_items bi\nJOIN bills bll ON bll.id = bi.bill_id\nJOIN rentals rnt ON rnt.id = bll.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE bll.billing_month = 11\n  AND bll.billing_year = 2025\n  AND bi.item_type = \u0027utility\u0027\n  AND (bi.item_name ILIKE \u0027%dien%\u0027 OR bi.item_name ILIKE \u0027%electric%\u0027)\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
     "question": "Hóa đơn nào đã quá hạn?",
-    "sql": "SELECT bll.id, bll.billing_period, ri.room_number, u.first_name, u.last_name,\n       bll.total_amount, bll.remaining_amount\nFROM bills bll\nJOIN rentals rnt ON rnt.id = bll.rental_id\nJOIN users u ON u.id = rnt.tenant_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE bll.status = \u0027overdue\u0027\n  AND b.owner_id = :owner_id\nORDER BY bll.due_date ASC;"
+    "sql": "SELECT bll.id, bll.billing_period, ri.room_number, u.first_name, u.last_name,\n       bll.total_amount, bll.remaining_amount\nFROM bills bll\nJOIN rentals rnt ON rnt.id = bll.rental_id\nJOIN users u ON u.id = rnt.tenant_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE bll.status = \u0027overdue\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\nORDER BY bll.due_date ASC;"
   },
   {
     "question": "Khách hàng nào đã thanh toán bằng chuyển khoản ngân hàng hôm nay?",
-    "sql": "SELECT DISTINCT u.id, u.first_name, u.last_name, u.phone, p.amount\nFROM payments p\nJOIN rentals rnt ON rnt.id = p.rental_id\nJOIN users u ON u.id = rnt.tenant_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE p.payment_status = \u0027completed\u0027\n  AND p.payment_method = \u0027bank_transfer\u0027\n  AND p.payment_date::date = current_date\n  AND b.owner_id = :owner_id;"
+    "sql": "SELECT DISTINCT u.id, u.first_name, u.last_name, u.phone, p.amount\nFROM payments p\nJOIN rentals rnt ON rnt.id = p.rental_id\nJOIN users u ON u.id = rnt.tenant_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE p.payment_status = \u0027completed\u0027\n  AND p.payment_method = \u0027bank_transfer\u0027\n  AND p.payment_date::date = current_date\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Tổng tiền đặt cọc hiện đang giữ cho các hợp đồng thuê đang hoạt động.",
-    "sql": "SELECT COALESCE(SUM(rnt.deposit_paid), 0) AS total_deposit_held\nFROM rentals rnt\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rnt.status = \u0027active\u0027\n  AND b.owner_id = :owner_id;"
+    "question": "Tổng tiền đặt cọc hiện đang giữ cho các hợp đồng thuê đang hoạt động",
+    "sql": "SELECT COALESCE(SUM(rnt.deposit_paid), 0) AS total_deposit_held\nFROM rentals rnt\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rnt.status = \u0027active\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "So sánh doanh thu tháng này với tháng trước.",
-    "sql": "WITH revenue AS (\n  SELECT \u0027current_month\u0027 AS period, COALESCE(SUM(p.amount), 0) AS amount\n  FROM payments p\n  JOIN rentals rnt ON rnt.id = p.rental_id\n  JOIN room_instances ri ON ri.id = rnt.room_instance_id\n  JOIN rooms rm ON rm.id = ri.room_id\n  JOIN buildings b ON b.id = rm.building_id\n  WHERE p.payment_status = \u0027completed\u0027\n    AND p.payment_date \u003e= date_trunc(\u0027month\u0027, current_date)\n    AND p.payment_date \u003c date_trunc(\u0027month\u0027, current_date) + INTERVAL \u00271 month\u0027\n    AND b.owner_id = :owner_id\n  UNION ALL\n  SELECT \u0027last_month\u0027 AS period, COALESCE(SUM(p.amount), 0) AS amount\n  FROM payments p\n  JOIN rentals rnt ON rnt.id = p.rental_id\n  JOIN room_instances ri ON ri.id = rnt.room_instance_id\n  JOIN rooms rm ON rm.id = ri.room_id\n  JOIN buildings b ON b.id = rm.building_id\n  WHERE p.payment_status = \u0027completed\u0027\n    AND p.payment_date \u003e= date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\n    AND p.payment_date \u003c date_trunc(\u0027month\u0027, current_date)\n    AND b.owner_id = :owner_id\n)\nSELECT *\nFROM revenue;"
+    "question": "So sánh doanh thu tháng này với tháng trước",
+    "sql": "WITH revenue AS (\n  SELECT \u0027current_month\u0027 AS period, COALESCE(SUM(p.amount), 0) AS amount\n  FROM payments p\n  JOIN rentals rnt ON rnt.id = p.rental_id\n  JOIN room_instances ri ON ri.id = rnt.room_instance_id\n  JOIN rooms rm ON rm.id = ri.room_id\n  JOIN buildings b ON b.id = rm.building_id\n  WHERE p.payment_status = \u0027completed\u0027\n    AND p.payment_date \u003e= date_trunc(\u0027month\u0027, current_date)\n    AND p.payment_date \u003c date_trunc(\u0027month\u0027, current_date) + INTERVAL \u00271 month\u0027\n    AND ri.is_active = TRUE\n    AND rm.is_active = TRUE\n    AND b.is_active = TRUE\n    AND b.owner_id = :owner_id\n  UNION ALL\n  SELECT \u0027last_month\u0027 AS period, COALESCE(SUM(p.amount), 0) AS amount\n  FROM payments p\n  JOIN rentals rnt ON rnt.id = p.rental_id\n  JOIN room_instances ri ON ri.id = rnt.room_instance_id\n  JOIN rooms rm ON rm.id = ri.room_id\n  JOIN buildings b ON b.id = rm.building_id\n  WHERE p.payment_status = \u0027completed\u0027\n    AND p.payment_date \u003e= date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\n    AND p.payment_date \u003c date_trunc(\u0027month\u0027, current_date)\n    AND ri.is_active = TRUE\n    AND rm.is_active = TRUE\n    AND b.is_active = TRUE\n    AND b.owner_id = :owner_id\n)\nSELECT *\nFROM revenue;"
   },
   {
-    "question": "Lịch sử thanh toán của phòng 201 trong 3 tháng qua.",
-    "sql": "SELECT p.id AS payment_id, p.amount, p.payment_method, p.payment_status, p.payment_date\nFROM payments p\nJOIN rentals rnt ON rnt.id = p.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027201\u0027\n  AND p.payment_date \u003e= current_date - INTERVAL \u00273 months\u0027\n  AND b.owner_id = :owner_id\nORDER BY p.payment_date DESC;"
+    "question": "Lịch sử thanh toán của phòng 201 trong 3 tháng qua",
+    "sql": "SELECT p.id AS payment_id, p.amount, p.payment_method, p.payment_status, p.payment_date\nFROM payments p\nJOIN rentals rnt ON rnt.id = p.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027201\u0027\n  AND p.payment_date \u003e= current_date - INTERVAL \u00273 months\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\nORDER BY p.payment_date DESC;"
   },
   {
     "question": "Có bao nhiêu hóa đơn điện tử vẫn còn ở trạng thái nháp/chờ xử lý?",
-    "sql": "SELECT COUNT(*) AS unsent_bills\nFROM bills bll\nJOIN rentals rnt ON rnt.id = bll.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE bll.status IN (\u0027draft\u0027, \u0027pending\u0027)\n  AND b.owner_id = :owner_id;"
+    "sql": "SELECT COUNT(*) AS unsent_bills\nFROM bills bll\nJOIN rentals rnt ON rnt.id = bll.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE bll.status IN (\u0027draft\u0027, \u0027pending\u0027)\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
     "question": "Chỉ số điện tháng trước của phòng 303 là bao nhiêu?",
-    "sql": "SELECT rimr.last_meter_reading, rimr.meter_reading, rimr.created_at\nFROM room_instance_meter_readings rimr\nJOIN room_instances ri ON ri.id = rimr.room_instance_id\nJOIN room_costs rc ON rc.id = rimr.room_cost_id\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027303\u0027\n  AND ct.name ILIKE \u0027%dien%\u0027\n  AND date_trunc(\u0027month\u0027, rimr.created_at) = date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\n  AND b.owner_id = :owner_id\nORDER BY rimr.created_at DESC\nLIMIT 1;"
+    "sql": "SELECT rimr.last_meter_reading, rimr.meter_reading, rimr.created_at\nFROM room_instance_meter_readings rimr\nJOIN room_instances ri ON ri.id = rimr.room_instance_id\nJOIN room_costs rc ON rc.id = rimr.room_cost_id\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027303\u0027\n  AND ct.name ILIKE \u0027%dien%\u0027\n  AND date_trunc(\u0027month\u0027, rimr.created_at) = date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\nORDER BY rimr.created_at DESC\nLIMIT 1;"
   },
   {
     "question": "Phòng nào sử dụng nhiều nước nhất tháng trước?",
-    "sql": "SELECT ri.room_number, b.name AS building_name,\n       (COALESCE(rimr.meter_reading, 0) - COALESCE(rimr.last_meter_reading, 0)) AS water_usage\nFROM room_instance_meter_readings rimr\nJOIN room_instances ri ON ri.id = rimr.room_instance_id\nJOIN room_costs rc ON rc.id = rimr.room_cost_id\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ct.name ILIKE \u0027%nuoc%\u0027\n  AND date_trunc(\u0027month\u0027, rimr.created_at) = date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\n  AND b.owner_id = :owner_id\nORDER BY water_usage DESC NULLS LAST\nLIMIT 1;"
+    "sql": "SELECT ri.room_number, b.name AS building_name,\n       (COALESCE(rimr.meter_reading, 0) - COALESCE(rimr.last_meter_reading, 0)) AS water_usage\nFROM room_instance_meter_readings rimr\nJOIN room_instances ri ON ri.id = rimr.room_instance_id\nJOIN room_costs rc ON rc.id = rimr.room_cost_id\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ct.name ILIKE \u0027%nuoc%\u0027\n  AND date_trunc(\u0027month\u0027, rimr.created_at) = date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\nORDER BY water_usage DESC NULLS LAST\nLIMIT 1;"
   },
   {
-    "question": "Giá điện hiện tại của tòa nhà \"Toa nha B\".",
-    "sql": "SELECT DISTINCT rc.unit_price, rc.unit, ct.name AS cost_type\nFROM room_costs rc\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nJOIN rooms rm ON rm.id = rc.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE b.name = \u0027Toa nha B\u0027\n  AND ct.name ILIKE \u0027%dien%\u0027\n  AND rc.is_active = TRUE\n  AND b.owner_id = :owner_id;"
+    "question": "Giá điện hiện tại của tòa nhà \"Toa nha B\"",
+    "sql": "SELECT DISTINCT rc.unit_price, rc.unit, ct.name AS cost_type\nFROM room_costs rc\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nJOIN rooms rm ON rm.id = rc.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE b.name = \u0027Toa nha B\u0027\n  AND ct.name ILIKE \u0027%dien%\u0027\n  AND rc.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Các phòng thiếu chỉ số đồng hồ tiện ích trong tháng này.",
+    "question": "Các phòng thiếu chỉ số đồng hồ tiện ích trong tháng này",
     "sql": "SELECT ri.room_number, b.name AS building_name\nFROM room_instances ri\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nJOIN room_costs rc ON rc.room_id = rm.id AND rc.cost_type = \u0027metered\u0027 AND rc.is_active = TRUE\nLEFT JOIN room_instance_meter_readings rimr\n  ON rimr.room_instance_id = ri.id\n  AND rimr.room_cost_id = rc.id\n  AND date_trunc(\u0027month\u0027, rimr.created_at) = date_trunc(\u0027month\u0027, current_date)\nWHERE ri.is_active = TRUE\n  AND b.owner_id = :owner_id\nGROUP BY ri.room_number, b.name\nHAVING COUNT(rimr.id) = 0;"
   },
   {
-    "question": "Chi phí dịch vụ hàng tháng (rác, wifi, dọn dẹp) cho phòng 101.",
-    "sql": "SELECT ri.room_number, b.name AS building_name,\n       SUM(COALESCE(rc.fixed_amount, 0) + COALESCE(rc.per_person_amount, 0)) AS monthly_service_cost\nFROM room_costs rc\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nJOIN rooms rm ON rm.id = rc.room_id\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027101\u0027\n  AND ct.category = \u0027service\u0027\n  AND rc.is_active = TRUE\n  AND b.owner_id = :owner_id\nGROUP BY ri.room_number, b.name;"
+    "question": "Chi phí dịch vụ hàng tháng rác wifi dọn dẹp cho phòng 101",
+    "sql": "SELECT ri.room_number, b.name AS building_name,\n       SUM(COALESCE(rc.fixed_amount, 0) + COALESCE(rc.per_person_amount, 0)) AS monthly_service_cost\nFROM room_costs rc\nJOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\nJOIN rooms rm ON rm.id = rc.room_id\nJOIN room_instances ri ON ri.room_id = rm.id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027101\u0027\n  AND ct.category = \u0027service\u0027\n  AND rc.is_active = TRUE\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\nGROUP BY ri.room_number, b.name;"
   },
   {
     "question": "Có phòng nào có mức sử dụng điện bất thường thấp trong tháng này so với tháng trước không?",
-    "sql": "WITH usage_monthly AS (\n  SELECT ri.id AS room_instance_id, ri.room_number,\n         date_trunc(\u0027month\u0027, rimr.created_at) AS month,\n         COALESCE(rimr.meter_reading, 0) - COALESCE(rimr.last_meter_reading, 0) AS usage_kwh,\n         b.owner_id\n  FROM room_instance_meter_readings rimr\n  JOIN room_instances ri ON ri.id = rimr.room_instance_id\n  JOIN room_costs rc ON rc.id = rimr.room_cost_id\n  JOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\n  JOIN rooms rm ON rm.id = ri.room_id\n  JOIN buildings b ON b.id = rm.building_id\n  WHERE ct.name ILIKE \u0027%dien%\u0027\n    AND b.owner_id = :owner_id\n)\nSELECT curr.room_number, curr.usage_kwh AS usage_this_month, prev.usage_kwh AS usage_last_month\nFROM usage_monthly curr\nJOIN usage_monthly prev\n  ON prev.room_instance_id = curr.room_instance_id\n  AND prev.month = date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\nWHERE curr.month = date_trunc(\u0027month\u0027, current_date)\n  AND curr.usage_kwh \u003c (prev.usage_kwh * 0.5);"
+    "sql": "WITH usage_monthly AS (\n  SELECT ri.id AS room_instance_id, ri.room_number,\n         date_trunc(\u0027month\u0027, rimr.created_at) AS month,\n         COALESCE(rimr.meter_reading, 0) - COALESCE(rimr.last_meter_reading, 0) AS usage_kwh,\n         b.owner_id\n  FROM room_instance_meter_readings rimr\n  JOIN room_instances ri ON ri.id = rimr.room_instance_id\n  JOIN room_costs rc ON rc.id = rimr.room_cost_id\n  JOIN cost_type_templates ct ON ct.id = rc.cost_type_template_id\n  JOIN rooms rm ON rm.id = ri.room_id\n  JOIN buildings b ON b.id = rm.building_id\n  WHERE ct.name ILIKE \u0027%dien%\u0027\n    AND ri.is_active = TRUE\n    AND rm.is_active = TRUE\n    AND b.is_active = TRUE\n    AND b.owner_id = :owner_id\n)\nSELECT curr.room_number, curr.usage_kwh AS usage_this_month, prev.usage_kwh AS usage_last_month\nFROM usage_monthly curr\nJOIN usage_monthly prev\n  ON prev.room_instance_id = curr.room_instance_id\n  AND prev.month = date_trunc(\u0027month\u0027, current_date - INTERVAL \u00271 month\u0027)\nWHERE curr.month = date_trunc(\u0027month\u0027, current_date)\n  AND curr.usage_kwh \u003c (prev.usage_kwh * 0.5);"
   },
   {
-    "question": "Các hợp đồng sắp hết hạn trong 30 ngày tới.",
-    "sql": "SELECT c.contract_code, ri.room_number, u.first_name, u.last_name, c.end_date\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nJOIN users u ON u.id = c.tenant_id\nWHERE c.end_date BETWEEN current_date AND (current_date + INTERVAL \u002730 days\u0027)\n  AND c.status IN (\u0027active\u0027, \u0027fully_signed\u0027)\n  AND b.owner_id = :owner_id\nORDER BY c.end_date ASC;"
+    "question": "Các hợp đồng sắp hết hạn trong 30 ngày tới",
+    "sql": "SELECT c.contract_code, ri.room_number, u.first_name, u.last_name, c.end_date\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nJOIN users u ON u.id = c.tenant_id\nWHERE c.end_date BETWEEN current_date AND (current_date + INTERVAL \u002730 days\u0027)\n  AND c.status IN (\u0027active\u0027, \u0027fully_signed\u0027)\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\nORDER BY c.end_date ASC;"
   },
   {
     "question": "Có bao nhiêu hợp đồng đang chờ ký?",
-    "sql": "SELECT COUNT(*) AS pending_signature_contracts\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE c.status = \u0027pending_signature\u0027\n  AND b.owner_id = :owner_id;"
+    "sql": "SELECT COUNT(*) AS pending_signature_contracts\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE c.status = \u0027pending_signature\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Thời hạn hợp đồng của phòng 501.",
-    "sql": "SELECT c.contract_code, c.start_date, c.end_date, (c.end_date - c.start_date) AS duration_days\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027501\u0027\n  AND b.owner_id = :owner_id;"
+    "question": "Thời hạn hợp đồng của phòng 501",
+    "sql": "SELECT c.contract_code, c.start_date, c.end_date, (c.end_date - c.start_date) AS duration_days\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027501\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Tìm hợp đồng của người thuê tên \"Tran Thi B\".",
-    "sql": "SELECT c.contract_code, c.status, c.start_date, c.end_date, ri.room_number, b.name AS building_name\nFROM contracts c\nJOIN users u ON u.id = c.tenant_id\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE (u.first_name || \u0027 \u0027 || u.last_name) ILIKE \u0027%Tran Thi B%\u0027\n  AND b.owner_id = :owner_id;"
+    "question": "Tìm hợp đồng của người thuê tên \"Tran Thi B\"",
+    "sql": "SELECT c.contract_code, c.status, c.start_date, c.end_date, ri.room_number, b.name AS building_name\nFROM contracts c\nJOIN users u ON u.id = c.tenant_id\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE (u.first_name || \u0027 \u0027 || u.last_name) ILIKE \u0027%Tran Thi B%\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Các hợp đồng bị chấm dứt sớm trong năm nay.",
-    "sql": "SELECT c.contract_code, ri.room_number, c.start_date, c.end_date, c.terminated_at\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE c.status = \u0027terminated\u0027\n  AND c.terminated_at IS NOT NULL\n  AND c.terminated_at \u003c c.end_date\n  AND DATE_PART(\u0027year\u0027, c.terminated_at) = DATE_PART(\u0027year\u0027, current_date)\n  AND b.owner_id = :owner_id;"
+    "question": "Các hợp đồng bị chấm dứt sớm trong năm nay",
+    "sql": "SELECT c.contract_code, ri.room_number, c.start_date, c.end_date, c.terminated_at\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE c.status = \u0027terminated\u0027\n  AND c.terminated_at IS NOT NULL\n  AND c.terminated_at \u003c c.end_date\n  AND DATE_PART(\u0027year\u0027, c.terminated_at) = DATE_PART(\u0027year\u0027, current_date)\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Hiển thị file PDF của hợp đồng phòng 102.",
-    "sql": "SELECT c.contract_code, c.pdf_url\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027102\u0027\n  AND b.owner_id = :owner_id;"
+    "question": "Hiển thị file PDF của hợp đồng phòng 102",
+    "sql": "SELECT c.contract_code, c.pdf_url\nFROM contracts c\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027102\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Người thuê chưa gia hạn hợp đồng.",
-    "sql": "SELECT DISTINCT u.id, u.first_name, u.last_name, ri.room_number, c.end_date\nFROM contracts c\nJOIN users u ON u.id = c.tenant_id\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE c.status = \u0027expired\u0027\n  AND c.end_date \u003c current_date\n  AND NOT EXISTS (\n    SELECT 1\n    FROM contracts c2\n    WHERE c2.tenant_id = c.tenant_id\n      AND c2.room_instance_id = c.room_instance_id\n      AND c2.status IN (\u0027active\u0027, \u0027fully_signed\u0027, \u0027pending_signature\u0027)\n      AND c2.start_date \u003e c.end_date\n  )\n  AND b.owner_id = :owner_id;"
+    "question": "Người thuê chưa gia hạn hợp đồng",
+    "sql": "SELECT DISTINCT u.id, u.first_name, u.last_name, ri.room_number, c.end_date\nFROM contracts c\nJOIN users u ON u.id = c.tenant_id\nJOIN room_instances ri ON ri.id = c.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE c.status = \u0027expired\u0027\n  AND c.end_date \u003c current_date\n  AND NOT EXISTS (\n    SELECT 1\n    FROM contracts c2\n    WHERE c2.tenant_id = c.tenant_id\n      AND c2.room_instance_id = c.room_instance_id\n      AND c2.status IN (\u0027active\u0027, \u0027fully_signed\u0027, \u0027pending_signature\u0027)\n      AND c2.start_date \u003e c.end_date\n  )\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
     "question": "Có bao nhiêu vấn đề mới chưa được xử lý?",
-    "sql": "SELECT COUNT(*) AS new_issues\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rmi.status = \u0027new\u0027\n  AND b.owner_id = :owner_id;"
+    "sql": "SELECT COUNT(*) AS new_issues\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE rmi.status = \u0027new\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
     "question": "Các vấn đề nào được báo cáo cho phòng 202?",
-    "sql": "SELECT ri.room_number, rmi.title, rmi.category, rmi.status, rmi.created_at\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027202\u0027\n  AND b.owner_id = :owner_id;"
+    "sql": "SELECT ri.room_number, rmi.title, rmi.category, rmi.status, rmi.created_at\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027202\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Liệt kê các vấn đề liên quan đến điện hoặc nước.",
-    "sql": "SELECT rmi.id, ri.room_number, b.name AS building_name, rmi.title, rmi.status, rmi.created_at\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE (rmi.category = \u0027utility\u0027 OR rmi.title ILIKE \u0027%dien%\u0027 OR rmi.title ILIKE \u0027%nuoc%\u0027)\n  AND b.owner_id = :owner_id\nORDER BY rmi.created_at DESC;"
+    "question": "Liệt kê các vấn đề liên quan đến điện hoặc nước",
+    "sql": "SELECT rmi.id, ri.room_number, b.name AS building_name, rmi.title, rmi.status, rmi.created_at\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE (rmi.category = \u0027utility\u0027 OR rmi.title ILIKE \u0027%dien%\u0027 OR rmi.title ILIKE \u0027%nuoc%\u0027)\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\nORDER BY rmi.created_at DESC;"
   },
   {
     "question": "Ai đã báo cáo vấn đề tiếng ồn ở tầng 3?",
-    "sql": "SELECT rmi.id, u.first_name, u.last_name, u.phone, ri.room_number, r.floor_number\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nJOIN users u ON u.id = rmi.reporter_id\nWHERE rmi.category = \u0027noise\u0027\n  AND r.floor_number = 3\n  AND b.owner_id = :owner_id;"
+    "sql": "SELECT rmi.id, u.first_name, u.last_name, u.phone, ri.room_number, r.floor_number\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms r ON r.id = ri.room_id\nJOIN buildings b ON b.id = r.building_id\nJOIN users u ON u.id = rmi.reporter_id\nWHERE rmi.category = \u0027noise\u0027\n  AND r.floor_number = 3\n  AND ri.is_active = TRUE\n  AND r.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
     "question": "Tòa nhà nào có nhiều vấn đề nhất trong tháng này?",
-    "sql": "SELECT b.id, b.name, COUNT(*) AS issue_count\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE date_trunc(\u0027month\u0027, rmi.created_at) = date_trunc(\u0027month\u0027, current_date)\n  AND b.owner_id = :owner_id\nGROUP BY b.id, b.name\nORDER BY issue_count DESC\nLIMIT 1;"
+    "sql": "SELECT b.id, b.name, COUNT(*) AS issue_count\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE date_trunc(\u0027month\u0027, rmi.created_at) = date_trunc(\u0027month\u0027, current_date)\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\nGROUP BY b.id, b.name\nORDER BY issue_count DESC\nLIMIT 1;"
   },
   {
     "question": "Vấn đề vòi nước ở phòng 104 đã được giải quyết chưa?",
-    "sql": "SELECT rmi.id, rmi.status, rmi.updated_at\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027104\u0027\n  AND rmi.title ILIKE \u0027%voi nuoc%\u0027\n  AND b.owner_id = :owner_id;"
+    "sql": "SELECT rmi.id, rmi.status, rmi.updated_at\nFROM room_issues rmi\nJOIN room_instances ri ON ri.id = rmi.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nWHERE ri.room_number = \u0027104\u0027\n  AND rmi.title ILIKE \u0027%voi nuoc%\u0027\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id;"
   },
   {
-    "question": "Các đánh giá thấp (<3 sao) liên quan đến các phòng cho thuê của chủ nhà này.",
-    "sql": "SELECT r.rating, r.content, r.created_at,\n       CASE r.target_type\n         WHEN \u0027tenant\u0027 THEN \u0027Tenant\u0027\n         WHEN \u0027landlord\u0027 THEN \u0027Landlord\u0027\n         WHEN \u0027room\u0027 THEN \u0027Room\u0027\n       END AS target_type,\n       r.target_id,\n       u.first_name AS reviewer_first_name,\n       u.last_name AS reviewer_last_name\nFROM ratings r\nJOIN rentals rnt ON rnt.id = r.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nJOIN users u ON u.id = r.reviewer_id\nWHERE r.rating \u003c 3\n  AND b.owner_id = :owner_id\nORDER BY r.rating ASC, r.created_at DESC;"
+    "question": "Các đánh giá thấp dưới 3 sao liên quan đến các phòng cho thuê của chủ nhà này",
+    "sql": "SELECT r.rating, r.content, r.created_at,\n       CASE r.target_type\n         WHEN \u0027tenant\u0027 THEN \u0027Tenant\u0027\n         WHEN \u0027landlord\u0027 THEN \u0027Landlord\u0027\n         WHEN \u0027room\u0027 THEN \u0027Room\u0027\n       END AS target_type,\n       r.target_id,\n       u.first_name AS reviewer_first_name,\n       u.last_name AS reviewer_last_name\nFROM ratings r\nJOIN rentals rnt ON rnt.id = r.rental_id\nJOIN room_instances ri ON ri.id = rnt.room_instance_id\nJOIN rooms rm ON rm.id = ri.room_id\nJOIN buildings b ON b.id = rm.building_id\nJOIN users u ON u.id = r.reviewer_id\nWHERE r.rating \u003c 3\n  AND r.rental_id IS NOT NULL\n  AND ri.is_active = TRUE\n  AND rm.is_active = TRUE\n  AND b.is_active = TRUE\n  AND b.owner_id = :owner_id\nORDER BY r.rating ASC, r.created_at DESC;"
   }
 ]

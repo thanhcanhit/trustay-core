@@ -333,6 +333,52 @@ export class SqlGenerationAgent {
 					.replace(/```sql\n?/gi, '')
 					.replace(/```\n?/g, '')
 					.trim();
+
+				// Guard: ensure canonical SQL is scoped to current user for personal-data queries
+				if (intentAction === 'own') {
+					if (!userId) {
+						this.logger.warn(
+							'[Canonical Reuse] Skipping reuse because intentAction=own but userId is missing (would risk leaking previous user scope)',
+						);
+						canonicalDecision = {
+							...canonicalDecision,
+							mode: SqlGenerationAgent.CANONICAL_MODE_HINT,
+						};
+						throw new Error('skip_reuse_no_user');
+					}
+					const uuidRegex =
+						/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi;
+					const ids = Array.from(canonicalSql.matchAll(uuidRegex)).map((m) => m[0].toLowerCase());
+					const hasUserId = ids.some((id) => id === userId.toLowerCase());
+					const foreignIds = ids.filter((id) => id !== userId.toLowerCase());
+
+					// Replace placeholder USER_ID if present
+					if (!hasUserId && canonicalSql.includes('USER_ID')) {
+						canonicalSql = canonicalSql.replace(/USER_ID/gi, userId);
+					}
+
+					if (!hasUserId && !canonicalSql.includes(userId)) {
+						this.logger.warn(
+							'[Canonical Reuse] Skipping reuse because canonical SQL lacks current user scope for intentAction=own',
+						);
+						canonicalDecision = {
+							...canonicalDecision,
+							mode: SqlGenerationAgent.CANONICAL_MODE_HINT,
+						};
+						throw new Error('skip_reuse_missing_user_scope');
+					}
+					if (foreignIds.length > 0) {
+						this.logger.warn(
+							`[Canonical Reuse] Skipping reuse because canonical SQL contains other user UUID(s): ${foreignIds.join(', ')}`,
+						);
+						canonicalDecision = {
+							...canonicalDecision,
+							mode: SqlGenerationAgent.CANONICAL_MODE_HINT,
+						};
+						throw new Error('skip_reuse_foreign_user_scope');
+					}
+				}
+
 				if (!canonicalSql.endsWith(';')) {
 					canonicalSql += ';';
 				}
