@@ -138,28 +138,22 @@ export class SqlGenerationAgent {
 		let ragContext = '';
 		let canonicalDecision: any = null;
 		let schemaChunkCount = 0;
-		const qaChunkCount = 0;
+		let qaChunkCount = 0;
 		let qaChunkSqlCount = 0;
 		if (this.knowledgeService) {
 			try {
-				// Check for canonical SQL to use as hint (never execute directly)
-				// Always regenerate SQL based on current schema to handle schema changes
+				// Check for canonical SQL to use as hint (and optionally reuse directly when exact match)
+				// Default is still to regenerate SQL from current schema unless high-confidence reuse is available
 				canonicalDecision = await this.knowledgeService.decideCanonicalReuse(query, {
 					hard: SqlGenerationAgent.CANONICAL_HARD_THRESHOLD, // Very high threshold - only exact matches
 					soft: SqlGenerationAgent.CANONICAL_SOFT_THRESHOLD, // Use as hint for similar queries
 				});
-				// NOTE: We never execute canonical SQL directly anymore
-				// Always regenerate to ensure SQL matches current schema
-				// Canonical SQL is only used as a hint/reference in the prompt
 				if (canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE) {
+					const canonicalScore =
+						typeof canonicalDecision.score === 'number' ? canonicalDecision.score.toFixed(4) : '?';
 					this.logger.debug(
-						`Canonical match found (score=${canonicalDecision.score.toFixed(4)}) - Will use as hint only, still regenerating SQL from current schema`,
+						`Canonical match found (score=${canonicalScore}, reusePreferred=${Boolean(canonicalDecision.reusePreferred)}) - will attempt direct reuse with safety checks`,
 					);
-					// Convert 'reuse' to 'hint' to ensure we still fetch RAG and regenerate
-					canonicalDecision = {
-						...canonicalDecision,
-						mode: SqlGenerationAgent.CANONICAL_MODE_HINT,
-					};
 				}
 				// Step 1: always fetch schema context
 				// Enhance query with table hints from orchestrator if available
@@ -252,7 +246,6 @@ export class SqlGenerationAgent {
 				// because they are usually not relevant (statistics queries vs room analysis)
 				const needExamples =
 					canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT && !filtersHint; // Skip QA examples if we have a specific room filter
-				let qaChunkCount = 0;
 				if (needExamples) {
 					const qaResults = await this.knowledgeService.retrieveKnowledgeContext(query, {
 						limit: SqlGenerationAgent.QA_EXAMPLES_LIMIT,
@@ -301,8 +294,15 @@ export class SqlGenerationAgent {
 					ragContext += `\n⚠️ LƯU Ý QUAN TRỌNG: SQL trên chỉ là THAM KHẢO từ lần trước.\n`;
 					ragContext += `PHẢI regenerate SQL MỚI dựa trên schema HIỆN TẠI trong RAG context.\n`;
 					ragContext += `Nếu schema đã thay đổi (tên bảng/cột, relationships), PHẢI điều chỉnh SQL cho phù hợp.\n`;
+					const canonicalLogScore =
+						typeof canonicalDecision.score === 'number' ? canonicalDecision.score.toFixed(4) : '?';
+					const canonicalLogNote =
+						canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE &&
+						canonicalDecision.reusePreferred
+							? 'Will attempt reuse with safety checks (still regenerate if reuse fails)'
+							: 'Using as hint only, will regenerate from current schema';
 					this.logger.debug(
-						`Canonical SQL found (score=${canonicalDecision.score.toFixed(4)}) - Using as hint only, will regenerate from current schema`,
+						`Canonical SQL found (score=${canonicalLogScore}) - ${canonicalLogNote}`,
 					);
 				}
 				this.logger.debug(
@@ -314,6 +314,112 @@ export class SqlGenerationAgent {
 				);
 			} catch (ragError) {
 				this.logger.warn('RAG retrieval failed, using fallback schema', ragError);
+			}
+		}
+		// Populate intent/filter hints outside regeneration loop (used by canonical reuse path)
+		intentAction = intentAction || this.extractIntentAction(session);
+		filtersHint = filtersHint || this.extractFiltersHint(session);
+
+		// High-confidence canonical reuse: execute validated canonical SQL directly, fallback to regeneration on failure
+		if (
+			canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE &&
+			canonicalDecision.reusePreferred
+		) {
+			const canonicalScore =
+				typeof canonicalDecision?.score === 'number' ? canonicalDecision.score.toFixed(4) : '?';
+			const reuseStart = Date.now();
+			try {
+				let canonicalSql = canonicalDecision.sql
+					.replace(/```sql\n?/gi, '')
+					.replace(/```\n?/g, '')
+					.trim();
+				if (!canonicalSql.endsWith(';')) {
+					canonicalSql += ';';
+				}
+				const sqlLower = canonicalSql.toLowerCase().trim();
+				if (!sqlLower.startsWith(SqlGenerationAgent.SQL_COMMAND_SELECT)) {
+					throw new Error('Only SELECT queries are allowed for canonical reuse');
+				}
+				const isAggregate = isAggregateQuery(canonicalSql);
+				const safetyCheck = validateSqlSafety(canonicalSql, isAggregate);
+				if (!safetyCheck.isValid) {
+					throw new Error(`SQL safety validation failed: ${safetyCheck.violations.join(', ')}`);
+				}
+				const finalSql = safetyCheck.enforcedSql || canonicalSql;
+				const results = await prisma.$queryRawUnsafe(finalSql);
+				const serializedResults = serializeBigInt(results);
+				const resultCount = Array.isArray(serializedResults) ? serializedResults.length : 1;
+				const attemptDuration = Date.now() - reuseStart;
+				attemptLogs.push({
+					attempt: 0,
+					prompt: '[CANONICAL_REUSE]',
+					rawResponse: canonicalDecision.sql.substring(
+						0,
+						SqlGenerationAgent.RAW_RESPONSE_PREVIEW_LENGTH,
+					),
+					finalSql,
+					tokenUsage: undefined,
+					durationMs: attemptDuration,
+					safetyCheck,
+				});
+				const ragContextForLog =
+					ragContext && ragContext.length > SqlGenerationAgent.RAG_CONTEXT_LOG_LIMIT
+						? `${ragContext.slice(0, SqlGenerationAgent.RAG_CONTEXT_LOG_LIMIT)}... (truncated)`
+						: ragContext;
+
+				this.logger.debug(
+					`[Canonical Reuse] Using validated canonical SQL directly (score=${canonicalScore})`,
+				);
+
+				return {
+					sql: finalSql,
+					results: serializedResults,
+					count: resultCount,
+					attempts: attemptLogs.length,
+					userId: userId,
+					userRole: userRole,
+					tokenUsage: undefined,
+					debug: {
+						ragContext: ragContextForLog,
+						canonicalDecision: {
+							...canonicalDecision,
+							applied: true,
+						},
+						intentAction,
+						filtersHint,
+						tablesHint,
+						relationshipsHint,
+						recentMessages,
+						schemaChunkCount,
+						qaChunkCount,
+						qaChunkSqlCount,
+						attempts: attemptLogs,
+					},
+				};
+			} catch (reuseError) {
+				const reuseErrorMessage = this.extractPrismaErrorMessage(reuseError);
+				const attemptDuration = Date.now() - reuseStart;
+				attemptLogs.push({
+					attempt: 0,
+					prompt: '[CANONICAL_REUSE]',
+					rawResponse: reuseErrorMessage.substring(
+						0,
+						SqlGenerationAgent.RAW_RESPONSE_PREVIEW_LENGTH,
+					),
+					finalSql: canonicalDecision.sql,
+					tokenUsage: undefined,
+					durationMs: attemptDuration,
+					error: reuseErrorMessage,
+				});
+				this.logger.warn(
+					`[Canonical Reuse] Failed to execute canonical SQL (score=${canonicalScore}) - falling back to regeneration`,
+					reuseError,
+				);
+				// Fallback to regeneration path with canonical as hint
+				canonicalDecision = {
+					...canonicalDecision,
+					mode: SqlGenerationAgent.CANONICAL_MODE_HINT,
+				};
 			}
 		}
 		const dbSchema = getCompleteDatabaseSchema();
