@@ -157,6 +157,25 @@ export class RoomInvitationsService {
 			},
 		});
 
+		// Notify tenant about new room invitation
+		try {
+			const landlordName =
+				`${roomInvitation.sender.firstName || ''} ${roomInvitation.sender.lastName || ''}`.trim() ||
+				roomInvitation.sender.email;
+			await this.notificationsService.notifyRoomInvitation(dto.tenantId, {
+				roomName: roomInvitation.room.name,
+				buildingName: roomInvitation.room.building.name,
+				landlordName,
+				invitationId: roomInvitation.id,
+			});
+		} catch (error) {
+			// Log error but don't fail the invitation creation
+			this.logger.error(
+				`Failed to send room invitation notification: ${error.message}`,
+				error.stack,
+			);
+		}
+
 		return this.transformToResponseDto(roomInvitation);
 	}
 

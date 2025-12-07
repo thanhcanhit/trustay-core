@@ -579,7 +579,7 @@ export class RoomsService {
 		}
 
 		// Get owner statistics
-		const ownerStats = await getOwnerStats(this.prisma, room.buildingId);
+		const ownerStats = await getOwnerStats(this.prisma, room.building.ownerId);
 
 		// Use the same format utility as public endpoint
 		// For admin, always show full info (authenticated = true)
@@ -849,7 +849,7 @@ export class RoomsService {
 		}
 
 		// Get owner statistics
-		const ownerStats = await getOwnerStats(this.prisma, room.buildingId);
+		const ownerStats = await getOwnerStats(this.prisma, room.building.ownerId);
 
 		// Use the formatting utility function
 		const roomDetail = formatRoomDetail(room, isAuthenticated, ownerStats);
@@ -1014,7 +1014,7 @@ export class RoomsService {
 		}
 
 		// Get owner statistics
-		const ownerStats = await getOwnerStats(this.prisma, room.buildingId);
+		const ownerStats = await getOwnerStats(this.prisma, room.building.ownerId);
 
 		// Use the formatting utility function
 		const roomDetail = formatRoomDetail(room, isAuthenticated, ownerStats);
@@ -1490,7 +1490,7 @@ export class RoomsService {
 		// Get owner statistics (all rooms belong to the same owner)
 		const ownerStats =
 			rooms.length > 0
-				? await getOwnerStats(this.prisma, rooms[0].buildingId)
+				? await getOwnerStats(this.prisma, rooms[0].building.ownerId)
 				: { totalBuildings: 0, totalRoomInstances: 0 };
 
 		return {

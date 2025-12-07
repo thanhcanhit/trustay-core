@@ -811,8 +811,10 @@ export class RoomSeekingPostService {
 			preferredWardId: roomRequest.preferredWardId,
 			preferredProvinceId: roomRequest.preferredProvinceId,
 			minBudget:
-				roomRequest.minBudget != null ? convertDecimalToNumber(roomRequest.minBudget) : undefined,
-			maxBudget: convertDecimalToNumber(roomRequest.maxBudget ?? 0),
+				roomRequest.minBudget != null
+					? convertDecimalToNumber(roomRequest.minBudget, true)
+					: undefined,
+			maxBudget: convertDecimalToNumber(roomRequest.maxBudget ?? 0, false),
 			currency: roomRequest.currency,
 			preferredRoomType: roomRequest.preferredRoomType,
 			occupancy: roomRequest.occupancy,
