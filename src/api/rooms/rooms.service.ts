@@ -579,7 +579,7 @@ export class RoomsService {
 		}
 
 		// Get owner statistics
-		const ownerStats = await getOwnerStats(this.prisma, room.buildingId);
+		const ownerStats = await getOwnerStats(this.prisma, room.building.ownerId);
 
 		// Use the same format utility as public endpoint
 		// For admin, always show full info (authenticated = true)

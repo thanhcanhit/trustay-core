@@ -2,9 +2,15 @@
  * Safely converts Prisma Decimal-like values into native numbers.
  * Handles Decimal objects, strings, and primitives while defaulting to 0 for invalid inputs.
  */
-export const convertDecimalToNumber = (value: unknown): number => {
+export function convertDecimalToNumber(value: unknown): number;
+export function convertDecimalToNumber(value: unknown, allowUndefined: false): number;
+export function convertDecimalToNumber(value: unknown, allowUndefined: true): number | undefined;
+export function convertDecimalToNumber(
+	value: unknown,
+	allowUndefined: boolean = false,
+): number | undefined {
 	if (value === null || value === undefined) {
-		return 0;
+		return allowUndefined ? undefined : 0;
 	}
 	if (typeof value === 'number') {
 		return value;
@@ -34,4 +40,4 @@ export const convertDecimalToNumber = (value: unknown): number => {
 	}
 	const parsed = Number(value);
 	return Number.isNaN(parsed) ? 0 : parsed;
-};
+}
