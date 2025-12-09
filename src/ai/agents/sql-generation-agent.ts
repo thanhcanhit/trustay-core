@@ -329,10 +329,7 @@ export class SqlGenerationAgent {
 				typeof canonicalDecision?.score === 'number' ? canonicalDecision.score.toFixed(4) : '?';
 			const reuseStart = Date.now();
 			try {
-				let canonicalSql = canonicalDecision.sql
-					.replace(/```sql\n?/gi, '')
-					.replace(/```\n?/g, '')
-					.trim();
+				let canonicalSql = canonicalDecision.sql.replace(/```sql\n?/gi, '').replace(/```\n?/g, '');
 
 				// Guard: ensure canonical SQL is scoped to current user for personal-data queries
 				if (intentAction === 'own') {
@@ -382,7 +379,7 @@ export class SqlGenerationAgent {
 				if (!canonicalSql.endsWith(';')) {
 					canonicalSql += ';';
 				}
-				const sqlLower = canonicalSql.toLowerCase().trim();
+				const sqlLower = canonicalSql.toLowerCase();
 				if (!sqlLower.startsWith(SqlGenerationAgent.SQL_COMMAND_SELECT)) {
 					throw new Error('Only SELECT queries are allowed for canonical reuse');
 				}
