@@ -927,9 +927,12 @@ export class AiService {
 		const extractTableNames = (ragContext: string): string[] => {
 			const regex = /"table_name"\s*:\s*"([^"]+)"/g;
 			const tables = new Set<string>();
-			let m: RegExpExecArray | null;
-			while ((m = regex.exec(ragContext))) {
-				if (m[1]) tables.add(m[1]);
+			let match: RegExpExecArray | null = regex.exec(ragContext);
+			while (match) {
+				if (match[1]) {
+					tables.add(match[1]);
+				}
+				match = regex.exec(ragContext);
 			}
 			return Array.from(tables);
 		};
@@ -1295,27 +1298,38 @@ export class AiService {
 					'SQL_AGENT',
 					`END | sqlPreview=${sqlResult.sql.substring(0, 50)}... | results=${sqlResult.count} | took=${sqlDuration}ms`,
 				);
-				appendStep('SQL AGENT DONE', {
-					results: sqlResult.count,
-					attempts: sqlResult.attempts || 1,
-					tookMs: sqlDuration,
-					tablesHint: processingLogData.orchestratorData?.tablesHint || 'none',
-					filtersHint: processingLogData.orchestratorData?.filtersHint || 'none',
-					canonicalMode: (sqlResult.debug?.canonicalDecision as any)?.mode || 'none',
-					canonicalSql: (sqlResult.debug?.canonicalDecision as any)?.sql
-						? (sqlResult.debug?.canonicalDecision as any)?.sql.substring(0, 400)
-						: 'none',
-					canonicalQuestion: (sqlResult.debug?.canonicalDecision as any)?.question || 'none',
-					canonicalScore: (sqlResult.debug?.canonicalDecision as any)?.score ?? 'none',
-					finalSql: sqlResult.sql,
-					attemptErrors: (sqlResult.debug?.attempts || [])
-						.filter((a: any) => a.error)
-						.map((a: any) => `try${a.attempt}:${a.error}`),
-					ragTables: extractTableNames(sqlResult.debug?.ragContext || ''),
-					ragSchemaChunks: (sqlResult.debug as any)?.schemaChunkCount ?? 'unknown',
-					ragQaChunks: (sqlResult.debug as any)?.qaChunkCount ?? 0,
-					ragQaSqlChunks: (sqlResult.debug as any)?.qaChunkSqlCount ?? 0,
-				});
+				const canonicalData = sqlResult.debug?.canonicalDecision as any;
+				const sqlStepDetail = [
+					'**INPUTS**',
+					`- tables_hint: ${processingLogData.orchestratorData?.tablesHint || 'none'}`,
+					`- filters_hint: ${processingLogData.orchestratorData?.filtersHint || 'none'}`,
+					`- canonical_mode: ${canonicalData?.mode || 'none'}`,
+					`- canonical_score: ${canonicalData?.score ?? 'none'}`,
+					`- canonical_question: ${canonicalData?.question || 'none'}`,
+					canonicalData?.sql
+						? `- canonical_sql:\n\`\`\`sql\n${canonicalData.sql}\n\`\`\``
+						: '- canonical_sql: none',
+					'',
+					'**OUTPUTS**',
+					`- results: ${sqlResult.count}`,
+					`- attempts: ${sqlResult.attempts || 1}`,
+					`- took_ms: ${sqlDuration}`,
+					sqlResult.sql ? `- final_sql:\n\`\`\`sql\n${sqlResult.sql}\n\`\`\`` : '- final_sql: none',
+					`- attempt_errors: ${
+						(sqlResult.debug?.attempts || [])
+							.filter((a: any) => a.error)
+							.map((a: any) => `try${a.attempt}:${a.error}`)
+							.join(', ') || 'none'
+					}`,
+					'',
+					'**RAG CONTEXT**',
+					`- rag_tables: ${(extractTableNames(sqlResult.debug?.ragContext || '') || []).join(', ') || 'none'}`,
+					`- rag_schema_chunks: ${(sqlResult.debug as any)?.schemaChunkCount ?? 'unknown'}`,
+					`- rag_qa_chunks: ${(sqlResult.debug as any)?.qaChunkCount ?? 0}`,
+					`- rag_qa_sql_chunks: ${(sqlResult.debug as any)?.qaChunkSqlCount ?? 0}`,
+				].join('\n');
+
+				appendStep('SQL AGENT DONE', sqlStepDetail);
 
 				// Append SQL generation attempt vào processing log (đầy đủ theo log)
 				if (sqlResult.debug?.attempts?.length) {
