@@ -801,6 +801,17 @@ export class RoomSeekingPostService {
 	}
 
 	private mapToResponseDto(roomRequest: any): RoomRoomSeekingPostDto {
+		const requester =
+			roomRequest.requester != null
+				? {
+						...roomRequest.requester,
+						overallRating:
+							roomRequest.requester.overallRating != null
+								? convertDecimalToNumber(roomRequest.requester.overallRating, true)
+								: undefined,
+					}
+				: undefined;
+
 		return {
 			id: roomRequest.id,
 			title: roomRequest.title,
@@ -826,7 +837,7 @@ export class RoomSeekingPostService {
 			contactCount: roomRequest.contactCount,
 			createdAt: roomRequest.createdAt,
 			updatedAt: roomRequest.updatedAt,
-			requester: roomRequest.requester,
+			requester,
 			amenities: roomRequest.amenities,
 			preferredProvince: roomRequest.preferredProvince,
 			preferredDistrict: roomRequest.preferredDistrict,
