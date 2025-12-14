@@ -769,4 +769,69 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 			throw error;
 		}
 	}
+
+	/**
+	 * Find all chunks linked to a SQL QA ID
+	 * @param sqlQAId - SQL QA ID
+	 * @returns Array of chunk IDs
+	 */
+	async findChunksBySqlQAId(sqlQAId: number): Promise<number[]> {
+		try {
+			const { data, error } = await this.supabaseClient
+				.from('ai_chunks')
+				.select('id')
+				.eq('sql_qa_id', sqlQAId)
+				.eq('tenant_id', this.config.tenantId)
+				.eq('db_key', this.config.dbKey);
+
+			if (error) {
+				throw new Error(`Failed to find chunks by SQL QA ID: ${error.message}`);
+			}
+
+			return (data || []).map((item: any) => Number(item.id));
+		} catch (error) {
+			this.logger.error(`Error finding chunks by SQL QA ID: ${sqlQAId}`, error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Delete SQL QA entry and all linked chunks
+	 * @param id - SQL QA ID
+	 * @returns Number of deleted chunks and SQL QA entry
+	 */
+	async deleteSqlQA(id: number): Promise<{ deletedChunks: number; deletedSqlQA: number }> {
+		try {
+			// Find all chunks linked to this SQL QA
+			const linkedChunkIds = await this.findChunksBySqlQAId(id);
+
+			// Delete linked chunks first
+			let deletedChunks = 0;
+			if (linkedChunkIds.length > 0) {
+				deletedChunks = await this.deleteChunks(linkedChunkIds);
+				this.logger.debug(`Deleted ${deletedChunks} chunks linked to SQL QA ${id}`);
+			}
+
+			// Delete SQL QA entry
+			const { data, error } = await this.supabaseClient
+				.from('sql_qa')
+				.delete()
+				.eq('id', id)
+				.eq('tenant_id', this.config.tenantId)
+				.eq('db_key', this.config.dbKey)
+				.select('id');
+
+			if (error) {
+				throw new Error(`Failed to delete SQL QA: ${error.message}`);
+			}
+
+			const deletedSqlQA = data?.length || 0;
+			this.logger.debug(`Deleted SQL QA ${id} and ${deletedChunks} linked chunks`);
+
+			return { deletedChunks, deletedSqlQA };
+		} catch (error) {
+			this.logger.error(`Error deleting SQL QA ${id}:`, error);
+			throw error;
+		}
+	}
 }

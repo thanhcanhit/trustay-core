@@ -78,5 +78,6 @@ Trả về theo format:
 IS_VALID: true/false
 SEVERITY: ERROR/WARN
 VIOLATIONS: [danh sách vi phạm, cách nhau bởi dấu phẩy]
-REASON: [lý do nếu invalid, hoặc "OK" nếu valid]`;
+REASON: [lý do nếu invalid, hoặc "OK" nếu valid]
+EVALUATION: [Viết đánh giá chi tiết về SQL và kết quả, giải thích tại sao valid/invalid, các điểm mạnh/yếu, gợi ý cải thiện nếu có. Đánh giá này sẽ được lưu lại để admin xem xét và quyết định có nên lưu vào knowledge store hay không]`;
 }

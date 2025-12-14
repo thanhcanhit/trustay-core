@@ -28,7 +28,7 @@ export class AiProcessingLogService {
 		totalDuration?: number;
 		status?: string;
 		error?: string;
-	}): Promise<void> {
+	}): Promise<string | null> {
 		try {
 			// Merge responseGeneratorData vào validatorData để đơn giản
 			const validatorDataWithResponseGen = input.validatorData
@@ -37,7 +37,7 @@ export class AiProcessingLogService {
 					? { responseGenerator: input.responseGeneratorData }
 					: undefined;
 
-			await (this.prisma as any).aiProcessingLog.create({
+			const log = await (this.prisma as any).aiProcessingLog.create({
 				data: {
 					question: input.question,
 					response: input.response,
@@ -52,9 +52,13 @@ export class AiProcessingLogService {
 					error: input.error,
 				},
 			});
-			this.logger.debug(`Saved processing log | duration=${input.totalDuration || 'N/A'}ms`);
+			this.logger.debug(
+				`Saved processing log | id=${log.id} | duration=${input.totalDuration || 'N/A'}ms`,
+			);
+			return log.id;
 		} catch (error) {
 			this.logger.warn('Failed to save processing log', error);
+			return null;
 		}
 	}
 

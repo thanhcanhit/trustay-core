@@ -14,6 +14,7 @@ import { buildOneForAllPrompt } from './prompts/simple-system-one-for-all';
 import { VIETNAMESE_LOCALE_SYSTEM_PROMPT } from './prompts/system.prompt';
 import { AiProcessingLogService } from './services/ai-processing-log.service';
 import { generateErrorResponse } from './services/error-handler.service';
+import { PendingKnowledgeService } from './services/pending-knowledge.service';
 import {
 	RoomPublishingService,
 	RoomPublishingStepResult,
@@ -24,6 +25,7 @@ import {
 	ChatSession,
 	DataPayload,
 	RequestType,
+	SqlGenerationResult,
 	TableColumn,
 } from './types/chat.types';
 import { RoomPublishingStatus } from './types/room-publishing.types';
@@ -75,6 +77,7 @@ export class AiService {
 		private readonly roomsService: RoomsService,
 		private readonly addressService: AddressService,
 		private readonly processingLogService: AiProcessingLogService,
+		private readonly pendingKnowledgeService: PendingKnowledgeService,
 	) {
 		// Initialize orchestrator agent with Prisma and KnowledgeService
 		this.orchestratorAgent = new OrchestratorAgent(this.prisma, this.knowledge);
@@ -1286,17 +1289,58 @@ export class AiService {
 					'SQL_AGENT',
 					'START | canonical decision | schema RAG | generate SQL | execute',
 				);
-				const sqlResult = await this.sqlGenerationAgent.process(
-					query,
-					session,
-					this.prisma,
-					this.AI_CONFIG,
-					orchestratorResponse.businessContext,
-				);
+				let sqlResult: SqlGenerationResult;
+				let sqlError: Error | null = null;
+				try {
+					sqlResult = await this.sqlGenerationAgent.process(
+						query,
+						session,
+						this.prisma,
+						this.AI_CONFIG,
+						orchestratorResponse.businessContext,
+					);
+				} catch (error) {
+					// SQL generation failed completely - log đầy đủ error
+					sqlError = error instanceof Error ? error : new Error(String(error));
+					this.logError('SQL_AGENT', `SQL generation failed: ${sqlError.message}`, error);
+					appendStep('SQL AGENT FAILED', {
+						error: sqlError.message,
+						stack: sqlError.stack,
+						attempts: 'unknown',
+					});
+					// Create a failed sqlResult for logging purposes
+					sqlResult = {
+						sql: '',
+						results: [],
+						count: 0,
+						attempts: 0,
+						userId: session.userId,
+						userRole: orchestratorResponse.userRole,
+						tokenUsage: undefined,
+						debug: {
+							attempts: [
+								{
+									attempt: 0,
+									error: sqlError.message,
+									durationMs: Date.now() - sqlStartTime,
+								},
+							],
+						},
+					};
+					// Log failed attempt
+					processingLogData.sqlGenerationAttempts!.push({
+						attempt: 0,
+						error: sqlError.message,
+						duration: Date.now() - sqlStartTime,
+						sql: null,
+						count: 0,
+					});
+				}
 				const sqlDuration = Date.now() - sqlStartTime;
+				const sqlPreview = sqlResult.sql ? sqlResult.sql.substring(0, 50) : 'NO_SQL';
 				this.logInfo(
 					'SQL_AGENT',
-					`END | sqlPreview=${sqlResult.sql.substring(0, 50)}... | results=${sqlResult.count} | took=${sqlDuration}ms`,
+					`END | sqlPreview=${sqlPreview}... | results=${sqlResult.count} | took=${sqlDuration}ms${sqlError ? ` | ERROR: ${sqlError.message}` : ''}`,
 				);
 				const canonicalData = sqlResult.debug?.canonicalDecision as any;
 				const sqlStepDetail = [
@@ -1358,15 +1402,59 @@ export class AiService {
 					recentMessages: sqlResult.debug?.recentMessages,
 				};
 
-				// Full SQL banner for debugging
-				try {
-					const top = '-------------------- GENERATED SQL (BEGIN) --------------------';
-					const bottom = '--------------------- GENERATED SQL (END) ---------------------';
-					this.logger.log(this.formatStep('SQL_AGENT', top));
-					this.logger.log(this.formatStep('SQL_AGENT', sqlResult.sql));
-					this.logger.log(this.formatStep('SQL_AGENT', bottom));
-				} catch (e) {
-					this.logWarn('SQL_AGENT', 'Failed to log full generated SQL', e);
+				// Full SQL banner for debugging (only if SQL exists)
+				if (sqlResult.sql) {
+					try {
+						const top = '-------------------- GENERATED SQL (BEGIN) --------------------';
+						const bottom = '--------------------- GENERATED SQL (END) ---------------------';
+						this.logger.log(this.formatStep('SQL_AGENT', top));
+						this.logger.log(this.formatStep('SQL_AGENT', sqlResult.sql));
+						this.logger.log(this.formatStep('SQL_AGENT', bottom));
+					} catch (e) {
+						this.logWarn('SQL_AGENT', 'Failed to log full generated SQL', e);
+					}
+				} else {
+					this.logWarn(
+						'SQL_AGENT',
+						`No SQL generated - SQL generation failed${sqlError ? `: ${sqlError.message}` : ''}`,
+					);
+				}
+
+				// Nếu SQL generation failed hoàn toàn, skip các bước tiếp theo và return error response
+				if (sqlError || !sqlResult.sql) {
+					const errorMessage = sqlError
+						? `Xin lỗi, không thể tạo SQL query: ${sqlError.message}`
+						: 'Xin lỗi, không thể tạo SQL query. Vui lòng thử lại với câu hỏi khác.';
+					this.addMessageToSession(session, 'assistant', errorMessage, {
+						kind: 'CONTROL',
+						payload: { mode: 'ERROR', details: sqlError?.message || 'SQL generation failed' },
+					});
+					const errorResponse: ChatResponse = {
+						kind: 'CONTROL',
+						sessionId: session.sessionId,
+						timestamp: new Date().toISOString(),
+						message: errorMessage,
+						payload: { mode: 'ERROR', details: sqlError?.message || 'SQL generation failed' },
+					};
+
+					// Save processing log với error
+					processingLogData.response = errorMessage;
+					processingLogData.status = 'failed';
+					processingLogData.error = sqlError?.message || 'SQL generation failed';
+					processingLogData.tokenUsage = orchestratorResponse.tokenUsage;
+					processingLogData.totalDuration = Date.now() - pipelineStartAt;
+					appendStep('SUMMARY', {
+						totalDurationMs: processingLogData.totalDuration,
+						totalTokens: orchestratorResponse.tokenUsage?.totalTokens || 0,
+					});
+					processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
+					await this.processingLogService.saveProcessingLog({
+						question: query,
+						...processingLogData,
+					});
+
+					this.logPipelineEnd(session.sessionId, errorResponse.kind, pipelineStartAt);
+					return errorResponse;
 				}
 
 				// ========================================
@@ -1421,6 +1509,7 @@ export class AiService {
 					reason: validation.reason,
 					severity: validation.severity,
 					violations: validation.violations,
+					evaluation: validation.evaluation, // Đánh giá chi tiết từ validator
 					tokenUsage: validation.tokenUsage,
 					duration: parallelDuration, // Parallel duration cho cả validator và response generator
 				};
@@ -1458,56 +1547,6 @@ export class AiService {
 					}
 				} catch (error) {
 					this.logError('ERROR', 'Error building entity path', error);
-				}
-
-				// Persist Q&A - ƯU TIÊN LƯU: Chỉ skip nếu có ERROR severity rõ ràng
-				// isValid=true hoặc WARN severity → lưu để có thể cải thiện sau
-				// CHỈ LƯU CÁC CÂU TRẢ LỜI ĐÚNG/CHẤT LƯỢNG:
-				// - isValid=true (SQL đúng và kết quả hợp lý)
-				// - severity !== 'ERROR' (không có lỗi nghiêm trọng)
-				// - Có SQL và có kết quả (không lưu khi SQL fail hoặc không có kết quả)
-				const shouldPersist =
-					validation.isValid &&
-					validation.severity !== 'ERROR' &&
-					sqlResult.sql &&
-					sqlResult.count >= 0; // Có thể là 0 (không có dữ liệu) nhưng vẫn hợp lệ
-				if (shouldPersist) {
-					try {
-						this.logDebug(
-							'PERSIST',
-							`Đang lưu Q&A vào knowledge store (isValid=${validation.isValid}, severity=${validation.severity || 'none'}, count=${sqlResult.count})...`,
-						);
-						await this.knowledge.saveQAInteraction({
-							question: query,
-							sql: sqlResult.sql,
-							sessionId: session.sessionId,
-							userId: session.userId,
-							context: { count: sqlResult.count, severity: validation.severity || 'OK' },
-						});
-						this.logDebug('PERSIST', 'Đã lưu Q&A thành công vào knowledge store');
-						appendStep('PERSIST KNOWLEDGE', {
-							status: 'saved',
-							count: sqlResult.count,
-							severity: validation.severity || 'OK',
-						});
-					} catch (persistErr) {
-						this.logWarn('PERSIST', 'Không thể lưu Q&A vào knowledge store', persistErr);
-						appendStep('PERSIST KNOWLEDGE FAILED', String(persistErr));
-					}
-				} else {
-					// Skip khi có lỗi hoặc không hợp lệ
-					const skipReason = !validation.isValid
-						? `isValid=false`
-						: validation.severity === 'ERROR'
-							? `severity=ERROR`
-							: !sqlResult.sql
-								? `no SQL`
-								: `unknown reason`;
-					this.logWarn(
-						'VALIDATOR',
-						`Kết quả không đủ chất lượng, không lưu vào knowledge store (${skipReason}): ${validation.reason || 'Unknown error'}`,
-					);
-					appendStep('PERSIST SKIPPED', skipReason);
 				}
 
 				// Build data payload từ parsed structured data
@@ -1550,7 +1589,7 @@ export class AiService {
 					payload: dataPayload,
 				};
 
-				// Save single log entry với tất cả data đã được append ở từng bước
+				// Save processing log trước để lấy ID và link với pending knowledge
 				processingLogData.response = parsedResponse.message;
 				processingLogData.status = 'completed';
 				processingLogData.tokenUsage = totalTokenUsage;
@@ -1560,10 +1599,69 @@ export class AiService {
 					totalTokens: totalTokenUsage.totalTokens || 0,
 				});
 				processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
-				await this.processingLogService.saveProcessingLog({
+				const processingLogId = await this.processingLogService.saveProcessingLog({
 					question: query,
 					...processingLogData,
 				});
+
+				// Persist Q&A - ƯU TIÊN LƯU: Chỉ skip nếu có ERROR severity rõ ràng
+				// isValid=true hoặc WARN severity → lưu vào pending để admin review
+				// CHỈ LƯU CÁC CÂU TRẢ LỜI ĐÚNG/CHẤT LƯỢNG:
+				// - isValid=true (SQL đúng và kết quả hợp lý)
+				// - severity !== 'ERROR' (không có lỗi nghiêm trọng)
+				// - Có SQL và có kết quả (không lưu khi SQL fail hoặc không có kết quả)
+				const shouldPersist =
+					validation.isValid &&
+					validation.severity !== 'ERROR' &&
+					sqlResult.sql &&
+					sqlResult.count >= 0; // Có thể là 0 (không có dữ liệu) nhưng vẫn hợp lệ
+				if (shouldPersist) {
+					try {
+						this.logDebug(
+							'PERSIST',
+							`Đang lưu Q&A vào pending knowledge (isValid=${validation.isValid}, severity=${validation.severity || 'none'}, count=${sqlResult.count}, evaluation=${validation.evaluation ? 'yes' : 'no'})...`,
+						);
+						const pendingResult = await this.pendingKnowledgeService.savePendingKnowledge({
+							question: query,
+							sql: sqlResult.sql,
+							response: responseText, // Lưu raw response từ response-generator (có đầy đủ structured data và metadata)
+							evaluation: validation.evaluation,
+							validatorData: validation,
+							sessionId: session.sessionId,
+							userId: session.userId,
+							processingLogId: processingLogId || undefined,
+						});
+						this.logDebug(
+							'PERSIST',
+							`Đã lưu Q&A vào pending knowledge | id=${pendingResult.id} | status=${pendingResult.status} | processingLogId=${processingLogId || 'N/A'}`,
+						);
+						appendStep('PERSIST PENDING KNOWLEDGE', {
+							status: 'saved_to_pending',
+							pendingId: pendingResult.id,
+							processingLogId: processingLogId || 'none',
+							count: sqlResult.count,
+							severity: validation.severity || 'OK',
+							hasEvaluation: !!validation.evaluation,
+						});
+					} catch (persistErr) {
+						this.logWarn('PERSIST', 'Không thể lưu Q&A vào pending knowledge', persistErr);
+						appendStep('PERSIST PENDING KNOWLEDGE FAILED', String(persistErr));
+					}
+				} else {
+					// Skip khi có lỗi hoặc không hợp lệ
+					const skipReason = !validation.isValid
+						? `isValid=false`
+						: validation.severity === 'ERROR'
+							? `severity=ERROR`
+							: !sqlResult.sql
+								? `no SQL`
+								: `unknown reason`;
+					this.logWarn(
+						'VALIDATOR',
+						`Kết quả không đủ chất lượng, không lưu vào pending knowledge (${skipReason}): ${validation.reason || 'Unknown error'}`,
+					);
+					appendStep('PERSIST SKIPPED', skipReason);
+				}
 
 				this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt, totalTokenUsage);
 				return response;
