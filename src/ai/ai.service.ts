@@ -25,6 +25,7 @@ import {
 	ChatSession,
 	DataPayload,
 	RequestType,
+	SqlGenerationResult,
 	TableColumn,
 } from './types/chat.types';
 import { RoomPublishingStatus } from './types/room-publishing.types';
@@ -1288,17 +1289,58 @@ export class AiService {
 					'SQL_AGENT',
 					'START | canonical decision | schema RAG | generate SQL | execute',
 				);
-				const sqlResult = await this.sqlGenerationAgent.process(
-					query,
-					session,
-					this.prisma,
-					this.AI_CONFIG,
-					orchestratorResponse.businessContext,
-				);
+				let sqlResult: SqlGenerationResult;
+				let sqlError: Error | null = null;
+				try {
+					sqlResult = await this.sqlGenerationAgent.process(
+						query,
+						session,
+						this.prisma,
+						this.AI_CONFIG,
+						orchestratorResponse.businessContext,
+					);
+				} catch (error) {
+					// SQL generation failed completely - log đầy đủ error
+					sqlError = error instanceof Error ? error : new Error(String(error));
+					this.logError('SQL_AGENT', `SQL generation failed: ${sqlError.message}`, error);
+					appendStep('SQL AGENT FAILED', {
+						error: sqlError.message,
+						stack: sqlError.stack,
+						attempts: 'unknown',
+					});
+					// Create a failed sqlResult for logging purposes
+					sqlResult = {
+						sql: '',
+						results: [],
+						count: 0,
+						attempts: 0,
+						userId: session.userId,
+						userRole: orchestratorResponse.userRole,
+						tokenUsage: undefined,
+						debug: {
+							attempts: [
+								{
+									attempt: 0,
+									error: sqlError.message,
+									durationMs: Date.now() - sqlStartTime,
+								},
+							],
+						},
+					};
+					// Log failed attempt
+					processingLogData.sqlGenerationAttempts!.push({
+						attempt: 0,
+						error: sqlError.message,
+						duration: Date.now() - sqlStartTime,
+						sql: null,
+						count: 0,
+					});
+				}
 				const sqlDuration = Date.now() - sqlStartTime;
+				const sqlPreview = sqlResult.sql ? sqlResult.sql.substring(0, 50) : 'NO_SQL';
 				this.logInfo(
 					'SQL_AGENT',
-					`END | sqlPreview=${sqlResult.sql.substring(0, 50)}... | results=${sqlResult.count} | took=${sqlDuration}ms`,
+					`END | sqlPreview=${sqlPreview}... | results=${sqlResult.count} | took=${sqlDuration}ms${sqlError ? ` | ERROR: ${sqlError.message}` : ''}`,
 				);
 				const canonicalData = sqlResult.debug?.canonicalDecision as any;
 				const sqlStepDetail = [
@@ -1360,15 +1402,59 @@ export class AiService {
 					recentMessages: sqlResult.debug?.recentMessages,
 				};
 
-				// Full SQL banner for debugging
-				try {
-					const top = '-------------------- GENERATED SQL (BEGIN) --------------------';
-					const bottom = '--------------------- GENERATED SQL (END) ---------------------';
-					this.logger.log(this.formatStep('SQL_AGENT', top));
-					this.logger.log(this.formatStep('SQL_AGENT', sqlResult.sql));
-					this.logger.log(this.formatStep('SQL_AGENT', bottom));
-				} catch (e) {
-					this.logWarn('SQL_AGENT', 'Failed to log full generated SQL', e);
+				// Full SQL banner for debugging (only if SQL exists)
+				if (sqlResult.sql) {
+					try {
+						const top = '-------------------- GENERATED SQL (BEGIN) --------------------';
+						const bottom = '--------------------- GENERATED SQL (END) ---------------------';
+						this.logger.log(this.formatStep('SQL_AGENT', top));
+						this.logger.log(this.formatStep('SQL_AGENT', sqlResult.sql));
+						this.logger.log(this.formatStep('SQL_AGENT', bottom));
+					} catch (e) {
+						this.logWarn('SQL_AGENT', 'Failed to log full generated SQL', e);
+					}
+				} else {
+					this.logWarn(
+						'SQL_AGENT',
+						`No SQL generated - SQL generation failed${sqlError ? `: ${sqlError.message}` : ''}`,
+					);
+				}
+
+				// Nếu SQL generation failed hoàn toàn, skip các bước tiếp theo và return error response
+				if (sqlError || !sqlResult.sql) {
+					const errorMessage = sqlError
+						? `Xin lỗi, không thể tạo SQL query: ${sqlError.message}`
+						: 'Xin lỗi, không thể tạo SQL query. Vui lòng thử lại với câu hỏi khác.';
+					this.addMessageToSession(session, 'assistant', errorMessage, {
+						kind: 'CONTROL',
+						payload: { mode: 'ERROR', details: sqlError?.message || 'SQL generation failed' },
+					});
+					const errorResponse: ChatResponse = {
+						kind: 'CONTROL',
+						sessionId: session.sessionId,
+						timestamp: new Date().toISOString(),
+						message: errorMessage,
+						payload: { mode: 'ERROR', details: sqlError?.message || 'SQL generation failed' },
+					};
+
+					// Save processing log với error
+					processingLogData.response = errorMessage;
+					processingLogData.status = 'failed';
+					processingLogData.error = sqlError?.message || 'SQL generation failed';
+					processingLogData.tokenUsage = orchestratorResponse.tokenUsage;
+					processingLogData.totalDuration = Date.now() - pipelineStartAt;
+					appendStep('SUMMARY', {
+						totalDurationMs: processingLogData.totalDuration,
+						totalTokens: orchestratorResponse.tokenUsage?.totalTokens || 0,
+					});
+					processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
+					await this.processingLogService.saveProcessingLog({
+						question: query,
+						...processingLogData,
+					});
+
+					this.logPipelineEnd(session.sessionId, errorResponse.kind, pipelineStartAt);
+					return errorResponse;
 				}
 
 				// ========================================
