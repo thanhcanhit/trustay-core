@@ -12,7 +12,13 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { KnowledgeService } from '../../../ai/knowledge/knowledge.service';
 import { AiProcessingLogService } from '../../../ai/services/ai-processing-log.service';
+import { PendingKnowledgeService } from '../../../ai/services/pending-knowledge.service';
 import { OptionalJwtAuthGuard } from '../../../auth/guards/optional-jwt-auth.guard';
+import {
+	ApprovePendingKnowledgeDto,
+	QueryPendingKnowledgeDto,
+	RejectPendingKnowledgeDto,
+} from './dto/pending-knowledge.dto';
 import { QueryCanonicalDto } from './dto/query-canonical.dto';
 import { QueryChunksDto } from './dto/query-chunks.dto';
 import { QueryLogsDto } from './dto/query-logs.dto';
@@ -27,6 +33,7 @@ export class AdminAiController {
 	constructor(
 		private readonly knowledge: KnowledgeService,
 		private readonly aiLogService: AiProcessingLogService,
+		private readonly pendingKnowledgeService: PendingKnowledgeService,
 	) {}
 
 	@Get('canonical')
@@ -219,6 +226,132 @@ export class AdminAiController {
 			chunkId: result.chunkId,
 			sqlQAId: result.sqlQAId,
 			isUpdate: result.isUpdate,
+		};
+	}
+
+	@Get('pending-knowledge')
+	@ApiOperation({
+		summary: 'Get list of pending knowledge entries',
+		description:
+			'Get paginated list of pending knowledge entries (Q&A validated by AI, waiting for admin approval)',
+	})
+	@ApiResponse({
+		status: HttpStatus.OK,
+		description: 'List of pending knowledge entries',
+	})
+	async getPendingKnowledge(@Query() query: QueryPendingKnowledgeDto) {
+		return await this.pendingKnowledgeService.findMany({
+			search: query.search,
+			status: query.status,
+			limit: query.limit,
+			offset: query.offset,
+		});
+	}
+
+	@Get('pending-knowledge/:id')
+	@ApiOperation({
+		summary: 'Get pending knowledge entry by ID',
+		description: 'Return full pending knowledge entry including evaluation and validator data',
+	})
+	@ApiResponse({
+		status: HttpStatus.OK,
+		description: 'Pending knowledge entry detail',
+	})
+	@ApiResponse({
+		status: HttpStatus.NOT_FOUND,
+		description: 'Pending knowledge entry not found',
+	})
+	async getPendingKnowledgeById(@Param('id') id: string) {
+		const pending = await this.pendingKnowledgeService.findById(id);
+		if (!pending) {
+			return { success: false, message: 'Pending knowledge entry not found' };
+		}
+		return pending;
+	}
+
+	@Post('pending-knowledge/:id/approve')
+	@ApiOperation({
+		summary: 'Approve pending knowledge and save to vector DB',
+		description:
+			'Approve a pending knowledge entry. This will save the Q&A to vector DB for use in future queries.',
+	})
+	@ApiResponse({
+		status: HttpStatus.OK,
+		description: 'Pending knowledge approved and saved to vector DB',
+		schema: {
+			type: 'object',
+			properties: {
+				success: { type: 'boolean', example: true },
+				message: { type: 'string', example: 'Pending knowledge approved successfully' },
+				pendingKnowledgeId: { type: 'string', example: 'uuid-here' },
+				chunkId: { type: 'number', example: 12345 },
+				sqlQAId: { type: 'number', example: 67890 },
+			},
+		},
+	})
+	@ApiResponse({
+		status: HttpStatus.BAD_REQUEST,
+		description: 'Pending knowledge is not in pending status',
+	})
+	@ApiResponse({
+		status: HttpStatus.NOT_FOUND,
+		description: 'Pending knowledge entry not found',
+	})
+	async approvePendingKnowledge(@Param('id') id: string, @Body() _dto: ApprovePendingKnowledgeDto) {
+		// TODO: Get userId from request context (auth guard)
+		// For now, using a placeholder - should be replaced with actual user ID from auth
+		const approvedBy = 'admin-user-id'; // This should come from request context
+		const result = await this.pendingKnowledgeService.approvePendingKnowledge(id, approvedBy);
+		return {
+			success: result.success,
+			message: 'Pending knowledge approved successfully',
+			pendingKnowledgeId: result.pendingKnowledgeId,
+			chunkId: result.chunkId,
+			sqlQAId: result.sqlQAId,
+		};
+	}
+
+	@Post('pending-knowledge/:id/reject')
+	@ApiOperation({
+		summary: 'Reject pending knowledge',
+		description:
+			'Reject a pending knowledge entry. This will mark it as rejected and it will not be saved to vector DB.',
+	})
+	@ApiResponse({
+		status: HttpStatus.OK,
+		description: 'Pending knowledge rejected',
+		schema: {
+			type: 'object',
+			properties: {
+				success: { type: 'boolean', example: true },
+				message: { type: 'string', example: 'Pending knowledge rejected successfully' },
+				pendingKnowledgeId: { type: 'string', example: 'uuid-here' },
+				status: { type: 'string', example: 'rejected' },
+			},
+		},
+	})
+	@ApiResponse({
+		status: HttpStatus.BAD_REQUEST,
+		description: 'Pending knowledge is not in pending status or reason is missing',
+	})
+	@ApiResponse({
+		status: HttpStatus.NOT_FOUND,
+		description: 'Pending knowledge entry not found',
+	})
+	async rejectPendingKnowledge(@Param('id') id: string, @Body() dto: RejectPendingKnowledgeDto) {
+		// TODO: Get userId from request context (auth guard)
+		// For now, using a placeholder - should be replaced with actual user ID from auth
+		const rejectedBy = 'admin-user-id'; // This should come from request context
+		const result = await this.pendingKnowledgeService.rejectPendingKnowledge(
+			id,
+			rejectedBy,
+			dto.reason,
+		);
+		return {
+			success: result.success,
+			message: 'Pending knowledge rejected successfully',
+			pendingKnowledgeId: result.pendingKnowledgeId,
+			status: result.status,
 		};
 	}
 }

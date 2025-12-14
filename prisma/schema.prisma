@@ -1259,6 +1259,39 @@ model AiProcessingLog {
 }
 
 // ========================================
+// PENDING KNOWLEDGE
+// ========================================
+
+model PendingKnowledge {
+  id            String   @id @default(uuid())
+  question      String   @db.Text
+  sql           String?  @db.Text
+  evaluation    String?  @db.Text // Đánh giá chi tiết từ validator
+  status        String   @default("pending") // pending, approved, rejected
+  validatorData Json?    @map("validator_data") // Full validation result
+  
+  // Context
+  sessionId     String?  @map("session_id")
+  userId        String?  @map("user_id")
+  processingLogId String? @map("processing_log_id") // Link to AiProcessingLog
+  
+  // Approval tracking
+  approvedAt    DateTime? @map("approved_at")
+  approvedBy    String?   @map("approved_by") // User ID của admin
+  rejectedAt    DateTime? @map("rejected_at")
+  rejectedBy    String?   @map("rejected_by")
+  rejectionReason String? @db.Text @map("rejection_reason")
+  
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  
+  @@index([status])
+  @@index([createdAt])
+  @@index([userId])
+  @@map("pending_knowledge")
+}
+
+// ========================================
 // TENANT PREFERENCES (OPTIMIZED FOR MATCHING)
 // ========================================
 

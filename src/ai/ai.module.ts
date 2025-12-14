@@ -8,6 +8,7 @@ import { AiController } from './ai.controller';
 import { AiService } from './ai.service';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { AiProcessingLogService } from './services/ai-processing-log.service';
+import { PendingKnowledgeService } from './services/pending-knowledge.service';
 import { RoomPublishingService } from './services/room-publishing.service';
 
 @Module({
@@ -20,7 +21,7 @@ import { RoomPublishingService } from './services/room-publishing.service';
 		ReferenceModule,
 	],
 	controllers: [AiController],
-	providers: [AiService, RoomPublishingService, AiProcessingLogService],
-	exports: [AiProcessingLogService], // Export để có thể dùng ở module khác nếu cần
+	providers: [AiService, RoomPublishingService, AiProcessingLogService, PendingKnowledgeService],
+	exports: [AiProcessingLogService, PendingKnowledgeService], // Export để có thể dùng ở module khác nếu cần
 })
 export class AiModule {}

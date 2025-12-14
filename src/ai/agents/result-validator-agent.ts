@@ -154,7 +154,7 @@ export class ResultValidatorAgent {
 			const reason = reasonMatch ? reasonMatch[1].trim() : undefined;
 
 			// Parse violations if present
-			const violationsMatch = response.match(/VIOLATIONS:\s*(.+?)(?=\n|$)/s);
+			const violationsMatch = response.match(/VIOLATIONS:\s*(.+?)(?=\n(?:REASON|EVALUATION|$)|$)/s);
 			const violations = violationsMatch
 				? violationsMatch[1]
 						.split(ResultValidatorAgent.DELIMITER_VIOLATIONS)
@@ -162,12 +162,29 @@ export class ResultValidatorAgent {
 						.filter((v) => v.length > 0)
 				: undefined;
 
+			// Parse evaluation if present
+			// Try to match EVALUATION: followed by content until next field or end
+			let evaluationMatch = response.match(
+				/EVALUATION:\s*(.+?)(?=\n(?:IS_VALID|SEVERITY|VIOLATIONS|REASON|$)|$)/s,
+			);
+			// Fallback: if no match, try to find EVALUATION: and take everything after it to the end
+			if (!evaluationMatch) {
+				const evaluationIndex = response.indexOf('EVALUATION:');
+				if (evaluationIndex !== -1) {
+					const evaluationText = response.substring(evaluationIndex + 'EVALUATION:'.length).trim();
+					if (evaluationText.length > 0) {
+						evaluationMatch = [null, evaluationText];
+					}
+				}
+			}
+			const evaluation = evaluationMatch ? evaluationMatch[1].trim() : undefined;
+
 			// Set severity: ERROR nếu invalid, WARN nếu có vấn đề nhỏ, undefined nếu OK
 			const severity =
 				parsedSeverity || (isValid ? undefined : ResultValidatorAgent.SEVERITY_ERROR);
 
 			this.logger.debug(
-				`Validation result: isValid=${isValid}, severity=${severity}${reason ? `, reason=${reason}` : ''}${violations ? `, violations=[${violations.length}]` : ''}`,
+				`Validation result: isValid=${isValid}, severity=${severity}${reason ? `, reason=${reason}` : ''}${violations ? `, violations=[${violations.length}]` : ''}${evaluation ? `, evaluation=${evaluation.substring(0, 100)}...` : ''}`,
 			);
 
 			return {
@@ -175,6 +192,7 @@ export class ResultValidatorAgent {
 				reason,
 				violations,
 				severity,
+				evaluation,
 				tokenUsage,
 			};
 		} catch (error) {

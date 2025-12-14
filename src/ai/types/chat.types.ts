@@ -251,6 +251,7 @@ export interface ResultValidationResponse {
 	reason?: string;
 	violations?: string[]; // List of validation violations
 	severity?: 'ERROR' | 'WARN'; // Severity level: ERROR blocks persistence, WARN allows but logs
+	evaluation?: string; // Đánh giá chi tiết về SQL và kết quả
 	tokenUsage?: TokenUsage; // Token usage from LLM call
 	prompt?: string;
 	rawResponse?: string;

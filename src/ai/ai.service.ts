@@ -14,6 +14,7 @@ import { buildOneForAllPrompt } from './prompts/simple-system-one-for-all';
 import { VIETNAMESE_LOCALE_SYSTEM_PROMPT } from './prompts/system.prompt';
 import { AiProcessingLogService } from './services/ai-processing-log.service';
 import { generateErrorResponse } from './services/error-handler.service';
+import { PendingKnowledgeService } from './services/pending-knowledge.service';
 import {
 	RoomPublishingService,
 	RoomPublishingStepResult,
@@ -75,6 +76,7 @@ export class AiService {
 		private readonly roomsService: RoomsService,
 		private readonly addressService: AddressService,
 		private readonly processingLogService: AiProcessingLogService,
+		private readonly pendingKnowledgeService: PendingKnowledgeService,
 	) {
 		// Initialize orchestrator agent with Prisma and KnowledgeService
 		this.orchestratorAgent = new OrchestratorAgent(this.prisma, this.knowledge);
@@ -1421,6 +1423,7 @@ export class AiService {
 					reason: validation.reason,
 					severity: validation.severity,
 					violations: validation.violations,
+					evaluation: validation.evaluation, // Đánh giá chi tiết từ validator
 					tokenUsage: validation.tokenUsage,
 					duration: parallelDuration, // Parallel duration cho cả validator và response generator
 				};
@@ -1458,56 +1461,6 @@ export class AiService {
 					}
 				} catch (error) {
 					this.logError('ERROR', 'Error building entity path', error);
-				}
-
-				// Persist Q&A - ƯU TIÊN LƯU: Chỉ skip nếu có ERROR severity rõ ràng
-				// isValid=true hoặc WARN severity → lưu để có thể cải thiện sau
-				// CHỈ LƯU CÁC CÂU TRẢ LỜI ĐÚNG/CHẤT LƯỢNG:
-				// - isValid=true (SQL đúng và kết quả hợp lý)
-				// - severity !== 'ERROR' (không có lỗi nghiêm trọng)
-				// - Có SQL và có kết quả (không lưu khi SQL fail hoặc không có kết quả)
-				const shouldPersist =
-					validation.isValid &&
-					validation.severity !== 'ERROR' &&
-					sqlResult.sql &&
-					sqlResult.count >= 0; // Có thể là 0 (không có dữ liệu) nhưng vẫn hợp lệ
-				if (shouldPersist) {
-					try {
-						this.logDebug(
-							'PERSIST',
-							`Đang lưu Q&A vào knowledge store (isValid=${validation.isValid}, severity=${validation.severity || 'none'}, count=${sqlResult.count})...`,
-						);
-						await this.knowledge.saveQAInteraction({
-							question: query,
-							sql: sqlResult.sql,
-							sessionId: session.sessionId,
-							userId: session.userId,
-							context: { count: sqlResult.count, severity: validation.severity || 'OK' },
-						});
-						this.logDebug('PERSIST', 'Đã lưu Q&A thành công vào knowledge store');
-						appendStep('PERSIST KNOWLEDGE', {
-							status: 'saved',
-							count: sqlResult.count,
-							severity: validation.severity || 'OK',
-						});
-					} catch (persistErr) {
-						this.logWarn('PERSIST', 'Không thể lưu Q&A vào knowledge store', persistErr);
-						appendStep('PERSIST KNOWLEDGE FAILED', String(persistErr));
-					}
-				} else {
-					// Skip khi có lỗi hoặc không hợp lệ
-					const skipReason = !validation.isValid
-						? `isValid=false`
-						: validation.severity === 'ERROR'
-							? `severity=ERROR`
-							: !sqlResult.sql
-								? `no SQL`
-								: `unknown reason`;
-					this.logWarn(
-						'VALIDATOR',
-						`Kết quả không đủ chất lượng, không lưu vào knowledge store (${skipReason}): ${validation.reason || 'Unknown error'}`,
-					);
-					appendStep('PERSIST SKIPPED', skipReason);
 				}
 
 				// Build data payload từ parsed structured data
@@ -1550,7 +1503,7 @@ export class AiService {
 					payload: dataPayload,
 				};
 
-				// Save single log entry với tất cả data đã được append ở từng bước
+				// Save processing log trước để lấy ID và link với pending knowledge
 				processingLogData.response = parsedResponse.message;
 				processingLogData.status = 'completed';
 				processingLogData.tokenUsage = totalTokenUsage;
@@ -1560,10 +1513,68 @@ export class AiService {
 					totalTokens: totalTokenUsage.totalTokens || 0,
 				});
 				processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
-				await this.processingLogService.saveProcessingLog({
+				const processingLogId = await this.processingLogService.saveProcessingLog({
 					question: query,
 					...processingLogData,
 				});
+
+				// Persist Q&A - ƯU TIÊN LƯU: Chỉ skip nếu có ERROR severity rõ ràng
+				// isValid=true hoặc WARN severity → lưu vào pending để admin review
+				// CHỈ LƯU CÁC CÂU TRẢ LỜI ĐÚNG/CHẤT LƯỢNG:
+				// - isValid=true (SQL đúng và kết quả hợp lý)
+				// - severity !== 'ERROR' (không có lỗi nghiêm trọng)
+				// - Có SQL và có kết quả (không lưu khi SQL fail hoặc không có kết quả)
+				const shouldPersist =
+					validation.isValid &&
+					validation.severity !== 'ERROR' &&
+					sqlResult.sql &&
+					sqlResult.count >= 0; // Có thể là 0 (không có dữ liệu) nhưng vẫn hợp lệ
+				if (shouldPersist) {
+					try {
+						this.logDebug(
+							'PERSIST',
+							`Đang lưu Q&A vào pending knowledge (isValid=${validation.isValid}, severity=${validation.severity || 'none'}, count=${sqlResult.count}, evaluation=${validation.evaluation ? 'yes' : 'no'})...`,
+						);
+						const pendingResult = await this.pendingKnowledgeService.savePendingKnowledge({
+							question: query,
+							sql: sqlResult.sql,
+							evaluation: validation.evaluation,
+							validatorData: validation,
+							sessionId: session.sessionId,
+							userId: session.userId,
+							processingLogId: processingLogId || undefined,
+						});
+						this.logDebug(
+							'PERSIST',
+							`Đã lưu Q&A vào pending knowledge | id=${pendingResult.id} | status=${pendingResult.status} | processingLogId=${processingLogId || 'N/A'}`,
+						);
+						appendStep('PERSIST PENDING KNOWLEDGE', {
+							status: 'saved_to_pending',
+							pendingId: pendingResult.id,
+							processingLogId: processingLogId || 'none',
+							count: sqlResult.count,
+							severity: validation.severity || 'OK',
+							hasEvaluation: !!validation.evaluation,
+						});
+					} catch (persistErr) {
+						this.logWarn('PERSIST', 'Không thể lưu Q&A vào pending knowledge', persistErr);
+						appendStep('PERSIST PENDING KNOWLEDGE FAILED', String(persistErr));
+					}
+				} else {
+					// Skip khi có lỗi hoặc không hợp lệ
+					const skipReason = !validation.isValid
+						? `isValid=false`
+						: validation.severity === 'ERROR'
+							? `severity=ERROR`
+							: !sqlResult.sql
+								? `no SQL`
+								: `unknown reason`;
+					this.logWarn(
+						'VALIDATOR',
+						`Kết quả không đủ chất lượng, không lưu vào pending knowledge (${skipReason}): ${validation.reason || 'Unknown error'}`,
+					);
+					appendStep('PERSIST SKIPPED', skipReason);
+				}
 
 				this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt, totalTokenUsage);
 				return response;
