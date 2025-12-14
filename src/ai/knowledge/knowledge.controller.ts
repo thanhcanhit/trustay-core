@@ -2,13 +2,17 @@ import {
 	Body,
 	Controller,
 	Delete,
+	Get,
 	HttpStatus,
 	Param,
 	ParseIntPipe,
 	Post,
+	Query,
+	Res,
 	UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Response } from 'express';
 import { OptionalJwtAuthGuard } from '../../auth/guards/optional-jwt-auth.guard';
 import { TeachKnowledgeDto } from './dto/teach-knowledge.dto';
 import { KnowledgeService } from './knowledge.service';
@@ -206,5 +210,94 @@ Use this when schema structure has changed or you want to refresh the schema emb
 	) {
 		// Re-use existing ingestSchemaFromDatabase logic
 		return await this.ingestSchemaFromDatabase(body);
+	}
+
+	@Get('export-golden-data')
+	@ApiOperation({
+		summary: 'Export golden data (Q&A pairs with SQL)',
+		description: `Export all golden data (cặp câu hỏi và SQL đã được lưu) từ hệ thống.
+		
+**Format options:**
+- \`json\`: JSON format (default)
+- \`csv\`: CSV format for spreadsheet
+
+**Query parameters:**
+- \`format\`: Export format (json, csv) - default: json
+- \`search\`: Search term to filter by question
+- \`limit\`: Maximum number of records (default: 1000, max: 10000)
+- \`offset\`: Offset for pagination (default: 0)
+
+**Response:**
+- JSON format: Returns array of Q&A pairs
+- CSV format: Downloads CSV file with headers: id, question, sql_canonical, sql_template, created_at`,
+	})
+	@ApiResponse({
+		status: HttpStatus.OK,
+		description: 'Golden data exported successfully',
+	})
+	async exportGoldenData(
+		@Res() res: Response,
+		@Query('format') format?: 'json' | 'csv',
+		@Query('search') search?: string,
+		@Query('limit') limit?: number,
+		@Query('offset') offset?: number,
+	) {
+		// Default to JSON if format not specified
+		const exportFormat = format || 'json';
+
+		// Get all golden data (with reasonable limit)
+		const maxLimit = Math.min(limit || 1000, 10000); // Max 10k records
+		const result = await this.knowledge.getCanonicalList({
+			search,
+			limit: maxLimit,
+			offset: offset || 0,
+		});
+
+		// Format data for export
+		const goldenData = result.items.map((item) => ({
+			id: item.id,
+			question: item.question,
+			sql: item.sqlCanonical,
+			sqlTemplate: item.sqlTemplate || null,
+			parameters: item.parameters || null,
+			createdAt: item.createdAt,
+			updatedAt: item.updatedAt,
+			lastUsedAt: item.lastUsedAt || null,
+		}));
+
+		if (exportFormat === 'csv') {
+			// Export as CSV
+			const csvHeaders = ['id', 'question', 'sql', 'parameters', 'created_at'];
+			const csvRows = goldenData.map((item) => [
+				item.id,
+				`"${(item.question || '').replace(/"/g, '""')}"`, // Escape quotes
+				`"${(item.sql || '').replace(/"/g, '""')}"`,
+				`"${JSON.stringify(item.parameters || {}).replace(/"/g, '""')}"`,
+				item.createdAt,
+			]);
+
+			const csvContent = [csvHeaders.join(','), ...csvRows.map((row) => row.join(','))].join('\n');
+
+			// Add UTF-8 BOM for Excel compatibility
+			const csvWithBom = `\ufeff${csvContent}`;
+
+			res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+			res.setHeader(
+				'Content-Disposition',
+				`attachment; filename="golden-data-${new Date().toISOString().split('T')[0]}.csv"`,
+			);
+			res.send(csvWithBom);
+			res.end();
+			return;
+		}
+
+		// Export as JSON (default)
+		res.json({
+			success: true,
+			total: result.total,
+			exported: goldenData.length,
+			format: 'json',
+			data: goldenData,
+		});
 	}
 }
