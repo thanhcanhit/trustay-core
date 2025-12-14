@@ -1,4 +1,13 @@
-import { Body, Controller, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import {
+	Body,
+	Controller,
+	Delete,
+	HttpStatus,
+	Param,
+	ParseIntPipe,
+	Post,
+	UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { OptionalJwtAuthGuard } from '../../auth/guards/optional-jwt-auth.guard';
 import { TeachKnowledgeDto } from './dto/teach-knowledge.dto';
@@ -123,5 +132,79 @@ export class KnowledgeController {
 			sqlQAId: result.sqlQAId,
 			question: dto.question,
 		};
+	}
+
+	@Delete('knowledge/:type/:id')
+	@ApiOperation({
+		summary: 'Delete knowledge (chunk or SQL QA)',
+		description: `Delete a knowledge entry (chunk or SQL QA) with relationship checks.
+		
+**Type:**
+- \`chunk\`: Delete an AI chunk. If linked to SQL QA, only the chunk is deleted, SQL QA is kept.
+- \`sql_qa\`: Delete a SQL QA entry. All linked chunks will also be deleted.
+
+**Relationship checks:**
+- When deleting a chunk linked to SQL QA, only the chunk is removed
+- When deleting SQL QA, all linked chunks are automatically deleted first`,
+	})
+	@ApiResponse({
+		status: HttpStatus.OK,
+		description: 'Knowledge deleted successfully',
+		schema: {
+			type: 'object',
+			properties: {
+				success: { type: 'boolean', example: true },
+				deletedChunks: { type: 'number', example: 1 },
+				deletedSqlQA: { type: 'number', example: 1 },
+				message: { type: 'string', example: 'Deleted SQL QA 123 and 1 linked chunks.' },
+			},
+		},
+	})
+	@ApiResponse({
+		status: HttpStatus.NOT_FOUND,
+		description: 'Knowledge entry not found',
+	})
+	async deleteKnowledge(
+		@Param('type') type: 'chunk' | 'sql_qa',
+		@Param('id', ParseIntPipe) id: number,
+	) {
+		return await this.knowledge.deleteKnowledge({ type, id });
+	}
+
+	@Post('re-embed-schema')
+	@ApiOperation({
+		summary: 'Re-embed database schema',
+		description: `Re-embed the database schema into vector store. This will:
+1. Clear existing schema chunks
+2. Re-ingest schema as JSON-structured descriptions
+3. Re-ingest reference lookup data (amenities, cost types, room rules)
+4. Re-ingest denormalized documents (rooms, requests)
+
+Use this when schema structure has changed or you want to refresh the schema embeddings.`,
+	})
+	@ApiResponse({
+		status: HttpStatus.OK,
+		description: 'Schema re-embedded successfully',
+		schema: {
+			type: 'object',
+			properties: {
+				success: { type: 'boolean', example: true },
+				inserted: { type: 'number', example: 150 },
+				jsonSchemaChunks: { type: 'number', example: 50 },
+				referenceDataChunks: { type: 'number', example: 30 },
+				roomDocsChunks: { type: 'number', example: 50 },
+				requestDocsChunks: { type: 'number', example: 20 },
+				tenantId: { type: 'string' },
+				dbKey: { type: 'string' },
+				schemaName: { type: 'string' },
+			},
+		},
+	})
+	async reEmbedSchema(
+		@Body()
+		body?: { tenantId?: string; dbKey?: string; schemaName?: string },
+	) {
+		// Re-use existing ingestSchemaFromDatabase logic
+		return await this.ingestSchemaFromDatabase(body);
 	}
 }

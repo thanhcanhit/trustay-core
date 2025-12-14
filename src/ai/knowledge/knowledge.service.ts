@@ -783,4 +783,59 @@ export class KnowledgeService {
 			};
 		}
 	}
+
+	/**
+	 * Delete knowledge (chunk or SQL QA) with relationship checks
+	 * @param params - Delete parameters
+	 * @returns Deletion result
+	 */
+	async deleteKnowledge(params: { type: 'chunk' | 'sql_qa'; id: number }): Promise<{
+		success: boolean;
+		deletedChunks?: number;
+		deletedSqlQA?: number;
+		message: string;
+	}> {
+		try {
+			if (params.type === 'chunk') {
+				// Delete chunk - check if it's linked to SQL QA
+				const sqlQAId = await this.vectorStore.findSqlQAIdByChunkId(params.id);
+				if (sqlQAId) {
+					// Chunk is linked to SQL QA - only delete chunk, keep SQL QA
+					const deletedChunks = await this.vectorStore.deleteChunks([params.id]);
+					this.logger.log(
+						`Deleted chunk ${params.id} (was linked to SQL QA ${sqlQAId}, SQL QA kept)`,
+					);
+					return {
+						success: true,
+						deletedChunks,
+						message: `Deleted chunk ${params.id}. Linked SQL QA ${sqlQAId} was kept.`,
+					};
+				} else {
+					// Chunk is not linked - safe to delete
+					const deletedChunks = await this.vectorStore.deleteChunks([params.id]);
+					this.logger.log(`Deleted chunk ${params.id}`);
+					return {
+						success: true,
+						deletedChunks,
+						message: `Deleted chunk ${params.id}.`,
+					};
+				}
+			} else if (params.type === 'sql_qa') {
+				// Delete SQL QA - will also delete all linked chunks
+				const result = await this.vectorStore.deleteSqlQA(params.id);
+				this.logger.log(`Deleted SQL QA ${params.id} and ${result.deletedChunks} linked chunks`);
+				return {
+					success: true,
+					deletedChunks: result.deletedChunks,
+					deletedSqlQA: result.deletedSqlQA,
+					message: `Deleted SQL QA ${params.id} and ${result.deletedChunks} linked chunks.`,
+				};
+			} else {
+				throw new Error(`Invalid delete type: ${params.type}`);
+			}
+		} catch (error) {
+			this.logger.error(`Failed to delete knowledge:`, error);
+			throw error;
+		}
+	}
 }
