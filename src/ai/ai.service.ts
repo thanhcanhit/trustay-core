@@ -1624,6 +1624,7 @@ export class AiService {
 						const pendingResult = await this.pendingKnowledgeService.savePendingKnowledge({
 							question: query,
 							sql: sqlResult.sql,
+							response: responseText, // Lưu raw response từ response-generator (có đầy đủ structured data và metadata)
 							evaluation: validation.evaluation,
 							validatorData: validation,
 							sessionId: session.sessionId,

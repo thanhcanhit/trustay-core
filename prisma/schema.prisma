@@ -1266,6 +1266,7 @@ model PendingKnowledge {
   id            String   @id @default(uuid())
   question      String   @db.Text
   sql           String?  @db.Text
+  response      String?  @db.Text // Câu trả lời từ response generator
   evaluation    String?  @db.Text // Đánh giá chi tiết từ validator
   status        String   @default("pending") // pending, approved, rejected
   validatorData Json?    @map("validator_data") // Full validation result

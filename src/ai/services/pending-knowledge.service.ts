@@ -24,6 +24,7 @@ export class PendingKnowledgeService {
 	async savePendingKnowledge(params: {
 		question: string;
 		sql?: string;
+		response?: string;
 		evaluation?: string;
 		validatorData?: ResultValidationResponse;
 		sessionId?: string;
@@ -33,6 +34,7 @@ export class PendingKnowledgeService {
 		id: string;
 		question: string;
 		sql?: string;
+		response?: string;
 		status: string;
 		createdAt: Date;
 	}> {
@@ -41,6 +43,7 @@ export class PendingKnowledgeService {
 				data: {
 					question: params.question,
 					sql: params.sql,
+					response: params.response,
 					evaluation: params.evaluation,
 					status: 'pending',
 					validatorData: params.validatorData
@@ -67,6 +70,7 @@ export class PendingKnowledgeService {
 				id: pendingKnowledge.id,
 				question: pendingKnowledge.question,
 				sql: pendingKnowledge.sql,
+				response: pendingKnowledge.response,
 				status: pendingKnowledge.status,
 				createdAt: pendingKnowledge.createdAt,
 			};
@@ -113,9 +117,13 @@ export class PendingKnowledgeService {
 			}
 
 			// Save to vector DB via KnowledgeService (cannot use transaction with vector store)
+			// saveQAInteraction sẽ tự động check duplicate và reuse nếu đã tồn tại
 			// If this fails, status remains 'pending' (OK)
 			let vectorResult: { chunkId: number; sqlQAId: number };
 			try {
+				this.logger.debug(
+					`Approving pending knowledge ${id} - saving to vector DB (will check for duplicates)`,
+				);
 				vectorResult = await this.knowledge.saveQAInteraction({
 					question: pending.question,
 					sql: pending.sql,
@@ -127,6 +135,16 @@ export class PendingKnowledgeService {
 						originalValidatorData: pending.validatorData,
 					},
 				});
+				// Log whether it was reused or created new
+				if (vectorResult.chunkId === 0) {
+					this.logger.debug(
+						`Pending knowledge ${id} approved - reused existing SQL QA (sqlQAId=${vectorResult.sqlQAId})`,
+					);
+				} else {
+					this.logger.debug(
+						`Pending knowledge ${id} approved - created new entry (chunkId=${vectorResult.chunkId}, sqlQAId=${vectorResult.sqlQAId})`,
+					);
+				}
 			} catch (vectorError) {
 				this.logger.error(
 					`Failed to save to vector DB for pending knowledge ${id}, status remains pending`,
@@ -262,17 +280,25 @@ export class PendingKnowledgeService {
 	async findMany(params: {
 		search?: string;
 		status?: string;
-		limit?: number;
-		offset?: number;
+		limit?: number | string;
+		offset?: number | string;
 	}): Promise<{ items: any[]; total: number; limit: number; offset: number }> {
 		try {
-			const limit = params.limit || 20;
-			const offset = params.offset || 0;
+			// Convert to numbers (query params come as strings)
+			const limitRaw =
+				typeof params.limit === 'string' ? parseInt(params.limit, 10) : params.limit || 20;
+			const offsetRaw =
+				typeof params.offset === 'string' ? parseInt(params.offset, 10) : params.offset || 0;
+			const limit = Number.isNaN(limitRaw) ? 20 : limitRaw;
+			const offset = Number.isNaN(offsetRaw) ? 0 : offsetRaw;
 
 			const where: any = {};
 
+			// Default: chỉ trả về pending nếu không có filter status
 			if (params.status) {
 				where.status = params.status;
+			} else {
+				where.status = 'pending';
 			}
 
 			if (params.search) {
@@ -300,11 +326,15 @@ export class PendingKnowledgeService {
 			};
 		} catch (error) {
 			this.logger.error('Failed to find pending knowledge', error);
+			const fallbackLimit =
+				typeof params.limit === 'string' ? parseInt(params.limit, 10) || 20 : params.limit || 20;
+			const fallbackOffset =
+				typeof params.offset === 'string' ? parseInt(params.offset, 10) || 0 : params.offset || 0;
 			return {
 				items: [],
 				total: 0,
-				limit: params.limit || 20,
-				offset: params.offset || 0,
+				limit: Number.isNaN(fallbackLimit) ? 20 : fallbackLimit,
+				offset: Number.isNaN(fallbackOffset) ? 0 : fallbackOffset,
 			};
 		}
 	}
