@@ -5,6 +5,7 @@ import { BuildingsService } from '../api/buildings/buildings.service';
 import { AddressService } from '../api/provinces/address/address.service';
 import { RoomsService } from '../api/rooms/rooms.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ChatSessionQueueService } from '../queue/services/chat-session-queue.service';
 import { OrchestratorAgent } from './agents/orchestrator-agent';
 import { ResponseGenerator } from './agents/response-generator';
 import { ResultValidatorAgent } from './agents/result-validator-agent';
@@ -13,6 +14,7 @@ import { KnowledgeService } from './knowledge/knowledge.service';
 import { buildOneForAllPrompt } from './prompts/simple-system-one-for-all';
 import { VIETNAMESE_LOCALE_SYSTEM_PROMPT } from './prompts/system.prompt';
 import { AiProcessingLogService } from './services/ai-processing-log.service';
+import { ChatSessionService } from './services/chat-session.service';
 import { generateErrorResponse } from './services/error-handler.service';
 import { PendingKnowledgeService } from './services/pending-knowledge.service';
 import {
@@ -63,11 +65,9 @@ export class AiService {
 	private readonly responseGenerator = new ResponseGenerator();
 	private readonly resultValidatorAgent = new ResultValidatorAgent();
 
-	// Chat session management - similar to rooms.service.ts view cache pattern
-	private chatSessions = new Map<string, ChatSession>();
-	private readonly SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 phút
-	private readonly MAX_MESSAGES_PER_SESSION = 10; // Giới hạn tin nhắn mỗi session
-	private readonly CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 phút
+	// Chat session management - using database-backed ChatSessionService
+	private readonly SUMMARY_THRESHOLD = 10; // Trigger summary generation when messageCount > this
+	private readonly AUTO_TITLE_MESSAGE_COUNT = 2; // Trigger auto-title when session has this many messages
 
 	constructor(
 		private readonly prisma: PrismaService,
@@ -78,15 +78,13 @@ export class AiService {
 		private readonly addressService: AddressService,
 		private readonly processingLogService: AiProcessingLogService,
 		private readonly pendingKnowledgeService: PendingKnowledgeService,
+		private readonly chatSessionService: ChatSessionService,
+		private readonly chatSessionQueueService: ChatSessionQueueService,
 	) {
 		// Initialize orchestrator agent with Prisma and KnowledgeService
 		this.orchestratorAgent = new OrchestratorAgent(this.prisma, this.knowledge);
 		// Initialize SQL generation agent with knowledge service for RAG
 		this.sqlGenerationAgent = new SqlGenerationAgent(this.knowledge);
-		// Dọn dẹp session cũ định kỳ - similar to rooms.service.ts cleanup pattern
-		setInterval(() => {
-			this.cleanupExpiredSessions();
-		}, this.CLEANUP_INTERVAL_MS);
 	}
 
 	/**
@@ -147,60 +145,73 @@ export class AiService {
 	}
 
 	/**
-	 * Generate session ID based on user context - similar to rooms.service.ts cache key generation
-	 * @param userId - User ID if authenticated
-	 * @param clientIp - Client IP address
-	 * @returns Session ID
+	 * Convert database session to ChatSession format
+	 * @param dbSession - Database session from ChatSessionService
+	 * @param clientIp - Client IP (not stored in DB, passed separately)
+	 * @returns ChatSession format
 	 */
-	private generateSessionId(userId?: string, clientIp?: string): string {
-		if (userId) {
-			return `user_${userId}`;
+	private convertDbSessionToChatSession(dbSession: any, clientIp?: string): ChatSession {
+		const messages: ChatMessage[] = dbSession.messages
+			? dbSession.messages.map((m: any) => ({
+					role: m.role as 'user' | 'assistant' | 'system',
+					content: m.content,
+					timestamp: new Date(m.createdAt),
+					kind: (m.metadata as any)?.kind,
+					payload: (m.metadata as any)?.payload,
+					meta: (m.metadata as any)?.meta,
+				}))
+			: [];
+		// Add system prompt if no messages exist
+		if (messages.length === 0) {
+			messages.push({
+				role: 'system',
+				content: VIETNAMESE_LOCALE_SYSTEM_PROMPT,
+				timestamp: new Date(),
+			});
 		}
-		if (clientIp) {
-			return `ip_${clientIp.replace(/[:.]/g, '_')}`;
-		}
-		// Fallback to random session (không khuyến khích)
-		return `anon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+		return {
+			sessionId: dbSession.id,
+			userId: dbSession.userId || undefined,
+			clientIp,
+			messages,
+			lastActivity: dbSession.lastMessageAt
+				? new Date(dbSession.lastMessageAt)
+				: new Date(dbSession.createdAt),
+			createdAt: new Date(dbSession.createdAt),
+		};
 	}
 
 	/**
-	 * Get or create chat session - pattern similar to rooms.service.ts shouldIncrementView
+	 * Get or create chat session - using database-backed ChatSessionService
 	 * @param userId - User ID if authenticated
 	 * @param clientIp - Client IP address
 	 * @returns Chat session
 	 */
-	private getOrCreateSession(userId?: string, clientIp?: string): ChatSession {
-		const sessionId = this.generateSessionId(userId, clientIp);
-
-		if (this.chatSessions.has(sessionId)) {
-			const session = this.chatSessions.get(sessionId)!;
-			session.lastActivity = new Date();
-			return session;
+	private async getOrCreateSession(userId?: string, clientIp?: string): Promise<ChatSession> {
+		const dbSession = await this.chatSessionService.getOrCreateSession(userId, clientIp);
+		// Add system prompt message if session is new (no messages)
+		if (dbSession.messageCount === 0) {
+			await this.chatSessionService.addMessage(
+				dbSession.id,
+				'system',
+				VIETNAMESE_LOCALE_SYSTEM_PROMPT,
+			);
 		}
-
-		// Tạo session mới với system prompt tiếng Việt
-		const newSession: ChatSession = {
-			sessionId,
-			userId,
-			clientIp,
-			messages: [
-				{ role: 'system', content: VIETNAMESE_LOCALE_SYSTEM_PROMPT, timestamp: new Date() },
-			],
-			lastActivity: new Date(),
-			createdAt: new Date(),
-		};
-
-		this.chatSessions.set(sessionId, newSession);
-		return newSession;
+		// Reload session with messages
+		const sessionWithMessages = await this.chatSessionService.getSession(dbSession.id);
+		return this.convertDbSessionToChatSession(sessionWithMessages || dbSession, clientIp);
 	}
 
 	/**
 	 * Add message to session with AI SDK CoreMessage format
+	 * Now saves to database via ChatSessionService
 	 * @param session - Chat session
 	 * @param role - Message role
 	 * @param content - Message content
+	 * @param envelope - Optional envelope with kind, payload, meta
+	 * @param triggerJobs - Whether to trigger background jobs (default: true for assistant messages)
 	 */
-	private addMessageToSession(
+	private async addMessageToSession(
 		session: ChatSession,
 		role: 'user' | 'assistant' | 'system',
 		content: string,
@@ -209,7 +220,22 @@ export class AiService {
 			payload?: any;
 			meta?: Record<string, unknown>;
 		},
-	): void {
+		triggerJobs: boolean = role === 'assistant',
+	): Promise<void> {
+		// Prepare metadata for database storage
+		const metadata: Record<string, unknown> = {};
+		if (envelope?.kind) {
+			metadata.kind = envelope.kind;
+		}
+		if (envelope?.payload) {
+			metadata.payload = envelope.payload;
+		}
+		if (envelope?.meta) {
+			metadata.meta = envelope.meta;
+		}
+		// Save to database
+		await this.chatSessionService.addMessage(session.sessionId, role, content, metadata);
+		// Update in-memory session for backward compatibility (will be refactored later)
 		const message: ChatMessage = {
 			role,
 			content,
@@ -218,42 +244,95 @@ export class AiService {
 			payload: envelope?.payload as any,
 			meta: envelope?.meta as Record<string, string | number | boolean> | undefined,
 		};
-
 		session.messages.push(message);
 		session.lastActivity = new Date();
-
-		// Giới hạn số lượng tin nhắn để tránh memory leak
-		if (session.messages.length > this.MAX_MESSAGES_PER_SESSION) {
-			// Giữ lại system message đầu tiên (nếu có) và tin nhắn gần đây nhất
-			const systemMessages = session.messages.filter((m) => m.role === 'system');
-			const recentMessages = session.messages
-				.filter((m) => m.role !== 'system')
-				.slice(-this.MAX_MESSAGES_PER_SESSION + systemMessages.length);
-			session.messages = [...systemMessages, ...recentMessages];
+		// Trigger background jobs if this is an assistant message
+		if (triggerJobs && role === 'assistant') {
+			// Get the last user message for auto-title
+			const lastUserMessage = session.messages
+				.filter((m) => m.role === 'user')
+				.slice(-1)[0]?.content;
+			await this.triggerBackgroundJobs(session, lastUserMessage);
 		}
 	}
 
 	/**
-	 * Clean up expired sessions - similar to rooms.service.ts cleanupViewCache
+	 * Trigger background jobs (auto-title, summary) after adding assistant message
+	 * @param session - Chat session
+	 * @param userMessage - User message that triggered this response
 	 */
-	private cleanupExpiredSessions(): void {
-		const now = Date.now();
-		const expiredSessions: string[] = [];
+	private async triggerBackgroundJobs(session: ChatSession, userMessage?: string): Promise<void> {
+		try {
+			const dbSession = await this.chatSessionService.getSession(session.sessionId);
+			if (!dbSession) {
+				return;
+			}
+			// Trigger auto-title if session has exactly AUTO_TITLE_MESSAGE_COUNT messages
+			// (1 user + 1 assistant, excluding system messages)
+			if (dbSession.messageCount === this.AUTO_TITLE_MESSAGE_COUNT && userMessage) {
+				// Get first user message
+				const messages = await this.chatSessionService.getRecentMessages(session.sessionId, 10);
+				const firstUserMessage = messages.reverse().find((m) => m.role === 'user')?.content;
+				if (firstUserMessage) {
+					await this.chatSessionQueueService.queueAutoTitle(session.sessionId, firstUserMessage);
+					this.logger.debug(`Queued auto-title job | sessionId=${session.sessionId}`);
+				}
+			}
+			// Trigger summary generation if messageCount > threshold
+			if (dbSession.messageCount > this.SUMMARY_THRESHOLD) {
+				await this.chatSessionQueueService.queueSummaryGeneration(
+					session.sessionId,
+					5, // Summarize last 5 old messages
+				);
+				this.logger.debug(`Queued summary generation job | sessionId=${session.sessionId}`);
+			}
+		} catch (error) {
+			this.logger.warn(`Failed to trigger background jobs: ${(error as Error).message}`, error);
+		}
+	}
 
-		for (const [sessionId, session] of this.chatSessions.entries()) {
-			if (now - session.lastActivity.getTime() > this.SESSION_TIMEOUT_MS) {
-				expiredSessions.push(sessionId);
+	/**
+	 * Build prompt with context (summary + recent messages)
+	 * @param session - Chat session
+	 * @param currentQuery - Current user query
+	 * @returns Formatted prompt string
+	 */
+	private async buildPromptWithContext(
+		session: ChatSession,
+		currentQuery: string,
+	): Promise<string> {
+		// Get session from database to access summary
+		const dbSession = await this.chatSessionService.getSession(session.sessionId);
+		const summary = dbSession?.summary || null;
+		// Get recent messages (last 10)
+		const recentMessages = await this.chatSessionService.getRecentMessages(session.sessionId, 10);
+		// Build prompt sections
+		const sections: string[] = [];
+		// System instruction (from system prompt)
+		sections.push(VIETNAMESE_LOCALE_SYSTEM_PROMPT);
+		// Long-term summary (if exists)
+		if (summary) {
+			sections.push(`\n[CONTEXT SUMMARY]\n${summary}\n`);
+		}
+		// Short-term history (recent messages)
+		if (recentMessages.length > 0) {
+			const historyText = recentMessages
+				.reverse() // Reverse to get chronological order
+				.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
+				.join('\n\n');
+			sections.push(`\n[RECENT CONVERSATION]\n${historyText}\n`);
+			// Inject SQL query from metadata if available
+			const lastSqlMessage = recentMessages
+				.reverse()
+				.find((m) => m.metadata && (m.metadata as any)?.payload?.sql);
+			if (lastSqlMessage && (lastSqlMessage.metadata as any)?.payload?.sql) {
+				const sql = (lastSqlMessage.metadata as any).payload.sql;
+				sections.push(`\n[LAST SQL QUERY]\n${sql}\n`);
 			}
 		}
-
-		for (const sessionId of expiredSessions) {
-			this.chatSessions.delete(sessionId);
-		}
-
-		if (expiredSessions.length > 0) {
-			// Log cleanup for monitoring purposes
-			// console.log(`Cleaned up ${expiredSessions.length} expired chat sessions`);
-		}
+		// Current user input
+		sections.push(`\n[CURRENT QUERY]\n${currentQuery}`);
+		return sections.join('\n');
 	}
 
 	/**
@@ -271,7 +350,7 @@ export class AiService {
 			throw new Error('User must be authenticated to publish room');
 		}
 
-		const session = this.getOrCreateSession(userId, clientIp);
+		const session = await this.getOrCreateSession(userId, clientIp);
 		const pipelineStartAt = this.logPipelineStart(message, session.sessionId);
 
 		this.logDebug('ROOM_PUBLISH', `Starting room publishing flow for user ${userId}`);
@@ -280,7 +359,7 @@ export class AiService {
 		}
 
 		// Lưu câu hỏi của người dùng vào session
-		this.addMessageToSession(session, 'user', message);
+		await this.addMessageToSession(session, 'user', message);
 
 		try {
 			// Step 1: Handle user message
@@ -359,7 +438,7 @@ export class AiService {
 			this.logError('ROOM_PUBLISH', `Error in room publishing flow`, error);
 			const errorMessage = generateErrorResponse((error as Error).message);
 			const messageText: string = `Xin lỗi, đã xảy ra lỗi khi xử lý đăng phòng: ${errorMessage}`;
-			this.addMessageToSession(session, 'assistant', messageText, {
+			await this.addMessageToSession(session, 'assistant', messageText, {
 				kind: 'CONTROL',
 				payload: { mode: 'ERROR', details: (error as Error).message },
 			});
@@ -727,12 +806,12 @@ export class AiService {
 
 			// Lưu message thành công vào session
 			const successMessage = `Đã tạo phòng thành công! Phòng của bạn đã được đăng tải.`;
-			const session = this.getOrCreateSession(userId);
+			const session = await this.getOrCreateSession(userId);
 			this.logDebug(
 				'ROOM_PUBLISH',
 				'[TOOL CALL] addMessageToSession() - Saving success message to session',
 			);
-			this.addMessageToSession(session, 'assistant', successMessage, {
+			await this.addMessageToSession(session, 'assistant', successMessage, {
 				kind: 'CONTROL',
 				payload: {
 					mode: 'ROOM_PUBLISH',
@@ -873,7 +952,7 @@ export class AiService {
 
 		// Bước 1: Quản lý session - Lấy hoặc tạo session chat
 		// Session tự động có system prompt tiếng Việt khi tạo mới
-		const session = this.getOrCreateSession(userId, clientIp);
+		const session = await this.getOrCreateSession(userId, clientIp);
 		const pipelineStartAt = this.logPipelineStart(query, session.sessionId);
 
 		// Parse và thêm thông tin trang hiện tại vào context nếu có
@@ -883,14 +962,14 @@ export class AiService {
 			const contextInfo = this.parsePageContext(currentPage);
 			if (contextInfo) {
 				const contextMessage = `[CONTEXT] User is currently viewing: ${currentPage}\n[CONTEXT] Entity: ${contextInfo.entity}, Identifier: ${contextInfo.identifier}${contextInfo.type ? `, Type: ${contextInfo.type}` : ''}`;
-				this.addMessageToSession(session, 'system', contextMessage);
+				await this.addMessageToSession(session, 'system', contextMessage, undefined, false);
 				this.logInfo(
 					'CONTEXT',
 					`Parsed page context: entity=${contextInfo.entity}, identifier=${contextInfo.identifier}, type=${contextInfo.type || 'unknown'}`,
 				);
 			} else {
 				// Fallback: chỉ ghi lại URL nếu không parse được
-				this.addMessageToSession(
+				await this.addMessageToSession(
 					session,
 					'system',
 					`[CONTEXT] User is currently viewing: ${currentPage}`,
@@ -902,7 +981,10 @@ export class AiService {
 		}
 
 		// Lưu câu hỏi của người dùng vào session
-		this.addMessageToSession(session, 'user', query);
+		await this.addMessageToSession(session, 'user', query);
+
+		// Trigger auto-title job if session has exactly 2 messages (1 user + 1 will be assistant)
+		// We'll check after assistant response is added
 
 		// Track processing data để lưu vào 1 log duy nhất (append ở từng bước)
 		const processingLogData: {
@@ -1113,7 +1195,7 @@ export class AiService {
 				} else {
 					// General chat or greeting
 					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
-					this.addMessageToSession(session, 'assistant', cleanedMessage, {
+					await this.addMessageToSession(session, 'assistant', cleanedMessage, {
 						kind: 'CONTENT',
 						payload: { mode: 'CONTENT' },
 					});
@@ -1157,7 +1239,7 @@ export class AiService {
 					orchestratorResponse.message,
 					orchestratorResponse.missingParams,
 				);
-				this.addMessageToSession(session, 'assistant', clarificationMessage, {
+				await this.addMessageToSession(session, 'assistant', clarificationMessage, {
 					kind: 'CONTROL',
 					payload: {
 						mode: 'CLARIFY',
@@ -1213,18 +1295,22 @@ export class AiService {
 
 			// Lưu hints từ agent vào session để agent SQL hiểu rõ hơn
 			if (orchestratorResponse.entityHint) {
-				this.addMessageToSession(
+				await this.addMessageToSession(
 					session,
 					'system',
 					`[INTENT] ENTITY=${orchestratorResponse.entityHint.toUpperCase()}`,
+					undefined,
+					false,
 				);
 				this.logDebug('ORCHESTRATOR', `Added ENTITY hint: ${orchestratorResponse.entityHint}`);
 			}
 			if (orchestratorResponse.filtersHint) {
-				this.addMessageToSession(
+				await this.addMessageToSession(
 					session,
 					'system',
 					`[INTENT] FILTERS=${orchestratorResponse.filtersHint}`,
+					undefined,
+					false,
 				);
 				this.logDebug(
 					'ORCHESTRATOR',
@@ -1232,10 +1318,12 @@ export class AiService {
 				);
 			}
 			if (orchestratorResponse.tablesHint) {
-				this.addMessageToSession(
+				await this.addMessageToSession(
 					session,
 					'system',
 					`[INTENT] TABLES=${orchestratorResponse.tablesHint}`,
+					undefined,
+					false,
 				);
 				this.logDebug(
 					'ORCHESTRATOR',
@@ -1243,10 +1331,12 @@ export class AiService {
 				);
 			}
 			if (orchestratorResponse.relationshipsHint) {
-				this.addMessageToSession(
+				await this.addMessageToSession(
 					session,
 					'system',
 					`[INTENT] RELATIONSHIPS=${orchestratorResponse.relationshipsHint}`,
+					undefined,
+					false,
 				);
 				this.logDebug(
 					'ORCHESTRATOR',
@@ -1254,19 +1344,27 @@ export class AiService {
 				);
 			}
 			if (desiredMode === 'INSIGHT') {
-				this.addMessageToSession(session, 'system', '[INTENT] MODE=INSIGHT');
+				await this.addMessageToSession(
+					session,
+					'system',
+					'[INTENT] MODE=INSIGHT',
+					undefined,
+					false,
+				);
 			} else if (desiredMode === 'CHART') {
-				this.addMessageToSession(session, 'system', '[INTENT] MODE=CHART');
+				await this.addMessageToSession(session, 'system', '[INTENT] MODE=CHART', undefined, false);
 			} else if (desiredMode === 'LIST') {
-				this.addMessageToSession(session, 'system', '[INTENT] MODE=LIST');
+				await this.addMessageToSession(session, 'system', '[INTENT] MODE=LIST', undefined, false);
 			} else {
-				this.addMessageToSession(session, 'system', '[INTENT] MODE=TABLE');
+				await this.addMessageToSession(session, 'system', '[INTENT] MODE=TABLE', undefined, false);
 			}
 			if (orchestratorResponse.intentAction) {
-				this.addMessageToSession(
+				await this.addMessageToSession(
 					session,
 					'system',
 					`[INTENT] ACTION=${orchestratorResponse.intentAction.toUpperCase()}`,
+					undefined,
+					false,
 				);
 				this.logDebug(
 					'ORCHESTRATOR',
@@ -1425,7 +1523,7 @@ export class AiService {
 					const errorMessage = sqlError
 						? `Xin lỗi, không thể tạo SQL query: ${sqlError.message}`
 						: 'Xin lỗi, không thể tạo SQL query. Vui lòng thử lại với câu hỏi khác.';
-					this.addMessageToSession(session, 'assistant', errorMessage, {
+					await this.addMessageToSession(session, 'assistant', errorMessage, {
 						kind: 'CONTROL',
 						payload: { mode: 'ERROR', details: sqlError?.message || 'SQL generation failed' },
 					});
@@ -1556,7 +1654,7 @@ export class AiService {
 				);
 
 				// Lưu câu trả lời vào session (kèm envelope structured)
-				this.addMessageToSession(session, 'assistant', parsedResponse.message, {
+				await this.addMessageToSession(session, 'assistant', parsedResponse.message, {
 					kind: 'DATA',
 					payload: dataPayload,
 				});
@@ -1674,7 +1772,7 @@ export class AiService {
 				);
 				appendStep('FLOW EXIT (READY=FALSE)', { requestType: orchestratorResponse.requestType });
 				const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
-				this.addMessageToSession(session, 'assistant', cleanedMessage, {
+				await this.addMessageToSession(session, 'assistant', cleanedMessage, {
 					kind: 'CONTENT',
 					payload: { mode: 'CONTENT' },
 				});
@@ -1721,7 +1819,7 @@ export class AiService {
 			// Tạo message lỗi thân thiện cho người dùng
 			const errorMessage = generateErrorResponse((error as Error).message);
 			const messageText: string = `Xin lỗi, đã xảy ra lỗi: ${errorMessage}`;
-			this.addMessageToSession(session, 'assistant', messageText, {
+			await this.addMessageToSession(session, 'assistant', messageText, {
 				kind: 'CONTROL',
 				payload: { mode: 'ERROR', details: (error as Error).message },
 			});
@@ -1912,7 +2010,7 @@ export class AiService {
 		}>;
 	}> {
 		const { userId, clientIp } = context;
-		const session = this.getOrCreateSession(userId, clientIp);
+		const session = await this.getOrCreateSession(userId, clientIp);
 
 		return {
 			sessionId: session.sessionId,
@@ -1937,12 +2035,8 @@ export class AiService {
 		context: { userId?: string; clientIp?: string } = {},
 	): Promise<{ success: boolean }> {
 		const { userId, clientIp } = context;
-		const sessionId = this.generateSessionId(userId, clientIp);
-
-		if (this.chatSessions.has(sessionId)) {
-			this.chatSessions.delete(sessionId);
-		}
-
+		const session = await this.chatSessionService.getOrCreateSession(userId, clientIp);
+		await this.chatSessionService.clearMessages(session.id);
 		return { success: true };
 	}
 
