@@ -56,6 +56,35 @@ export class ChatSessionService {
 	}
 
 	/**
+	 * Create a new conversation session with UUID (for explicit conversation management)
+	 * This creates a truly new session, unlike getOrCreateSession which reuses existing
+	 * @param userId - User ID if authenticated
+	 * @param _clientIp - Client IP address (optional, for anonymous users - currently unused but kept for API consistency)
+	 * @returns Created session with UUID
+	 */
+	async createNewConversationSession(userId?: string, _clientIp?: string) {
+		try {
+			// Use UUID for new conversations (Prisma will generate it)
+			const session = await (this.prisma as any).aiChatSession.create({
+				data: {
+					userId: userId || null,
+					title: 'New Chat',
+					summary: null,
+					messageCount: 0,
+					lastMessageAt: null,
+				},
+			});
+			this.logger.debug(
+				`Created new conversation session | id=${session.id} | userId=${userId || 'anonymous'}`,
+			);
+			return session;
+		} catch (error) {
+			this.logger.error('Failed to create new conversation session', error);
+			throw error;
+		}
+	}
+
+	/**
 	 * Get session by ID
 	 * @param sessionId - Session ID
 	 * @returns Session or null

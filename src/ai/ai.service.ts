@@ -7,6 +7,7 @@ import { RoomsService } from '../api/rooms/rooms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChatSessionQueueService } from '../queue/services/chat-session-queue.service';
 import { OrchestratorAgent } from './agents/orchestrator-agent';
+import { QuestionExpansionAgent } from './agents/question-expansion-agent';
 import { ResponseGenerator } from './agents/response-generator';
 import { ResultValidatorAgent } from './agents/result-validator-agent';
 import { SqlGenerationAgent } from './agents/sql-generation-agent';
@@ -46,6 +47,11 @@ import { serializeBigInt } from './utils/serializer';
 import { isAggregateQuery, validateSqlSafety } from './utils/sql-safety';
 export { ChatResponse };
 
+/**
+ * Conversation management methods - New API variant
+ * These methods work with explicit conversation IDs
+ */
+
 @Injectable()
 export class AiService {
 	// AI Constants
@@ -64,6 +70,7 @@ export class AiService {
 	private sqlGenerationAgent: SqlGenerationAgent;
 	private readonly responseGenerator = new ResponseGenerator();
 	private readonly resultValidatorAgent = new ResultValidatorAgent();
+	private readonly questionExpansionAgent = new QuestionExpansionAgent();
 
 	// Chat session management - using database-backed ChatSessionService
 	private readonly SUMMARY_THRESHOLD = 10; // Trigger summary generation when messageCount > this
@@ -203,6 +210,76 @@ export class AiService {
 	}
 
 	/**
+	 * Extract last SQL query from session messages metadata
+	 * Query from database to ensure we get the latest data
+	 * @param sessionId - Session ID
+	 * @returns Last SQL query or null
+	 */
+	private async extractLastSqlFromSession(sessionId: string): Promise<string | null> {
+		try {
+			// Query recent messages from database to get latest SQL
+			const recentMessages = await this.chatSessionService.getRecentMessages(sessionId, 20);
+			// Look for last assistant message with SQL in metadata
+			for (const msg of recentMessages) {
+				if (msg.role === 'assistant' && msg.metadata) {
+					const metadata = msg.metadata as any;
+					// Check metadata.sql (stored directly)
+					if (metadata.sql) {
+						return metadata.sql as string;
+					}
+					// Check payload.sql (from DATA payload)
+					if (metadata.payload?.sql) {
+						return metadata.payload.sql as string;
+					}
+					// Check meta.sql (from envelope meta)
+					if (metadata.meta?.sql) {
+						return metadata.meta.sql as string;
+					}
+				}
+			}
+			return null;
+		} catch (error) {
+			this.logger.warn(`Failed to extract SQL from session: ${sessionId}`, error);
+			return null;
+		}
+	}
+
+	/**
+	 * Extract last canonical question from session messages metadata
+	 * Query from database to ensure we get the latest data
+	 * @param sessionId - Session ID
+	 * @returns Last canonical question or null
+	 */
+	private async extractLastCanonicalQuestionFromSession(sessionId: string): Promise<string | null> {
+		try {
+			// Query recent messages from database to get latest canonical question
+			const recentMessages = await this.chatSessionService.getRecentMessages(sessionId, 20);
+			// Look for last assistant message with canonical question in metadata
+			for (const msg of recentMessages) {
+				if (msg.role === 'assistant' && msg.metadata) {
+					const metadata = msg.metadata as any;
+					// Check metadata.canonicalQuestion (stored directly)
+					if (metadata.canonicalQuestion) {
+						return metadata.canonicalQuestion as string;
+					}
+					// Check meta.canonicalQuestion (from envelope meta)
+					if (metadata.meta?.canonicalQuestion) {
+						return metadata.meta.canonicalQuestion as string;
+					}
+					// Check payload.meta.canonicalQuestion
+					if (metadata.payload?.meta?.canonicalQuestion) {
+						return metadata.payload.meta.canonicalQuestion as string;
+					}
+				}
+			}
+			return null;
+		} catch (error) {
+			this.logger.warn(`Failed to extract canonical question from session: ${sessionId}`, error);
+			return null;
+		}
+	}
+
+	/**
 	 * Add message to session with AI SDK CoreMessage format
 	 * Now saves to database via ChatSessionService
 	 * @param session - Chat session
@@ -210,6 +287,8 @@ export class AiService {
 	 * @param content - Message content
 	 * @param envelope - Optional envelope with kind, payload, meta
 	 * @param triggerJobs - Whether to trigger background jobs (default: true for assistant messages)
+	 * @param sqlQuery - Optional SQL query to store in metadata
+	 * @param canonicalQuestion - Optional canonical question to store in metadata
 	 */
 	private async addMessageToSession(
 		session: ChatSession,
@@ -221,6 +300,8 @@ export class AiService {
 			meta?: Record<string, unknown>;
 		},
 		triggerJobs: boolean = role === 'assistant',
+		sqlQuery?: string,
+		canonicalQuestion?: string,
 	): Promise<void> {
 		// Prepare metadata for database storage
 		const metadata: Record<string, unknown> = {};
@@ -233,6 +314,13 @@ export class AiService {
 		if (envelope?.meta) {
 			metadata.meta = envelope.meta;
 		}
+		// Store SQL query and canonical question in metadata if provided
+		if (sqlQuery) {
+			metadata.sql = sqlQuery;
+		}
+		if (canonicalQuestion) {
+			metadata.canonicalQuestion = canonicalQuestion;
+		}
 		// Save to database
 		await this.chatSessionService.addMessage(session.sessionId, role, content, metadata);
 		// Update in-memory session for backward compatibility (will be refactored later)
@@ -242,7 +330,11 @@ export class AiService {
 			timestamp: new Date(),
 			kind: envelope?.kind,
 			payload: envelope?.payload as any,
-			meta: envelope?.meta as Record<string, string | number | boolean> | undefined,
+			meta: {
+				...(envelope?.meta as Record<string, string | number | boolean> | undefined),
+				...(sqlQuery ? { sql: sqlQuery } : {}),
+				...(canonicalQuestion ? { canonicalQuestion } : {}),
+			},
 		};
 		session.messages.push(message);
 		session.lastActivity = new Date();
@@ -954,6 +1046,32 @@ export class AiService {
 		// Session tự động có system prompt tiếng Việt khi tạo mới
 		const session = await this.getOrCreateSession(userId, clientIp);
 		const pipelineStartAt = this.logPipelineStart(query, session.sessionId);
+		// Use internal method to process query with explicit session
+		return await this.processChatQueryWithSession(
+			query,
+			session,
+			{ userId, clientIp, currentPage },
+			pipelineStartAt,
+		);
+	}
+
+	/**
+	 * Core chat processing with explicit session (extracted from chatWithAI)
+	 * This method processes the query using the provided session without creating a new one
+	 * Used by both old API (after getOrCreateSession) and new API (with explicit conversationId)
+	 * @param query - User query
+	 * @param session - Chat session (already loaded)
+	 * @param context - Additional context
+	 * @param pipelineStartAt - Pipeline start timestamp
+	 * @returns AI response
+	 */
+	private async processChatQueryWithSession(
+		query: string,
+		session: ChatSession,
+		context: { userId?: string; clientIp?: string; currentPage?: string },
+		pipelineStartAt: number,
+	): Promise<ChatResponse> {
+		const { currentPage } = context;
 
 		// Parse và thêm thông tin trang hiện tại vào context nếu có
 		if (currentPage) {
@@ -1158,7 +1276,7 @@ export class AiService {
 					const messageText: string = cleanedMessage.trim().endsWith('?')
 						? cleanedMessage
 						: `Minh can them thong tin de tra loi chinh xac: ${cleanedMessage}`;
-					this.addMessageToSession(session, 'assistant', messageText, {
+					await this.addMessageToSession(session, 'assistant', messageText, {
 						kind: 'CONTROL',
 						payload: { mode: 'CLARIFY', questions: [] },
 					});
@@ -1292,6 +1410,10 @@ export class AiService {
 				orchestratorResponse.intentModeHint === 'INSIGHT'
 					? 'INSIGHT'
 					: (orchestratorResponse.intentModeHint ?? 'TABLE');
+			// Initialize canonical question variables (used for modification queries and saving to pending knowledge)
+			let canonicalQuestion: string = query; // Default to original query
+			let previousSql: string | null = null;
+			let previousCanonicalQuestion: string | null = null;
 
 			// Lưu hints từ agent vào session để agent SQL hiểu rõ hơn
 			if (orchestratorResponse.entityHint) {
@@ -1375,6 +1497,53 @@ export class AiService {
 			// Kiểm tra: Agent 1 đã xác định đủ thông tin để tạo SQL chưa?
 			if (orchestratorResponse.readyForSql) {
 				// ========================================
+				// BƯỚC 2.5: Question Expansion (dùng LLM để tự detect và expand)
+				// ========================================
+				// Luôn thử expand nếu có previous SQL - LLM sẽ tự quyết định có cần expand không
+				previousSql = await this.extractLastSqlFromSession(session.sessionId);
+				previousCanonicalQuestion = await this.extractLastCanonicalQuestionFromSession(
+					session.sessionId,
+				);
+				if (previousSql) {
+					this.logInfo(
+						'QUESTION_EXPANSION',
+						`Attempting to expand question with LLM | query="${query.substring(0, 50)}..." | hasPreviousSql=true`,
+					);
+					try {
+						canonicalQuestion = await this.questionExpansionAgent.expandQuestion(
+							query,
+							previousSql,
+							previousCanonicalQuestion || undefined,
+						);
+						// LLM sẽ tự quyết định: nếu query đã đầy đủ thì trả về như cũ, nếu là modification thì expand
+						if (canonicalQuestion !== query) {
+							this.logInfo(
+								'QUESTION_EXPANSION',
+								`LLM expanded question | original="${query.substring(0, 50)}..." | canonical="${canonicalQuestion.substring(0, 80)}..."`,
+							);
+						} else {
+							this.logDebug(
+								'QUESTION_EXPANSION',
+								`LLM determined query is already complete, no expansion needed`,
+							);
+						}
+						appendStep('QUESTION EXPANSION', {
+							originalQuestion: query,
+							canonicalQuestion,
+							previousSqlLength: previousSql.length,
+							previousCanonicalQuestion: previousCanonicalQuestion || 'none',
+						});
+					} catch (error) {
+						this.logWarn(
+							'QUESTION_EXPANSION',
+							`Failed to expand question, using original: ${(error as Error).message}`,
+							error,
+						);
+						// Fallback: use original query
+						canonicalQuestion = query;
+					}
+				}
+				// ========================================
 				// BƯỚC 3: Agent 2 - SQL Generation Agent
 				// ========================================
 				// SQL_AGENT features:
@@ -1385,17 +1554,21 @@ export class AiService {
 				const sqlStartTime = Date.now();
 				this.logInfo(
 					'SQL_AGENT',
-					'START | canonical decision | schema RAG | generate SQL | execute',
+					`START | canonical decision | schema RAG | generate SQL | execute | canonicalQuestion="${canonicalQuestion.substring(0, 50)}..."`,
 				);
 				let sqlResult: SqlGenerationResult;
 				let sqlError: Error | null = null;
 				try {
+					// Use canonical question for SQL generation (not original short query)
+					// Pass previous SQL and canonical question to SQL Agent for modification queries
 					sqlResult = await this.sqlGenerationAgent.process(
-						query,
+						canonicalQuestion, // Use expanded canonical question instead of original
 						session,
 						this.prisma,
 						this.AI_CONFIG,
 						orchestratorResponse.businessContext,
+						previousSql || undefined, // Pass previous SQL if available (for modification queries)
+						previousCanonicalQuestion || undefined, // Pass previous canonical question if available
 					);
 				} catch (error) {
 					// SQL generation failed completely - log đầy đủ error
@@ -1654,10 +1827,19 @@ export class AiService {
 				);
 
 				// Lưu câu trả lời vào session (kèm envelope structured)
-				await this.addMessageToSession(session, 'assistant', parsedResponse.message, {
-					kind: 'DATA',
-					payload: dataPayload,
-				});
+				// Include SQL query và canonical question trong metadata
+				await this.addMessageToSession(
+					session,
+					'assistant',
+					parsedResponse.message,
+					{
+						kind: 'DATA',
+						payload: dataPayload,
+					},
+					true, // triggerJobs
+					sqlResult.sql, // SQL query
+					canonicalQuestion, // Canonical question (expanded if modification query)
+				);
 
 				// Tích lũy token usage từ tất cả các agent
 				const totalTokenUsage = {
@@ -1717,11 +1899,14 @@ export class AiService {
 					try {
 						this.logDebug(
 							'PERSIST',
-							`Đang lưu Q&A vào pending knowledge (isValid=${validation.isValid}, severity=${validation.severity || 'none'}, count=${sqlResult.count}, evaluation=${validation.evaluation ? 'yes' : 'no'})...`,
+							`Đang lưu Q&A vào pending knowledge (isValid=${validation.isValid}, severity=${validation.severity || 'none'}, count=${sqlResult.count}, evaluation=${validation.evaluation ? 'yes' : 'no'}, canonicalQuestion="${canonicalQuestion.substring(0, 50)}...")...`,
 						);
 						const pendingResult = await this.pendingKnowledgeService.savePendingKnowledge({
-							question: query,
+							question: query, // Original question (may be short)
+							canonicalQuestion: canonicalQuestion !== query ? canonicalQuestion : undefined, // Only save if different
 							sql: sqlResult.sql,
+							previousSql: previousSql || undefined, // Previous SQL if modification query
+							previousCanonicalQuestion: previousCanonicalQuestion || undefined, // Previous canonical question if modification query
 							response: responseText, // Lưu raw response từ response-generator (có đầy đủ structured data và metadata)
 							evaluation: validation.evaluation,
 							validatorData: validation,
@@ -1846,6 +2031,10 @@ export class AiService {
 			return response;
 		}
 	}
+
+	// Continue with the rest of chatWithAI logic here (from line ~1028 onwards)
+	// This is the main processing pipeline that was previously in chatWithAI
+	// Now extracted to processChatQueryWithSession so it can be reused
 
 	/**
 	 * Format clarification message with missingParams (MVP)
@@ -2181,5 +2370,151 @@ export class AiService {
 				error: (error as Error).message,
 			};
 		}
+	}
+
+	// ========================================
+	// CONVERSATION API METHODS (New variant)
+	// ========================================
+	// These methods work with explicit conversation IDs
+	// Keep backward compatibility with old /ai/chat endpoints
+
+	/**
+	 * List all conversations for a user
+	 * @param userId - User ID
+	 * @param limit - Maximum number of conversations to return
+	 * @returns List of conversations
+	 */
+	async listConversations(userId: string, limit: number = 50) {
+		return await this.chatSessionService.getUserSessions(userId, limit);
+	}
+
+	/**
+	 * Create a new conversation
+	 * @param options - Conversation creation options
+	 * @returns Created conversation
+	 */
+	async createConversation(options: {
+		userId?: string;
+		clientIp?: string;
+		title?: string;
+		initialMessage?: string;
+	}) {
+		const { userId, clientIp, title } = options;
+		// Create NEW session (not reuse existing via getOrCreateSession)
+		const session = await this.chatSessionService.createNewConversationSession(userId, clientIp);
+		// Update title if provided
+		if (title && title !== 'New Chat') {
+			await this.chatSessionService.updateSessionTitle(session.id, title);
+			// Reload to get updated title
+			const updated = await this.chatSessionService.getSession(session.id);
+			return updated || session;
+		}
+		return session;
+	}
+
+	/**
+	 * Get conversation details with messages
+	 * @param conversationId - Conversation/Session ID
+	 * @returns Conversation with messages (consistent format)
+	 */
+	async getConversation(conversationId: string) {
+		const dbSession = await this.chatSessionService.getSession(conversationId);
+		if (!dbSession) {
+			return null;
+		}
+		// Return session with messages loaded (consistent with getSession)
+		return dbSession;
+	}
+
+	/**
+	 * Send a message in a conversation
+	 * This is the main chat method for conversations
+	 * @param conversationId - Conversation/Session ID
+	 * @param message - User message
+	 * @param context - Additional context
+	 * @returns AI response
+	 */
+	async chatInConversation(
+		conversationId: string,
+		message: string,
+		context: { userId?: string; clientIp?: string; currentPage?: string } = {},
+	): Promise<ChatResponse> {
+		const { userId, clientIp, currentPage } = context;
+		// Get session by ID (verify it exists and belongs to user if authenticated)
+		const dbSession = await this.chatSessionService.getSession(conversationId);
+		if (!dbSession) {
+			throw new Error(`Conversation not found: ${conversationId}`);
+		}
+		// Verify ownership if user is authenticated
+		if (userId && dbSession.userId !== userId) {
+			throw new Error(`Conversation ${conversationId} does not belong to user ${userId}`);
+		}
+		// Add system prompt if session is new (no messages)
+		if (dbSession.messageCount === 0) {
+			await this.chatSessionService.addMessage(
+				dbSession.id,
+				'system',
+				VIETNAMESE_LOCALE_SYSTEM_PROMPT,
+			);
+			// Reload session to get system message
+			const updatedDbSession = await this.chatSessionService.getSession(conversationId);
+			if (!updatedDbSession) {
+				throw new Error(`Failed to reload session: ${conversationId}`);
+			}
+			const session = this.convertDbSessionToChatSession(updatedDbSession, clientIp);
+			const pipelineStartAt = this.logPipelineStart(message, session.sessionId);
+			return await this.processChatQueryWithSession(
+				message,
+				session,
+				{ userId, clientIp, currentPage },
+				pipelineStartAt,
+			);
+		}
+		// Convert to ChatSession format and use it directly
+		// This ensures we use the correct conversationId session, not create a new one
+		const session = this.convertDbSessionToChatSession(dbSession, clientIp);
+		const pipelineStartAt = this.logPipelineStart(message, session.sessionId);
+		// Use processChatQueryWithSession to process with explicit session (avoid getOrCreateSession)
+		return await this.processChatQueryWithSession(
+			message,
+			session,
+			{ userId, clientIp, currentPage },
+			pipelineStartAt,
+		);
+	}
+
+	/**
+	 * Get messages from a conversation
+	 * @param conversationId - Conversation/Session ID
+	 * @param limit - Maximum number of messages to return
+	 * @returns List of messages
+	 */
+	async getConversationMessages(conversationId: string, limit: number = 100) {
+		return await this.chatSessionService.getRecentMessages(conversationId, limit);
+	}
+
+	/**
+	 * Update conversation title
+	 * @param conversationId - Conversation/Session ID
+	 * @param title - New title
+	 */
+	async updateConversationTitle(conversationId: string, title: string) {
+		await this.chatSessionService.updateSessionTitle(conversationId, title);
+	}
+
+	/**
+	 * Delete a conversation
+	 * @param conversationId - Conversation/Session ID
+	 */
+	async deleteConversation(conversationId: string) {
+		await this.chatSessionService.deleteSession(conversationId);
+	}
+
+	/**
+	 * Clear messages from a conversation
+	 * @param conversationId - Conversation/Session ID
+	 */
+	async clearConversationMessages(conversationId: string) {
+		await this.chatSessionService.clearMessages(conversationId);
 	}
 }

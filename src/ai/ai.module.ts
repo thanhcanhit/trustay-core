@@ -8,6 +8,7 @@ import { QueueModule } from '../queue/queue.module';
 import { AiController } from './ai.controller';
 import { AiService } from './ai.service';
 import { ChatSessionController } from './chat-session.controller';
+import { ConversationController } from './conversation.controller';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { AiProcessingLogService } from './services/ai-processing-log.service';
 import { ChatSessionService } from './services/chat-session.service';
@@ -24,7 +25,7 @@ import { RoomPublishingService } from './services/room-publishing.service';
 		AddressModule,
 		ReferenceModule,
 	],
-	controllers: [AiController, ChatSessionController],
+	controllers: [AiController, ChatSessionController, ConversationController],
 	providers: [
 		AiService,
 		RoomPublishingService,
