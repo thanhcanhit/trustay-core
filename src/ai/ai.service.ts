@@ -1571,6 +1571,7 @@ export class AiService {
 						duration: Date.now() - sqlStartTime,
 						sql: null,
 						count: 0,
+						results: [],
 					});
 				}
 				const sqlDuration = Date.now() - sqlStartTime;
@@ -1613,12 +1614,30 @@ export class AiService {
 				appendStep('SQL AGENT DONE', sqlStepDetail);
 
 				// Append SQL generation attempt vào processing log (đầy đủ theo log)
+				// Giới hạn kết quả SQL để tránh quá lớn (chỉ lưu tối đa 20 rows đầu tiên)
+				const MAX_RESULTS_ROWS = 20;
+				const limitedResults = Array.isArray(sqlResult.results)
+					? sqlResult.results.slice(0, MAX_RESULTS_ROWS)
+					: sqlResult.results;
 				if (sqlResult.debug?.attempts?.length) {
-					processingLogData.sqlGenerationAttempts = sqlResult.debug.attempts;
+					// Cập nhật attempts với results từ attempt cuối cùng (thành công)
+					const attemptsWithResults = sqlResult.debug.attempts.map((attempt: any, idx: number) => {
+						// Chỉ thêm results vào attempt cuối cùng (thành công)
+						if (idx === sqlResult.debug.attempts.length - 1 && sqlResult.sql) {
+							return {
+								...attempt,
+								results: limitedResults,
+								count: sqlResult.count,
+							};
+						}
+						return attempt;
+					});
+					processingLogData.sqlGenerationAttempts = attemptsWithResults;
 				} else {
 					processingLogData.sqlGenerationAttempts!.push({
 						sql: sqlResult.sql,
 						count: sqlResult.count,
+						results: limitedResults,
 						tokenUsage: sqlResult.tokenUsage,
 						error: (sqlResult as any).error,
 						duration: sqlDuration,
