@@ -1730,6 +1730,7 @@ export class AiService {
 						this.AI_CONFIG,
 						desiredMode,
 						sessionSummary, // Pass session summary for long-term context
+						query, // Pass original query to detect chart type
 					),
 					// Agent 4: Result Validator - Đánh giá tính hợp lệ của kết quả
 					// Pass cả originalQuery và canonicalQuestion để validator hiểu context
@@ -1812,6 +1813,7 @@ export class AiService {
 				const dataPayload: DataPayload | undefined = this.buildDataPayloadFromParsed(
 					parsedResponse,
 					desiredMode,
+					query, // Pass query to auto-convert TABLE to CHART if needed
 				);
 
 				// Lưu câu trả lời vào session (kèm envelope structured)
@@ -2083,6 +2085,7 @@ export class AiService {
 	private buildDataPayloadFromParsed(
 		parsedResponse: { list: any[] | null; table: any | null; chart: any | null },
 		desiredMode?: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT',
+		query?: string,
 	): DataPayload | undefined {
 		// INSIGHT mode không có structured data - nhưng vẫn check nếu có data thì return
 		// Ưu tiên LIST > CHART > TABLE
@@ -2111,6 +2114,33 @@ export class AiService {
 				parsedResponse.table.rows &&
 				Array.isArray(parsedResponse.table.rows)
 			) {
+				// Auto-convert TABLE to CHART if user requested chart and data is suitable
+				if (desiredMode === 'CHART' && parsedResponse.table.rows.length > 0) {
+					try {
+						const chartData = tryBuildChart(
+							parsedResponse.table.rows as Array<Record<string, unknown>>,
+							undefined,
+							query,
+						);
+						if (chartData) {
+							return {
+								mode: 'CHART' as const,
+								chart: {
+									mimeType: 'image/png' as const,
+									url: chartData.url,
+									width: chartData.width,
+									height: chartData.height,
+									alt: 'Chart',
+									...(chartData.type
+										? { type: chartData.type as 'pie' | 'bar' | 'line' | 'doughnut' }
+										: {}),
+								},
+							};
+						}
+					} catch (error) {
+						this.logger.warn('Failed to auto-convert TABLE to CHART', error);
+					}
+				}
 				return {
 					mode: 'TABLE',
 					table: parsedResponse.table,

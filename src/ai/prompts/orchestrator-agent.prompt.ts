@@ -257,6 +257,12 @@ HÃY PHÂN TÍCH VÀ TRẢ LỜI:
      * Ví dụ: "thống kê phòng" → MODE_HINT=TABLE (bảng thống kê chi tiết)
      * Ví dụ: "tỷ lệ lấp đầy" → MODE_HINT=CHART (biểu đồ tỷ lệ)
      * Ví dụ: "danh sách hóa đơn" → MODE_HINT=TABLE (bảng danh sách)
+     * QUAN TRỌNG - PHÁT HIỆN YÊU CẦU BIỂU ĐỒ TRÒN/PIE CHART:
+     * Nếu user yêu cầu "biểu đồ tròn", "pie chart", "tỉ lệ", "tỷ lệ", "phần trăm" → PHẢI set MODE_HINT=CHART
+     * Ví dụ: "Tỉ lệ nam nữ của dãy trọ bằng biểu đồ tròn" → MODE_HINT=CHART
+     * Ví dụ: "Tỷ lệ phòng trống theo quận bằng biểu đồ tròn" → MODE_HINT=CHART
+     * Ví dụ: "Phần trăm doanh thu theo tháng bằng pie chart" → MODE_HINT=CHART
+     * Từ khóa để detect: "biểu đồ tròn", "pie chart", "pie", "doughnut", "tỉ lệ", "tỷ lệ", "phần trăm", "percentage"
 
 3. TẠO CÂU TRẢ LỜI TỰ NHIÊN:
    - Thân thiện, như đang trò chuyện
