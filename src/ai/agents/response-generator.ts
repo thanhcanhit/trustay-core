@@ -2,13 +2,28 @@ import { google } from '@ai-sdk/google';
 import { Logger } from '@nestjs/common';
 import { generateText } from 'ai';
 import {
+	AI_TEMPERATURE,
+	ENTITY_TYPES,
+	MAX_OUTPUT_TOKENS,
+	MESSAGE_LABELS,
+	PREVIEW_LENGTHS,
+	RECENT_MESSAGES_LIMIT,
+} from '../config/agent.config';
+import {
 	buildFinalMessagePrompt,
 	buildFriendlyResponsePrompt,
 	getNoResultsMessage,
 	getSuccessMessage,
 } from '../prompts/response-generator.prompt';
-import { ChatSession, SqlGenerationResult, TokenUsage } from '../types/chat.types';
 import {
+	ChatSession,
+	EntityType,
+	SqlGenerationResult,
+	TableColumn,
+	TokenUsage,
+} from '../types/chat.types';
+import {
+	hasColumnMapping,
 	inferColumns,
 	isListLike,
 	normalizeRows,
@@ -25,26 +40,12 @@ export class ResponseGenerator {
 	private readonly logger = new Logger(ResponseGenerator.name);
 
 	// Configuration constants
-	private static readonly RECENT_MESSAGES_LIMIT = 3;
-	private static readonly TEMPERATURE = 0.3;
-	private static readonly MAX_OUTPUT_TOKENS_FINAL = 500;
-	private static readonly MAX_OUTPUT_TOKENS_FRIENDLY = 300;
-	private static readonly MAX_OUTPUT_TOKENS_INSIGHT = 2000; // Increased for detailed insight analysis (300-400 words)
-	private static readonly DATA_PREVIEW_LENGTH_FINAL = 800;
-	private static readonly DATA_PREVIEW_LENGTH_FRIENDLY = 1000;
 	private static readonly LIST_ITEMS_LIMIT = 50;
 	private static readonly TABLE_ROWS_LIMIT = 50;
 	private static readonly PREVIEW_LIMIT = 50;
 	// Chart constants
 	private static readonly CHART_MIME_TYPE = 'image/png';
 	private static readonly CHART_ALT_TEXT = 'Chart (Top 10)';
-	// Entity types
-	private static readonly ENTITY_ROOM = 'room';
-	private static readonly ENTITY_POST = 'post';
-	private static readonly ENTITY_ROOM_SEEKING_POST = 'room_seeking_post';
-	// Message labels
-	private static readonly LABEL_USER = 'Người dùng';
-	private static readonly LABEL_AI = 'AI';
 	// Mode strings
 	private static readonly MODE_LIST = 'LIST';
 	private static readonly MODE_TABLE = 'TABLE';
@@ -68,14 +69,12 @@ export class ResponseGenerator {
 		session: ChatSession,
 		aiConfig: { model: string; temperature: number; maxTokens: number },
 		desiredMode?: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT',
+		sessionSummary?: string | null,
 	): Promise<string> {
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
-			.slice(-ResponseGenerator.RECENT_MESSAGES_LIMIT)
-			.map(
-				(m) =>
-					`${m.role === 'user' ? ResponseGenerator.LABEL_USER : ResponseGenerator.LABEL_AI}: ${m.content}`,
-			)
+			.slice(-RECENT_MESSAGES_LIMIT.RESPONSE)
+			.map((m) => `${m.role === 'user' ? MESSAGE_LABELS.USER : MESSAGE_LABELS.AI}: ${m.content}`)
 			.join('\n');
 
 		// INSIGHT mode: Chỉ trả về message với phân tích chi tiết, không có structured data
@@ -94,8 +93,8 @@ export class ResponseGenerator {
 				const { text, usage } = await generateText({
 					model: google(aiConfig.model),
 					prompt: insightPrompt,
-					temperature: ResponseGenerator.TEMPERATURE,
-					maxOutputTokens: ResponseGenerator.MAX_OUTPUT_TOKENS_INSIGHT,
+					temperature: AI_TEMPERATURE.STANDARD,
+					maxOutputTokens: MAX_OUTPUT_TOKENS.RESPONSE_INSIGHT,
 				});
 				const messageText = text.trim();
 				const tokenUsage: TokenUsage | undefined = usage
@@ -146,18 +145,16 @@ export class ResponseGenerator {
 		// Build structured data payload cho các mode khác (không phải INSIGHT)
 		let structuredData: { list: any[] | null; table: any | null; chart: any | null } | null = null;
 		if (desiredMode && desiredMode !== ('INSIGHT' as typeof desiredMode)) {
-			structuredData = this.buildStructuredData(sqlResult.results, desiredMode);
+			structuredData = await this.buildStructuredData(sqlResult.results, desiredMode, aiConfig);
 		}
 
 		// Build message-only prompt for the LLM
 		const finalPrompt = buildFinalMessagePrompt({
 			recentMessages,
+			sessionSummary: sessionSummary || undefined,
 			conversationalMessage,
 			count: sqlResult.count,
-			dataPreview: JSON.stringify(sqlResult.results).substring(
-				0,
-				ResponseGenerator.DATA_PREVIEW_LENGTH_FINAL,
-			),
+			dataPreview: JSON.stringify(sqlResult.results).substring(0, PREVIEW_LENGTHS.DATA_FINAL),
 			structuredData,
 			isInsightMode: false,
 		});
@@ -166,8 +163,8 @@ export class ResponseGenerator {
 			const { text, usage } = await generateText({
 				model: google(aiConfig.model),
 				prompt: finalPrompt,
-				temperature: ResponseGenerator.TEMPERATURE,
-				maxOutputTokens: ResponseGenerator.MAX_OUTPUT_TOKENS_FINAL,
+				temperature: AI_TEMPERATURE.STANDARD,
+				maxOutputTokens: MAX_OUTPUT_TOKENS.RESPONSE_FINAL,
 			});
 			const messageText = text.trim();
 			const tokenUsage: TokenUsage | undefined = usage
@@ -228,15 +225,84 @@ export class ResponseGenerator {
 	}
 
 	/**
+	 * Translate column labels using LLM for columns not in mapping
+	 * @param columns - Columns to translate
+	 * @param aiConfig - AI configuration
+	 * @returns Translated columns
+	 */
+	private async translateColumnLabelsWithLLM(
+		columns: TableColumn[],
+		aiConfig: { model: string; temperature: number; maxTokens: number },
+	): Promise<TableColumn[]> {
+		// Filter columns that need LLM translation (not in mapping)
+		const columnsToTranslate = columns.filter((col) => !hasColumnMapping(col.key));
+		if (columnsToTranslate.length === 0) {
+			return columns; // All columns already translated by mapping
+		}
+		try {
+			const columnKeys = columnsToTranslate.map((col) => col.key).join(', ');
+			const prompt = `Bạn là AI assistant. Nhiệm vụ của bạn là chuyển tên cột database (snake_case, tiếng Anh) sang tiếng Việt dễ hiểu cho người dùng không chuyên kỹ thuật.
+
+Danh sách tên cột cần chuyển: ${columnKeys}
+
+QUY TẮC:
+1. Chuyển sang tiếng Việt tự nhiên, dễ hiểu
+2. Giữ nguyên ý nghĩa của cột
+3. Nếu là số liệu/thống kê → thêm đơn vị nếu cần (ví dụ: "Số lượng", "Tổng tiền (VNĐ)")
+4. Nếu là ngày tháng → dùng "Ngày ..."
+5. Nếu là trạng thái → dùng "Trạng thái ..."
+6. Nếu là ID → có thể giữ nguyên "ID" hoặc mô tả rõ hơn
+
+VÍ DỤ:
+- base_price_monthly → "Giá thuê/tháng"
+- district_name → "Quận/Huyện"
+- total_amount → "Tổng tiền"
+- payment_date → "Ngày thanh toán"
+- status → "Trạng thái"
+
+Trả về JSON format: {"column_key": "Tên tiếng Việt", ...}
+Ví dụ: {"base_price_monthly": "Giá thuê/tháng", "district_name": "Quận/Huyện"}
+
+CHỈ trả về JSON, không có text khác:`;
+			const { text } = await generateText({
+				model: google(aiConfig.model),
+				prompt,
+				temperature: 0.3,
+				maxOutputTokens: 200,
+			});
+			// Parse JSON response
+			const jsonMatch = text.match(/\{[\s\S]*\}/);
+			if (jsonMatch) {
+				const translations = JSON.parse(jsonMatch[0]) as Record<string, string>;
+				// Update columns with LLM translations
+				return columns.map((col) => {
+					if (translations[col.key]) {
+						return { ...col, label: translations[col.key] };
+					}
+					return col;
+				});
+			}
+		} catch (error) {
+			this.logger.warn(
+				`Failed to translate column labels with LLM, using original labels: ${(error as Error).message}`,
+			);
+		}
+		// Fallback: return original columns
+		return columns;
+	}
+
+	/**
 	 * Build structured data from SQL results
 	 * @param results - SQL query results
 	 * @param desiredMode - Desired output mode
+	 * @param aiConfig - AI configuration (for LLM translation)
 	 * @returns Structured data object with LIST/TABLE/CHART
 	 */
-	private buildStructuredData(
+	private async buildStructuredData(
 		results: unknown,
 		desiredMode?: 'LIST' | 'TABLE' | 'CHART',
-	): { list: any[] | null; table: any | null; chart: any | null } {
+		aiConfig?: { model: string; temperature: number; maxTokens: number },
+	): Promise<{ list: any[] | null; table: any | null; chart: any | null }> {
 		if (!Array.isArray(results) || results.length === 0 || typeof results[0] !== 'object') {
 			return { list: null, table: null, chart: null };
 		}
@@ -273,7 +339,11 @@ export class ResponseGenerator {
 
 		// Fallback to TABLE
 		const inferred = inferColumns(rows);
-		const columns = selectImportantColumns(inferred, rows);
+		let columns = selectImportantColumns(inferred, rows);
+		// Translate column labels with LLM if aiConfig is provided
+		if (aiConfig) {
+			columns = await this.translateColumnLabelsWithLLM(columns, aiConfig);
+		}
 		const normalized = normalizeRows(rows, columns).slice(0, ResponseGenerator.TABLE_ROWS_LIMIT);
 
 		// MVP: Add path to table rows if entity and id exist
@@ -286,11 +356,11 @@ export class ResponseGenerator {
 			if (
 				entityId &&
 				entity &&
-				(entity === ResponseGenerator.ENTITY_ROOM ||
-					entity === ResponseGenerator.ENTITY_POST ||
-					entity === ResponseGenerator.ENTITY_ROOM_SEEKING_POST)
+				(entity === ENTITY_TYPES.ROOM ||
+					entity === ENTITY_TYPES.POST ||
+					entity === ENTITY_TYPES.ROOM_SEEKING_POST)
 			) {
-				const path = buildEntityPath(entity, entityId);
+				const path = buildEntityPath(entity as EntityType, entityId);
 				return { ...row, path };
 			}
 			return row;
@@ -322,30 +392,26 @@ export class ResponseGenerator {
 		sqlResult: SqlGenerationResult,
 		session: ChatSession,
 		aiConfig: { model: string; temperature: number; maxTokens: number },
+		sessionSummary?: string | null,
 	): Promise<string> {
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
-			.slice(-ResponseGenerator.RECENT_MESSAGES_LIMIT)
-			.map(
-				(m) =>
-					`${m.role === 'user' ? ResponseGenerator.LABEL_USER : ResponseGenerator.LABEL_AI}: ${m.content}`,
-			)
+			.slice(-RECENT_MESSAGES_LIMIT.RESPONSE)
+			.map((m) => `${m.role === 'user' ? MESSAGE_LABELS.USER : MESSAGE_LABELS.AI}: ${m.content}`)
 			.join('\n');
 		const responsePrompt = buildFriendlyResponsePrompt({
 			recentMessages,
+			sessionSummary: sessionSummary || undefined,
 			query,
 			count: sqlResult.count,
-			dataPreview: JSON.stringify(sqlResult.results).substring(
-				0,
-				ResponseGenerator.DATA_PREVIEW_LENGTH_FRIENDLY,
-			),
+			dataPreview: JSON.stringify(sqlResult.results).substring(0, PREVIEW_LENGTHS.DATA_FRIENDLY),
 		});
 		try {
 			const { text } = await generateText({
 				model: google(aiConfig.model),
 				prompt: responsePrompt,
-				temperature: ResponseGenerator.TEMPERATURE,
-				maxOutputTokens: ResponseGenerator.MAX_OUTPUT_TOKENS_FRIENDLY,
+				temperature: AI_TEMPERATURE.STANDARD,
+				maxOutputTokens: MAX_OUTPUT_TOKENS.RESPONSE_FRIENDLY,
 			});
 			return text.trim();
 		} catch {

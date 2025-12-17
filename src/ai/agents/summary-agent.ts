@@ -1,6 +1,7 @@
 import { google } from '@ai-sdk/google';
 import { Logger } from '@nestjs/common';
 import { generateText } from 'ai';
+import { AI_MODELS, AI_TEMPERATURE, MAX_OUTPUT_TOKENS } from '../config/agent.config';
 import {
 	buildRollingSummaryPrompt,
 	buildTitleGenerationPrompt,
@@ -14,9 +15,6 @@ export class SummaryAgent {
 	private readonly logger = new Logger(SummaryAgent.name);
 
 	// Configuration constants
-	private static readonly MODEL = 'gemini-2.0-flash'; // Model nhỏ/rẻ cho summarization
-	private static readonly TEMPERATURE = 0.3; // Lower temperature cho summarization (cần chính xác)
-	private static readonly MAX_OUTPUT_TOKENS = 150; // Title: ~20 tokens, Summary: ~150 tokens
 	private static readonly TITLE_MAX_WORDS = 7;
 	private static readonly SUMMARY_MAX_WORDS = 200;
 
@@ -30,10 +28,10 @@ export class SummaryAgent {
 			const prompt = buildTitleGenerationPrompt(firstUserMessage);
 			const startTime = Date.now();
 			const { text } = await generateText({
-				model: google(SummaryAgent.MODEL),
+				model: google(AI_MODELS.LIGHT),
 				prompt,
-				temperature: SummaryAgent.TEMPERATURE,
-				maxOutputTokens: SummaryAgent.MAX_OUTPUT_TOKENS,
+				temperature: AI_TEMPERATURE.STANDARD,
+				maxOutputTokens: MAX_OUTPUT_TOKENS.SUMMARY,
 			});
 			const duration = Date.now() - startTime;
 			// Clean up title: remove quotes, extra whitespace, trailing punctuation
@@ -75,10 +73,10 @@ export class SummaryAgent {
 			const prompt = buildRollingSummaryPrompt(existingSummary, oldMessages);
 			const startTime = Date.now();
 			const { text } = await generateText({
-				model: google(SummaryAgent.MODEL),
+				model: google(AI_MODELS.LIGHT),
 				prompt,
-				temperature: SummaryAgent.TEMPERATURE,
-				maxOutputTokens: SummaryAgent.MAX_OUTPUT_TOKENS * 2, // Summary needs more tokens
+				temperature: AI_TEMPERATURE.STANDARD,
+				maxOutputTokens: MAX_OUTPUT_TOKENS.SUMMARY * 2, // Summary needs more tokens
 			});
 			const duration = Date.now() - startTime;
 			// Clean up summary

@@ -14,6 +14,7 @@ export interface OrchestratorPromptParams {
 		identifier: string;
 		type?: 'slug' | 'id';
 	};
+	sessionSummary?: string;
 }
 
 export function buildOrchestratorPrompt(params: OrchestratorPromptParams): string {
@@ -25,6 +26,7 @@ export function buildOrchestratorPrompt(params: OrchestratorPromptParams): strin
 		userRole,
 		businessContext,
 		currentPageContext,
+		sessionSummary,
 	} = params;
 
 	return `
@@ -36,6 +38,8 @@ Bạn là AI Agent 1 - Orchestrator Agent (Nhà điều phối) của hệ thố
 5. CHỈ hỏi thông tin THỰC SỰ CẦN THIẾT - không hỏi quá nhiều
 
 ${userId ? `THÔNG TIN NGƯỜI DÙNG:\nUser ID: ${userId}\nUser Role: ${userRole}\n` : 'NGƯỜI DÙNG: Khách (chưa đăng nhập)\n'}
+
+${sessionSummary ? `TÓM TẮT NGỮ CẢNH DÀI HẠN (từ các cuộc hội thoại trước):\n${sessionSummary}\n\nQUAN TRỌNG: Sử dụng tóm tắt này để hiểu ngữ cảnh và ý định của người dùng từ các câu hỏi trước. Kết hợp với recentMessages để có context đầy đủ.\n\n` : ''}
 
 ${businessContext ? `NGỮ CẢNH NGHIỆP VỤ (từ RAG):\n${businessContext}\n\n` : ''}
 
@@ -246,6 +250,13 @@ HÃY PHÂN TÍCH VÀ TRẢ LỜI:
    - User hiện tại có role: ${userRole}
    - LƯU Ý: KHÔNG đưa tag [${userRole}] vào RESPONSE khi trả lời trực tiếp cho người dùng
    - Tag chỉ được sử dụng nội bộ giữa các agent, KHÔNG hiển thị cho người dùng
+   - QUAN TRỌNG - ƯU TIÊN CHART/TABLE CHO LANDLORD:
+     * Nếu userRole=LANDLORD và câu hỏi về thống kê/doanh thu/nhu cầu/phân tích dữ liệu → ƯU TIÊN MODE_HINT=CHART hoặc TABLE
+     * Landlord cần xem dữ liệu trực quan để ra quyết định kinh doanh
+     * Ví dụ: "doanh thu tháng này" → MODE_HINT=CHART (biểu đồ doanh thu)
+     * Ví dụ: "thống kê phòng" → MODE_HINT=TABLE (bảng thống kê chi tiết)
+     * Ví dụ: "tỷ lệ lấp đầy" → MODE_HINT=CHART (biểu đồ tỷ lệ)
+     * Ví dụ: "danh sách hóa đơn" → MODE_HINT=TABLE (bảng danh sách)
 
 3. TẠO CÂU TRẢ LỜI TỰ NHIÊN:
    - Thân thiện, như đang trò chuyện

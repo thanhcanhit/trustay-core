@@ -870,13 +870,183 @@ if (error.message.includes('Conversation not found')) {
 ```
 
 ### 4. Context Awareness
-Luôn gửi `currentPage` để AI hiểu context:
+### 4. CurrentPage Context (QUAN TRỌNG)
+
+**`currentPage` đi theo từng tin nhắn cụ thể, không phải theo conversation.**
+
+#### Khi nào cần gửi `currentPage`?
+
+Gửi `currentPage` khi user đang ở trang chi tiết và muốn AI phân tích/tham chiếu đến entity đó:
+
+- ✅ **Cần gửi**: User đang ở `/rooms/slug-123` và chat "phân tích phòng hiện tại"
+- ✅ **Cần gửi**: User đang ở `/room-seeking-posts/slug-456` và chat "đánh giá bài đăng này"
+- ❌ **Không cần**: User đang ở trang home và chat "tìm phòng giá rẻ"
+- ❌ **Không cần**: User đang ở trang list và chat "hiển thị danh sách phòng"
+
+#### Format của `currentPage`
+
+`currentPage` phải là **URL pathname** (không bao gồm domain, query params, hash):
 
 ```typescript
-const currentPage = window.location.pathname; // e.g., "/rooms/abc-123"
+// ✅ ĐÚNG
+currentPage: "/rooms/tuyenquan-go-vap-phong-ap1443"
+currentPage: "/rooms/123e4567-e89b-12d3-a456-426614174000" // UUID
+currentPage: "/room-seeking-posts/bai-dang-tim-nguoi-o-ghep"
+currentPage: "/roommate-seeking-posts/tim-ban-o-ghep"
 
-await sendMessage(message, currentPage);
+// ❌ SAI
+currentPage: "https://trustay.com/rooms/abc-123" // Không bao gồm domain
+currentPage: "/rooms/abc-123?tab=details" // Không bao gồm query params
+currentPage: "/rooms/abc-123#amenities" // Không bao gồm hash
 ```
+
+#### Cách sử dụng trong Frontend
+
+**1. Khi tạo conversation với initial message:**
+
+```typescript
+const createConversationWithContext = async (message: string) => {
+  const currentPage = window.location.pathname; // e.g., "/rooms/abc-123"
+  
+  const response = await fetch('/api/ai/conversations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}` // Optional
+    },
+    body: JSON.stringify({
+      initialMessage: message,
+      currentPage: currentPage // ✅ Gửi currentPage ở đây
+    })
+  });
+  
+  return response.json();
+};
+
+// Ví dụ: User đang ở trang phòng và chat "phân tích phòng này"
+await createConversationWithContext("phân tích phòng này");
+```
+
+**2. Khi gửi message trong conversation:**
+
+```typescript
+const sendMessage = async (conversationId: string, message: string) => {
+  const currentPage = window.location.pathname; // Lấy pathname hiện tại
+  
+  const response = await fetch(`/api/ai/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}` // Optional
+    },
+    body: JSON.stringify({
+      message: message,
+      currentPage: currentPage // ✅ Gửi currentPage cho mỗi tin nhắn
+    })
+  });
+  
+  return response.json();
+};
+
+// Ví dụ:
+// - Tin nhắn 1: User ở trang phòng → gửi currentPage="/rooms/abc-123"
+// - Tin nhắn 2: User đã chuyển sang trang khác → gửi currentPage="/rooms/xyz-456" (hoặc null)
+// - Tin nhắn 3: User ở trang home → không gửi currentPage (hoặc null)
+```
+
+**3. React Hook Example:**
+
+```typescript
+import { useState, useEffect } from 'react';
+
+const useConversation = (conversationId: string) => {
+  const [currentPage, setCurrentPage] = useState<string | undefined>();
+
+  // Track current page khi route thay đổi
+  useEffect(() => {
+    const updateCurrentPage = () => {
+      setCurrentPage(window.location.pathname);
+    };
+    
+    updateCurrentPage();
+    window.addEventListener('popstate', updateCurrentPage);
+    
+    return () => window.removeEventListener('popstate', updateCurrentPage);
+  }, []);
+
+  const sendMessage = async (message: string) => {
+    const response = await fetch(`/api/ai/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        message,
+        currentPage: currentPage // ✅ Tự động gửi currentPage hiện tại
+      })
+    });
+    
+    return response.json();
+  };
+
+  return { sendMessage };
+};
+```
+
+#### Ví dụ Use Cases
+
+**Use Case 1: Phân tích phòng hiện tại**
+
+```typescript
+// User đang ở: /rooms/tuyenquan-go-vap-phong-ap1443
+// User chat: "phân tích phòng này"
+
+await sendMessage(conversationId, "phân tích phòng này", "/rooms/tuyenquan-go-vap-phong-ap1443");
+
+// AI sẽ:
+// - Hiểu "phòng này" = phòng có slug "tuyenquan-go-vap-phong-ap1443"
+// - Set MODE_HINT=INSIGHT (phân tích chi tiết)
+// - Filter theo rooms.slug='tuyenquan-go-vap-phong-ap1443'
+// - Trả về phân tích đầy đủ với markdown formatting
+```
+
+**Use Case 2: So sánh phòng**
+
+```typescript
+// User đang ở: /rooms/phong-abc-123
+// User chat: "so sánh với phòng xyz-456"
+
+await sendMessage(conversationId, "so sánh với phòng xyz-456", "/rooms/phong-abc-123");
+
+// AI sẽ:
+// - Hiểu "so sánh" = so sánh phòng hiện tại (phong-abc-123) với phòng xyz-456
+// - Query cả 2 phòng và so sánh
+```
+
+**Use Case 3: Tìm kiếm chung (không có currentPage)**
+
+```typescript
+// User đang ở: / (home page)
+// User chat: "tìm phòng giá rẻ ở quận 1"
+
+await sendMessage(conversationId, "tìm phòng giá rẻ ở quận 1"); // Không gửi currentPage
+
+// AI sẽ:
+// - Hiểu đây là query tìm kiếm chung
+// - Set MODE_HINT=TABLE hoặc LIST
+// - Query tất cả phòng phù hợp
+```
+
+#### Lưu ý quan trọng
+
+1. **`currentPage` đi theo từng tin nhắn**: Mỗi tin nhắn có thể có `currentPage` khác nhau tùy vào trang user đang xem khi gửi tin nhắn đó.
+
+2. **Chỉ gửi khi cần thiết**: Chỉ gửi `currentPage` khi user đang ở trang chi tiết và muốn AI tham chiếu đến entity đó. Không cần gửi khi ở trang home, list, hoặc search.
+
+3. **Format đúng**: Phải là pathname thuần túy (không có domain, query params, hash).
+
+4. **Optional field**: `currentPage` là optional, nếu không có thì AI sẽ xử lý như query chung.
 
 ### 5. Message Ordering
 Messages được trả về theo `sequenceNumber` DESC (mới nhất trước). Đảo ngược để hiển thị:

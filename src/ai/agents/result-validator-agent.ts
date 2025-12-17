@@ -1,6 +1,7 @@
 import { google } from '@ai-sdk/google';
 import { Logger } from '@nestjs/common';
 import { generateText } from 'ai';
+import { AI_TEMPERATURE, MAX_OUTPUT_TOKENS, PREVIEW_LENGTHS } from '../config/agent.config';
 import { buildResultValidatorPrompt } from '../prompts/result-validator-agent.prompt';
 import { RequestType, ResultValidationResponse, TokenUsage } from '../types/chat.types';
 
@@ -12,9 +13,7 @@ export class ResultValidatorAgent {
 
 	// Configuration constants
 	private static readonly RESULTS_PREVIEW_LENGTH = 1000;
-	private static readonly TEMPERATURE = 0.2;
-	private static readonly MAX_OUTPUT_TOKENS = 300;
-	private static readonly LOG_PREVIEW_LENGTH = 200;
+	// Configuration constants - using shared config
 	// Validation keywords
 	private static readonly KEYWORD_INVALID_EN = 'invalid';
 	private static readonly KEYWORD_INVALID_VI = 'không hợp lệ';
@@ -71,8 +70,8 @@ export class ResultValidatorAgent {
 			const { text, usage } = await generateText({
 				model: google(aiConfig.model),
 				prompt: validatorPrompt,
-				temperature: ResultValidatorAgent.TEMPERATURE,
-				maxOutputTokens: ResultValidatorAgent.MAX_OUTPUT_TOKENS,
+				temperature: AI_TEMPERATURE.PRECISE,
+				maxOutputTokens: MAX_OUTPUT_TOKENS.VALIDATION,
 			});
 			const tokenUsage: TokenUsage | undefined = usage
 				? {
@@ -86,9 +85,7 @@ export class ResultValidatorAgent {
 				: undefined;
 
 			const response = text.trim();
-			this.logger.debug(
-				`Validator response: ${response.substring(0, ResultValidatorAgent.LOG_PREVIEW_LENGTH)}...`,
-			);
+			this.logger.debug(`Validator response: ${response.substring(0, PREVIEW_LENGTHS.LOG)}...`);
 
 			// Parse response to extract validation result
 			const isValidMatch = response.match(

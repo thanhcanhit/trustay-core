@@ -10,6 +10,7 @@ export interface SqlPromptParams {
 	userId?: string;
 	userRole?: string;
 	businessContext?: string;
+	sessionSummary?: string; // Long-term conversation summary
 	intentAction?: 'search' | 'own' | 'stats'; // Intent action: search (toàn hệ thống), own (cá nhân), stats (thống kê)
 	filtersHint?: string; // Filters hint from orchestrator (e.g., "rooms.slug='tuyenquan-go-vap-phong-ap1443'")
 	lastError?: string;
@@ -31,6 +32,7 @@ export function buildSqlPrompt(params: SqlPromptParams): string {
 		userId,
 		userRole,
 		businessContext,
+		sessionSummary,
 		intentAction,
 		filtersHint,
 		lastError = '',
@@ -174,7 +176,7 @@ SECURITY REQUIREMENTS (USER CHƯA ĐĂNG NHẬP):
 
 	return `${role}
 
-${schemaSection}${businessContextSection}${securityContext}${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
+${schemaSection}${businessContextSection}${securityContext}${sessionSummary ? `TÓM TẮT NGỮ CẢNH DÀI HẠN (từ các cuộc hội thoại trước):\n${sessionSummary}\n\nQUAN TRỌNG: Sử dụng tóm tắt này để hiểu ngữ cảnh và ý định của người dùng từ các câu hỏi trước. Kết hợp với recentMessages để có context đầy đủ.\n\n` : ''}${recentMessages ? `NGỮ CẢNH HỘI THOẠI GẦN ĐÂY:\n${recentMessages}\n\n` : ''}
 
 ${errorContext}Câu hỏi hiện tại: "${query}"
 

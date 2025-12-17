@@ -2,6 +2,8 @@ import { google } from '@ai-sdk/google';
 import { Logger } from '@nestjs/common';
 import { generateText } from 'ai';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MESSAGE_LABELS, PREVIEW_LENGTHS, RECENT_MESSAGES_LIMIT } from '../config/agent.config';
+import { RAG_THRESHOLDS } from '../config/rag.config';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import { buildModificationQueryContext } from '../prompts/question-expansion-agent.prompt';
 import { buildSqlPrompt } from '../prompts/sql-agent.prompt';
@@ -29,16 +31,13 @@ export class SqlGenerationAgent {
 	private readonly logger = new Logger(SqlGenerationAgent.name);
 
 	// Configuration constants
-	private static readonly RECENT_MESSAGES_LIMIT = 5;
 	private static readonly MAX_ATTEMPTS = 5;
 	private static readonly RETRY_DELAY_MS = 1000;
 	private static readonly MAX_CONSECUTIVE_SAME_ERROR = 2; // Stop early if same error repeats
 	// Canonical thresholds
 	private static readonly CANONICAL_HARD_THRESHOLD = 0.95;
 	private static readonly CANONICAL_SOFT_THRESHOLD = 0.8;
-	// RAG thresholds (increased for better precision with table_complete chunks)
-	private static readonly RAG_SCHEMA_THRESHOLD = 0.65; // Slightly higher for better precision
-	private static readonly RAG_QA_THRESHOLD = 0.6;
+	// RAG thresholds imported from shared config
 	// Dynamic limit calculation (optimized for 1 chunk per table strategy)
 	private static readonly DYNAMIC_LIMIT_BASE = 1; // Base chunks for general context (reduced from 2)
 	private static readonly DYNAMIC_LIMIT_TABLE_MULTIPLIER = 1; // 1 chunk per table (since we use table_complete chunks)
@@ -51,9 +50,6 @@ export class SqlGenerationAgent {
 	private static readonly QA_EXAMPLES_LIMIT = 2; // Reduced from 8 to 2
 	// Max chunk content length (truncate if exceeds)
 	private static readonly MAX_CHUNK_CONTENT_LENGTH = 8000; // Max 8KB per chunk to prevent token overflow
-	// Message labels
-	private static readonly LABEL_USER = 'Người dùng';
-	private static readonly LABEL_AI = 'AI';
 	// Validation strings
 	private static readonly VALIDATION_NONE = 'none';
 	// Delimiters
@@ -65,8 +61,7 @@ export class SqlGenerationAgent {
 	// SQL commands
 	private static readonly SQL_COMMAND_SELECT = 'select';
 	// Logging previews to avoid huge payloads
-	private static readonly PROMPT_LOG_PREVIEW_LENGTH = 1200;
-	private static readonly RAW_RESPONSE_PREVIEW_LENGTH = 1200;
+	// Preview lengths imported from shared config
 	private static readonly RAG_CONTEXT_LOG_LIMIT = 4000;
 
 	constructor(private readonly knowledgeService?: KnowledgeService) {}
@@ -113,14 +108,12 @@ export class SqlGenerationAgent {
 		businessContext?: string,
 		previousSql?: string | null,
 		previousCanonicalQuestion?: string | null,
+		sessionSummary?: string | null,
 	): Promise<SqlGenerationResult> {
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
-			.slice(-SqlGenerationAgent.RECENT_MESSAGES_LIMIT)
-			.map(
-				(m) =>
-					`${m.role === 'user' ? SqlGenerationAgent.LABEL_USER : SqlGenerationAgent.LABEL_AI}: ${m.content}`,
-			)
+			.slice(-RECENT_MESSAGES_LIMIT.SQL_GENERATION)
+			.map((m) => `${m.role === 'user' ? MESSAGE_LABELS.USER : MESSAGE_LABELS.AI}: ${m.content}`)
 			.join('\n');
 		const userId = session.userId;
 		// Check if this is a modification query (passed from AiService)
@@ -199,7 +192,7 @@ export class SqlGenerationAgent {
 				);
 				const schemaResults = await this.knowledgeService.retrieveSchemaContext(enhancedQuery, {
 					limit: dynamicLimit,
-					threshold: SqlGenerationAgent.RAG_SCHEMA_THRESHOLD,
+					threshold: RAG_THRESHOLDS.SCHEMA,
 				});
 				schemaChunkCount = schemaResults.length;
 
@@ -254,7 +247,7 @@ export class SqlGenerationAgent {
 				if (needExamples) {
 					const qaResults = await this.knowledgeService.retrieveKnowledgeContext(query, {
 						limit: SqlGenerationAgent.QA_EXAMPLES_LIMIT,
-						threshold: SqlGenerationAgent.RAG_QA_THRESHOLD + 0.2, // Increase threshold to 0.8 for better relevance
+						threshold: RAG_THRESHOLDS.QA, // Using shared RAG threshold for better relevance
 					});
 					qaChunkCount = qaResults.length;
 					qaChunkSqlCount = qaResults.filter(
@@ -408,10 +401,7 @@ export class SqlGenerationAgent {
 				attemptLogs.push({
 					attempt: 0,
 					prompt: '[CANONICAL_REUSE]',
-					rawResponse: canonicalDecision.sql.substring(
-						0,
-						SqlGenerationAgent.RAW_RESPONSE_PREVIEW_LENGTH,
-					),
+					rawResponse: canonicalDecision.sql.substring(0, PREVIEW_LENGTHS.RAW_RESPONSE),
 					finalSql,
 					tokenUsage: undefined,
 					durationMs: attemptDuration,
@@ -457,10 +447,7 @@ export class SqlGenerationAgent {
 				attemptLogs.push({
 					attempt: 0,
 					prompt: '[CANONICAL_REUSE]',
-					rawResponse: reuseErrorMessage.substring(
-						0,
-						SqlGenerationAgent.RAW_RESPONSE_PREVIEW_LENGTH,
-					),
+					rawResponse: reuseErrorMessage.substring(0, PREVIEW_LENGTHS.RAW_RESPONSE),
 					finalSql: canonicalDecision.sql,
 					tokenUsage: undefined,
 					durationMs: attemptDuration,
@@ -524,6 +511,7 @@ export class SqlGenerationAgent {
 					userId,
 					userRole,
 					businessContext,
+					sessionSummary: sessionSummary || undefined,
 					intentAction, // Intent action: search (toàn hệ thống) vs own (cá nhân)
 					filtersHint, // Filters hint from orchestrator (BẮT BUỘC phải dùng)
 					lastError, // Error từ lần attempt trước → AI tự sửa lỗi
@@ -601,8 +589,8 @@ export class SqlGenerationAgent {
 				const attemptDuration = Date.now() - attemptStart;
 				attemptLogs.push({
 					attempt: attempts,
-					prompt: contextualPrompt.substring(0, SqlGenerationAgent.PROMPT_LOG_PREVIEW_LENGTH),
-					rawResponse: text.substring(0, SqlGenerationAgent.RAW_RESPONSE_PREVIEW_LENGTH),
+					prompt: contextualPrompt.substring(0, PREVIEW_LENGTHS.PROMPT),
+					rawResponse: text.substring(0, PREVIEW_LENGTHS.RAW_RESPONSE),
 					finalSql,
 					tokenUsage: attemptTokenUsage,
 					durationMs: attemptDuration,
@@ -653,8 +641,8 @@ export class SqlGenerationAgent {
 				const attemptDuration = Date.now() - attemptStart;
 				attemptLogs.push({
 					attempt: attempts,
-					prompt: contextualPrompt.substring(0, SqlGenerationAgent.PROMPT_LOG_PREVIEW_LENGTH),
-					rawResponse: currentError.substring(0, SqlGenerationAgent.RAW_RESPONSE_PREVIEW_LENGTH),
+					prompt: contextualPrompt.substring(0, PREVIEW_LENGTHS.PROMPT),
+					rawResponse: currentError.substring(0, PREVIEW_LENGTHS.RAW_RESPONSE),
 					finalSql: lastSql,
 					tokenUsage: attemptTokenUsage,
 					durationMs: attemptDuration,

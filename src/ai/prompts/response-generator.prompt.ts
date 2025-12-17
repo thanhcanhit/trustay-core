@@ -4,6 +4,7 @@
 
 export interface FinalResponsePromptParams {
 	recentMessages?: string;
+	sessionSummary?: string; // Long-term conversation summary
 	conversationalMessage: string;
 	count: number;
 	dataPreview: string;
@@ -18,6 +19,7 @@ export interface FinalResponsePromptParams {
 export function buildFinalResponsePrompt(params: FinalResponsePromptParams): string {
 	const {
 		recentMessages,
+		sessionSummary,
 		conversationalMessage,
 		count,
 		dataPreview,
@@ -30,7 +32,7 @@ export function buildFinalResponsePrompt(params: FinalResponsePromptParams): str
 		return `
 Bạn là AI assistant của Trustay. Phân tích CHI TIẾT phòng trọ với SỐ LIỆU CỤ THỂ từ dữ liệu.
 
-${recentMessages ? `NGỮ CẢNH:\n${recentMessages}\n\n` : ''}
+${sessionSummary ? `TÓM TẮT NGỮ CẢNH DÀI HẠN (từ các cuộc hội thoại trước):\n${sessionSummary}\n\nQUAN TRỌNG: Sử dụng tóm tắt này để hiểu ngữ cảnh và ý định của người dùng từ các câu hỏi trước.\n\n` : ''}${recentMessages ? `NGỮ CẢNH HỘI THOẠI GẦN ĐÂY:\n${recentMessages}\n\n` : ''}
 
 THÔNG ĐIỆP: "${conversationalMessage}"
 DỮ LIỆU PHÒNG: ${dataPreview}
@@ -44,15 +46,32 @@ QUY TẮC BẮT BUỘC:
 6. Liệt kê ĐẦY ĐỦ tiện ích từ mảng amenities
 7. Kết luận: "Giá này [hợp lý/không hợp lý] vì [lý do cụ thể với số liệu]"
 
+ĐỊNH DẠNG MARKDOWN (QUAN TRỌNG - INSIGHT THƯỜNG RẤT DÀI):
+- Sử dụng **bold** cho các số liệu quan trọng: **5.5 triệu/tháng**, **30m²**, **0.18 triệu/m²/tháng**
+- Sử dụng **bold** cho các tiêu đề phần: **Giá cả**, **Tiện ích**, **Điểm mạnh**, **Điểm yếu**, **Kết luận**
+- Sử dụng headers (##) để phân chia các phần lớn nếu insight quá dài (ví dụ: ## Giá cả và Chi phí, ## Tiện ích, ## Đánh giá)
+- Sử dụng bullet points (-) để liệt kê tiện ích hoặc các điểm quan trọng
+- Sử dụng **bold** cho các từ khóa quan trọng: **hợp lý**, **không hợp lý**, **đáng xem xét**, **cần lưu ý**
+
 CẤM TUYỆT ĐỐI:
 - KHÔNG viết: "Mình đã tìm thấy", "Mình sẽ phân tích", "Bạn xem qua", "Bạn thấy sao"
 - KHÔNG nói chung chung: "giá khá ổn", "nhiều tiện ích" → PHẢI có số cụ thể
 - KHÔNG chỉ liệt kê → PHẢI phân tích và đánh giá
 
-VÍ DỤ ĐÚNG:
-"Phòng 30m² tại đường Nguyễn Gia Trí, quận Bình Thạnh. Giá thuê 5.5 triệu/tháng, tiền cọc 11 triệu (2 tháng), phí dịch vụ 500k/tháng không bao gồm. Tổng chi phí thực tế 6 triệu/tháng. Giá/m² = 5.5/30 = 0.18 triệu/m²/tháng, hợp lý so với thị trường Bình Thạnh (0.15-0.2 triệu/m²). Phòng có 10 tiện ích: điều hòa, wifi, gác lửng, ban công, tủ lạnh, máy giặt, máy nước nóng... Với giá 5.5 triệu và 10 tiện ích đầy đủ, giá này hợp lý hơn phòng cùng diện tích chỉ có 5-6 tiện ích giá 4.5 triệu. Điểm mạnh: giá/m² thấp hơn trung bình, tiện ích đầy đủ, vị trí thuận tiện. Điểm yếu: phí dịch vụ không bao gồm. Kết luận: Tổng chi phí 6 triệu/tháng cho phòng 30m² với 10 tiện ích là hợp lý và đáng xem xét."
+VÍ DỤ ĐÚNG (với markdown formatting):
+"Phòng **30m²** tại đường Nguyễn Gia Trí, quận Bình Thạnh. **Giá thuê 5.5 triệu/tháng**, tiền cọc **11 triệu** (2 tháng), phí dịch vụ **500k/tháng** không bao gồm. **Tổng chi phí thực tế: 6 triệu/tháng**. 
 
-TRẢ VỀ: Chỉ message text (Markdown), 300-400 từ, đầy đủ số liệu và đánh giá cụ thể.`;
+**Giá/m²**: 5.5/30 = **0.18 triệu/m²/tháng**, hợp lý so với thị trường Bình Thạnh (0.15-0.2 triệu/m²). 
+
+**Tiện ích**: Phòng có **10 tiện ích** đầy đủ: điều hòa, wifi, gác lửng, ban công, tủ lạnh, máy giặt, máy nước nóng...
+
+**Điểm mạnh**: Giá/m² thấp hơn trung bình, tiện ích đầy đủ, vị trí thuận tiện.
+
+**Điểm yếu**: Phí dịch vụ không bao gồm.
+
+**Kết luận**: Tổng chi phí **6 triệu/tháng** cho phòng **30m²** với **10 tiện ích** là **hợp lý** và **đáng xem xét**."
+
+TRẢ VỀ: Message text với Markdown formatting (bold, headers, bullet points), 300-400 từ, đầy đủ số liệu và đánh giá cụ thể.`;
 	}
 
 	const structuredDataSection = structuredData
@@ -68,7 +87,7 @@ DỮ LIỆU ĐÃ ĐƯỢC XỬ LÝ:
 	return `
 Bạn là AI assistant của Trustay. Hãy tạo câu trả lời cuối cùng kết hợp thông tin từ cuộc trò chuyện và kết quả truy vấn.
 
-${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
+${sessionSummary ? `TÓM TẮT NGỮ CẢNH DÀI HẠN (từ các cuộc hội thoại trước):\n${sessionSummary}\n\nQUAN TRỌNG: Sử dụng tóm tắt này để hiểu ngữ cảnh và ý định của người dùng từ các câu hỏi trước.\n\n` : ''}${recentMessages ? `NGỮ CẢNH HỘI THOẠI GẦN ĐÂY:\n${recentMessages}\n\n` : ''}
 
 THÔNG ĐIỆP TỪ ORCHESTRATOR AGENT: "${conversationalMessage}"
 SỐ KẾT QUẢ: ${count}
@@ -81,8 +100,13 @@ YÊU CẦU ĐỊNH DẠNG (BẮT BUỘC):
 3. Không dùng tiêu đề lớn hay ký tự #.
 4. Không hiển thị SQL query.
 5. Nếu không có kết quả, đưa ra gợi ý hữu ích.
-6. Trả về nội dung ở dạng Markdown an toàn (không HTML).
-7. QUAN TRỌNG (PATH CLICKABLE): Khi cấu trúc dữ liệu có trường "id" và biết thực thể (entity), hãy thêm trường "path" theo quy tắc:
+6. QUAN TRỌNG - MARKDOWN TABLE:
+   - Khi có structured data (LIST/TABLE/CHART trong payload): Message CHỈ là text mô tả ngắn gọn, KHÔNG tạo markdown table hoặc format dữ liệu dạng bảng.
+   - Chỉ INSIGHT mode (không có structured data) mới được dùng markdown formatting phức tạp.
+   - Khi có TABLE trong structured data: KHÔNG tạo markdown table trong message, chỉ mô tả ngắn gọn như "Đây là danh sách X phòng..." hoặc "Mình đã tìm thấy X kết quả...".
+   - Dữ liệu sẽ được hiển thị qua payload (LIST/TABLE/CHART), KHÔNG cần format lại trong message.
+7. Trả về nội dung ở dạng Markdown an toàn (không HTML), nhưng KHÔNG tạo markdown table khi đã có structured data.
+8. QUAN TRỌNG (PATH CLICKABLE): Khi cấu trúc dữ liệu có trường "id" và biết thực thể (entity), hãy thêm trường "path" theo quy tắc:
    - room → "/rooms/:id"
    - post → "/posts/:id"
    - room_seeking_post → "/room-seeking-posts/:id"
@@ -103,9 +127,39 @@ QUAN TRỌNG - PHÂN TÍCH/ĐÁNH GIÁ PHÒNG:
   * ƯU TIÊN: Tập trung vào giá cả và tiện ích, KHÔNG tập trung vào rating (rating thường ít hoặc không có)
   * Format: "Phòng này có [tiện ích 1, tiện ích 2, ...]. Giá thuê [X] triệu/tháng, tiền cọc [Y] triệu, phí dịch vụ [Z] triệu/người. [Đánh giá hợp lý dựa trên giá và tiện ích]"
    (Thay ":id" bằng giá trị id thực tế). Nếu không biết entity, bỏ qua path.
-8. ƯU TIÊN CHART: Nếu structured data có thể dựng biểu đồ và ý định là thống kê/vẽ/biểu đồ → ưu tiên payload CHART; chỉ dùng TABLE khi không có số liệu phù hợp.
+9. ƯU TIÊN CHART/TABLE CHO LANDLORD: 
+   - Nếu user là LANDLORD và query về thống kê/doanh thu/nhu cầu → ƯU TIÊN CHART hoặc TABLE để mô tả trực quan
+   - Landlord cần xem dữ liệu trực quan để ra quyết định kinh doanh
+   - ƯU TIÊN CHART: Nếu structured data có thể dựng biểu đồ và ý định là thống kê/vẽ/biểu đồ → ưu tiên payload CHART; chỉ dùng TABLE khi không có số liệu phù hợp.
 
-9. SAU KHI VIẾT XONG CÂU TRẢ LỜI (CHỈ TEXT MARKDOWN, KHÔNG CÓ JSON CODE BLOCK), BẮT BUỘC PHẢI:
+10. QUAN TRỌNG - CHUYỂN TÊN CỘT DB SANG TIẾNG VIỆT DỄ HIỂU (CHỈ ÁP DỤNG CHO TABLE):
+   - Khi tạo TABLE payload, PHẢI chuyển tên cột từ DB (snake_case, tiếng Anh) sang tiếng Việt dễ hiểu
+   - Format: {"columns": [{"key": "tên_db_gốc", "label": "Tên Tiếng Việt Dễ Hiểu", "type": "..."}, ...]}
+   - Ví dụ mapping:
+     * base_price_monthly → "Giá thuê/tháng"
+     * deposit_amount → "Tiền cọc"
+     * district_name → "Quận/Huyện"
+     * province_name → "Tỉnh/Thành phố"
+     * area_sqm → "Diện tích (m²)"
+     * max_occupancy → "Sức chứa"
+     * total_amount → "Tổng tiền"
+     * payment_date → "Ngày thanh toán"
+     * status → "Trạng thái"
+     * count → "Số lượng"
+     * sum → "Tổng"
+     * avg → "Trung bình"
+     * building_name → "Tên tòa nhà"
+     * room_name → "Tên phòng"
+     * monthly_rent → "Tiền thuê/tháng"
+     * contract_start_date → "Ngày bắt đầu hợp đồng"
+     * contract_end_date → "Ngày kết thúc hợp đồng"
+   - QUY TẮC:
+     * Luôn dùng tiếng Việt tự nhiên, dễ hiểu cho người dùng không chuyên kỹ thuật
+     * Giữ nguyên key (tên DB gốc) để frontend có thể map đúng dữ liệu
+     * Chỉ thay đổi label (tên hiển thị) sang tiếng Việt
+     * Nếu không chắc chắn nghĩa của cột → dùng tên mô tả rõ ràng nhất có thể
+
+11. SAU KHI VIẾT XONG CÂU TRẢ LỜI (CHỈ TEXT MARKDOWN, KHÔNG CÓ JSON CODE BLOCK), BẮT BUỘC PHẢI:
    - QUAN TRỌNG: Message chỉ là TEXT MARKDOWN, KHÔNG bao giờ chứa JSON code block.
    - ƯU TIÊN: Trả về JSON envelope format (toàn bộ response là JSON hợp lệ, KHÔNG có markdown text trước):
      Format: {"message":"[TENANT] Đây là 5 phòng...","payload":{"mode":"LIST","list":{"items":[...],"total":5}}}
@@ -126,6 +180,7 @@ Câu trả lời cuối cùng (ƯU TIÊN JSON ENVELOPE - toàn bộ response là
 
 export interface FinalMessagePromptParams {
 	recentMessages?: string;
+	sessionSummary?: string; // Long-term conversation summary
 	conversationalMessage: string;
 	count: number;
 	dataPreview: string;
@@ -140,6 +195,7 @@ export interface FinalMessagePromptParams {
 export function buildFinalMessagePrompt(params: FinalMessagePromptParams): string {
 	const {
 		recentMessages,
+		sessionSummary,
 		conversationalMessage,
 		count,
 		dataPreview,
@@ -152,7 +208,7 @@ export function buildFinalMessagePrompt(params: FinalMessagePromptParams): strin
 		return `
 Bạn là AI assistant của Trustay. Phân tích CHI TIẾT phòng trọ với SỐ LIỆU CỤ THỂ từ dữ liệu.
 
-${recentMessages ? `NGỮ CẢNH:\n${recentMessages}\n\n` : ''}
+${sessionSummary ? `TÓM TẮT NGỮ CẢNH DÀI HẠN (từ các cuộc hội thoại trước):\n${sessionSummary}\n\nQUAN TRỌNG: Sử dụng tóm tắt này để hiểu ngữ cảnh và ý định của người dùng từ các câu hỏi trước.\n\n` : ''}${recentMessages ? `NGỮ CẢNH HỘI THOẠI GẦN ĐÂY:\n${recentMessages}\n\n` : ''}
 
 THÔNG ĐIỆP: "${conversationalMessage}"
 DỮ LIỆU PHÒNG: ${dataPreview}
@@ -166,15 +222,32 @@ QUY TẮC BẮT BUỘC:
 6. Liệt kê ĐẦY ĐỦ tiện ích từ mảng amenities
 7. Kết luận: "Giá này [hợp lý/không hợp lý] vì [lý do cụ thể với số liệu]"
 
+ĐỊNH DẠNG MARKDOWN (QUAN TRỌNG - INSIGHT THƯỜNG RẤT DÀI):
+- Sử dụng **bold** cho các số liệu quan trọng: **5.5 triệu/tháng**, **30m²**, **0.18 triệu/m²/tháng**
+- Sử dụng **bold** cho các tiêu đề phần: **Giá cả**, **Tiện ích**, **Điểm mạnh**, **Điểm yếu**, **Kết luận**
+- Sử dụng headers (##) để phân chia các phần lớn nếu insight quá dài (ví dụ: ## Giá cả và Chi phí, ## Tiện ích, ## Đánh giá)
+- Sử dụng bullet points (-) để liệt kê tiện ích hoặc các điểm quan trọng
+- Sử dụng **bold** cho các từ khóa quan trọng: **hợp lý**, **không hợp lý**, **đáng xem xét**, **cần lưu ý**
+
 CẤM TUYỆT ĐỐI:
 - KHÔNG viết: "Mình đã tìm thấy", "Mình sẽ phân tích", "Bạn xem qua", "Bạn thấy sao"
 - KHÔNG nói chung chung: "giá khá ổn", "nhiều tiện ích" → PHẢI có số cụ thể
 - KHÔNG chỉ liệt kê → PHẢI phân tích và đánh giá
 
-VÍ DỤ ĐÚNG:
-"Phòng 30m² tại đường Nguyễn Gia Trí, quận Bình Thạnh. Giá thuê 5.5 triệu/tháng, tiền cọc 11 triệu (2 tháng), phí dịch vụ 500k/tháng không bao gồm. Tổng chi phí thực tế 6 triệu/tháng. Giá/m² = 5.5/30 = 0.18 triệu/m²/tháng, hợp lý so với thị trường Bình Thạnh (0.15-0.2 triệu/m²). Phòng có 10 tiện ích: điều hòa, wifi, gác lửng, ban công, tủ lạnh, máy giặt, máy nước nóng... Với giá 5.5 triệu và 10 tiện ích đầy đủ, giá này hợp lý hơn phòng cùng diện tích chỉ có 5-6 tiện ích giá 4.5 triệu. Điểm mạnh: giá/m² thấp hơn trung bình, tiện ích đầy đủ, vị trí thuận tiện. Điểm yếu: phí dịch vụ không bao gồm. Kết luận: Tổng chi phí 6 triệu/tháng cho phòng 30m² với 10 tiện ích là hợp lý và đáng xem xét."
+VÍ DỤ ĐÚNG (với markdown formatting):
+"Phòng **30m²** tại đường Nguyễn Gia Trí, quận Bình Thạnh. **Giá thuê 5.5 triệu/tháng**, tiền cọc **11 triệu** (2 tháng), phí dịch vụ **500k/tháng** không bao gồm. **Tổng chi phí thực tế: 6 triệu/tháng**. 
 
-TRẢ VỀ: Chỉ message text (Markdown), 300-400 từ, đầy đủ số liệu và đánh giá cụ thể.`;
+**Giá/m²**: 5.5/30 = **0.18 triệu/m²/tháng**, hợp lý so với thị trường Bình Thạnh (0.15-0.2 triệu/m²). 
+
+**Tiện ích**: Phòng có **10 tiện ích** đầy đủ: điều hòa, wifi, gác lửng, ban công, tủ lạnh, máy giặt, máy nước nóng...
+
+**Điểm mạnh**: Giá/m² thấp hơn trung bình, tiện ích đầy đủ, vị trí thuận tiện.
+
+**Điểm yếu**: Phí dịch vụ không bao gồm.
+
+**Kết luận**: Tổng chi phí **6 triệu/tháng** cho phòng **30m²** với **10 tiện ích** là **hợp lý** và **đáng xem xét**."
+
+TRẢ VỀ: Message text với Markdown formatting (bold, headers, bullet points), 300-400 từ, đầy đủ số liệu và đánh giá cụ thể.`;
 	}
 
 	const structuredDataSection = structuredData
@@ -204,24 +277,30 @@ YÊU CẦU ĐỊNH DẠNG (BẮT BUỘC):
 4. Không dùng tiêu đề lớn hay ký tự #.
 5. Không hiển thị SQL query.
 6. Nếu không có kết quả, đưa ra gợi ý hữu ích.
-7. Nội dung phải là Markdown an toàn (không HTML, không khối code dạng \`\`\`json ...\`\`\`).
+7. QUAN TRỌNG - MARKDOWN TABLE:
+   - Khi có structured data (LIST/TABLE/CHART trong payload): Message CHỈ là text mô tả ngắn gọn, KHÔNG tạo markdown table hoặc format dữ liệu dạng bảng.
+   - Chỉ INSIGHT mode (không có structured data) mới được dùng markdown formatting phức tạp.
+   - Khi có TABLE trong structured data: KHÔNG tạo markdown table trong message, chỉ mô tả ngắn gọn như "Đây là danh sách X phòng..." hoặc "Mình đã tìm thấy X kết quả...".
+   - Dữ liệu sẽ được hiển thị qua payload (LIST/TABLE/CHART), KHÔNG cần format lại trong message.
+8. Nội dung phải là Markdown an toàn (không HTML, không khối code dạng \`\`\`json ...\`\`\`), nhưng KHÔNG tạo markdown table khi đã có structured data.
 
 CHỈ TRẢ VỀ NỘI DUNG TIN NHẮN (KHÔNG JSON, KHÔNG GIẢI THÍCH THÊM):`;
 }
 
 export interface FriendlyResponsePromptParams {
 	recentMessages?: string;
+	sessionSummary?: string; // Long-term conversation summary
 	query: string;
 	count: number;
 	dataPreview: string;
 }
 
 export function buildFriendlyResponsePrompt(params: FriendlyResponsePromptParams): string {
-	const { recentMessages, query, count, dataPreview } = params;
+	const { recentMessages, sessionSummary, query, count, dataPreview } = params;
 	return `
 Bạn là AI assistant thân thiện cho ứng dụng Trustay. Hãy tạo câu trả lời dễ hiểu cho người dùng.
 
-${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
+${sessionSummary ? `TÓM TẮT NGỮ CẢNH DÀI HẠN (từ các cuộc hội thoại trước):\n${sessionSummary}\n\nQUAN TRỌNG: Sử dụng tóm tắt này để hiểu ngữ cảnh và ý định của người dùng từ các câu hỏi trước.\n\n` : ''}${recentMessages ? `NGỮ CẢNH HỘI THOẠI GẦN ĐÂY:\n${recentMessages}\n\n` : ''}
 
 CÂU HỎI NGƯỜI DÙNG: "${query}"
 SỐ KẾT QUẢ: ${count}

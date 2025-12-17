@@ -16,7 +16,8 @@ export class AiProcessingLogService {
 	 * Mỗi câu hỏi chỉ lưu 1 bản ghi duy nhất, được append data ở từng bước
 	 */
 	async saveProcessingLog(input: {
-		question: string;
+		question: string; // Original question (may be short)
+		canonicalQuestion?: string; // Expanded canonical question (if different from question)
 		response?: string;
 		orchestratorData?: any;
 		sqlGenerationAttempts?: any[];
@@ -37,13 +38,24 @@ export class AiProcessingLogService {
 					? { responseGenerator: input.responseGeneratorData }
 					: undefined;
 
+			// Nếu có canonical question, dùng làm question chính và lưu original vào validatorData
+			const finalQuestion = input.canonicalQuestion || input.question;
+			const finalValidatorData =
+				input.canonicalQuestion && input.canonicalQuestion !== input.question
+					? {
+							...(validatorDataWithResponseGen || {}),
+							originalQuestion: input.question, // Lưu original question ngắn gọn
+							canonicalQuestion: input.canonicalQuestion, // Lưu canonical question đầy đủ
+						}
+					: validatorDataWithResponseGen;
+
 			const log = await (this.prisma as any).aiProcessingLog.create({
 				data: {
-					question: input.question,
+					question: finalQuestion, // Dùng canonical question nếu có
 					response: input.response,
 					orchestratorData: input.orchestratorData,
 					sqlGenerationAttempts: input.sqlGenerationAttempts || [],
-					validatorData: validatorDataWithResponseGen,
+					validatorData: finalValidatorData,
 					ragContext: input.ragContext,
 					stepsLog: input.stepsLog,
 					tokenUsage: input.tokenUsage,
@@ -53,7 +65,7 @@ export class AiProcessingLogService {
 				},
 			});
 			this.logger.debug(
-				`Saved processing log | id=${log.id} | duration=${input.totalDuration || 'N/A'}ms`,
+				`Saved processing log | id=${log.id} | question="${finalQuestion.substring(0, 50)}..." | duration=${input.totalDuration || 'N/A'}ms`,
 			);
 			return log.id;
 		} catch (error) {

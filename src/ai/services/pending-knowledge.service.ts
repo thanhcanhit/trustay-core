@@ -59,9 +59,11 @@ export class PendingKnowledgeService {
 							previousCanonicalQuestion: params.previousCanonicalQuestion,
 						}
 					: undefined;
+			// Ưu tiên lưu canonical question làm question chính nếu có
+			const finalQuestion = params.canonicalQuestion || params.question;
 			const pendingKnowledge = await (this.prisma as any).pendingKnowledge.create({
 				data: {
-					question: params.question,
+					question: finalQuestion, // Dùng canonical question nếu có
 					sql: params.sql,
 					response: params.response,
 					evaluation: params.evaluation,
@@ -74,7 +76,7 @@ export class PendingKnowledgeService {
 			});
 
 			this.logger.debug(
-				`Saved pending knowledge | id=${pendingKnowledge.id} | question="${params.question.substring(0, 50)}..."`,
+				`Saved pending knowledge | id=${pendingKnowledge.id} | question="${finalQuestion.substring(0, 50)}..." | original="${params.question.substring(0, 30)}..."`,
 			);
 
 			// Extract canonical question from validatorData if stored there
