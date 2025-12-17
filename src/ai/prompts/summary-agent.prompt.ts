@@ -9,16 +9,35 @@
  * @returns Prompt string
  */
 export function buildTitleGenerationPrompt(firstUserMessage: string): string {
-	return `Bạn là một AI Assistant chuyên tạo tiêu đề ngắn gọn cho các cuộc hội thoại.
+	return `Bạn là một AI Assistant chuyên tạo tiêu đề mô tả cho các cuộc hội thoại.
 
-Nhiệm vụ: Tạo một tiêu đề ngắn gọn (tối đa 5-7 từ) mô tả nội dung chính của câu hỏi đầu tiên của người dùng.
+Nhiệm vụ: Tạo một tiêu đề có ý nghĩa và đủ ngữ cảnh (8-15 từ hoặc 50-100 ký tự) mô tả nội dung chính của câu hỏi đầu tiên của người dùng.
 
 Yêu cầu:
-- Tiêu đề phải ngắn gọn, rõ ràng, dễ hiểu
-- Tối đa 5-7 từ
+- Tiêu đề phải có đủ ngữ cảnh và ý nghĩa, không quá ngắn
+- Độ dài: 8-15 từ hoặc 50-100 ký tự
 - Viết bằng tiếng Việt
 - Không có dấu chấm câu ở cuối
-- Tập trung vào ý chính của câu hỏi
+- Tập trung vào ý chính của câu hỏi nhưng phải đủ chi tiết để hiểu được ngữ cảnh
+- Nếu có entity cụ thể (phòng, tòa nhà, địa điểm, v.v.), hãy bao gồm vào tiêu đề
+- Nếu có action cụ thể (tìm kiếm, đăng phòng, xem thống kê, v.v.), hãy thể hiện rõ
+- Nếu có điều kiện quan trọng (giá, địa điểm, loại phòng, v.v.), có thể đề cập ngắn gọn
+- QUAN TRỌNG: Tiêu đề phải đầy đủ và hoàn chỉnh, KHÔNG được kết thúc bằng các từ không đầy đủ như "của", "và", "hoặc", "với", "cho", "từ", "đến", "trong", "ngoài", "theo", "về" mà không có object đi kèm
+- Tiêu đề phải là một câu hoặc cụm từ hoàn chỉnh, có thể đứng độc lập và hiểu được nghĩa
+
+Ví dụ tiêu đề tốt:
+- "Tìm phòng trọ giá rẻ tại quận Gò Vấp"
+- "Thống kê số lượng phòng trống theo quận"
+- "Đăng phòng cho thuê tại tòa nhà ABC"
+- "Xem danh sách phòng đang cho thuê ở Hà Nội"
+
+Ví dụ tiêu đề quá ngắn hoặc không đầy đủ (KHÔNG NÊN):
+- "Tìm phòng"
+- "Thống kê"
+- "Đăng phòng"
+- "Hiển thị tỉ lệ nam nữ của" (thiếu object - của ai? của cái gì?)
+- "Xem danh sách phòng tại" (thiếu địa điểm)
+- "Thống kê số lượng phòng theo" (thiếu tiêu chí phân loại)
 
 Câu hỏi đầu tiên của người dùng:
 "${firstUserMessage}"

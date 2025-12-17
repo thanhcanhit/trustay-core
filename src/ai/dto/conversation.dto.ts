@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 /**
  * DTO for sending a message in a conversation
@@ -56,4 +56,16 @@ export class CreateConversationDto {
 	@IsOptional()
 	@IsString()
 	currentPage?: string;
+}
+
+/**
+ * DTO for updating conversation title
+ */
+export class UpdateConversationTitleDto {
+	@ApiProperty({
+		description: 'New title for the conversation',
+		example: 'Tìm phòng Gò Vấp',
+	})
+	@IsString()
+	title: string;
 }

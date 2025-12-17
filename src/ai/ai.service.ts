@@ -1732,8 +1732,10 @@ export class AiService {
 						sessionSummary, // Pass session summary for long-term context
 					),
 					// Agent 4: Result Validator - Đánh giá tính hợp lệ của kết quả
+					// Pass cả originalQuery và canonicalQuestion để validator hiểu context
 					this.resultValidatorAgent.validateResult(
-						query,
+						query, // Original query (short, context-dependent)
+						canonicalQuestion, // Canonical question (expanded, used for SQL generation)
 						sqlResult.sql,
 						sqlResult.results,
 						orchestratorResponse.requestType,

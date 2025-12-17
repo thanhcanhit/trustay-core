@@ -256,6 +256,8 @@ export interface ResultValidationResponse {
 	prompt?: string;
 	rawResponse?: string;
 	resultsPreview?: string;
+	originalQuestion?: string; // Original user query (short, context-dependent)
+	canonicalQuestion?: string; // Expanded canonical question (full context, used for SQL generation)
 }
 
 /**

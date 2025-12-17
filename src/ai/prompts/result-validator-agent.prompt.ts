@@ -5,7 +5,8 @@
 import { RequestType } from '../types/chat.types';
 
 export interface ResultValidatorPromptParams {
-	query: string;
+	originalQuery: string;
+	canonicalQuestion: string;
 	sql: string;
 	resultsCount: number;
 	resultsPreview: string;
@@ -13,12 +14,25 @@ export interface ResultValidatorPromptParams {
 }
 
 export function buildResultValidatorPrompt(params: ResultValidatorPromptParams): string {
-	const { query, sql, resultsCount, resultsPreview, expectedType } = params;
+	const { originalQuery, canonicalQuestion, sql, resultsCount, resultsPreview, expectedType } =
+		params;
+	const isExpanded = canonicalQuestion !== originalQuery;
 
 	return `
 Bạn là AI Agent 4 - Result Validator của hệ thống Trustay. Nhiệm vụ của bạn là đánh giá xem kết quả SQL có đáp ứng yêu cầu ban đầu của người dùng không.
 
-CÂU HỎI NGƯỜI DÙNG: "${query}"
+${
+	isExpanded
+		? `CÂU HỎI GỐC (ngắn gọn, phụ thuộc ngữ cảnh): "${originalQuery}"
+CÂU HỎI ĐÃ ĐƯỢC MỞ RỘNG (đầy đủ ngữ cảnh, dùng để generate SQL): "${canonicalQuestion}"
+
+QUAN TRỌNG: SQL được generate dựa trên CÂU HỎI ĐÃ ĐƯỢC MỞ RỘNG (canonicalQuestion), không phải câu hỏi gốc ngắn gọn.
+Bạn CẦN validate SQL và kết quả dựa trên CÂU HỎI ĐÃ ĐƯỢC MỞ RỘNG này, không phải câu hỏi gốc.
+Ví dụ: Nếu câu hỏi gốc là "Tăng thêm 2 triệu" và được expand thành "Tìm phòng có chỗ đậu xe ô tô với giá dưới 6 triệu rưỡi", 
+thì bạn phải validate SQL dựa trên câu hỏi đã được mở rộng (6.5 triệu), không phải câu hỏi gốc ("Tăng thêm 2 triệu").
+`
+		: `CÂU HỎI NGƯỜI DÙNG: "${canonicalQuestion}"`
+}
 REQUEST TYPE: ${expectedType}
 SQL ĐÃ SINH RA:
 \`\`\`sql
@@ -32,10 +46,18 @@ KẾT QUẢ SQL:
 YÊU CẦU ĐÁNH GIÁ:
 
 1. SO SÁNH YÊU CẦU VỚI SQL:
-   - SQL có match với yêu cầu ban đầu không?
+   ${
+			isExpanded
+				? `- QUAN TRỌNG: Validate dựa trên CÂU HỎI ĐÃ ĐƯỢC MỞ RỘNG (canonicalQuestion), không phải câu hỏi gốc ngắn gọn.
+   - SQL được generate từ canonicalQuestion, nên bạn phải so sánh SQL với canonicalQuestion.
+   - Ví dụ: Nếu canonicalQuestion là "Tìm phòng có chỗ đậu xe ô tô với giá dưới 6 triệu rưỡi" và SQL có filter "base_price_monthly <= 6500000" → VALID (đúng với canonicalQuestion).
+   - Ví dụ: Nếu canonicalQuestion là "Tìm phòng ở quận 1" nhưng SQL query "quận 2" → INVALID
+   - Ví dụ: Nếu canonicalQuestion là "thống kê hóa đơn" nhưng SQL trả về danh sách phòng → INVALID`
+				: `- SQL có match với yêu cầu ban đầu không?
    - Có các filter/điều kiện phù hợp không?
    - Ví dụ: Nếu người dùng hỏi "phòng ở quận 1" nhưng SQL query "quận 2" → INVALID
-   - Ví dụ: Nếu người dùng hỏi "thống kê hóa đơn" nhưng SQL trả về danh sách phòng → INVALID
+   - Ví dụ: Nếu người dùng hỏi "thống kê hóa đơn" nhưng SQL trả về danh sách phòng → INVALID`
+		}
 
 2. KIỂM TRA KẾT QUẢ:
    - Kết quả có hợp lý không? (ví dụ: tìm phòng quận 1 mà kết quả là quận 2 thì invalid)
