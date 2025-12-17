@@ -295,9 +295,26 @@ export function selectImportantColumns(
 	return prioritized.slice(0, MAX_COLUMNS);
 }
 
+/**
+ * Try to build chart from data rows with intelligent chart type detection
+ * @param rows - Data rows
+ * @param chartType - Optional chart type hint ('pie', 'bar', 'line', 'doughnut', 'radar', 'polarArea', 'area', 'horizontalBar')
+ * @param query - Optional query text to detect chart type from keywords
+ * @returns Chart URL and dimensions or null if cannot build chart
+ */
 export function tryBuildChart(
 	rows: ReadonlyArray<Record<string, unknown>>,
-): { url: string; width: number; height: number } | null {
+	chartType?:
+		| 'pie'
+		| 'bar'
+		| 'line'
+		| 'doughnut'
+		| 'radar'
+		| 'polarArea'
+		| 'area'
+		| 'horizontalBar',
+	query?: string,
+): { url: string; width: number; height: number; type: string } | null {
 	if (rows.length === 0) {
 		return null;
 	}
@@ -316,36 +333,169 @@ export function tryBuildChart(
 		return null;
 	}
 	const labelKey =
-		keys.find((k) => /name|title|label|category/i.test(k)) ??
+		keys.find((k) => /name|title|label|category|gender|type|status/i.test(k)) ??
 		keys.find((k) => !numericKeys.includes(k));
 	if (!labelKey) {
 		return null;
 	}
 	const valueKey = numericKeys[0];
-	const statLike = keys.some((k) => /count|sum|avg|total|min|max/i.test(k));
+	const statLike = keys.some((k) => /count|sum|avg|total|min|max|value/i.test(k));
 	const numericRatio = numericKeys.length / Math.max(keys.length, 1);
 	if (!statLike && numericRatio < 0.6) {
 		return null;
 	}
+	// Process rows and handle null labels
 	const pairs = rows.map((r) => {
 		const raw = (r as Record<string, unknown>)[valueKey];
 		const num = typeof raw === 'number' ? raw : Number(raw);
+		const rawLabel = (r as Record<string, unknown>)[labelKey];
+		// Handle null/undefined labels - convert to meaningful text
+		let label = '';
+		if (rawLabel === null || rawLabel === undefined) {
+			label = 'Không xác định';
+		} else {
+			label = String(rawLabel).trim();
+			if (label === '') {
+				label = 'Không xác định';
+			}
+		}
+		// Translate common English labels to Vietnamese
+		if (label.toLowerCase() === 'male') {
+			label = 'Nam';
+		} else if (label.toLowerCase() === 'female') {
+			label = 'Nữ';
+		} else if (label.toLowerCase() === 'other' || label.toLowerCase() === 'unknown') {
+			label = 'Khác';
+		}
 		return {
-			label: String((r as Record<string, unknown>)[labelKey] ?? ''),
+			label,
 			value: Number.isFinite(num) ? num : 0,
 		};
 	});
-	pairs.sort((a, b) => b.value - a.value);
-	const top = pairs.slice(0, 10);
+	// Filter out zero values for pie charts (but keep for bar charts)
+	const filteredPairs =
+		chartType === 'pie' || chartType === 'doughnut' ? pairs.filter((p) => p.value > 0) : pairs;
+	if (filteredPairs.length === 0) {
+		return null;
+	}
+	// Sort by value descending
+	filteredPairs.sort((a, b) => b.value - a.value);
+	// Limit to top 10 for bar charts, all for pie charts
+	const top =
+		chartType === 'pie' || chartType === 'doughnut' ? filteredPairs : filteredPairs.slice(0, 10);
 	const labels: string[] = top.map((p) => p.label);
 	const data: number[] = top.map((p) => p.value);
+	// Detect chart type from query if not provided
+	let detectedType:
+		| 'bar'
+		| 'line'
+		| 'pie'
+		| 'doughnut'
+		| 'radar'
+		| 'polarArea'
+		| 'area'
+		| 'horizontalBar' = chartType || 'bar';
+	if (!chartType && query) {
+		const queryLower = query.toLowerCase();
+		// Pie/Doughnut detection
+		if (/biểu đồ tròn|pie chart|pie|doughnut|tỉ lệ|tỷ lệ|phần trăm|percentage/i.test(queryLower)) {
+			detectedType = filteredPairs.length <= 5 ? 'pie' : 'doughnut';
+		}
+		// Area chart detection (time series with fill)
+		else if (
+			/biểu đồ miền|area chart|area|diện tích|filled|điền|theo thời gian.*fill/i.test(queryLower)
+		) {
+			detectedType = 'area';
+		}
+		// Line chart detection (time series)
+		else if (
+			/biểu đồ đường|line chart|line|theo thời gian|theo tháng|theo năm|theo ngày|trend|xu hướng/i.test(
+				queryLower,
+			)
+		) {
+			detectedType = 'line';
+		}
+		// Horizontal bar detection (for long labels)
+		else if (/biểu đồ cột ngang|horizontal bar|bar ngang|cột ngang|nằm ngang/i.test(queryLower)) {
+			detectedType = 'horizontalBar';
+		}
+		// Radar chart detection (multi-criteria comparison)
+		else if (
+			/radar|so sánh|đánh giá|phân tích đa tiêu chí|nhiều tiêu chí|multi.*criteria/i.test(
+				queryLower,
+			)
+		) {
+			detectedType = filteredPairs.length >= 3 && filteredPairs.length <= 8 ? 'radar' : 'bar';
+		}
+		// Bar chart detection
+		else if (/biểu đồ cột|bar chart|bar|cột/i.test(queryLower)) {
+			detectedType = 'bar';
+		}
+	}
+	// Intelligent auto-detection based on data characteristics
+	if (!chartType && !query) {
+		const categoryCount = filteredPairs.length;
+		const total = filteredPairs.reduce((sum, p) => sum + p.value, 0);
+		const maxValue = Math.max(...filteredPairs.map((p) => p.value));
+		const isProportionData = filteredPairs.every((p) => p.value <= total);
+		// Check if labels are long (suggest horizontal bar)
+		const avgLabelLength = labels.reduce((sum, label) => sum + label.length, 0) / labels.length;
+		// Pie chart: 2-5 categories, proportion data (parts of a whole)
+		if (categoryCount >= 2 && categoryCount <= 5 && isProportionData) {
+			detectedType = 'pie';
+		}
+		// Doughnut: 6-8 categories, proportion data
+		else if (categoryCount >= 6 && categoryCount <= 8 && isProportionData) {
+			detectedType = 'doughnut';
+		}
+		// Horizontal bar: long labels (better readability)
+		else if (avgLabelLength > 15 && categoryCount <= 10) {
+			detectedType = 'horizontalBar';
+		}
+		// Radar: 3-8 categories, similar value ranges (comparison)
+		else if (
+			categoryCount >= 3 &&
+			categoryCount <= 8 &&
+			maxValue > 0 &&
+			filteredPairs.every((p) => p.value / maxValue >= 0.1) // Values are somewhat comparable
+		) {
+			// Use radar for comparison scenarios, but prefer bar if values vary too much
+			const valueVariance =
+				filteredPairs.reduce((sum, p) => sum + (p.value - total / categoryCount) ** 2, 0) /
+				categoryCount;
+			const avgValue = total / categoryCount;
+			// If variance is low relative to average, use radar; otherwise bar
+			if (valueVariance / avgValue < 0.5) {
+				detectedType = 'radar';
+			}
+		}
+		// Default to bar for other cases
+	}
+	// Adjust dimensions based on chart type
+	let chartWidth = 800;
+	let chartHeight = 400;
+	if (detectedType === 'pie' || detectedType === 'doughnut' || detectedType === 'polarArea') {
+		chartWidth = 600;
+		chartHeight = 600;
+	} else if (detectedType === 'radar') {
+		chartWidth = 700;
+		chartHeight = 700;
+	} else if (detectedType === 'horizontalBar') {
+		// Horizontal bars need more height for labels
+		chartWidth = 800;
+		chartHeight = Math.max(400, filteredPairs.length * 40);
+	} else if (detectedType === 'area') {
+		// Area charts similar to line but slightly taller
+		chartWidth = 800;
+		chartHeight = 450;
+	}
 	const { url, width, height } = buildQuickChartUrl({
 		labels,
 		datasetLabel: toLabel(valueKey),
 		data,
-		type: 'bar',
-		width: 800,
-		height: 400,
+		type: detectedType,
+		width: chartWidth,
+		height: chartHeight,
 	});
-	return { url, width, height };
+	return { url, width, height, type: detectedType };
 }

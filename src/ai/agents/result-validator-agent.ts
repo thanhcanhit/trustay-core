@@ -37,7 +37,8 @@ export class ResultValidatorAgent {
 
 	/**
 	 * Validate SQL results against original request
-	 * @param query - Original user query
+	 * @param originalQuery - Original user query (short, context-dependent)
+	 * @param canonicalQuestion - Expanded canonical question (full context, used for SQL generation)
 	 * @param sql - Generated SQL query
 	 * @param results - SQL execution results
 	 * @param expectedType - Expected request type
@@ -45,7 +46,8 @@ export class ResultValidatorAgent {
 	 * @returns Validation result with isValid and reason
 	 */
 	async validateResult(
-		query: string,
+		originalQuery: string,
+		canonicalQuestion: string,
 		sql: string,
 		results: unknown,
 		expectedType: RequestType,
@@ -58,7 +60,8 @@ export class ResultValidatorAgent {
 		);
 
 		const validatorPrompt = buildResultValidatorPrompt({
-			query,
+			originalQuery,
+			canonicalQuestion,
 			sql,
 			resultsCount,
 			resultsPreview,
@@ -66,7 +69,9 @@ export class ResultValidatorAgent {
 		});
 
 		try {
-			this.logger.debug(`Validating results for query: "${query}" (type: ${expectedType})`);
+			this.logger.debug(
+				`Validating results | originalQuery="${originalQuery}" | canonicalQuestion="${canonicalQuestion}"${canonicalQuestion !== originalQuery ? ' (EXPANDED)' : ' (SAME)'} | type: ${expectedType}`,
+			);
 			const { text, usage } = await generateText({
 				model: google(aiConfig.model),
 				prompt: validatorPrompt,
@@ -84,20 +89,24 @@ export class ResultValidatorAgent {
 					}
 				: undefined;
 
-			const response = text.trim();
-			this.logger.debug(`Validator response: ${response.substring(0, PREVIEW_LENGTHS.LOG)}...`);
+			const validatorResponseText = text.trim();
+			this.logger.debug(
+				`Validator response: ${validatorResponseText.substring(0, PREVIEW_LENGTHS.LOG)}...`,
+			);
 
 			// Parse response to extract validation result
-			const isValidMatch = response.match(
+			const isValidMatch = validatorResponseText.match(
 				new RegExp(
 					`IS_VALID:\\s*(${ResultValidatorAgent.BOOLEAN_TRUE}|${ResultValidatorAgent.BOOLEAN_FALSE})`,
 					'i',
 				),
 			);
-			const reasonMatch = response.match(/REASON:\s*(.+?)(?=\n(?:SEVERITY|VIOLATIONS)|$)/s);
+			const reasonMatch = validatorResponseText.match(
+				/REASON:\s*(.+?)(?=\n(?:SEVERITY|VIOLATIONS)|$)/s,
+			);
 
 			// Parse severity FIRST để có thể sử dụng trong logic
-			const severityMatch = response.match(
+			const severityMatch = validatorResponseText.match(
 				new RegExp(
 					`SEVERITY:\\s*(${ResultValidatorAgent.SEVERITY_ERROR}|${ResultValidatorAgent.SEVERITY_WARN})`,
 					'i',
@@ -109,7 +118,7 @@ export class ResultValidatorAgent {
 
 			// Balanced approach: ƯU TIÊN LƯU - chỉ reject khi có lỗi nghiêm trọng
 			// Check if AI explicitly says "valid" or "invalid" in text
-			const responseLower = response.toLowerCase();
+			const responseLower = validatorResponseText.toLowerCase();
 			const hasExplicitInvalid =
 				responseLower.includes(ResultValidatorAgent.KEYWORD_INVALID_EN) ||
 				responseLower.includes(ResultValidatorAgent.KEYWORD_INVALID_VI) ||
@@ -151,7 +160,9 @@ export class ResultValidatorAgent {
 			const reason = reasonMatch ? reasonMatch[1].trim() : undefined;
 
 			// Parse violations if present
-			const violationsMatch = response.match(/VIOLATIONS:\s*(.+?)(?=\n(?:REASON|EVALUATION|$)|$)/s);
+			const violationsMatch = validatorResponseText.match(
+				/VIOLATIONS:\s*(.+?)(?=\n(?:REASON|EVALUATION|$)|$)/s,
+			);
 			const violations = violationsMatch
 				? violationsMatch[1]
 						.split(ResultValidatorAgent.DELIMITER_VIOLATIONS)
@@ -161,14 +172,16 @@ export class ResultValidatorAgent {
 
 			// Parse evaluation if present
 			// Try to match EVALUATION: followed by content until next field or end
-			let evaluationMatch = response.match(
+			let evaluationMatch = validatorResponseText.match(
 				/EVALUATION:\s*(.+?)(?=\n(?:IS_VALID|SEVERITY|VIOLATIONS|REASON|$)|$)/s,
 			);
 			// Fallback: if no match, try to find EVALUATION: and take everything after it to the end
 			if (!evaluationMatch) {
-				const evaluationIndex = response.indexOf('EVALUATION:');
+				const evaluationIndex = validatorResponseText.indexOf('EVALUATION:');
 				if (evaluationIndex !== -1) {
-					const evaluationText = response.substring(evaluationIndex + 'EVALUATION:'.length).trim();
+					const evaluationText = validatorResponseText
+						.substring(evaluationIndex + 'EVALUATION:'.length)
+						.trim();
 					if (evaluationText.length > 0) {
 						evaluationMatch = [null, evaluationText];
 					}
@@ -191,6 +204,8 @@ export class ResultValidatorAgent {
 				severity,
 				evaluation,
 				tokenUsage,
+				originalQuestion: originalQuery,
+				canonicalQuestion: canonicalQuestion,
 			};
 		} catch (error) {
 			this.logger.error('Result validator error:', error);
@@ -201,6 +216,8 @@ export class ResultValidatorAgent {
 				violations: [ResultValidatorAgent.ERROR_VIOLATION_EXCEPTION],
 				severity: ResultValidatorAgent.SEVERITY_ERROR,
 				tokenUsage: undefined,
+				originalQuestion: originalQuery,
+				canonicalQuestion: canonicalQuestion,
 			};
 		}
 	}

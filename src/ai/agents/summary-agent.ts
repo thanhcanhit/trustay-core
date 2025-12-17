@@ -15,7 +15,8 @@ export class SummaryAgent {
 	private readonly logger = new Logger(SummaryAgent.name);
 
 	// Configuration constants
-	private static readonly TITLE_MAX_WORDS = 7;
+	private static readonly TITLE_MAX_WORDS = 15; // Increased from 7 to allow more context
+	private static readonly TITLE_MAX_CHARS = 100; // Max characters as fallback
 	private static readonly SUMMARY_MAX_WORDS = 200;
 
 	/**
@@ -39,10 +40,43 @@ export class SummaryAgent {
 			title = title.replace(/^["']|["']$/g, ''); // Remove surrounding quotes
 			title = title.replace(/[.!?]+$/, ''); // Remove trailing punctuation
 			title = title.trim();
-			// Limit to max words
+			// Limit to max words, but ensure title is meaningful and complete
 			const words = title.split(/\s+/);
 			if (words.length > SummaryAgent.TITLE_MAX_WORDS) {
-				title = words.slice(0, SummaryAgent.TITLE_MAX_WORDS).join(' ');
+				// Cut at max words, but check if we're cutting at an incomplete phrase
+				let cutTitle = words.slice(0, SummaryAgent.TITLE_MAX_WORDS).join(' ');
+				// Remove incomplete phrases at the end (common Vietnamese particles/prepositions)
+				const incompleteEndings = [
+					'của',
+					'và',
+					'hoặc',
+					'với',
+					'cho',
+					'từ',
+					'đến',
+					'trong',
+					'ngoài',
+					'theo',
+					'về',
+				];
+				const lastWord = words[SummaryAgent.TITLE_MAX_WORDS - 1]?.toLowerCase();
+				if (lastWord && incompleteEndings.includes(lastWord)) {
+					// Remove the incomplete ending word
+					cutTitle = words.slice(0, SummaryAgent.TITLE_MAX_WORDS - 1).join(' ');
+				}
+				title = cutTitle;
+			}
+			// Also check character limit as fallback
+			if (title.length > SummaryAgent.TITLE_MAX_CHARS) {
+				// Cut at character limit, but try to cut at word boundary
+				const truncated = title.substring(0, SummaryAgent.TITLE_MAX_CHARS);
+				const lastSpaceIndex = truncated.lastIndexOf(' ');
+				if (lastSpaceIndex > SummaryAgent.TITLE_MAX_CHARS * 0.7) {
+					// Only cut at word boundary if we're not losing too much
+					title = truncated.substring(0, lastSpaceIndex);
+				} else {
+					title = truncated;
+				}
 			}
 			this.logger.debug(
 				`Generated title | title="${title}" | duration=${duration}ms | original="${firstUserMessage.substring(0, 50)}..."`,
@@ -50,9 +84,28 @@ export class SummaryAgent {
 			return title || 'New Chat'; // Fallback
 		} catch (error) {
 			this.logger.error(`Failed to generate title: ${(error as Error).message}`, error);
-			// Fallback: extract first few words from message
+			// Fallback: extract first few words from message, but ensure meaningful
 			const words = firstUserMessage.trim().split(/\s+/).slice(0, SummaryAgent.TITLE_MAX_WORDS);
-			return words.join(' ') || 'New Chat';
+			let fallbackTitle = words.join(' ');
+			// Remove incomplete endings in fallback too
+			const incompleteEndings = [
+				'của',
+				'và',
+				'hoặc',
+				'với',
+				'cho',
+				'từ',
+				'đến',
+				'trong',
+				'ngoài',
+				'theo',
+				'về',
+			];
+			const lastWord = words[words.length - 1]?.toLowerCase();
+			if (lastWord && incompleteEndings.includes(lastWord) && words.length > 1) {
+				fallbackTitle = words.slice(0, words.length - 1).join(' ');
+			}
+			return fallbackTitle || 'New Chat';
 		}
 	}
 

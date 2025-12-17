@@ -16,7 +16,11 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagg
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AiService, ChatResponse } from './ai.service';
-import { ConversationMessageDto, CreateConversationDto } from './dto/conversation.dto';
+import {
+	ConversationMessageDto,
+	CreateConversationDto,
+	UpdateConversationTitleDto,
+} from './dto/conversation.dto';
 
 /**
  * Conversation Controller - New version with explicit conversation management
@@ -294,23 +298,43 @@ export class ConversationController {
 	}
 
 	/**
-	 * Update conversation title
+	 * Update conversation title (rename conversation)
 	 */
 	@Patch(':conversationId/title')
 	@ApiOperation({
 		summary: 'Update conversation title',
-		description: 'Update the title of a conversation',
+		description: 'Update the title of a conversation (rename conversation)',
 	})
 	@ApiResponse({
 		status: HttpStatus.OK,
 		description: 'Title updated successfully',
+		schema: {
+			type: 'object',
+			properties: {
+				success: { type: 'boolean', example: true },
+				data: {
+					type: 'object',
+					properties: {
+						conversationId: { type: 'string', example: 'uuid' },
+						title: { type: 'string', example: 'Tìm phòng Gò Vấp' },
+					},
+				},
+			},
+		},
 	})
-	async updateTitle(@Param('conversationId') conversationId: string, @Body('title') title: string) {
+	@ApiResponse({
+		status: HttpStatus.NOT_FOUND,
+		description: 'Conversation not found',
+	})
+	async updateTitle(
+		@Param('conversationId') conversationId: string,
+		@Body() dto: UpdateConversationTitleDto,
+	) {
 		try {
-			await this.aiService.updateConversationTitle(conversationId, title);
+			await this.aiService.updateConversationTitle(conversationId, dto.title);
 			return {
 				success: true,
-				data: { conversationId, title },
+				data: { conversationId, title: dto.title },
 			};
 		} catch (error) {
 			this.logger.error(`Failed to update title: ${error.message}`, error);
@@ -333,6 +357,22 @@ export class ConversationController {
 	@ApiResponse({
 		status: HttpStatus.OK,
 		description: 'Conversation deleted successfully',
+		schema: {
+			type: 'object',
+			properties: {
+				success: { type: 'boolean', example: true },
+				data: {
+					type: 'object',
+					properties: {
+						conversationId: { type: 'string', example: 'uuid' },
+					},
+				},
+			},
+		},
+	})
+	@ApiResponse({
+		status: HttpStatus.NOT_FOUND,
+		description: 'Conversation not found',
 	})
 	async deleteConversation(@Param('conversationId') conversationId: string) {
 		try {

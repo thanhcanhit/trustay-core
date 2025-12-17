@@ -70,6 +70,7 @@ export class ResponseGenerator {
 		aiConfig: { model: string; temperature: number; maxTokens: number },
 		desiredMode?: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT',
 		sessionSummary?: string | null,
+		query?: string,
 	): Promise<string> {
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
@@ -145,7 +146,12 @@ export class ResponseGenerator {
 		// Build structured data payload cho các mode khác (không phải INSIGHT)
 		let structuredData: { list: any[] | null; table: any | null; chart: any | null } | null = null;
 		if (desiredMode && desiredMode !== ('INSIGHT' as typeof desiredMode)) {
-			structuredData = await this.buildStructuredData(sqlResult.results, desiredMode, aiConfig);
+			structuredData = await this.buildStructuredData(
+				sqlResult.results,
+				desiredMode,
+				aiConfig,
+				query,
+			);
 		}
 
 		// Build message-only prompt for the LLM
@@ -296,12 +302,14 @@ CHỈ trả về JSON, không có text khác:`;
 	 * @param results - SQL query results
 	 * @param desiredMode - Desired output mode
 	 * @param aiConfig - AI configuration (for LLM translation)
+	 * @param query - Optional query text to detect chart type
 	 * @returns Structured data object with LIST/TABLE/CHART
 	 */
 	private async buildStructuredData(
 		results: unknown,
 		desiredMode?: 'LIST' | 'TABLE' | 'CHART',
 		aiConfig?: { model: string; temperature: number; maxTokens: number },
+		query?: string,
 	): Promise<{ list: any[] | null; table: any | null; chart: any | null }> {
 		if (!Array.isArray(results) || results.length === 0 || typeof results[0] !== 'object') {
 			return { list: null, table: null, chart: null };
@@ -321,7 +329,42 @@ CHỈ trả về JSON, không có text khác:`;
 
 		// Try CHART for aggregate/statistics-like data
 		if (desiredMode === ResponseGenerator.MODE_CHART) {
-			const chartData = tryBuildChart(rows);
+			// Detect chart type from query
+			let chartType:
+				| 'pie'
+				| 'bar'
+				| 'line'
+				| 'doughnut'
+				| 'radar'
+				| 'polarArea'
+				| 'area'
+				| 'horizontalBar'
+				| undefined;
+			if (query) {
+				const queryLower = query.toLowerCase();
+				if (
+					/biểu đồ tròn|pie chart|pie|doughnut|tỉ lệ|tỷ lệ|phần trăm|percentage/i.test(queryLower)
+				) {
+					chartType = 'pie';
+				} else if (/biểu đồ miền|area chart|area|diện tích|filled|điền/i.test(queryLower)) {
+					chartType = 'area';
+				} else if (
+					/biểu đồ đường|line chart|line|theo thời gian|theo tháng|theo năm|theo ngày|trend|xu hướng/i.test(
+						queryLower,
+					)
+				) {
+					chartType = 'line';
+				} else if (/biểu đồ cột ngang|horizontal bar|bar ngang|cột ngang/i.test(queryLower)) {
+					chartType = 'horizontalBar';
+				} else if (
+					/radar|so sánh|đánh giá|phân tích đa tiêu chí|nhiều tiêu chí/i.test(queryLower)
+				) {
+					chartType = 'radar';
+				} else if (/biểu đồ cột|bar chart|bar|cột/i.test(queryLower)) {
+					chartType = 'bar';
+				}
+			}
+			const chartData = tryBuildChart(rows, chartType, query);
 			if (chartData) {
 				return {
 					list: null,
@@ -332,6 +375,7 @@ CHỈ trả về JSON, không có text khác:`;
 						width: chartData.width,
 						height: chartData.height,
 						alt: ResponseGenerator.CHART_ALT_TEXT,
+						type: chartData.type,
 					},
 				};
 			}
