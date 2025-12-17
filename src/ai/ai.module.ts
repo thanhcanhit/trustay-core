@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { BuildingModule } from '../api/buildings/building.module';
 import { AddressModule } from '../api/provinces/address/address.module';
 import { ReferenceModule } from '../api/reference/reference.module';
@@ -18,7 +18,7 @@ import { RoomPublishingService } from './services/room-publishing.service';
 @Module({
 	imports: [
 		PrismaModule,
-		QueueModule, // Import QueueModule để có thể inject ChatSessionQueueService
+		forwardRef(() => QueueModule), // Import QueueModule để có thể inject ChatSessionQueueService (forwardRef để tránh circular dependency)
 		KnowledgeModule,
 		BuildingModule,
 		RoomsModule,

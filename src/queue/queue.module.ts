@@ -1,5 +1,5 @@
 import { BullModule } from '@nestjs/bull';
-import { Global, Module, OnModuleInit } from '@nestjs/common';
+import { forwardRef, Global, Module, OnModuleInit } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AiModule } from '../ai/ai.module';
 import { ElasticsearchCustomModule } from '../elasticsearch/elasticsearch.module';
@@ -26,7 +26,7 @@ export const QUEUE_NAMES = {
 @Module({
 	imports: [
 		PrismaModule,
-		AiModule, // Import để có thể inject ChatSessionService vào processor
+		forwardRef(() => AiModule), // Import để có thể inject ChatSessionService vào processor (forwardRef để tránh circular dependency)
 		ElasticsearchCustomModule,
 		BullModule.forRootAsync({
 			imports: [ConfigModule],

@@ -33,7 +33,7 @@ export class SummaryAgent {
 				model: google(SummaryAgent.MODEL),
 				prompt,
 				temperature: SummaryAgent.TEMPERATURE,
-				maxTokens: SummaryAgent.MAX_OUTPUT_TOKENS,
+				maxOutputTokens: SummaryAgent.MAX_OUTPUT_TOKENS,
 			});
 			const duration = Date.now() - startTime;
 			// Clean up title: remove quotes, extra whitespace, trailing punctuation
@@ -78,7 +78,7 @@ export class SummaryAgent {
 				model: google(SummaryAgent.MODEL),
 				prompt,
 				temperature: SummaryAgent.TEMPERATURE,
-				maxTokens: SummaryAgent.MAX_OUTPUT_TOKENS * 2, // Summary needs more tokens
+				maxOutputTokens: SummaryAgent.MAX_OUTPUT_TOKENS * 2, // Summary needs more tokens
 			});
 			const duration = Date.now() - startTime;
 			// Clean up summary

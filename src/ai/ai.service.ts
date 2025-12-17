@@ -168,14 +168,8 @@ export class AiService {
 					meta: (m.metadata as any)?.meta,
 				}))
 			: [];
-		// Add system prompt if no messages exist
-		if (messages.length === 0) {
-			messages.push({
-				role: 'system',
-				content: VIETNAMESE_LOCALE_SYSTEM_PROMPT,
-				timestamp: new Date(),
-			});
-		}
+		// Không thêm system prompt vào in-memory session (chỉ dùng khi build prompt)
+		// System prompt sẽ được inject vào prompt khi gọi LLM, không cần lưu vào session
 		return {
 			sessionId: dbSession.id,
 			userId: dbSession.userId || undefined,
@@ -196,14 +190,7 @@ export class AiService {
 	 */
 	private async getOrCreateSession(userId?: string, clientIp?: string): Promise<ChatSession> {
 		const dbSession = await this.chatSessionService.getOrCreateSession(userId, clientIp);
-		// Add system prompt message if session is new (no messages)
-		if (dbSession.messageCount === 0) {
-			await this.chatSessionService.addMessage(
-				dbSession.id,
-				'system',
-				VIETNAMESE_LOCALE_SYSTEM_PROMPT,
-			);
-		}
+		// Không lưu system prompt vào DB, chỉ dùng trong memory cho processing
 		// Reload session with messages
 		const sessionWithMessages = await this.chatSessionService.getSession(dbSession.id);
 		return this.convertDbSessionToChatSession(sessionWithMessages || dbSession, clientIp);
@@ -340,20 +327,16 @@ export class AiService {
 		session.lastActivity = new Date();
 		// Trigger background jobs if this is an assistant message
 		if (triggerJobs && role === 'assistant') {
-			// Get the last user message for auto-title
-			const lastUserMessage = session.messages
-				.filter((m) => m.role === 'user')
-				.slice(-1)[0]?.content;
-			await this.triggerBackgroundJobs(session, lastUserMessage);
+			// Trigger background jobs - will get user message from DB
+			await this.triggerBackgroundJobs(session);
 		}
 	}
 
 	/**
 	 * Trigger background jobs (auto-title, summary) after adding assistant message
 	 * @param session - Chat session
-	 * @param userMessage - User message that triggered this response
 	 */
-	private async triggerBackgroundJobs(session: ChatSession, userMessage?: string): Promise<void> {
+	private async triggerBackgroundJobs(session: ChatSession): Promise<void> {
 		try {
 			const dbSession = await this.chatSessionService.getSession(session.sessionId);
 			if (!dbSession) {
@@ -361,13 +344,23 @@ export class AiService {
 			}
 			// Trigger auto-title if session has exactly AUTO_TITLE_MESSAGE_COUNT messages
 			// (1 user + 1 assistant, excluding system messages)
-			if (dbSession.messageCount === this.AUTO_TITLE_MESSAGE_COUNT && userMessage) {
-				// Get first user message
-				const messages = await this.chatSessionService.getRecentMessages(session.sessionId, 10);
-				const firstUserMessage = messages.reverse().find((m) => m.role === 'user')?.content;
+			// Count only user and assistant messages from DB
+			const allMessages = await this.chatSessionService.getRecentMessages(session.sessionId, 10);
+			const userAssistantMessages = allMessages.filter(
+				(m) => m.role === 'user' || m.role === 'assistant',
+			);
+			if (userAssistantMessages.length === this.AUTO_TITLE_MESSAGE_COUNT) {
+				// Get first user message from DB
+				const firstUserMessage = allMessages.reverse().find((m) => m.role === 'user')?.content;
 				if (firstUserMessage) {
 					await this.chatSessionQueueService.queueAutoTitle(session.sessionId, firstUserMessage);
-					this.logger.debug(`Queued auto-title job | sessionId=${session.sessionId}`);
+					this.logger.debug(
+						`Queued auto-title job | sessionId=${session.sessionId} | messageCount=${dbSession.messageCount} | userAssistantCount=${userAssistantMessages.length}`,
+					);
+				} else {
+					this.logger.warn(
+						`Auto-title skipped: No user message found | sessionId=${session.sessionId} | messageCount=${dbSession.messageCount}`,
+					);
 				}
 			}
 			// Trigger summary generation if messageCount > threshold
@@ -406,9 +399,12 @@ export class AiService {
 		if (summary) {
 			sections.push(`\n[CONTEXT SUMMARY]\n${summary}\n`);
 		}
-		// Short-term history (recent messages)
-		if (recentMessages.length > 0) {
-			const historyText = recentMessages
+		// Short-term history (recent messages) - chỉ lấy user và assistant messages
+		const userAssistantMessages = recentMessages.filter(
+			(m) => m.role === 'user' || m.role === 'assistant',
+		);
+		if (userAssistantMessages.length > 0) {
+			const historyText = userAssistantMessages
 				.reverse() // Reverse to get chronological order
 				.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
 				.join('\n\n');
@@ -1073,25 +1069,17 @@ export class AiService {
 	): Promise<ChatResponse> {
 		const { currentPage } = context;
 
-		// Parse và thêm thông tin trang hiện tại vào context nếu có
+		// Parse và log thông tin trang hiện tại (không lưu vào DB, chỉ dùng cho processing)
 		if (currentPage) {
 			this.logDebug('CONTEXT', `Current page received: ${currentPage}`);
-			// Parse entity và identifier từ URL path
+			// Parse entity và identifier từ URL path (chỉ để log, không lưu vào session)
 			const contextInfo = this.parsePageContext(currentPage);
 			if (contextInfo) {
-				const contextMessage = `[CONTEXT] User is currently viewing: ${currentPage}\n[CONTEXT] Entity: ${contextInfo.entity}, Identifier: ${contextInfo.identifier}${contextInfo.type ? `, Type: ${contextInfo.type}` : ''}`;
-				await this.addMessageToSession(session, 'system', contextMessage, undefined, false);
 				this.logInfo(
 					'CONTEXT',
 					`Parsed page context: entity=${contextInfo.entity}, identifier=${contextInfo.identifier}, type=${contextInfo.type || 'unknown'}`,
 				);
 			} else {
-				// Fallback: chỉ ghi lại URL nếu không parse được
-				await this.addMessageToSession(
-					session,
-					'system',
-					`[CONTEXT] User is currently viewing: ${currentPage}`,
-				);
 				this.logWarn('CONTEXT', `Could not parse page context from: ${currentPage}`);
 			}
 		} else {
@@ -1415,83 +1403,39 @@ export class AiService {
 			let previousSql: string | null = null;
 			let previousCanonicalQuestion: string | null = null;
 
-			// Lưu hints từ agent vào session để agent SQL hiểu rõ hơn
+			// Log hints từ agent (không lưu vào DB, chỉ để debug)
 			if (orchestratorResponse.entityHint) {
-				await this.addMessageToSession(
-					session,
-					'system',
-					`[INTENT] ENTITY=${orchestratorResponse.entityHint.toUpperCase()}`,
-					undefined,
-					false,
-				);
-				this.logDebug('ORCHESTRATOR', `Added ENTITY hint: ${orchestratorResponse.entityHint}`);
+				this.logDebug('ORCHESTRATOR', `ENTITY hint: ${orchestratorResponse.entityHint}`);
 			}
 			if (orchestratorResponse.filtersHint) {
-				await this.addMessageToSession(
-					session,
-					'system',
-					`[INTENT] FILTERS=${orchestratorResponse.filtersHint}`,
-					undefined,
-					false,
-				);
 				this.logDebug(
 					'ORCHESTRATOR',
-					`Added FILTERS hint: ${orchestratorResponse.filtersHint.substring(0, 50)}`,
+					`FILTERS hint: ${orchestratorResponse.filtersHint.substring(0, 50)}`,
 				);
 			}
 			if (orchestratorResponse.tablesHint) {
-				await this.addMessageToSession(
-					session,
-					'system',
-					`[INTENT] TABLES=${orchestratorResponse.tablesHint}`,
-					undefined,
-					false,
-				);
 				this.logDebug(
 					'ORCHESTRATOR',
-					`Added TABLES hint: ${orchestratorResponse.tablesHint} (will enhance RAG query)`,
+					`TABLES hint: ${orchestratorResponse.tablesHint} (will enhance RAG query)`,
 				);
 			}
 			if (orchestratorResponse.relationshipsHint) {
-				await this.addMessageToSession(
-					session,
-					'system',
-					`[INTENT] RELATIONSHIPS=${orchestratorResponse.relationshipsHint}`,
-					undefined,
-					false,
-				);
 				this.logDebug(
 					'ORCHESTRATOR',
-					`Added RELATIONSHIPS hint: ${orchestratorResponse.relationshipsHint}`,
+					`RELATIONSHIPS hint: ${orchestratorResponse.relationshipsHint}`,
 				);
 			}
 			if (desiredMode === 'INSIGHT') {
-				await this.addMessageToSession(
-					session,
-					'system',
-					'[INTENT] MODE=INSIGHT',
-					undefined,
-					false,
-				);
+				this.logDebug('ORCHESTRATOR', 'MODE hint: INSIGHT');
 			} else if (desiredMode === 'CHART') {
-				await this.addMessageToSession(session, 'system', '[INTENT] MODE=CHART', undefined, false);
+				this.logDebug('ORCHESTRATOR', 'MODE hint: CHART');
 			} else if (desiredMode === 'LIST') {
-				await this.addMessageToSession(session, 'system', '[INTENT] MODE=LIST', undefined, false);
+				this.logDebug('ORCHESTRATOR', 'MODE hint: LIST');
 			} else {
-				await this.addMessageToSession(session, 'system', '[INTENT] MODE=TABLE', undefined, false);
+				this.logDebug('ORCHESTRATOR', 'MODE hint: TABLE');
 			}
 			if (orchestratorResponse.intentAction) {
-				await this.addMessageToSession(
-					session,
-					'system',
-					`[INTENT] ACTION=${orchestratorResponse.intentAction.toUpperCase()}`,
-					undefined,
-					false,
-				);
-				this.logDebug(
-					'ORCHESTRATOR',
-					`Added INTENT_ACTION hint: ${orchestratorResponse.intentAction}`,
-				);
+				this.logDebug('ORCHESTRATOR', `INTENT_ACTION hint: ${orchestratorResponse.intentAction}`);
 			}
 
 			// Kiểm tra: Agent 1 đã xác định đủ thông tin để tạo SQL chưa?
@@ -2449,27 +2393,8 @@ export class AiService {
 		if (userId && dbSession.userId !== userId) {
 			throw new Error(`Conversation ${conversationId} does not belong to user ${userId}`);
 		}
-		// Add system prompt if session is new (no messages)
-		if (dbSession.messageCount === 0) {
-			await this.chatSessionService.addMessage(
-				dbSession.id,
-				'system',
-				VIETNAMESE_LOCALE_SYSTEM_PROMPT,
-			);
-			// Reload session to get system message
-			const updatedDbSession = await this.chatSessionService.getSession(conversationId);
-			if (!updatedDbSession) {
-				throw new Error(`Failed to reload session: ${conversationId}`);
-			}
-			const session = this.convertDbSessionToChatSession(updatedDbSession, clientIp);
-			const pipelineStartAt = this.logPipelineStart(message, session.sessionId);
-			return await this.processChatQueryWithSession(
-				message,
-				session,
-				{ userId, clientIp, currentPage },
-				pipelineStartAt,
-			);
-		}
+		// Không lưu system prompt vào DB, chỉ dùng trong memory cho processing
+		// Convert to ChatSession format and use it directly
 		// Convert to ChatSession format and use it directly
 		// This ensures we use the correct conversationId session, not create a new one
 		const session = this.convertDbSessionToChatSession(dbSession, clientIp);
@@ -2485,12 +2410,49 @@ export class AiService {
 
 	/**
 	 * Get messages from a conversation
+	 * Transform DB format to format compatible with old chat API for Frontend reuse
 	 * @param conversationId - Conversation/Session ID
 	 * @param limit - Maximum number of messages to return
-	 * @returns List of messages
+	 * @returns List of messages in format compatible with old chat API
 	 */
 	async getConversationMessages(conversationId: string, limit: number = 100) {
-		return await this.chatSessionService.getRecentMessages(conversationId, limit);
+		const dbMessages = await this.chatSessionService.getRecentMessages(conversationId, limit);
+		// Transform DB format to format compatible with old chat API
+		// Old API format: { id, role, content, timestamp, kind?, payload? }
+		// DB format: { id, sessionId, role, content, metadata: { kind?, payload?, sql?, canonicalQuestion? }, sequenceNumber, createdAt }
+		return dbMessages
+			.filter((m) => m.role !== 'system') // Filter out system messages
+			.map((msg) => {
+				const metadata = (msg.metadata as any) || {};
+				// Build response matching old chat API format for backward compatibility
+				// Old API has: id, role, content, timestamp, kind?, payload?
+				const transformed: any = {
+					id: msg.id,
+					sessionId: msg.sessionId,
+					role: msg.role,
+					content: msg.content,
+					timestamp: msg.createdAt, // Old API uses 'timestamp'
+					// Top-level fields for backward compatibility (old chat API format)
+					kind: metadata.kind, // Top-level kind for compatibility
+					payload: metadata.payload, // Top-level payload for compatibility
+					// Keep metadata for new features (sql, canonicalQuestion, etc.)
+					metadata: {
+						kind: metadata.kind,
+						payload: metadata.payload,
+						sql: metadata.sql,
+						canonicalQuestion: metadata.canonicalQuestion,
+						meta: metadata.meta,
+					},
+					// Additional fields for new API
+					sequenceNumber: msg.sequenceNumber,
+					createdAt: msg.createdAt,
+				};
+				// Remove undefined fields to keep response clean
+				if (!transformed.kind) delete transformed.kind;
+				if (!transformed.payload) delete transformed.payload;
+				return transformed;
+			})
+			.reverse(); // Reverse to get chronological order (oldest first)
 	}
 
 	/**
