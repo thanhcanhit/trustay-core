@@ -1069,16 +1069,26 @@ export class AiService {
 	): Promise<ChatResponse> {
 		const { currentPage } = context;
 
-		// Parse và log thông tin trang hiện tại (không lưu vào DB, chỉ dùng cho processing)
+		// Parse và log thông tin trang hiện tại
+		// Lưu vào session messages dưới dạng system message để orchestrator agent có thể đọc
 		if (currentPage) {
 			this.logDebug('CONTEXT', `Current page received: ${currentPage}`);
-			// Parse entity và identifier từ URL path (chỉ để log, không lưu vào session)
+			// Parse entity và identifier từ URL path
 			const contextInfo = this.parsePageContext(currentPage);
 			if (contextInfo) {
 				this.logInfo(
 					'CONTEXT',
 					`Parsed page context: entity=${contextInfo.entity}, identifier=${contextInfo.identifier}, type=${contextInfo.type || 'unknown'}`,
 				);
+				// Lưu context vào session messages dưới dạng system message để orchestrator agent có thể đọc
+				// Format: [CONTEXT] Entity: room Identifier: slug-123 Type: slug
+				const contextMessage = `[CONTEXT] Entity: ${contextInfo.entity} Identifier: ${contextInfo.identifier} Type: ${contextInfo.type || 'slug'}`;
+				// Chỉ lưu vào in-memory session, không lưu vào DB (system messages không được persist)
+				session.messages.push({
+					role: 'system',
+					content: contextMessage,
+					timestamp: new Date(),
+				});
 			} else {
 				this.logWarn('CONTEXT', `Could not parse page context from: ${currentPage}`);
 			}
@@ -2039,10 +2049,8 @@ export class AiService {
 		parsedResponse: { list: any[] | null; table: any | null; chart: any | null },
 		desiredMode?: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT',
 	): DataPayload | undefined {
-		// INSIGHT mode không có structured data
-		if (desiredMode === 'INSIGHT') {
-			return undefined;
-		}
+		// INSIGHT mode không có structured data - nhưng vẫn check nếu có data thì return
+		// Ưu tiên LIST > CHART > TABLE
 		if (parsedResponse.list !== null && parsedResponse.list.length > 0) {
 			return {
 				mode: 'LIST',
@@ -2061,12 +2069,21 @@ export class AiService {
 		}
 
 		if (parsedResponse.table !== null) {
-			return {
-				mode: 'TABLE',
-				table: parsedResponse.table,
-			};
+			// Check if table has valid structure (columns and rows)
+			if (
+				parsedResponse.table.columns &&
+				Array.isArray(parsedResponse.table.columns) &&
+				parsedResponse.table.rows &&
+				Array.isArray(parsedResponse.table.rows)
+			) {
+				return {
+					mode: 'TABLE',
+					table: parsedResponse.table,
+				};
+			}
 		}
 
+		// INSIGHT mode hoặc không có structured data
 		return undefined;
 	}
 

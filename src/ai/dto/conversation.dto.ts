@@ -48,4 +48,12 @@ export class CreateConversationDto {
 	@IsOptional()
 	@IsString()
 	title?: string;
+
+	@ApiPropertyOptional({
+		description: 'Pathname of current page (for context)',
+		example: '/rooms/tuyenquan-go-vap-phong-ap1443',
+	})
+	@IsOptional()
+	@IsString()
+	currentPage?: string;
 }

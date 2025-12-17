@@ -134,7 +134,7 @@ export class ConversationController {
 					{
 						userId,
 						clientIp,
-						currentPage: undefined,
+						currentPage: dto.currentPage,
 					},
 				);
 				return {
