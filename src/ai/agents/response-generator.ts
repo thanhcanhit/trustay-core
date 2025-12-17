@@ -2,12 +2,26 @@ import { google } from '@ai-sdk/google';
 import { Logger } from '@nestjs/common';
 import { generateText } from 'ai';
 import {
+	AI_TEMPERATURE,
+	ENTITY_TYPES,
+	MAX_OUTPUT_TOKENS,
+	MESSAGE_LABELS,
+	PREVIEW_LENGTHS,
+	RECENT_MESSAGES_LIMIT,
+} from '../config/agent.config';
+import {
 	buildFinalMessagePrompt,
 	buildFriendlyResponsePrompt,
 	getNoResultsMessage,
 	getSuccessMessage,
 } from '../prompts/response-generator.prompt';
-import { ChatSession, SqlGenerationResult, TableColumn, TokenUsage } from '../types/chat.types';
+import {
+	ChatSession,
+	EntityType,
+	SqlGenerationResult,
+	TableColumn,
+	TokenUsage,
+} from '../types/chat.types';
 import {
 	hasColumnMapping,
 	inferColumns,
@@ -26,26 +40,12 @@ export class ResponseGenerator {
 	private readonly logger = new Logger(ResponseGenerator.name);
 
 	// Configuration constants
-	private static readonly RECENT_MESSAGES_LIMIT = 3;
-	private static readonly TEMPERATURE = 0.3;
-	private static readonly MAX_OUTPUT_TOKENS_FINAL = 500;
-	private static readonly MAX_OUTPUT_TOKENS_FRIENDLY = 300;
-	private static readonly MAX_OUTPUT_TOKENS_INSIGHT = 2000; // Increased for detailed insight analysis (300-400 words)
-	private static readonly DATA_PREVIEW_LENGTH_FINAL = 800;
-	private static readonly DATA_PREVIEW_LENGTH_FRIENDLY = 1000;
 	private static readonly LIST_ITEMS_LIMIT = 50;
 	private static readonly TABLE_ROWS_LIMIT = 50;
 	private static readonly PREVIEW_LIMIT = 50;
 	// Chart constants
 	private static readonly CHART_MIME_TYPE = 'image/png';
 	private static readonly CHART_ALT_TEXT = 'Chart (Top 10)';
-	// Entity types
-	private static readonly ENTITY_ROOM = 'room';
-	private static readonly ENTITY_POST = 'post';
-	private static readonly ENTITY_ROOM_SEEKING_POST = 'room_seeking_post';
-	// Message labels
-	private static readonly LABEL_USER = 'Người dùng';
-	private static readonly LABEL_AI = 'AI';
 	// Mode strings
 	private static readonly MODE_LIST = 'LIST';
 	private static readonly MODE_TABLE = 'TABLE';
@@ -72,11 +72,8 @@ export class ResponseGenerator {
 	): Promise<string> {
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
-			.slice(-ResponseGenerator.RECENT_MESSAGES_LIMIT)
-			.map(
-				(m) =>
-					`${m.role === 'user' ? ResponseGenerator.LABEL_USER : ResponseGenerator.LABEL_AI}: ${m.content}`,
-			)
+			.slice(-RECENT_MESSAGES_LIMIT.RESPONSE)
+			.map((m) => `${m.role === 'user' ? MESSAGE_LABELS.USER : MESSAGE_LABELS.AI}: ${m.content}`)
 			.join('\n');
 
 		// INSIGHT mode: Chỉ trả về message với phân tích chi tiết, không có structured data
@@ -95,8 +92,8 @@ export class ResponseGenerator {
 				const { text, usage } = await generateText({
 					model: google(aiConfig.model),
 					prompt: insightPrompt,
-					temperature: ResponseGenerator.TEMPERATURE,
-					maxOutputTokens: ResponseGenerator.MAX_OUTPUT_TOKENS_INSIGHT,
+					temperature: AI_TEMPERATURE.STANDARD,
+					maxOutputTokens: MAX_OUTPUT_TOKENS.RESPONSE_INSIGHT,
 				});
 				const messageText = text.trim();
 				const tokenUsage: TokenUsage | undefined = usage
@@ -155,10 +152,7 @@ export class ResponseGenerator {
 			recentMessages,
 			conversationalMessage,
 			count: sqlResult.count,
-			dataPreview: JSON.stringify(sqlResult.results).substring(
-				0,
-				ResponseGenerator.DATA_PREVIEW_LENGTH_FINAL,
-			),
+			dataPreview: JSON.stringify(sqlResult.results).substring(0, PREVIEW_LENGTHS.DATA_FINAL),
 			structuredData,
 			isInsightMode: false,
 		});
@@ -167,8 +161,8 @@ export class ResponseGenerator {
 			const { text, usage } = await generateText({
 				model: google(aiConfig.model),
 				prompt: finalPrompt,
-				temperature: ResponseGenerator.TEMPERATURE,
-				maxOutputTokens: ResponseGenerator.MAX_OUTPUT_TOKENS_FINAL,
+				temperature: AI_TEMPERATURE.STANDARD,
+				maxOutputTokens: MAX_OUTPUT_TOKENS.RESPONSE_FINAL,
 			});
 			const messageText = text.trim();
 			const tokenUsage: TokenUsage | undefined = usage
@@ -343,7 +337,11 @@ CHỈ trả về JSON, không có text khác:`;
 
 		// Fallback to TABLE
 		const inferred = inferColumns(rows);
-		const columns = selectImportantColumns(inferred, rows);
+		let columns = selectImportantColumns(inferred, rows);
+		// Translate column labels with LLM if aiConfig is provided
+		if (aiConfig) {
+			columns = await this.translateColumnLabelsWithLLM(columns, aiConfig);
+		}
 		const normalized = normalizeRows(rows, columns).slice(0, ResponseGenerator.TABLE_ROWS_LIMIT);
 
 		// MVP: Add path to table rows if entity and id exist
@@ -356,11 +354,11 @@ CHỈ trả về JSON, không có text khác:`;
 			if (
 				entityId &&
 				entity &&
-				(entity === ResponseGenerator.ENTITY_ROOM ||
-					entity === ResponseGenerator.ENTITY_POST ||
-					entity === ResponseGenerator.ENTITY_ROOM_SEEKING_POST)
+				(entity === ENTITY_TYPES.ROOM ||
+					entity === ENTITY_TYPES.POST ||
+					entity === ENTITY_TYPES.ROOM_SEEKING_POST)
 			) {
-				const path = buildEntityPath(entity, entityId);
+				const path = buildEntityPath(entity as EntityType, entityId);
 				return { ...row, path };
 			}
 			return row;
@@ -395,27 +393,21 @@ CHỈ trả về JSON, không có text khác:`;
 	): Promise<string> {
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
-			.slice(-ResponseGenerator.RECENT_MESSAGES_LIMIT)
-			.map(
-				(m) =>
-					`${m.role === 'user' ? ResponseGenerator.LABEL_USER : ResponseGenerator.LABEL_AI}: ${m.content}`,
-			)
+			.slice(-RECENT_MESSAGES_LIMIT.RESPONSE)
+			.map((m) => `${m.role === 'user' ? MESSAGE_LABELS.USER : MESSAGE_LABELS.AI}: ${m.content}`)
 			.join('\n');
 		const responsePrompt = buildFriendlyResponsePrompt({
 			recentMessages,
 			query,
 			count: sqlResult.count,
-			dataPreview: JSON.stringify(sqlResult.results).substring(
-				0,
-				ResponseGenerator.DATA_PREVIEW_LENGTH_FRIENDLY,
-			),
+			dataPreview: JSON.stringify(sqlResult.results).substring(0, PREVIEW_LENGTHS.DATA_FRIENDLY),
 		});
 		try {
 			const { text } = await generateText({
 				model: google(aiConfig.model),
 				prompt: responsePrompt,
-				temperature: ResponseGenerator.TEMPERATURE,
-				maxOutputTokens: ResponseGenerator.MAX_OUTPUT_TOKENS_FRIENDLY,
+				temperature: AI_TEMPERATURE.STANDARD,
+				maxOutputTokens: MAX_OUTPUT_TOKENS.RESPONSE_FRIENDLY,
 			});
 			return text.trim();
 		} catch {

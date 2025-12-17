@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { RAG_THRESHOLDS } from '../config/rag.config';
 import { BUSINESS_CONTEXT } from '../prompts/business-context';
 import { getCompleteDatabaseSchema } from '../utils/schema-provider';
 import { SupabaseVectorStoreService } from '../vector-store/supabase-vector-store.service';
@@ -464,7 +465,7 @@ export class KnowledgeService {
 		qaCount: number;
 	}> {
 		const schemaLimit = params.schemaLimit ?? 32;
-		const threshold = params.threshold ?? 0.85;
+		const threshold = params.threshold ?? RAG_THRESHOLDS.DEFAULT;
 		const qaLimit = params.qaLimit ?? 2;
 
 		const schemaResults = await this.retrieveSchemaContext(query, {
@@ -537,7 +538,7 @@ export class KnowledgeService {
 	 */
 	private async findReusableCanonicalSql(
 		question: string,
-		threshold: number = 0.85,
+		threshold: number = RAG_THRESHOLDS.QA,
 	): Promise<{ chunkId: number; sqlQAId: number } | null> {
 		const normalized = this.normalizeQuestion(question);
 		const results = await this.vectorStore.similaritySearch(normalized, 'qa', {

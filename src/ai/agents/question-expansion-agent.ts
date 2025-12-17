@@ -1,6 +1,7 @@
 import { google } from '@ai-sdk/google';
 import { Logger } from '@nestjs/common';
 import { generateText } from 'ai';
+import { AI_MODELS, AI_TEMPERATURE, MAX_OUTPUT_TOKENS } from '../config/agent.config';
 import { buildQuestionExpansionPrompt } from '../prompts/question-expansion-agent.prompt';
 
 /**
@@ -11,10 +12,7 @@ import { buildQuestionExpansionPrompt } from '../prompts/question-expansion-agen
 export class QuestionExpansionAgent {
 	private readonly logger = new Logger(QuestionExpansionAgent.name);
 
-	// Configuration constants
-	private static readonly MODEL = 'gemini-2.0-flash'; // Model nhỏ/rẻ cho expansion
-	private static readonly TEMPERATURE = 0.3; // Lower temperature cho accuracy
-	private static readonly MAX_OUTPUT_TOKENS = 100; // Canonical question should be concise
+	// Configuration constants - using shared config
 
 	/**
 	 * Expand short question to full canonical question
@@ -36,10 +34,10 @@ export class QuestionExpansionAgent {
 			);
 			const startTime = Date.now();
 			const { text } = await generateText({
-				model: google(QuestionExpansionAgent.MODEL),
+				model: google(AI_MODELS.LIGHT),
 				prompt,
-				temperature: QuestionExpansionAgent.TEMPERATURE,
-				maxOutputTokens: QuestionExpansionAgent.MAX_OUTPUT_TOKENS,
+				temperature: AI_TEMPERATURE.STANDARD,
+				maxOutputTokens: MAX_OUTPUT_TOKENS.EXPANSION,
 			});
 			const duration = Date.now() - startTime;
 			// Clean up canonical question

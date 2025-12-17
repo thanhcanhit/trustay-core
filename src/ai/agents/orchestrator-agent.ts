@@ -2,6 +2,13 @@ import { google } from '@ai-sdk/google';
 import { Logger } from '@nestjs/common';
 import { generateText } from 'ai';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+	AI_TEMPERATURE,
+	MAX_OUTPUT_TOKENS,
+	PREVIEW_LENGTHS,
+	RECENT_MESSAGES_LIMIT,
+} from '../config/agent.config';
+import { RAG_THRESHOLDS } from '../config/rag.config';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import { buildOrchestratorPrompt } from '../prompts/orchestrator-agent.prompt';
 import {
@@ -19,12 +26,7 @@ export class OrchestratorAgent {
 	private readonly logger = new Logger(OrchestratorAgent.name);
 
 	// Configuration constants
-	private static readonly RECENT_MESSAGES_LIMIT = 10;
 	private static readonly RAG_BUSINESS_LIMIT = 8;
-	private static readonly RAG_BUSINESS_THRESHOLD = 0.85;
-	private static readonly TEMPERATURE = 0.4;
-	private static readonly MAX_OUTPUT_TOKENS = 400;
-	private static readonly LOG_PREVIEW_LENGTH = 200;
 	private static readonly FILTERS_HINT_PREVIEW_LENGTH = 50;
 	private static readonly MIN_PARTS_FOR_MISSING_PARAM = 2;
 	private static readonly FIRST_MESSAGE_USER_COUNT_THRESHOLD = 1;
@@ -75,7 +77,7 @@ export class OrchestratorAgent {
 		const userId = session.userId;
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
-			.slice(-OrchestratorAgent.RECENT_MESSAGES_LIMIT)
+			.slice(-RECENT_MESSAGES_LIMIT.ORCHESTRATOR)
 			.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
 			.join('\n');
 		const isFirstMessage =
@@ -106,7 +108,7 @@ export class OrchestratorAgent {
 		try {
 			const ragContext = await this.knowledge.buildRagContext(query, {
 				schemaLimit: OrchestratorAgent.RAG_BUSINESS_LIMIT,
-				threshold: OrchestratorAgent.RAG_BUSINESS_THRESHOLD,
+				threshold: RAG_THRESHOLDS.BUSINESS,
 				includeBusiness: true,
 				qaLimit: 2,
 			});
@@ -164,8 +166,8 @@ export class OrchestratorAgent {
 			const { text, usage } = await generateText({
 				model: google(aiConfig.model),
 				prompt: orchestratorPrompt,
-				temperature: OrchestratorAgent.TEMPERATURE,
-				maxOutputTokens: OrchestratorAgent.MAX_OUTPUT_TOKENS,
+				temperature: AI_TEMPERATURE.COMPLEX,
+				maxOutputTokens: MAX_OUTPUT_TOKENS.ORCHESTRATION,
 			});
 			const response = text.trim();
 			const tokenUsage = usage
@@ -179,7 +181,7 @@ export class OrchestratorAgent {
 					}
 				: undefined;
 			this.logger.debug(
-				`AI response (first ${OrchestratorAgent.LOG_PREVIEW_LENGTH} chars): ${response.substring(0, OrchestratorAgent.LOG_PREVIEW_LENGTH)}...`,
+				`AI response (first ${PREVIEW_LENGTHS.LOG} chars): ${response.substring(0, PREVIEW_LENGTHS.LOG)}...`,
 			);
 			// Log full response for debugging (can be enabled via log level)
 			this.logger.verbose(`Full orchestrator AI response:\n${response}`);
