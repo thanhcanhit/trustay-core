@@ -21,7 +21,7 @@ export class OrchestratorAgent {
 	// Configuration constants
 	private static readonly RECENT_MESSAGES_LIMIT = 10;
 	private static readonly RAG_BUSINESS_LIMIT = 8;
-	private static readonly RAG_BUSINESS_THRESHOLD = 0.6;
+	private static readonly RAG_BUSINESS_THRESHOLD = 0.85;
 	private static readonly TEMPERATURE = 0.4;
 	private static readonly MAX_OUTPUT_TOKENS = 400;
 	private static readonly LOG_PREVIEW_LENGTH = 200;

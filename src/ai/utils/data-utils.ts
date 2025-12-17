@@ -66,6 +66,137 @@ export function toLowerKeys(obj: Record<string, unknown>): Record<string, unknow
 	}, {});
 }
 
+/**
+ * Mapping từ tên cột DB (snake_case) sang tiếng Việt dễ hiểu
+ */
+const COLUMN_NAME_MAPPING: Record<string, string> = {
+	// Pricing & Costs
+	base_price_monthly: 'Giá thuê/tháng',
+	monthly_rent: 'Tiền thuê/tháng',
+	deposit_amount: 'Tiền cọc',
+	deposit_months: 'Số tháng cọc',
+	utility_cost_per_person: 'Phí dịch vụ/người',
+	utility_cost_monthly: 'Phí dịch vụ/tháng',
+	utility_included: 'Đã bao gồm phí dịch vụ',
+	electricity_cost: 'Tiền điện',
+	water_cost: 'Tiền nước',
+	internet_cost: 'Tiền internet',
+	cleaning_cost: 'Phí dọn dẹp',
+	service_fee_percentage: 'Phí dịch vụ (%)',
+	cleaning_fee: 'Phí dọn dẹp',
+	total_amount: 'Tổng tiền',
+	subtotal: 'Tạm tính',
+	discount_amount: 'Giảm giá',
+	tax_amount: 'Thuế',
+	amount: 'Số tiền',
+	price: 'Giá',
+	cost: 'Chi phí',
+	// Location
+	district_name: 'Quận/Huyện',
+	district_name_en: 'Quận/Huyện (EN)',
+	province_name: 'Tỉnh/Thành phố',
+	province_name_en: 'Tỉnh/Thành phố (EN)',
+	ward_name: 'Phường/Xã',
+	ward_name_en: 'Phường/Xã (EN)',
+	address_line_1: 'Địa chỉ dòng 1',
+	address_line_2: 'Địa chỉ dòng 2',
+	latitude: 'Vĩ độ',
+	longitude: 'Kinh độ',
+	// Room & Building
+	area_sqm: 'Diện tích (m²)',
+	max_occupancy: 'Sức chứa',
+	room_number: 'Số phòng',
+	floor_number: 'Tầng',
+	room_type: 'Loại phòng',
+	building_name: 'Tên tòa nhà',
+	room_name: 'Tên phòng',
+	name: 'Tên',
+	title: 'Tiêu đề',
+	description: 'Mô tả',
+	slug: 'Đường dẫn',
+	// Status & Dates
+	status: 'Trạng thái',
+	is_active: 'Đang hoạt động',
+	contract_start_date: 'Ngày bắt đầu hợp đồng',
+	contract_end_date: 'Ngày kết thúc hợp đồng',
+	payment_date: 'Ngày thanh toán',
+	due_date: 'Ngày đến hạn',
+	billing_period: 'Kỳ thanh toán',
+	billing_month: 'Tháng thanh toán',
+	billing_year: 'Năm thanh toán',
+	period_start: 'Bắt đầu kỳ',
+	period_end: 'Kết thúc kỳ',
+	move_in_date: 'Ngày vào ở',
+	move_out_date: 'Ngày ra',
+	created_at: 'Ngày tạo',
+	updated_at: 'Ngày cập nhật',
+	createdAt: 'Ngày tạo',
+	updatedAt: 'Ngày cập nhật',
+	// Statistics & Aggregates
+	count: 'Số lượng',
+	total: 'Tổng',
+	sum: 'Tổng',
+	avg: 'Trung bình',
+	average: 'Trung bình',
+	min: 'Tối thiểu',
+	max: 'Tối đa',
+	// Users & Roles
+	user_id: 'ID người dùng',
+	owner_id: 'ID chủ sở hữu',
+	tenant_id: 'ID người thuê',
+	first_name: 'Tên',
+	last_name: 'Họ',
+	email: 'Email',
+	phone: 'Số điện thoại',
+	role: 'Vai trò',
+	// Payments & Bills
+	payment_type: 'Loại thanh toán',
+	payment_method: 'Phương thức thanh toán',
+	payment_status: 'Trạng thái thanh toán',
+	currency: 'Tiền tệ',
+	// Other
+	id: 'ID',
+	entity: 'Thực thể',
+	path: 'Đường dẫn',
+	view_count: 'Lượt xem',
+	contact_count: 'Lượt liên hệ',
+	preferred_district_id: 'ID quận ưa thích',
+	preferred_province_id: 'ID tỉnh ưa thích',
+	min_budget: 'Ngân sách tối thiểu',
+	max_budget: 'Ngân sách tối đa',
+	preferred_room_type: 'Loại phòng ưa thích',
+	occupancy: 'Sức chứa',
+	rental_months: 'Số tháng thuê',
+	price_negotiable: 'Có thể thương lượng',
+	minimum_stay_months: 'Thời gian ở tối thiểu (tháng)',
+	maximum_stay_months: 'Thời gian ở tối đa (tháng)',
+};
+
+/**
+ * Chuyển tên cột DB sang tiếng Việt dễ hiểu (chỉ dùng mapping, không gọi LLM)
+ * Nếu không có trong mapping, trả về key để LLM translate sau
+ */
+function translateColumnName(key: string): string {
+	// Kiểm tra mapping trực tiếp
+	if (COLUMN_NAME_MAPPING[key]) {
+		return COLUMN_NAME_MAPPING[key];
+	}
+	// Kiểm tra snake_case với các biến thể
+	const lowerKey = key.toLowerCase();
+	if (COLUMN_NAME_MAPPING[lowerKey]) {
+		return COLUMN_NAME_MAPPING[lowerKey];
+	}
+	// Không có trong mapping → trả về key để LLM translate sau
+	return key;
+}
+
+/**
+ * Kiểm tra xem column có trong mapping không
+ */
+export function hasColumnMapping(key: string): boolean {
+	return !!COLUMN_NAME_MAPPING[key] || !!COLUMN_NAME_MAPPING[key.toLowerCase()];
+}
+
 export function inferColumns(rows: ReadonlyArray<Record<string, unknown>>): TableColumn[] {
 	const sample = rows[0] ?? {};
 	return Object.keys(sample).map((key) => {
@@ -82,7 +213,8 @@ export function inferColumns(rows: ReadonlyArray<Record<string, unknown>>): Tabl
 							: /image|thumbnail/i.test(key)
 								? 'image'
 								: 'string';
-		return { key, label: key, type };
+		// Chuyển label sang tiếng Việt dễ hiểu, giữ nguyên key (tên DB gốc)
+		return { key, label: translateColumnName(key), type };
 	});
 }
 

@@ -464,7 +464,7 @@ export class KnowledgeService {
 		qaCount: number;
 	}> {
 		const schemaLimit = params.schemaLimit ?? 32;
-		const threshold = params.threshold ?? 0.6;
+		const threshold = params.threshold ?? 0.85;
 		const qaLimit = params.qaLimit ?? 2;
 
 		const schemaResults = await this.retrieveSchemaContext(query, {

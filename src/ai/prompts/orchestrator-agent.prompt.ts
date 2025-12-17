@@ -246,6 +246,13 @@ HÃY PHÂN TÍCH VÀ TRẢ LỜI:
    - User hiện tại có role: ${userRole}
    - LƯU Ý: KHÔNG đưa tag [${userRole}] vào RESPONSE khi trả lời trực tiếp cho người dùng
    - Tag chỉ được sử dụng nội bộ giữa các agent, KHÔNG hiển thị cho người dùng
+   - QUAN TRỌNG - ƯU TIÊN CHART/TABLE CHO LANDLORD:
+     * Nếu userRole=LANDLORD và câu hỏi về thống kê/doanh thu/nhu cầu/phân tích dữ liệu → ƯU TIÊN MODE_HINT=CHART hoặc TABLE
+     * Landlord cần xem dữ liệu trực quan để ra quyết định kinh doanh
+     * Ví dụ: "doanh thu tháng này" → MODE_HINT=CHART (biểu đồ doanh thu)
+     * Ví dụ: "thống kê phòng" → MODE_HINT=TABLE (bảng thống kê chi tiết)
+     * Ví dụ: "tỷ lệ lấp đầy" → MODE_HINT=CHART (biểu đồ tỷ lệ)
+     * Ví dụ: "danh sách hóa đơn" → MODE_HINT=TABLE (bảng danh sách)
 
 3. TẠO CÂU TRẢ LỜI TỰ NHIÊN:
    - Thân thiện, như đang trò chuyện

@@ -37,8 +37,8 @@ export class SqlGenerationAgent {
 	private static readonly CANONICAL_HARD_THRESHOLD = 0.95;
 	private static readonly CANONICAL_SOFT_THRESHOLD = 0.8;
 	// RAG thresholds (increased for better precision with table_complete chunks)
-	private static readonly RAG_SCHEMA_THRESHOLD = 0.65; // Slightly higher for better precision
-	private static readonly RAG_QA_THRESHOLD = 0.6;
+	private static readonly RAG_SCHEMA_THRESHOLD = 0.85; // Higher threshold for better precision
+	private static readonly RAG_QA_THRESHOLD = 0.85;
 	// Dynamic limit calculation (optimized for 1 chunk per table strategy)
 	private static readonly DYNAMIC_LIMIT_BASE = 1; // Base chunks for general context (reduced from 2)
 	private static readonly DYNAMIC_LIMIT_TABLE_MULTIPLIER = 1; // 1 chunk per table (since we use table_complete chunks)
@@ -254,7 +254,7 @@ export class SqlGenerationAgent {
 				if (needExamples) {
 					const qaResults = await this.knowledgeService.retrieveKnowledgeContext(query, {
 						limit: SqlGenerationAgent.QA_EXAMPLES_LIMIT,
-						threshold: SqlGenerationAgent.RAG_QA_THRESHOLD + 0.2, // Increase threshold to 0.8 for better relevance
+						threshold: SqlGenerationAgent.RAG_QA_THRESHOLD, // Using base threshold 0.85 for better relevance
 					});
 					qaChunkCount = qaResults.length;
 					qaChunkSqlCount = qaResults.filter(

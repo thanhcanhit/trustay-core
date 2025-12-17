@@ -7,8 +7,9 @@ import {
 	getNoResultsMessage,
 	getSuccessMessage,
 } from '../prompts/response-generator.prompt';
-import { ChatSession, SqlGenerationResult, TokenUsage } from '../types/chat.types';
+import { ChatSession, SqlGenerationResult, TableColumn, TokenUsage } from '../types/chat.types';
 import {
+	hasColumnMapping,
 	inferColumns,
 	isListLike,
 	normalizeRows,
@@ -146,7 +147,7 @@ export class ResponseGenerator {
 		// Build structured data payload cho các mode khác (không phải INSIGHT)
 		let structuredData: { list: any[] | null; table: any | null; chart: any | null } | null = null;
 		if (desiredMode && desiredMode !== ('INSIGHT' as typeof desiredMode)) {
-			structuredData = this.buildStructuredData(sqlResult.results, desiredMode);
+			structuredData = await this.buildStructuredData(sqlResult.results, desiredMode, aiConfig);
 		}
 
 		// Build message-only prompt for the LLM
@@ -228,15 +229,84 @@ export class ResponseGenerator {
 	}
 
 	/**
+	 * Translate column labels using LLM for columns not in mapping
+	 * @param columns - Columns to translate
+	 * @param aiConfig - AI configuration
+	 * @returns Translated columns
+	 */
+	private async translateColumnLabelsWithLLM(
+		columns: TableColumn[],
+		aiConfig: { model: string; temperature: number; maxTokens: number },
+	): Promise<TableColumn[]> {
+		// Filter columns that need LLM translation (not in mapping)
+		const columnsToTranslate = columns.filter((col) => !hasColumnMapping(col.key));
+		if (columnsToTranslate.length === 0) {
+			return columns; // All columns already translated by mapping
+		}
+		try {
+			const columnKeys = columnsToTranslate.map((col) => col.key).join(', ');
+			const prompt = `Bạn là AI assistant. Nhiệm vụ của bạn là chuyển tên cột database (snake_case, tiếng Anh) sang tiếng Việt dễ hiểu cho người dùng không chuyên kỹ thuật.
+
+Danh sách tên cột cần chuyển: ${columnKeys}
+
+QUY TẮC:
+1. Chuyển sang tiếng Việt tự nhiên, dễ hiểu
+2. Giữ nguyên ý nghĩa của cột
+3. Nếu là số liệu/thống kê → thêm đơn vị nếu cần (ví dụ: "Số lượng", "Tổng tiền (VNĐ)")
+4. Nếu là ngày tháng → dùng "Ngày ..."
+5. Nếu là trạng thái → dùng "Trạng thái ..."
+6. Nếu là ID → có thể giữ nguyên "ID" hoặc mô tả rõ hơn
+
+VÍ DỤ:
+- base_price_monthly → "Giá thuê/tháng"
+- district_name → "Quận/Huyện"
+- total_amount → "Tổng tiền"
+- payment_date → "Ngày thanh toán"
+- status → "Trạng thái"
+
+Trả về JSON format: {"column_key": "Tên tiếng Việt", ...}
+Ví dụ: {"base_price_monthly": "Giá thuê/tháng", "district_name": "Quận/Huyện"}
+
+CHỈ trả về JSON, không có text khác:`;
+			const { text } = await generateText({
+				model: google(aiConfig.model),
+				prompt,
+				temperature: 0.3,
+				maxOutputTokens: 200,
+			});
+			// Parse JSON response
+			const jsonMatch = text.match(/\{[\s\S]*\}/);
+			if (jsonMatch) {
+				const translations = JSON.parse(jsonMatch[0]) as Record<string, string>;
+				// Update columns with LLM translations
+				return columns.map((col) => {
+					if (translations[col.key]) {
+						return { ...col, label: translations[col.key] };
+					}
+					return col;
+				});
+			}
+		} catch (error) {
+			this.logger.warn(
+				`Failed to translate column labels with LLM, using original labels: ${(error as Error).message}`,
+			);
+		}
+		// Fallback: return original columns
+		return columns;
+	}
+
+	/**
 	 * Build structured data from SQL results
 	 * @param results - SQL query results
 	 * @param desiredMode - Desired output mode
+	 * @param aiConfig - AI configuration (for LLM translation)
 	 * @returns Structured data object with LIST/TABLE/CHART
 	 */
-	private buildStructuredData(
+	private async buildStructuredData(
 		results: unknown,
 		desiredMode?: 'LIST' | 'TABLE' | 'CHART',
-	): { list: any[] | null; table: any | null; chart: any | null } {
+		aiConfig?: { model: string; temperature: number; maxTokens: number },
+	): Promise<{ list: any[] | null; table: any | null; chart: any | null }> {
 		if (!Array.isArray(results) || results.length === 0 || typeof results[0] !== 'object') {
 			return { list: null, table: null, chart: null };
 		}

@@ -1179,14 +1179,15 @@ export class AiService {
 		};
 
 		try {
-			this.logDebug(
+			this.logInfo(
 				'SESSION',
-				`BẮT ĐẦU XỬ LÝ | session=${session.sessionId}${currentPage ? ` | page=${currentPage}` : ''}`,
+				`BẮT ĐẦU XỬ LÝ | session=${session.sessionId}${currentPage ? ` | page=${currentPage}` : ''} | originalQuery="${query}"`,
 			);
 			appendStep('SESSION START', {
 				session: session.sessionId,
 				page: currentPage || 'none',
 				userId: session.userId || 'anonymous',
+				originalQuery: query,
 			});
 
 			// ========================================
@@ -1194,7 +1195,7 @@ export class AiService {
 			// ========================================
 			// ORCHESTRATOR features:
 			// - Classify user role & request type
-			// - Read business context via RAG (limit=8, threshold=0.6)
+			// - Read business context via RAG (limit=8, threshold=0.85)
 			// - Decide readiness for SQL
 			// - Derive intent hints: ENTITY/FILTERS/MODE
 			const orchestratorStartTime = Date.now();
@@ -1461,7 +1462,7 @@ export class AiService {
 				if (previousSql) {
 					this.logInfo(
 						'QUESTION_EXPANSION',
-						`Attempting to expand question with LLM | query="${query.substring(0, 50)}..." | hasPreviousSql=true`,
+						`Attempting to expand question with LLM | originalQuery="${query}" | hasPreviousSql=true | previousCanonicalQuestion="${previousCanonicalQuestion || 'none'}"`,
 					);
 					try {
 						canonicalQuestion = await this.questionExpansionAgent.expandQuestion(
@@ -1473,12 +1474,12 @@ export class AiService {
 						if (canonicalQuestion !== query) {
 							this.logInfo(
 								'QUESTION_EXPANSION',
-								`LLM expanded question | original="${query.substring(0, 50)}..." | canonical="${canonicalQuestion.substring(0, 80)}..."`,
+								`✅ LLM expanded question | originalQuery="${query}" | canonicalQuestion="${canonicalQuestion}"`,
 							);
 						} else {
-							this.logDebug(
+							this.logInfo(
 								'QUESTION_EXPANSION',
-								`LLM determined query is already complete, no expansion needed`,
+								`✅ LLM determined query is already complete, no expansion needed | originalQuery="${query}" | canonicalQuestion="${canonicalQuestion}" (same as original)`,
 							);
 						}
 						appendStep('QUESTION EXPANSION', {
@@ -1502,13 +1503,13 @@ export class AiService {
 				// ========================================
 				// SQL_AGENT features:
 				// - Canonical reuse decision (hard=0.92, soft=0.8)
-				// - Retrieve schema context via RAG (limit=8, threshold=0.6)
+				// - Retrieve schema context via RAG (limit=8, threshold=0.85)
 				// - Generate SQL (use business + intent hints)
 				// - Execute read-only & serialize results
 				const sqlStartTime = Date.now();
 				this.logInfo(
 					'SQL_AGENT',
-					`START | canonical decision | schema RAG | generate SQL | execute | canonicalQuestion="${canonicalQuestion.substring(0, 50)}..."`,
+					`START | canonical decision | schema RAG | generate SQL | execute | originalQuery="${query}" | canonicalQuestion="${canonicalQuestion}"${canonicalQuestion !== query ? ' (EXPANDED)' : ' (SAME AS ORIGINAL)'}`,
 				);
 				let sqlResult: SqlGenerationResult;
 				let sqlError: Error | null = null;
@@ -1834,7 +1835,8 @@ export class AiService {
 				});
 				processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
 				const processingLogId = await this.processingLogService.saveProcessingLog({
-					question: query,
+					question: query, // Original question (để lưu vào validatorData nếu có canonical)
+					canonicalQuestion: canonicalQuestion, // Pass canonical question để lưu làm question chính
 					...processingLogData,
 				});
 
@@ -1851,13 +1853,13 @@ export class AiService {
 					sqlResult.count >= 0; // Có thể là 0 (không có dữ liệu) nhưng vẫn hợp lệ
 				if (shouldPersist) {
 					try {
-						this.logDebug(
+						this.logInfo(
 							'PERSIST',
-							`Đang lưu Q&A vào pending knowledge (isValid=${validation.isValid}, severity=${validation.severity || 'none'}, count=${sqlResult.count}, evaluation=${validation.evaluation ? 'yes' : 'no'}, canonicalQuestion="${canonicalQuestion.substring(0, 50)}...")...`,
+							`Đang lưu Q&A vào pending knowledge | originalQuery="${query}" | canonicalQuestion="${canonicalQuestion}"${canonicalQuestion !== query ? ' (EXPANDED)' : ' (SAME AS ORIGINAL)'} | isValid=${validation.isValid} | severity=${validation.severity || 'none'} | count=${sqlResult.count} | evaluation=${validation.evaluation ? 'yes' : 'no'}`,
 						);
 						const pendingResult = await this.pendingKnowledgeService.savePendingKnowledge({
-							question: query, // Original question (may be short)
-							canonicalQuestion: canonicalQuestion !== query ? canonicalQuestion : undefined, // Only save if different
+							question: query, // Original question (để lưu vào validatorData)
+							canonicalQuestion: canonicalQuestion, // Luôn pass canonical question (sẽ được dùng làm question chính)
 							sql: sqlResult.sql,
 							previousSql: previousSql || undefined, // Previous SQL if modification query
 							previousCanonicalQuestion: previousCanonicalQuestion || undefined, // Previous canonical question if modification query
