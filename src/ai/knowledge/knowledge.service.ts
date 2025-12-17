@@ -394,11 +394,15 @@ export class KnowledgeService {
 		query: string,
 		options: VectorSearchOptions = { limit: 5 },
 	): Promise<VectorSearchResult[]> {
-		return await this.vectorStore.similaritySearch(query, 'schema', {
+		const threshold = options.threshold ?? RAG_THRESHOLDS.SCHEMA;
+		const results = await this.vectorStore.similaritySearch(query, 'schema', {
 			...options,
+			threshold,
 			tenantId: this.tenantId,
 			dbKey: this.dbKey,
 		});
+		// Filter by threshold if score is available
+		return results.filter((r) => typeof r.score === 'number' && r.score >= threshold);
 	}
 
 	/**
@@ -408,11 +412,15 @@ export class KnowledgeService {
 		query: string,
 		options: VectorSearchOptions = { limit: 5 },
 	): Promise<VectorSearchResult[]> {
-		return await this.vectorStore.similaritySearch(query, 'qa', {
+		const threshold = options.threshold ?? RAG_THRESHOLDS.QA;
+		const results = await this.vectorStore.similaritySearch(query, 'qa', {
 			...options,
+			threshold,
 			tenantId: this.tenantId,
 			dbKey: this.dbKey,
 		});
+		// Filter by threshold if score is available
+		return results.filter((r) => typeof r.score === 'number' && r.score >= threshold);
 	}
 
 	/**
@@ -422,11 +430,15 @@ export class KnowledgeService {
 		query: string,
 		options: VectorSearchOptions = { limit: 5 },
 	): Promise<VectorSearchResult[]> {
-		return await this.vectorStore.similaritySearch(query, 'business', {
+		const threshold = options.threshold ?? RAG_THRESHOLDS.BUSINESS;
+		const results = await this.vectorStore.similaritySearch(query, 'business', {
 			...options,
+			threshold,
 			tenantId: this.tenantId,
 			dbKey: this.dbKey,
 		});
+		// Filter by threshold if score is available
+		return results.filter((r) => typeof r.score === 'number' && r.score >= threshold);
 	}
 
 	/**
@@ -524,9 +536,12 @@ export class KnowledgeService {
 		knowledge: VectorSearchResult[];
 		business?: VectorSearchResult[];
 	}> {
+		// Ensure threshold is set from config if not provided
+		const threshold = options.threshold ?? RAG_THRESHOLDS.DEFAULT;
+		const optionsWithThreshold = { ...options, threshold };
 		const [schema, knowledge] = await Promise.all([
-			this.retrieveSchemaContext(query, options),
-			this.retrieveKnowledgeContext(query, options),
+			this.retrieveSchemaContext(query, optionsWithThreshold),
+			this.retrieveKnowledgeContext(query, optionsWithThreshold),
 		]);
 
 		return { schema, knowledge };
