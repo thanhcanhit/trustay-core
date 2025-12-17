@@ -330,19 +330,32 @@ CHỈ trả về JSON, không có text khác:`;
 		// Try CHART for aggregate/statistics-like data
 		if (desiredMode === ResponseGenerator.MODE_CHART) {
 			// Detect chart type from query
-			let chartType: 'pie' | 'bar' | 'line' | 'doughnut' | 'radar' | 'polarArea' | undefined;
+			let chartType:
+				| 'pie'
+				| 'bar'
+				| 'line'
+				| 'doughnut'
+				| 'radar'
+				| 'polarArea'
+				| 'area'
+				| 'horizontalBar'
+				| undefined;
 			if (query) {
 				const queryLower = query.toLowerCase();
 				if (
 					/biểu đồ tròn|pie chart|pie|doughnut|tỉ lệ|tỷ lệ|phần trăm|percentage/i.test(queryLower)
 				) {
 					chartType = 'pie';
+				} else if (/biểu đồ miền|area chart|area|diện tích|filled|điền/i.test(queryLower)) {
+					chartType = 'area';
 				} else if (
 					/biểu đồ đường|line chart|line|theo thời gian|theo tháng|theo năm|theo ngày|trend|xu hướng/i.test(
 						queryLower,
 					)
 				) {
 					chartType = 'line';
+				} else if (/biểu đồ cột ngang|horizontal bar|bar ngang|cột ngang/i.test(queryLower)) {
+					chartType = 'horizontalBar';
 				} else if (
 					/radar|so sánh|đánh giá|phân tích đa tiêu chí|nhiều tiêu chí/i.test(queryLower)
 				) {

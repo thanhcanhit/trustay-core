@@ -2139,7 +2139,9 @@ export class AiService {
 													| 'line'
 													| 'doughnut'
 													| 'radar'
-													| 'polarArea',
+													| 'polarArea'
+													| 'area'
+													| 'horizontalBar',
 											}
 										: {}),
 								},
