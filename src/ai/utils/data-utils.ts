@@ -296,15 +296,15 @@ export function selectImportantColumns(
 }
 
 /**
- * Try to build chart from data rows
+ * Try to build chart from data rows with intelligent chart type detection
  * @param rows - Data rows
- * @param chartType - Optional chart type hint ('pie', 'bar', 'line', 'doughnut')
+ * @param chartType - Optional chart type hint ('pie', 'bar', 'line', 'doughnut', 'radar', 'polarArea')
  * @param query - Optional query text to detect chart type from keywords
  * @returns Chart URL and dimensions or null if cannot build chart
  */
 export function tryBuildChart(
 	rows: ReadonlyArray<Record<string, unknown>>,
-	chartType?: 'pie' | 'bar' | 'line' | 'doughnut',
+	chartType?: 'pie' | 'bar' | 'line' | 'doughnut' | 'radar' | 'polarArea',
 	query?: string,
 ): { url: string; width: number; height: number; type: string } | null {
 	if (rows.length === 0) {
@@ -378,35 +378,85 @@ export function tryBuildChart(
 	const labels: string[] = top.map((p) => p.label);
 	const data: number[] = top.map((p) => p.value);
 	// Detect chart type from query if not provided
-	let detectedType: 'bar' | 'line' | 'pie' | 'doughnut' = chartType || 'bar';
+	let detectedType: 'bar' | 'line' | 'pie' | 'doughnut' | 'radar' | 'polarArea' =
+		chartType || 'bar';
 	if (!chartType && query) {
 		const queryLower = query.toLowerCase();
+		// Pie/Doughnut detection
 		if (/biểu đồ tròn|pie chart|pie|doughnut|tỉ lệ|tỷ lệ|phần trăm|percentage/i.test(queryLower)) {
-			detectedType = 'pie';
-		} else if (
-			/biểu đồ đường|line chart|line|theo thời gian|theo tháng|theo năm/i.test(queryLower)
+			detectedType = filteredPairs.length <= 5 ? 'pie' : 'doughnut';
+		}
+		// Line chart detection (time series)
+		else if (
+			/biểu đồ đường|line chart|line|theo thời gian|theo tháng|theo năm|theo ngày|trend|xu hướng/i.test(
+				queryLower,
+			)
 		) {
 			detectedType = 'line';
-		} else if (/biểu đồ cột|bar chart|bar|cột/i.test(queryLower)) {
+		}
+		// Radar chart detection (multi-criteria comparison)
+		else if (
+			/radar|so sánh|đánh giá|phân tích đa tiêu chí|nhiều tiêu chí|multi.*criteria/i.test(
+				queryLower,
+			)
+		) {
+			detectedType = filteredPairs.length >= 3 && filteredPairs.length <= 8 ? 'radar' : 'bar';
+		}
+		// Bar chart detection
+		else if (/biểu đồ cột|bar chart|bar|cột/i.test(queryLower)) {
 			detectedType = 'bar';
 		}
 	}
-	// Auto-detect pie chart for ratio/proportion data (2-5 categories, sum represents total)
-	if (!chartType && !query && filteredPairs.length >= 2 && filteredPairs.length <= 5) {
+	// Intelligent auto-detection based on data characteristics
+	if (!chartType && !query) {
+		const categoryCount = filteredPairs.length;
 		const total = filteredPairs.reduce((sum, p) => sum + p.value, 0);
-		// If values represent parts of a whole (like percentages or counts that sum to total)
+		const maxValue = Math.max(...filteredPairs.map((p) => p.value));
 		const isProportionData = filteredPairs.every((p) => p.value <= total);
-		if (isProportionData) {
+		// Pie chart: 2-5 categories, proportion data (parts of a whole)
+		if (categoryCount >= 2 && categoryCount <= 5 && isProportionData) {
 			detectedType = 'pie';
 		}
+		// Doughnut: 6-8 categories, proportion data
+		else if (categoryCount >= 6 && categoryCount <= 8 && isProportionData) {
+			detectedType = 'doughnut';
+		}
+		// Radar: 3-8 categories, similar value ranges (comparison)
+		else if (
+			categoryCount >= 3 &&
+			categoryCount <= 8 &&
+			maxValue > 0 &&
+			filteredPairs.every((p) => p.value / maxValue >= 0.1) // Values are somewhat comparable
+		) {
+			// Use radar for comparison scenarios, but prefer bar if values vary too much
+			const valueVariance =
+				filteredPairs.reduce((sum, p) => sum + (p.value - total / categoryCount) ** 2, 0) /
+				categoryCount;
+			const avgValue = total / categoryCount;
+			// If variance is low relative to average, use radar; otherwise bar
+			if (valueVariance / avgValue < 0.5) {
+				detectedType = 'radar';
+			}
+		}
+		// Default to bar for other cases
+	}
+	// Adjust dimensions based on chart type
+	let chartWidth = 800;
+	let chartHeight = 400;
+	if (detectedType === 'pie' || detectedType === 'doughnut' || detectedType === 'polarArea') {
+		chartWidth = 600;
+		chartHeight = 600;
+	} else if (detectedType === 'radar') {
+		chartWidth = 700;
+		chartHeight = 700;
 	}
 	const { url, width, height } = buildQuickChartUrl({
 		labels,
 		datasetLabel: toLabel(valueKey),
 		data,
 		type: detectedType,
-		width: detectedType === 'pie' || detectedType === 'doughnut' ? 600 : 800,
-		height: detectedType === 'pie' || detectedType === 'doughnut' ? 600 : 400,
+		width: chartWidth,
+		height: chartHeight,
 	});
 	return { url, width, height, type: detectedType };
 }

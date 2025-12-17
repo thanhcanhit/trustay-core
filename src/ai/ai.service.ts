@@ -2132,7 +2132,15 @@ export class AiService {
 									height: chartData.height,
 									alt: 'Chart',
 									...(chartData.type
-										? { type: chartData.type as 'pie' | 'bar' | 'line' | 'doughnut' }
+										? {
+												type: chartData.type as
+													| 'pie'
+													| 'bar'
+													| 'line'
+													| 'doughnut'
+													| 'radar'
+													| 'polarArea',
+											}
 										: {}),
 								},
 							};

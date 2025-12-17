@@ -330,7 +330,7 @@ CHỈ trả về JSON, không có text khác:`;
 		// Try CHART for aggregate/statistics-like data
 		if (desiredMode === ResponseGenerator.MODE_CHART) {
 			// Detect chart type from query
-			let chartType: 'pie' | 'bar' | 'line' | 'doughnut' | undefined;
+			let chartType: 'pie' | 'bar' | 'line' | 'doughnut' | 'radar' | 'polarArea' | undefined;
 			if (query) {
 				const queryLower = query.toLowerCase();
 				if (
@@ -338,9 +338,15 @@ CHỈ trả về JSON, không có text khác:`;
 				) {
 					chartType = 'pie';
 				} else if (
-					/biểu đồ đường|line chart|line|theo thời gian|theo tháng|theo năm/i.test(queryLower)
+					/biểu đồ đường|line chart|line|theo thời gian|theo tháng|theo năm|theo ngày|trend|xu hướng/i.test(
+						queryLower,
+					)
 				) {
 					chartType = 'line';
+				} else if (
+					/radar|so sánh|đánh giá|phân tích đa tiêu chí|nhiều tiêu chí/i.test(queryLower)
+				) {
+					chartType = 'radar';
 				} else if (/biểu đồ cột|bar chart|bar|cột/i.test(queryLower)) {
 					chartType = 'bar';
 				}

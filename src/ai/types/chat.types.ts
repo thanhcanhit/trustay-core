@@ -87,7 +87,7 @@ export interface DataPayload {
 		width: number;
 		height: number;
 		alt?: string;
-		type?: 'pie' | 'bar' | 'line' | 'doughnut'; // Chart type for reference
+		type?: 'pie' | 'bar' | 'line' | 'doughnut' | 'radar' | 'polarArea'; // Chart type for reference
 	};
 }
 
