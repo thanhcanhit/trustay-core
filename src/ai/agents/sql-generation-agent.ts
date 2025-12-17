@@ -108,6 +108,7 @@ export class SqlGenerationAgent {
 		businessContext?: string,
 		previousSql?: string | null,
 		previousCanonicalQuestion?: string | null,
+		sessionSummary?: string | null,
 	): Promise<SqlGenerationResult> {
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
@@ -510,6 +511,7 @@ export class SqlGenerationAgent {
 					userId,
 					userRole,
 					businessContext,
+					sessionSummary: sessionSummary || undefined,
 					intentAction, // Intent action: search (toàn hệ thống) vs own (cá nhân)
 					filtersHint, // Filters hint from orchestrator (BẮT BUỘC phải dùng)
 					lastError, // Error từ lần attempt trước → AI tự sửa lỗi

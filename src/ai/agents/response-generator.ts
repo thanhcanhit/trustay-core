@@ -69,6 +69,7 @@ export class ResponseGenerator {
 		session: ChatSession,
 		aiConfig: { model: string; temperature: number; maxTokens: number },
 		desiredMode?: 'LIST' | 'TABLE' | 'CHART' | 'INSIGHT',
+		sessionSummary?: string | null,
 	): Promise<string> {
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
@@ -150,6 +151,7 @@ export class ResponseGenerator {
 		// Build message-only prompt for the LLM
 		const finalPrompt = buildFinalMessagePrompt({
 			recentMessages,
+			sessionSummary: sessionSummary || undefined,
 			conversationalMessage,
 			count: sqlResult.count,
 			dataPreview: JSON.stringify(sqlResult.results).substring(0, PREVIEW_LENGTHS.DATA_FINAL),
@@ -390,6 +392,7 @@ CHỈ trả về JSON, không có text khác:`;
 		sqlResult: SqlGenerationResult,
 		session: ChatSession,
 		aiConfig: { model: string; temperature: number; maxTokens: number },
+		sessionSummary?: string | null,
 	): Promise<string> {
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
@@ -398,6 +401,7 @@ CHỈ trả về JSON, không có text khác:`;
 			.join('\n');
 		const responsePrompt = buildFriendlyResponsePrompt({
 			recentMessages,
+			sessionSummary: sessionSummary || undefined,
 			query,
 			count: sqlResult.count,
 			dataPreview: JSON.stringify(sqlResult.results).substring(0, PREVIEW_LENGTHS.DATA_FRIENDLY),

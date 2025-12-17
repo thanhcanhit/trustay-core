@@ -4,6 +4,7 @@
 
 export interface FinalResponsePromptParams {
 	recentMessages?: string;
+	sessionSummary?: string; // Long-term conversation summary
 	conversationalMessage: string;
 	count: number;
 	dataPreview: string;
@@ -18,6 +19,7 @@ export interface FinalResponsePromptParams {
 export function buildFinalResponsePrompt(params: FinalResponsePromptParams): string {
 	const {
 		recentMessages,
+		sessionSummary,
 		conversationalMessage,
 		count,
 		dataPreview,
@@ -30,7 +32,7 @@ export function buildFinalResponsePrompt(params: FinalResponsePromptParams): str
 		return `
 Bạn là AI assistant của Trustay. Phân tích CHI TIẾT phòng trọ với SỐ LIỆU CỤ THỂ từ dữ liệu.
 
-${recentMessages ? `NGỮ CẢNH:\n${recentMessages}\n\n` : ''}
+${sessionSummary ? `TÓM TẮT NGỮ CẢNH DÀI HẠN (từ các cuộc hội thoại trước):\n${sessionSummary}\n\nQUAN TRỌNG: Sử dụng tóm tắt này để hiểu ngữ cảnh và ý định của người dùng từ các câu hỏi trước.\n\n` : ''}${recentMessages ? `NGỮ CẢNH HỘI THOẠI GẦN ĐÂY:\n${recentMessages}\n\n` : ''}
 
 THÔNG ĐIỆP: "${conversationalMessage}"
 DỮ LIỆU PHÒNG: ${dataPreview}
@@ -85,7 +87,7 @@ DỮ LIỆU ĐÃ ĐƯỢC XỬ LÝ:
 	return `
 Bạn là AI assistant của Trustay. Hãy tạo câu trả lời cuối cùng kết hợp thông tin từ cuộc trò chuyện và kết quả truy vấn.
 
-${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
+${sessionSummary ? `TÓM TẮT NGỮ CẢNH DÀI HẠN (từ các cuộc hội thoại trước):\n${sessionSummary}\n\nQUAN TRỌNG: Sử dụng tóm tắt này để hiểu ngữ cảnh và ý định của người dùng từ các câu hỏi trước.\n\n` : ''}${recentMessages ? `NGỮ CẢNH HỘI THOẠI GẦN ĐÂY:\n${recentMessages}\n\n` : ''}
 
 THÔNG ĐIỆP TỪ ORCHESTRATOR AGENT: "${conversationalMessage}"
 SỐ KẾT QUẢ: ${count}
@@ -178,6 +180,7 @@ Câu trả lời cuối cùng (ƯU TIÊN JSON ENVELOPE - toàn bộ response là
 
 export interface FinalMessagePromptParams {
 	recentMessages?: string;
+	sessionSummary?: string; // Long-term conversation summary
 	conversationalMessage: string;
 	count: number;
 	dataPreview: string;
@@ -192,6 +195,7 @@ export interface FinalMessagePromptParams {
 export function buildFinalMessagePrompt(params: FinalMessagePromptParams): string {
 	const {
 		recentMessages,
+		sessionSummary,
 		conversationalMessage,
 		count,
 		dataPreview,
@@ -204,7 +208,7 @@ export function buildFinalMessagePrompt(params: FinalMessagePromptParams): strin
 		return `
 Bạn là AI assistant của Trustay. Phân tích CHI TIẾT phòng trọ với SỐ LIỆU CỤ THỂ từ dữ liệu.
 
-${recentMessages ? `NGỮ CẢNH:\n${recentMessages}\n\n` : ''}
+${sessionSummary ? `TÓM TẮT NGỮ CẢNH DÀI HẠN (từ các cuộc hội thoại trước):\n${sessionSummary}\n\nQUAN TRỌNG: Sử dụng tóm tắt này để hiểu ngữ cảnh và ý định của người dùng từ các câu hỏi trước.\n\n` : ''}${recentMessages ? `NGỮ CẢNH HỘI THOẠI GẦN ĐÂY:\n${recentMessages}\n\n` : ''}
 
 THÔNG ĐIỆP: "${conversationalMessage}"
 DỮ LIỆU PHÒNG: ${dataPreview}
@@ -285,17 +289,18 @@ CHỈ TRẢ VỀ NỘI DUNG TIN NHẮN (KHÔNG JSON, KHÔNG GIẢI THÍCH THÊM)
 
 export interface FriendlyResponsePromptParams {
 	recentMessages?: string;
+	sessionSummary?: string; // Long-term conversation summary
 	query: string;
 	count: number;
 	dataPreview: string;
 }
 
 export function buildFriendlyResponsePrompt(params: FriendlyResponsePromptParams): string {
-	const { recentMessages, query, count, dataPreview } = params;
+	const { recentMessages, sessionSummary, query, count, dataPreview } = params;
 	return `
 Bạn là AI assistant thân thiện cho ứng dụng Trustay. Hãy tạo câu trả lời dễ hiểu cho người dùng.
 
-${recentMessages ? `NGỮ CẢNH HỘI THOẠI:\n${recentMessages}\n\n` : ''}
+${sessionSummary ? `TÓM TẮT NGỮ CẢNH DÀI HẠN (từ các cuộc hội thoại trước):\n${sessionSummary}\n\nQUAN TRỌNG: Sử dụng tóm tắt này để hiểu ngữ cảnh và ý định của người dùng từ các câu hỏi trước.\n\n` : ''}${recentMessages ? `NGỮ CẢNH HỘI THOẠI GẦN ĐÂY:\n${recentMessages}\n\n` : ''}
 
 CÂU HỎI NGƯỜI DÙNG: "${query}"
 SỐ KẾT QUẢ: ${count}

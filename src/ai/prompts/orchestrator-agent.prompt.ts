@@ -14,6 +14,7 @@ export interface OrchestratorPromptParams {
 		identifier: string;
 		type?: 'slug' | 'id';
 	};
+	sessionSummary?: string;
 }
 
 export function buildOrchestratorPrompt(params: OrchestratorPromptParams): string {
@@ -25,6 +26,7 @@ export function buildOrchestratorPrompt(params: OrchestratorPromptParams): strin
 		userRole,
 		businessContext,
 		currentPageContext,
+		sessionSummary,
 	} = params;
 
 	return `
@@ -36,6 +38,8 @@ Bạn là AI Agent 1 - Orchestrator Agent (Nhà điều phối) của hệ thố
 5. CHỈ hỏi thông tin THỰC SỰ CẦN THIẾT - không hỏi quá nhiều
 
 ${userId ? `THÔNG TIN NGƯỜI DÙNG:\nUser ID: ${userId}\nUser Role: ${userRole}\n` : 'NGƯỜI DÙNG: Khách (chưa đăng nhập)\n'}
+
+${sessionSummary ? `TÓM TẮT NGỮ CẢNH DÀI HẠN (từ các cuộc hội thoại trước):\n${sessionSummary}\n\nQUAN TRỌNG: Sử dụng tóm tắt này để hiểu ngữ cảnh và ý định của người dùng từ các câu hỏi trước. Kết hợp với recentMessages để có context đầy đủ.\n\n` : ''}
 
 ${businessContext ? `NGỮ CẢNH NGHIỆP VỤ (từ RAG):\n${businessContext}\n\n` : ''}
 

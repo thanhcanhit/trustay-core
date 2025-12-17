@@ -1198,6 +1198,15 @@ export class AiService {
 			// - Read business context via RAG (limit=8, threshold=0.85)
 			// - Decide readiness for SQL
 			// - Derive intent hints: ENTITY/FILTERS/MODE
+			// Load summary from DB for context
+			const dbSession = await this.chatSessionService.getSession(session.sessionId);
+			const sessionSummary = dbSession?.summary || null;
+			if (sessionSummary) {
+				this.logDebug(
+					'CONTEXT',
+					`Loaded session summary (${sessionSummary.length} chars) for context`,
+				);
+			}
 			const orchestratorStartTime = Date.now();
 			this.logInfo(
 				'ORCHESTRATOR',
@@ -1207,6 +1216,7 @@ export class AiService {
 				query,
 				session,
 				this.AI_CONFIG,
+				sessionSummary, // Pass summary for context
 			);
 			const orchestratorDuration = Date.now() - orchestratorStartTime;
 			this.logInfo(
@@ -1524,6 +1534,7 @@ export class AiService {
 						orchestratorResponse.businessContext,
 						previousSql || undefined, // Pass previous SQL if available (for modification queries)
 						previousCanonicalQuestion || undefined, // Pass previous canonical question if available
+						sessionSummary, // Pass session summary for long-term context
 					);
 				} catch (error) {
 					// SQL generation failed completely - log đầy đủ error
@@ -1699,6 +1710,7 @@ export class AiService {
 						session,
 						this.AI_CONFIG,
 						desiredMode,
+						sessionSummary, // Pass session summary for long-term context
 					),
 					// Agent 4: Result Validator - Đánh giá tính hợp lệ của kết quả
 					this.resultValidatorAgent.validateResult(

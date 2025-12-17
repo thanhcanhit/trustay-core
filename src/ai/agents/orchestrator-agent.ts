@@ -73,6 +73,7 @@ export class OrchestratorAgent {
 		query: string,
 		session: ChatSession,
 		aiConfig: { model: string; temperature: number; maxTokens: number },
+		sessionSummary?: string | null,
 	): Promise<OrchestratorAgentResponse> {
 		const userId = session.userId;
 		const recentMessages = session.messages
@@ -150,7 +151,7 @@ export class OrchestratorAgent {
 			this.logger.debug('[OrchestratorAgent] No context messages found in session');
 		}
 
-		// Build orchestrator prompt with business context, user role, and current page context
+		// Build orchestrator prompt with business context, user role, current page context, and summary
 		const orchestratorPrompt = buildOrchestratorPrompt({
 			recentMessages,
 			query,
@@ -159,6 +160,7 @@ export class OrchestratorAgent {
 			userRole,
 			businessContext,
 			currentPageContext,
+			sessionSummary: sessionSummary || undefined,
 		});
 
 		try {

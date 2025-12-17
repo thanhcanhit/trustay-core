@@ -47,14 +47,17 @@ export const MAX_OUTPUT_TOKENS = {
 
 /**
  * Recent Messages Limits - How many recent messages to include in context
+ * Unified limit for all agents to maintain consistent context
  */
 export const RECENT_MESSAGES_LIMIT = {
+	/** Standard limit for all agents */
+	DEFAULT: 5,
 	/** Orchestrator agent */
-	ORCHESTRATOR: 10,
+	ORCHESTRATOR: 5,
 	/** SQL generation agent */
 	SQL_GENERATION: 5,
 	/** Response generator */
-	RESPONSE: 3,
+	RESPONSE: 5,
 } as const;
 
 /**
