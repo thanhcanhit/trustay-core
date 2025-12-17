@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { generateText } from 'ai';
 import { PrismaService } from '../../prisma/prisma.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
+import { buildModificationQueryContext } from '../prompts/question-expansion-agent.prompt';
 import { buildSqlPrompt } from '../prompts/sql-agent.prompt';
 import {
 	ChatSession,
@@ -110,6 +111,8 @@ export class SqlGenerationAgent {
 		prisma: PrismaService,
 		aiConfig: AiConfig,
 		businessContext?: string,
+		previousSql?: string | null,
+		previousCanonicalQuestion?: string | null,
 	): Promise<SqlGenerationResult> {
 		const recentMessages = session.messages
 			.filter((m) => m.role !== 'system')
@@ -120,6 +123,8 @@ export class SqlGenerationAgent {
 			)
 			.join('\n');
 		const userId = session.userId;
+		// Check if this is a modification query (passed from AiService)
+		const isModification = previousSql && previousSql.length > 0;
 		// Get user role if authenticated - AI will handle security via prompt
 		let userRole: string | undefined;
 		if (userId) {
@@ -282,7 +287,14 @@ export class SqlGenerationAgent {
 						.join('\n\n');
 					ragContext += qaContext ? `RELEVANT Q&A EXAMPLES:\n${qaContext}\n` : '';
 				}
-				if (
+				// Inject previous SQL from AiService if this is a modification query
+				// This takes priority over canonical decision from vector DB (more recent context)
+				if (isModification && previousSql) {
+					ragContext += `\n${buildModificationQueryContext(query, previousSql, previousCanonicalQuestion || undefined)}`;
+					this.logger.debug(
+						`Modification query detected | previousSql length=${previousSql.length} | previousCanonicalQuestion="${previousCanonicalQuestion || 'N/A'}"`,
+					);
+				} else if (
 					canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT ||
 					canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE
 				) {

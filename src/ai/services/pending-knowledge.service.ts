@@ -22,8 +22,11 @@ export class PendingKnowledgeService {
 	 * @returns Created pending knowledge record
 	 */
 	async savePendingKnowledge(params: {
-		question: string;
+		question: string; // Original question (may be short)
+		canonicalQuestion?: string; // Expanded canonical question (if different from question)
 		sql?: string;
+		previousSql?: string; // Previous SQL query (for reference in modification queries)
+		previousCanonicalQuestion?: string; // Previous canonical question (for reference)
 		response?: string;
 		evaluation?: string;
 		validatorData?: ResultValidationResponse;
@@ -33,12 +36,29 @@ export class PendingKnowledgeService {
 	}): Promise<{
 		id: string;
 		question: string;
+		canonicalQuestion?: string;
 		sql?: string;
+		previousSql?: string;
 		response?: string;
 		status: string;
 		createdAt: Date;
 	}> {
 		try {
+			// Build validatorData with canonical question info
+			const validatorDataWithCanonical = params.validatorData
+				? {
+						...params.validatorData,
+						canonicalQuestion: params.canonicalQuestion || params.question,
+						previousSql: params.previousSql,
+						previousCanonicalQuestion: params.previousCanonicalQuestion,
+					}
+				: params.canonicalQuestion || params.previousSql || params.previousCanonicalQuestion
+					? {
+							canonicalQuestion: params.canonicalQuestion || params.question,
+							previousSql: params.previousSql,
+							previousCanonicalQuestion: params.previousCanonicalQuestion,
+						}
+					: undefined;
 			const pendingKnowledge = await (this.prisma as any).pendingKnowledge.create({
 				data: {
 					question: params.question,
@@ -46,16 +66,7 @@ export class PendingKnowledgeService {
 					response: params.response,
 					evaluation: params.evaluation,
 					status: 'pending',
-					validatorData: params.validatorData
-						? {
-								isValid: params.validatorData.isValid,
-								reason: params.validatorData.reason,
-								violations: params.validatorData.violations,
-								severity: params.validatorData.severity,
-								evaluation: params.validatorData.evaluation,
-								tokenUsage: params.validatorData.tokenUsage,
-							}
-						: undefined,
+					validatorData: validatorDataWithCanonical,
 					sessionId: params.sessionId,
 					userId: params.userId,
 					processingLogId: params.processingLogId,
@@ -66,10 +77,17 @@ export class PendingKnowledgeService {
 				`Saved pending knowledge | id=${pendingKnowledge.id} | question="${params.question.substring(0, 50)}..."`,
 			);
 
+			// Extract canonical question from validatorData if stored there
+			const validatorData = pendingKnowledge.validatorData as any;
+			const canonicalQuestion =
+				validatorData?.canonicalQuestion || params.canonicalQuestion || params.question;
+			const previousSql = validatorData?.previousSql || params.previousSql;
 			return {
 				id: pendingKnowledge.id,
 				question: pendingKnowledge.question,
+				canonicalQuestion,
 				sql: pendingKnowledge.sql,
+				previousSql,
 				response: pendingKnowledge.response,
 				status: pendingKnowledge.status,
 				createdAt: pendingKnowledge.createdAt,
@@ -124,8 +142,12 @@ export class PendingKnowledgeService {
 				this.logger.debug(
 					`Approving pending knowledge ${id} - saving to vector DB (will check for duplicates)`,
 				);
+				// Extract canonical question from validatorData if available
+				const validatorData = pending.validatorData as any;
+				const canonicalQuestion = validatorData?.canonicalQuestion || pending.question;
+				// Use canonical question for vector DB (not original short question)
 				vectorResult = await this.knowledge.saveQAInteraction({
-					question: pending.question,
+					question: canonicalQuestion, // Use canonical question instead of original
 					sql: pending.sql,
 					sessionId: pending.sessionId || undefined,
 					userId: pending.userId || undefined,
@@ -133,6 +155,9 @@ export class PendingKnowledgeService {
 						approvedFrom: id,
 						approvedBy,
 						originalValidatorData: pending.validatorData,
+						originalQuestion: pending.question, // Keep original for reference
+						previousSql: validatorData?.previousSql,
+						previousCanonicalQuestion: validatorData?.previousCanonicalQuestion,
 					},
 				});
 				// Log whether it was reused or created new

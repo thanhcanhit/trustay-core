@@ -5,7 +5,9 @@ import { BuildingsService } from '../api/buildings/buildings.service';
 import { AddressService } from '../api/provinces/address/address.service';
 import { RoomsService } from '../api/rooms/rooms.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ChatSessionQueueService } from '../queue/services/chat-session-queue.service';
 import { OrchestratorAgent } from './agents/orchestrator-agent';
+import { QuestionExpansionAgent } from './agents/question-expansion-agent';
 import { ResponseGenerator } from './agents/response-generator';
 import { ResultValidatorAgent } from './agents/result-validator-agent';
 import { SqlGenerationAgent } from './agents/sql-generation-agent';
@@ -13,6 +15,7 @@ import { KnowledgeService } from './knowledge/knowledge.service';
 import { buildOneForAllPrompt } from './prompts/simple-system-one-for-all';
 import { VIETNAMESE_LOCALE_SYSTEM_PROMPT } from './prompts/system.prompt';
 import { AiProcessingLogService } from './services/ai-processing-log.service';
+import { ChatSessionService } from './services/chat-session.service';
 import { generateErrorResponse } from './services/error-handler.service';
 import { PendingKnowledgeService } from './services/pending-knowledge.service';
 import {
@@ -44,6 +47,11 @@ import { serializeBigInt } from './utils/serializer';
 import { isAggregateQuery, validateSqlSafety } from './utils/sql-safety';
 export { ChatResponse };
 
+/**
+ * Conversation management methods - New API variant
+ * These methods work with explicit conversation IDs
+ */
+
 @Injectable()
 export class AiService {
 	// AI Constants
@@ -62,12 +70,11 @@ export class AiService {
 	private sqlGenerationAgent: SqlGenerationAgent;
 	private readonly responseGenerator = new ResponseGenerator();
 	private readonly resultValidatorAgent = new ResultValidatorAgent();
+	private readonly questionExpansionAgent = new QuestionExpansionAgent();
 
-	// Chat session management - similar to rooms.service.ts view cache pattern
-	private chatSessions = new Map<string, ChatSession>();
-	private readonly SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 phút
-	private readonly MAX_MESSAGES_PER_SESSION = 10; // Giới hạn tin nhắn mỗi session
-	private readonly CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 phút
+	// Chat session management - using database-backed ChatSessionService
+	private readonly SUMMARY_THRESHOLD = 10; // Trigger summary generation when messageCount > this
+	private readonly AUTO_TITLE_MESSAGE_COUNT = 2; // Trigger auto-title when session has this many messages
 
 	constructor(
 		private readonly prisma: PrismaService,
@@ -78,15 +85,13 @@ export class AiService {
 		private readonly addressService: AddressService,
 		private readonly processingLogService: AiProcessingLogService,
 		private readonly pendingKnowledgeService: PendingKnowledgeService,
+		private readonly chatSessionService: ChatSessionService,
+		private readonly chatSessionQueueService: ChatSessionQueueService,
 	) {
 		// Initialize orchestrator agent with Prisma and KnowledgeService
 		this.orchestratorAgent = new OrchestratorAgent(this.prisma, this.knowledge);
 		// Initialize SQL generation agent with knowledge service for RAG
 		this.sqlGenerationAgent = new SqlGenerationAgent(this.knowledge);
-		// Dọn dẹp session cũ định kỳ - similar to rooms.service.ts cleanup pattern
-		setInterval(() => {
-			this.cleanupExpiredSessions();
-		}, this.CLEANUP_INTERVAL_MS);
 	}
 
 	/**
@@ -147,60 +152,132 @@ export class AiService {
 	}
 
 	/**
-	 * Generate session ID based on user context - similar to rooms.service.ts cache key generation
-	 * @param userId - User ID if authenticated
-	 * @param clientIp - Client IP address
-	 * @returns Session ID
+	 * Convert database session to ChatSession format
+	 * @param dbSession - Database session from ChatSessionService
+	 * @param clientIp - Client IP (not stored in DB, passed separately)
+	 * @returns ChatSession format
 	 */
-	private generateSessionId(userId?: string, clientIp?: string): string {
-		if (userId) {
-			return `user_${userId}`;
-		}
-		if (clientIp) {
-			return `ip_${clientIp.replace(/[:.]/g, '_')}`;
-		}
-		// Fallback to random session (không khuyến khích)
-		return `anon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+	private convertDbSessionToChatSession(dbSession: any, clientIp?: string): ChatSession {
+		const messages: ChatMessage[] = dbSession.messages
+			? dbSession.messages.map((m: any) => ({
+					role: m.role as 'user' | 'assistant' | 'system',
+					content: m.content,
+					timestamp: new Date(m.createdAt),
+					kind: (m.metadata as any)?.kind,
+					payload: (m.metadata as any)?.payload,
+					meta: (m.metadata as any)?.meta,
+				}))
+			: [];
+		// Không thêm system prompt vào in-memory session (chỉ dùng khi build prompt)
+		// System prompt sẽ được inject vào prompt khi gọi LLM, không cần lưu vào session
+		return {
+			sessionId: dbSession.id,
+			userId: dbSession.userId || undefined,
+			clientIp,
+			messages,
+			lastActivity: dbSession.lastMessageAt
+				? new Date(dbSession.lastMessageAt)
+				: new Date(dbSession.createdAt),
+			createdAt: new Date(dbSession.createdAt),
+		};
 	}
 
 	/**
-	 * Get or create chat session - pattern similar to rooms.service.ts shouldIncrementView
+	 * Get or create chat session - using database-backed ChatSessionService
 	 * @param userId - User ID if authenticated
 	 * @param clientIp - Client IP address
 	 * @returns Chat session
 	 */
-	private getOrCreateSession(userId?: string, clientIp?: string): ChatSession {
-		const sessionId = this.generateSessionId(userId, clientIp);
+	private async getOrCreateSession(userId?: string, clientIp?: string): Promise<ChatSession> {
+		const dbSession = await this.chatSessionService.getOrCreateSession(userId, clientIp);
+		// Không lưu system prompt vào DB, chỉ dùng trong memory cho processing
+		// Reload session with messages
+		const sessionWithMessages = await this.chatSessionService.getSession(dbSession.id);
+		return this.convertDbSessionToChatSession(sessionWithMessages || dbSession, clientIp);
+	}
 
-		if (this.chatSessions.has(sessionId)) {
-			const session = this.chatSessions.get(sessionId)!;
-			session.lastActivity = new Date();
-			return session;
+	/**
+	 * Extract last SQL query from session messages metadata
+	 * Query from database to ensure we get the latest data
+	 * @param sessionId - Session ID
+	 * @returns Last SQL query or null
+	 */
+	private async extractLastSqlFromSession(sessionId: string): Promise<string | null> {
+		try {
+			// Query recent messages from database to get latest SQL
+			const recentMessages = await this.chatSessionService.getRecentMessages(sessionId, 20);
+			// Look for last assistant message with SQL in metadata
+			for (const msg of recentMessages) {
+				if (msg.role === 'assistant' && msg.metadata) {
+					const metadata = msg.metadata as any;
+					// Check metadata.sql (stored directly)
+					if (metadata.sql) {
+						return metadata.sql as string;
+					}
+					// Check payload.sql (from DATA payload)
+					if (metadata.payload?.sql) {
+						return metadata.payload.sql as string;
+					}
+					// Check meta.sql (from envelope meta)
+					if (metadata.meta?.sql) {
+						return metadata.meta.sql as string;
+					}
+				}
+			}
+			return null;
+		} catch (error) {
+			this.logger.warn(`Failed to extract SQL from session: ${sessionId}`, error);
+			return null;
 		}
+	}
 
-		// Tạo session mới với system prompt tiếng Việt
-		const newSession: ChatSession = {
-			sessionId,
-			userId,
-			clientIp,
-			messages: [
-				{ role: 'system', content: VIETNAMESE_LOCALE_SYSTEM_PROMPT, timestamp: new Date() },
-			],
-			lastActivity: new Date(),
-			createdAt: new Date(),
-		};
-
-		this.chatSessions.set(sessionId, newSession);
-		return newSession;
+	/**
+	 * Extract last canonical question from session messages metadata
+	 * Query from database to ensure we get the latest data
+	 * @param sessionId - Session ID
+	 * @returns Last canonical question or null
+	 */
+	private async extractLastCanonicalQuestionFromSession(sessionId: string): Promise<string | null> {
+		try {
+			// Query recent messages from database to get latest canonical question
+			const recentMessages = await this.chatSessionService.getRecentMessages(sessionId, 20);
+			// Look for last assistant message with canonical question in metadata
+			for (const msg of recentMessages) {
+				if (msg.role === 'assistant' && msg.metadata) {
+					const metadata = msg.metadata as any;
+					// Check metadata.canonicalQuestion (stored directly)
+					if (metadata.canonicalQuestion) {
+						return metadata.canonicalQuestion as string;
+					}
+					// Check meta.canonicalQuestion (from envelope meta)
+					if (metadata.meta?.canonicalQuestion) {
+						return metadata.meta.canonicalQuestion as string;
+					}
+					// Check payload.meta.canonicalQuestion
+					if (metadata.payload?.meta?.canonicalQuestion) {
+						return metadata.payload.meta.canonicalQuestion as string;
+					}
+				}
+			}
+			return null;
+		} catch (error) {
+			this.logger.warn(`Failed to extract canonical question from session: ${sessionId}`, error);
+			return null;
+		}
 	}
 
 	/**
 	 * Add message to session with AI SDK CoreMessage format
+	 * Now saves to database via ChatSessionService
 	 * @param session - Chat session
 	 * @param role - Message role
 	 * @param content - Message content
+	 * @param envelope - Optional envelope with kind, payload, meta
+	 * @param triggerJobs - Whether to trigger background jobs (default: true for assistant messages)
+	 * @param sqlQuery - Optional SQL query to store in metadata
+	 * @param canonicalQuestion - Optional canonical question to store in metadata
 	 */
-	private addMessageToSession(
+	private async addMessageToSession(
 		session: ChatSession,
 		role: 'user' | 'assistant' | 'system',
 		content: string,
@@ -209,51 +286,141 @@ export class AiService {
 			payload?: any;
 			meta?: Record<string, unknown>;
 		},
-	): void {
+		triggerJobs: boolean = role === 'assistant',
+		sqlQuery?: string,
+		canonicalQuestion?: string,
+	): Promise<void> {
+		// Prepare metadata for database storage
+		const metadata: Record<string, unknown> = {};
+		if (envelope?.kind) {
+			metadata.kind = envelope.kind;
+		}
+		if (envelope?.payload) {
+			metadata.payload = envelope.payload;
+		}
+		if (envelope?.meta) {
+			metadata.meta = envelope.meta;
+		}
+		// Store SQL query and canonical question in metadata if provided
+		if (sqlQuery) {
+			metadata.sql = sqlQuery;
+		}
+		if (canonicalQuestion) {
+			metadata.canonicalQuestion = canonicalQuestion;
+		}
+		// Save to database
+		await this.chatSessionService.addMessage(session.sessionId, role, content, metadata);
+		// Update in-memory session for backward compatibility (will be refactored later)
 		const message: ChatMessage = {
 			role,
 			content,
 			timestamp: new Date(),
 			kind: envelope?.kind,
 			payload: envelope?.payload as any,
-			meta: envelope?.meta as Record<string, string | number | boolean> | undefined,
+			meta: {
+				...(envelope?.meta as Record<string, string | number | boolean> | undefined),
+				...(sqlQuery ? { sql: sqlQuery } : {}),
+				...(canonicalQuestion ? { canonicalQuestion } : {}),
+			},
 		};
-
 		session.messages.push(message);
 		session.lastActivity = new Date();
-
-		// Giới hạn số lượng tin nhắn để tránh memory leak
-		if (session.messages.length > this.MAX_MESSAGES_PER_SESSION) {
-			// Giữ lại system message đầu tiên (nếu có) và tin nhắn gần đây nhất
-			const systemMessages = session.messages.filter((m) => m.role === 'system');
-			const recentMessages = session.messages
-				.filter((m) => m.role !== 'system')
-				.slice(-this.MAX_MESSAGES_PER_SESSION + systemMessages.length);
-			session.messages = [...systemMessages, ...recentMessages];
+		// Trigger background jobs if this is an assistant message
+		if (triggerJobs && role === 'assistant') {
+			// Trigger background jobs - will get user message from DB
+			await this.triggerBackgroundJobs(session);
 		}
 	}
 
 	/**
-	 * Clean up expired sessions - similar to rooms.service.ts cleanupViewCache
+	 * Trigger background jobs (auto-title, summary) after adding assistant message
+	 * @param session - Chat session
 	 */
-	private cleanupExpiredSessions(): void {
-		const now = Date.now();
-		const expiredSessions: string[] = [];
+	private async triggerBackgroundJobs(session: ChatSession): Promise<void> {
+		try {
+			const dbSession = await this.chatSessionService.getSession(session.sessionId);
+			if (!dbSession) {
+				return;
+			}
+			// Trigger auto-title if session has exactly AUTO_TITLE_MESSAGE_COUNT messages
+			// (1 user + 1 assistant, excluding system messages)
+			// Count only user and assistant messages from DB
+			const allMessages = await this.chatSessionService.getRecentMessages(session.sessionId, 10);
+			const userAssistantMessages = allMessages.filter(
+				(m) => m.role === 'user' || m.role === 'assistant',
+			);
+			if (userAssistantMessages.length === this.AUTO_TITLE_MESSAGE_COUNT) {
+				// Get first user message from DB
+				const firstUserMessage = allMessages.reverse().find((m) => m.role === 'user')?.content;
+				if (firstUserMessage) {
+					await this.chatSessionQueueService.queueAutoTitle(session.sessionId, firstUserMessage);
+					this.logger.debug(
+						`Queued auto-title job | sessionId=${session.sessionId} | messageCount=${dbSession.messageCount} | userAssistantCount=${userAssistantMessages.length}`,
+					);
+				} else {
+					this.logger.warn(
+						`Auto-title skipped: No user message found | sessionId=${session.sessionId} | messageCount=${dbSession.messageCount}`,
+					);
+				}
+			}
+			// Trigger summary generation if messageCount > threshold
+			if (dbSession.messageCount > this.SUMMARY_THRESHOLD) {
+				await this.chatSessionQueueService.queueSummaryGeneration(
+					session.sessionId,
+					5, // Summarize last 5 old messages
+				);
+				this.logger.debug(`Queued summary generation job | sessionId=${session.sessionId}`);
+			}
+		} catch (error) {
+			this.logger.warn(`Failed to trigger background jobs: ${(error as Error).message}`, error);
+		}
+	}
 
-		for (const [sessionId, session] of this.chatSessions.entries()) {
-			if (now - session.lastActivity.getTime() > this.SESSION_TIMEOUT_MS) {
-				expiredSessions.push(sessionId);
+	/**
+	 * Build prompt with context (summary + recent messages)
+	 * @param session - Chat session
+	 * @param currentQuery - Current user query
+	 * @returns Formatted prompt string
+	 */
+	private async buildPromptWithContext(
+		session: ChatSession,
+		currentQuery: string,
+	): Promise<string> {
+		// Get session from database to access summary
+		const dbSession = await this.chatSessionService.getSession(session.sessionId);
+		const summary = dbSession?.summary || null;
+		// Get recent messages (last 10)
+		const recentMessages = await this.chatSessionService.getRecentMessages(session.sessionId, 10);
+		// Build prompt sections
+		const sections: string[] = [];
+		// System instruction (from system prompt)
+		sections.push(VIETNAMESE_LOCALE_SYSTEM_PROMPT);
+		// Long-term summary (if exists)
+		if (summary) {
+			sections.push(`\n[CONTEXT SUMMARY]\n${summary}\n`);
+		}
+		// Short-term history (recent messages) - chỉ lấy user và assistant messages
+		const userAssistantMessages = recentMessages.filter(
+			(m) => m.role === 'user' || m.role === 'assistant',
+		);
+		if (userAssistantMessages.length > 0) {
+			const historyText = userAssistantMessages
+				.reverse() // Reverse to get chronological order
+				.map((m) => `${m.role === 'user' ? 'Người dùng' : 'AI'}: ${m.content}`)
+				.join('\n\n');
+			sections.push(`\n[RECENT CONVERSATION]\n${historyText}\n`);
+			// Inject SQL query from metadata if available
+			const lastSqlMessage = recentMessages
+				.reverse()
+				.find((m) => m.metadata && (m.metadata as any)?.payload?.sql);
+			if (lastSqlMessage && (lastSqlMessage.metadata as any)?.payload?.sql) {
+				const sql = (lastSqlMessage.metadata as any).payload.sql;
+				sections.push(`\n[LAST SQL QUERY]\n${sql}\n`);
 			}
 		}
-
-		for (const sessionId of expiredSessions) {
-			this.chatSessions.delete(sessionId);
-		}
-
-		if (expiredSessions.length > 0) {
-			// Log cleanup for monitoring purposes
-			// console.log(`Cleaned up ${expiredSessions.length} expired chat sessions`);
-		}
+		// Current user input
+		sections.push(`\n[CURRENT QUERY]\n${currentQuery}`);
+		return sections.join('\n');
 	}
 
 	/**
@@ -271,7 +438,7 @@ export class AiService {
 			throw new Error('User must be authenticated to publish room');
 		}
 
-		const session = this.getOrCreateSession(userId, clientIp);
+		const session = await this.getOrCreateSession(userId, clientIp);
 		const pipelineStartAt = this.logPipelineStart(message, session.sessionId);
 
 		this.logDebug('ROOM_PUBLISH', `Starting room publishing flow for user ${userId}`);
@@ -280,7 +447,7 @@ export class AiService {
 		}
 
 		// Lưu câu hỏi của người dùng vào session
-		this.addMessageToSession(session, 'user', message);
+		await this.addMessageToSession(session, 'user', message);
 
 		try {
 			// Step 1: Handle user message
@@ -359,7 +526,7 @@ export class AiService {
 			this.logError('ROOM_PUBLISH', `Error in room publishing flow`, error);
 			const errorMessage = generateErrorResponse((error as Error).message);
 			const messageText: string = `Xin lỗi, đã xảy ra lỗi khi xử lý đăng phòng: ${errorMessage}`;
-			this.addMessageToSession(session, 'assistant', messageText, {
+			await this.addMessageToSession(session, 'assistant', messageText, {
 				kind: 'CONTROL',
 				payload: { mode: 'ERROR', details: (error as Error).message },
 			});
@@ -727,12 +894,12 @@ export class AiService {
 
 			// Lưu message thành công vào session
 			const successMessage = `Đã tạo phòng thành công! Phòng của bạn đã được đăng tải.`;
-			const session = this.getOrCreateSession(userId);
+			const session = await this.getOrCreateSession(userId);
 			this.logDebug(
 				'ROOM_PUBLISH',
 				'[TOOL CALL] addMessageToSession() - Saving success message to session',
 			);
-			this.addMessageToSession(session, 'assistant', successMessage, {
+			await this.addMessageToSession(session, 'assistant', successMessage, {
 				kind: 'CONTROL',
 				payload: {
 					mode: 'ROOM_PUBLISH',
@@ -873,28 +1040,46 @@ export class AiService {
 
 		// Bước 1: Quản lý session - Lấy hoặc tạo session chat
 		// Session tự động có system prompt tiếng Việt khi tạo mới
-		const session = this.getOrCreateSession(userId, clientIp);
+		const session = await this.getOrCreateSession(userId, clientIp);
 		const pipelineStartAt = this.logPipelineStart(query, session.sessionId);
+		// Use internal method to process query with explicit session
+		return await this.processChatQueryWithSession(
+			query,
+			session,
+			{ userId, clientIp, currentPage },
+			pipelineStartAt,
+		);
+	}
 
-		// Parse và thêm thông tin trang hiện tại vào context nếu có
+	/**
+	 * Core chat processing with explicit session (extracted from chatWithAI)
+	 * This method processes the query using the provided session without creating a new one
+	 * Used by both old API (after getOrCreateSession) and new API (with explicit conversationId)
+	 * @param query - User query
+	 * @param session - Chat session (already loaded)
+	 * @param context - Additional context
+	 * @param pipelineStartAt - Pipeline start timestamp
+	 * @returns AI response
+	 */
+	private async processChatQueryWithSession(
+		query: string,
+		session: ChatSession,
+		context: { userId?: string; clientIp?: string; currentPage?: string },
+		pipelineStartAt: number,
+	): Promise<ChatResponse> {
+		const { currentPage } = context;
+
+		// Parse và log thông tin trang hiện tại (không lưu vào DB, chỉ dùng cho processing)
 		if (currentPage) {
 			this.logDebug('CONTEXT', `Current page received: ${currentPage}`);
-			// Parse entity và identifier từ URL path
+			// Parse entity và identifier từ URL path (chỉ để log, không lưu vào session)
 			const contextInfo = this.parsePageContext(currentPage);
 			if (contextInfo) {
-				const contextMessage = `[CONTEXT] User is currently viewing: ${currentPage}\n[CONTEXT] Entity: ${contextInfo.entity}, Identifier: ${contextInfo.identifier}${contextInfo.type ? `, Type: ${contextInfo.type}` : ''}`;
-				this.addMessageToSession(session, 'system', contextMessage);
 				this.logInfo(
 					'CONTEXT',
 					`Parsed page context: entity=${contextInfo.entity}, identifier=${contextInfo.identifier}, type=${contextInfo.type || 'unknown'}`,
 				);
 			} else {
-				// Fallback: chỉ ghi lại URL nếu không parse được
-				this.addMessageToSession(
-					session,
-					'system',
-					`[CONTEXT] User is currently viewing: ${currentPage}`,
-				);
 				this.logWarn('CONTEXT', `Could not parse page context from: ${currentPage}`);
 			}
 		} else {
@@ -902,7 +1087,10 @@ export class AiService {
 		}
 
 		// Lưu câu hỏi của người dùng vào session
-		this.addMessageToSession(session, 'user', query);
+		await this.addMessageToSession(session, 'user', query);
+
+		// Trigger auto-title job if session has exactly 2 messages (1 user + 1 will be assistant)
+		// We'll check after assistant response is added
 
 		// Track processing data để lưu vào 1 log duy nhất (append ở từng bước)
 		const processingLogData: {
@@ -1076,7 +1264,7 @@ export class AiService {
 					const messageText: string = cleanedMessage.trim().endsWith('?')
 						? cleanedMessage
 						: `Minh can them thong tin de tra loi chinh xac: ${cleanedMessage}`;
-					this.addMessageToSession(session, 'assistant', messageText, {
+					await this.addMessageToSession(session, 'assistant', messageText, {
 						kind: 'CONTROL',
 						payload: { mode: 'CLARIFY', questions: [] },
 					});
@@ -1113,7 +1301,7 @@ export class AiService {
 				} else {
 					// General chat or greeting
 					const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
-					this.addMessageToSession(session, 'assistant', cleanedMessage, {
+					await this.addMessageToSession(session, 'assistant', cleanedMessage, {
 						kind: 'CONTENT',
 						payload: { mode: 'CONTENT' },
 					});
@@ -1157,7 +1345,7 @@ export class AiService {
 					orchestratorResponse.message,
 					orchestratorResponse.missingParams,
 				);
-				this.addMessageToSession(session, 'assistant', clarificationMessage, {
+				await this.addMessageToSession(session, 'assistant', clarificationMessage, {
 					kind: 'CONTROL',
 					payload: {
 						mode: 'CLARIFY',
@@ -1210,72 +1398,95 @@ export class AiService {
 				orchestratorResponse.intentModeHint === 'INSIGHT'
 					? 'INSIGHT'
 					: (orchestratorResponse.intentModeHint ?? 'TABLE');
+			// Initialize canonical question variables (used for modification queries and saving to pending knowledge)
+			let canonicalQuestion: string = query; // Default to original query
+			let previousSql: string | null = null;
+			let previousCanonicalQuestion: string | null = null;
 
-			// Lưu hints từ agent vào session để agent SQL hiểu rõ hơn
+			// Log hints từ agent (không lưu vào DB, chỉ để debug)
 			if (orchestratorResponse.entityHint) {
-				this.addMessageToSession(
-					session,
-					'system',
-					`[INTENT] ENTITY=${orchestratorResponse.entityHint.toUpperCase()}`,
-				);
-				this.logDebug('ORCHESTRATOR', `Added ENTITY hint: ${orchestratorResponse.entityHint}`);
+				this.logDebug('ORCHESTRATOR', `ENTITY hint: ${orchestratorResponse.entityHint}`);
 			}
 			if (orchestratorResponse.filtersHint) {
-				this.addMessageToSession(
-					session,
-					'system',
-					`[INTENT] FILTERS=${orchestratorResponse.filtersHint}`,
-				);
 				this.logDebug(
 					'ORCHESTRATOR',
-					`Added FILTERS hint: ${orchestratorResponse.filtersHint.substring(0, 50)}`,
+					`FILTERS hint: ${orchestratorResponse.filtersHint.substring(0, 50)}`,
 				);
 			}
 			if (orchestratorResponse.tablesHint) {
-				this.addMessageToSession(
-					session,
-					'system',
-					`[INTENT] TABLES=${orchestratorResponse.tablesHint}`,
-				);
 				this.logDebug(
 					'ORCHESTRATOR',
-					`Added TABLES hint: ${orchestratorResponse.tablesHint} (will enhance RAG query)`,
+					`TABLES hint: ${orchestratorResponse.tablesHint} (will enhance RAG query)`,
 				);
 			}
 			if (orchestratorResponse.relationshipsHint) {
-				this.addMessageToSession(
-					session,
-					'system',
-					`[INTENT] RELATIONSHIPS=${orchestratorResponse.relationshipsHint}`,
-				);
 				this.logDebug(
 					'ORCHESTRATOR',
-					`Added RELATIONSHIPS hint: ${orchestratorResponse.relationshipsHint}`,
+					`RELATIONSHIPS hint: ${orchestratorResponse.relationshipsHint}`,
 				);
 			}
 			if (desiredMode === 'INSIGHT') {
-				this.addMessageToSession(session, 'system', '[INTENT] MODE=INSIGHT');
+				this.logDebug('ORCHESTRATOR', 'MODE hint: INSIGHT');
 			} else if (desiredMode === 'CHART') {
-				this.addMessageToSession(session, 'system', '[INTENT] MODE=CHART');
+				this.logDebug('ORCHESTRATOR', 'MODE hint: CHART');
 			} else if (desiredMode === 'LIST') {
-				this.addMessageToSession(session, 'system', '[INTENT] MODE=LIST');
+				this.logDebug('ORCHESTRATOR', 'MODE hint: LIST');
 			} else {
-				this.addMessageToSession(session, 'system', '[INTENT] MODE=TABLE');
+				this.logDebug('ORCHESTRATOR', 'MODE hint: TABLE');
 			}
 			if (orchestratorResponse.intentAction) {
-				this.addMessageToSession(
-					session,
-					'system',
-					`[INTENT] ACTION=${orchestratorResponse.intentAction.toUpperCase()}`,
-				);
-				this.logDebug(
-					'ORCHESTRATOR',
-					`Added INTENT_ACTION hint: ${orchestratorResponse.intentAction}`,
-				);
+				this.logDebug('ORCHESTRATOR', `INTENT_ACTION hint: ${orchestratorResponse.intentAction}`);
 			}
 
 			// Kiểm tra: Agent 1 đã xác định đủ thông tin để tạo SQL chưa?
 			if (orchestratorResponse.readyForSql) {
+				// ========================================
+				// BƯỚC 2.5: Question Expansion (dùng LLM để tự detect và expand)
+				// ========================================
+				// Luôn thử expand nếu có previous SQL - LLM sẽ tự quyết định có cần expand không
+				previousSql = await this.extractLastSqlFromSession(session.sessionId);
+				previousCanonicalQuestion = await this.extractLastCanonicalQuestionFromSession(
+					session.sessionId,
+				);
+				if (previousSql) {
+					this.logInfo(
+						'QUESTION_EXPANSION',
+						`Attempting to expand question with LLM | query="${query.substring(0, 50)}..." | hasPreviousSql=true`,
+					);
+					try {
+						canonicalQuestion = await this.questionExpansionAgent.expandQuestion(
+							query,
+							previousSql,
+							previousCanonicalQuestion || undefined,
+						);
+						// LLM sẽ tự quyết định: nếu query đã đầy đủ thì trả về như cũ, nếu là modification thì expand
+						if (canonicalQuestion !== query) {
+							this.logInfo(
+								'QUESTION_EXPANSION',
+								`LLM expanded question | original="${query.substring(0, 50)}..." | canonical="${canonicalQuestion.substring(0, 80)}..."`,
+							);
+						} else {
+							this.logDebug(
+								'QUESTION_EXPANSION',
+								`LLM determined query is already complete, no expansion needed`,
+							);
+						}
+						appendStep('QUESTION EXPANSION', {
+							originalQuestion: query,
+							canonicalQuestion,
+							previousSqlLength: previousSql.length,
+							previousCanonicalQuestion: previousCanonicalQuestion || 'none',
+						});
+					} catch (error) {
+						this.logWarn(
+							'QUESTION_EXPANSION',
+							`Failed to expand question, using original: ${(error as Error).message}`,
+							error,
+						);
+						// Fallback: use original query
+						canonicalQuestion = query;
+					}
+				}
 				// ========================================
 				// BƯỚC 3: Agent 2 - SQL Generation Agent
 				// ========================================
@@ -1287,17 +1498,21 @@ export class AiService {
 				const sqlStartTime = Date.now();
 				this.logInfo(
 					'SQL_AGENT',
-					'START | canonical decision | schema RAG | generate SQL | execute',
+					`START | canonical decision | schema RAG | generate SQL | execute | canonicalQuestion="${canonicalQuestion.substring(0, 50)}..."`,
 				);
 				let sqlResult: SqlGenerationResult;
 				let sqlError: Error | null = null;
 				try {
+					// Use canonical question for SQL generation (not original short query)
+					// Pass previous SQL and canonical question to SQL Agent for modification queries
 					sqlResult = await this.sqlGenerationAgent.process(
-						query,
+						canonicalQuestion, // Use expanded canonical question instead of original
 						session,
 						this.prisma,
 						this.AI_CONFIG,
 						orchestratorResponse.businessContext,
+						previousSql || undefined, // Pass previous SQL if available (for modification queries)
+						previousCanonicalQuestion || undefined, // Pass previous canonical question if available
 					);
 				} catch (error) {
 					// SQL generation failed completely - log đầy đủ error
@@ -1425,7 +1640,7 @@ export class AiService {
 					const errorMessage = sqlError
 						? `Xin lỗi, không thể tạo SQL query: ${sqlError.message}`
 						: 'Xin lỗi, không thể tạo SQL query. Vui lòng thử lại với câu hỏi khác.';
-					this.addMessageToSession(session, 'assistant', errorMessage, {
+					await this.addMessageToSession(session, 'assistant', errorMessage, {
 						kind: 'CONTROL',
 						payload: { mode: 'ERROR', details: sqlError?.message || 'SQL generation failed' },
 					});
@@ -1556,10 +1771,19 @@ export class AiService {
 				);
 
 				// Lưu câu trả lời vào session (kèm envelope structured)
-				this.addMessageToSession(session, 'assistant', parsedResponse.message, {
-					kind: 'DATA',
-					payload: dataPayload,
-				});
+				// Include SQL query và canonical question trong metadata
+				await this.addMessageToSession(
+					session,
+					'assistant',
+					parsedResponse.message,
+					{
+						kind: 'DATA',
+						payload: dataPayload,
+					},
+					true, // triggerJobs
+					sqlResult.sql, // SQL query
+					canonicalQuestion, // Canonical question (expanded if modification query)
+				);
 
 				// Tích lũy token usage từ tất cả các agent
 				const totalTokenUsage = {
@@ -1619,11 +1843,14 @@ export class AiService {
 					try {
 						this.logDebug(
 							'PERSIST',
-							`Đang lưu Q&A vào pending knowledge (isValid=${validation.isValid}, severity=${validation.severity || 'none'}, count=${sqlResult.count}, evaluation=${validation.evaluation ? 'yes' : 'no'})...`,
+							`Đang lưu Q&A vào pending knowledge (isValid=${validation.isValid}, severity=${validation.severity || 'none'}, count=${sqlResult.count}, evaluation=${validation.evaluation ? 'yes' : 'no'}, canonicalQuestion="${canonicalQuestion.substring(0, 50)}...")...`,
 						);
 						const pendingResult = await this.pendingKnowledgeService.savePendingKnowledge({
-							question: query,
+							question: query, // Original question (may be short)
+							canonicalQuestion: canonicalQuestion !== query ? canonicalQuestion : undefined, // Only save if different
 							sql: sqlResult.sql,
+							previousSql: previousSql || undefined, // Previous SQL if modification query
+							previousCanonicalQuestion: previousCanonicalQuestion || undefined, // Previous canonical question if modification query
 							response: responseText, // Lưu raw response từ response-generator (có đầy đủ structured data và metadata)
 							evaluation: validation.evaluation,
 							validatorData: validation,
@@ -1674,7 +1901,7 @@ export class AiService {
 				);
 				appendStep('FLOW EXIT (READY=FALSE)', { requestType: orchestratorResponse.requestType });
 				const cleanedMessage = this.cleanMessage(orchestratorResponse.message);
-				this.addMessageToSession(session, 'assistant', cleanedMessage, {
+				await this.addMessageToSession(session, 'assistant', cleanedMessage, {
 					kind: 'CONTENT',
 					payload: { mode: 'CONTENT' },
 				});
@@ -1721,7 +1948,7 @@ export class AiService {
 			// Tạo message lỗi thân thiện cho người dùng
 			const errorMessage = generateErrorResponse((error as Error).message);
 			const messageText: string = `Xin lỗi, đã xảy ra lỗi: ${errorMessage}`;
-			this.addMessageToSession(session, 'assistant', messageText, {
+			await this.addMessageToSession(session, 'assistant', messageText, {
 				kind: 'CONTROL',
 				payload: { mode: 'ERROR', details: (error as Error).message },
 			});
@@ -1748,6 +1975,10 @@ export class AiService {
 			return response;
 		}
 	}
+
+	// Continue with the rest of chatWithAI logic here (from line ~1028 onwards)
+	// This is the main processing pipeline that was previously in chatWithAI
+	// Now extracted to processChatQueryWithSession so it can be reused
 
 	/**
 	 * Format clarification message with missingParams (MVP)
@@ -1912,7 +2143,7 @@ export class AiService {
 		}>;
 	}> {
 		const { userId, clientIp } = context;
-		const session = this.getOrCreateSession(userId, clientIp);
+		const session = await this.getOrCreateSession(userId, clientIp);
 
 		return {
 			sessionId: session.sessionId,
@@ -1937,12 +2168,8 @@ export class AiService {
 		context: { userId?: string; clientIp?: string } = {},
 	): Promise<{ success: boolean }> {
 		const { userId, clientIp } = context;
-		const sessionId = this.generateSessionId(userId, clientIp);
-
-		if (this.chatSessions.has(sessionId)) {
-			this.chatSessions.delete(sessionId);
-		}
-
+		const session = await this.chatSessionService.getOrCreateSession(userId, clientIp);
+		await this.chatSessionService.clearMessages(session.id);
 		return { success: true };
 	}
 
@@ -2087,5 +2314,169 @@ export class AiService {
 				error: (error as Error).message,
 			};
 		}
+	}
+
+	// ========================================
+	// CONVERSATION API METHODS (New variant)
+	// ========================================
+	// These methods work with explicit conversation IDs
+	// Keep backward compatibility with old /ai/chat endpoints
+
+	/**
+	 * List all conversations for a user
+	 * @param userId - User ID
+	 * @param limit - Maximum number of conversations to return
+	 * @returns List of conversations
+	 */
+	async listConversations(userId: string, limit: number = 50) {
+		return await this.chatSessionService.getUserSessions(userId, limit);
+	}
+
+	/**
+	 * Create a new conversation
+	 * @param options - Conversation creation options
+	 * @returns Created conversation
+	 */
+	async createConversation(options: {
+		userId?: string;
+		clientIp?: string;
+		title?: string;
+		initialMessage?: string;
+	}) {
+		const { userId, clientIp, title } = options;
+		// Create NEW session (not reuse existing via getOrCreateSession)
+		const session = await this.chatSessionService.createNewConversationSession(userId, clientIp);
+		// Update title if provided
+		if (title && title !== 'New Chat') {
+			await this.chatSessionService.updateSessionTitle(session.id, title);
+			// Reload to get updated title
+			const updated = await this.chatSessionService.getSession(session.id);
+			return updated || session;
+		}
+		return session;
+	}
+
+	/**
+	 * Get conversation details with messages
+	 * @param conversationId - Conversation/Session ID
+	 * @returns Conversation with messages (consistent format)
+	 */
+	async getConversation(conversationId: string) {
+		const dbSession = await this.chatSessionService.getSession(conversationId);
+		if (!dbSession) {
+			return null;
+		}
+		// Return session with messages loaded (consistent with getSession)
+		return dbSession;
+	}
+
+	/**
+	 * Send a message in a conversation
+	 * This is the main chat method for conversations
+	 * @param conversationId - Conversation/Session ID
+	 * @param message - User message
+	 * @param context - Additional context
+	 * @returns AI response
+	 */
+	async chatInConversation(
+		conversationId: string,
+		message: string,
+		context: { userId?: string; clientIp?: string; currentPage?: string } = {},
+	): Promise<ChatResponse> {
+		const { userId, clientIp, currentPage } = context;
+		// Get session by ID (verify it exists and belongs to user if authenticated)
+		const dbSession = await this.chatSessionService.getSession(conversationId);
+		if (!dbSession) {
+			throw new Error(`Conversation not found: ${conversationId}`);
+		}
+		// Verify ownership if user is authenticated
+		if (userId && dbSession.userId !== userId) {
+			throw new Error(`Conversation ${conversationId} does not belong to user ${userId}`);
+		}
+		// Không lưu system prompt vào DB, chỉ dùng trong memory cho processing
+		// Convert to ChatSession format and use it directly
+		// Convert to ChatSession format and use it directly
+		// This ensures we use the correct conversationId session, not create a new one
+		const session = this.convertDbSessionToChatSession(dbSession, clientIp);
+		const pipelineStartAt = this.logPipelineStart(message, session.sessionId);
+		// Use processChatQueryWithSession to process with explicit session (avoid getOrCreateSession)
+		return await this.processChatQueryWithSession(
+			message,
+			session,
+			{ userId, clientIp, currentPage },
+			pipelineStartAt,
+		);
+	}
+
+	/**
+	 * Get messages from a conversation
+	 * Transform DB format to format compatible with old chat API for Frontend reuse
+	 * @param conversationId - Conversation/Session ID
+	 * @param limit - Maximum number of messages to return
+	 * @returns List of messages in format compatible with old chat API
+	 */
+	async getConversationMessages(conversationId: string, limit: number = 100) {
+		const dbMessages = await this.chatSessionService.getRecentMessages(conversationId, limit);
+		// Transform DB format to format compatible with old chat API
+		// Old API format: { id, role, content, timestamp, kind?, payload? }
+		// DB format: { id, sessionId, role, content, metadata: { kind?, payload?, sql?, canonicalQuestion? }, sequenceNumber, createdAt }
+		return dbMessages
+			.filter((m) => m.role !== 'system') // Filter out system messages
+			.map((msg) => {
+				const metadata = (msg.metadata as any) || {};
+				// Build response matching old chat API format for backward compatibility
+				// Old API has: id, role, content, timestamp, kind?, payload?
+				const transformed: any = {
+					id: msg.id,
+					sessionId: msg.sessionId,
+					role: msg.role,
+					content: msg.content,
+					timestamp: msg.createdAt, // Old API uses 'timestamp'
+					// Top-level fields for backward compatibility (old chat API format)
+					kind: metadata.kind, // Top-level kind for compatibility
+					payload: metadata.payload, // Top-level payload for compatibility
+					// Keep metadata for new features (sql, canonicalQuestion, etc.)
+					metadata: {
+						kind: metadata.kind,
+						payload: metadata.payload,
+						sql: metadata.sql,
+						canonicalQuestion: metadata.canonicalQuestion,
+						meta: metadata.meta,
+					},
+					// Additional fields for new API
+					sequenceNumber: msg.sequenceNumber,
+					createdAt: msg.createdAt,
+				};
+				// Remove undefined fields to keep response clean
+				if (!transformed.kind) delete transformed.kind;
+				if (!transformed.payload) delete transformed.payload;
+				return transformed;
+			})
+			.reverse(); // Reverse to get chronological order (oldest first)
+	}
+
+	/**
+	 * Update conversation title
+	 * @param conversationId - Conversation/Session ID
+	 * @param title - New title
+	 */
+	async updateConversationTitle(conversationId: string, title: string) {
+		await this.chatSessionService.updateSessionTitle(conversationId, title);
+	}
+
+	/**
+	 * Delete a conversation
+	 * @param conversationId - Conversation/Session ID
+	 */
+	async deleteConversation(conversationId: string) {
+		await this.chatSessionService.deleteSession(conversationId);
+	}
+
+	/**
+	 * Clear messages from a conversation
+	 * @param conversationId - Conversation/Session ID
+	 */
+	async clearConversationMessages(conversationId: string) {
+		await this.chatSessionService.clearMessages(conversationId);
 	}
 }

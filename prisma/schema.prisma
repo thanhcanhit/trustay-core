@@ -40,7 +40,7 @@ enum RequestStatus {
   rejected
   expired
   cancelled
-  awaiting_confirmation 
+  awaiting_confirmation
 }
 
 enum RentalStatus {
@@ -81,7 +81,6 @@ enum PaymentStatus {
   failed
   refunded
 }
-
 
 enum RatingTargetType {
   tenant
@@ -262,7 +261,7 @@ model User {
   totalRatings  Int      @default(0) @map("total_ratings")
 
   // Account balance for landlords (money received from payments)
-  balance       Decimal  @default(0) @map("balance") @db.Decimal(15, 2)
+  balance Decimal @default(0) @map("balance") @db.Decimal(15, 2)
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -293,6 +292,7 @@ model User {
   contractSignatures   ContractSignature[]
   contractAuditLogs    ContractAuditLog[]
   reportedIssues       RoomIssue[]                @relation("RoomIssueReporter")
+  aiChatSessions       AiChatSession[]
 
   @@map("users")
 }
@@ -435,15 +435,15 @@ model Room {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  building        Building         @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  roomInstances   RoomInstance[] // Các phòng cụ thể
-  amenities       RoomAmenity[]
-  costs           RoomCost[]
-  images          RoomImage[]
-  rules           RoomRule[]
-  pricing         RoomPricing?
-  roomBookings    RoomBooking[]
-  invitations     RoomInvitation[]
+  building      Building         @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  roomInstances RoomInstance[] // Các phòng cụ thể
+  amenities     RoomAmenity[]
+  costs         RoomCost[]
+  images        RoomImage[]
+  rules         RoomRule[]
+  pricing       RoomPricing?
+  roomBookings  RoomBooking[]
+  invitations   RoomInvitation[]
 
   @@index([buildingId])
   @@index([roomType])
@@ -463,9 +463,9 @@ model RoomInstance {
   updatedAt  DateTime   @updatedAt @map("updated_at")
 
   // Relations
-  room                 Room                  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  room                 Room                       @relation(fields: [roomId], references: [id], onDelete: Cascade)
   rentals              Rental[]
-  bills         Bill[]
+  bills                Bill[]
   contracts            Contract[]
   roommateSeekingPosts RoommateSeekingPost[]
   meterReadings        RoomInstanceMeterReading[]
@@ -519,16 +519,16 @@ model RoomRuleTemplate {
 }
 
 model RoomRule {
-  id           String   @id @default(uuid())
-  roomId       String   @map("room_id")
+  id             String   @id @default(uuid())
+  roomId         String   @map("room_id")
   ruleTemplateId String   @map("rule_template_id")
-  customValue  String?  @map("custom_value")
-  isEnforced   Boolean  @default(true) @map("is_enforced")
-  notes        String?
-  createdAt    DateTime @default(now()) @map("created_at")
+  customValue    String?  @map("custom_value")
+  isEnforced     Boolean  @default(true) @map("is_enforced")
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at")
 
   // Relations
-  room       Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  room         Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
   ruleTemplate RoomRuleTemplate @relation(fields: [ruleTemplateId], references: [id], onDelete: Cascade)
 
   @@unique([roomId, ruleTemplateId])
@@ -562,15 +562,15 @@ model Amenity {
 }
 
 model RoomAmenity {
-  id              String   @id @default(uuid())
-  roomId          String   @map("room_id")
-  amenityId String   @map("amenity_id")
-  customValue     String?  @map("custom_value")
-  notes           String?
-  createdAt       DateTime @default(now()) @map("created_at")
+  id          String   @id @default(uuid())
+  roomId      String   @map("room_id")
+  amenityId   String   @map("amenity_id")
+  customValue String?  @map("custom_value")
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
 
   // Relations
-  room          Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  room    Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
   amenity Amenity @relation(fields: [amenityId], references: [id], onDelete: Cascade)
 
   @@unique([roomId, amenityId])
@@ -604,23 +604,23 @@ model CostTypeTemplate {
 }
 
 model RoomCost {
-  id               String @id @default(uuid())
-  roomId           String @map("room_id")
+  id                 String @id @default(uuid())
+  roomId             String @map("room_id")
   costTypeTemplateId String @map("cost_type_template_id")
 
   // Cost type and pricing
-  costType    CostType @default(fixed) @map("cost_type")
-  currency    String   @default("VND")
-  
+  costType CostType @default(fixed) @map("cost_type")
+  currency String   @default("VND")
+
   // Fixed cost - giá cố định hàng tháng
   fixedAmount Decimal? @map("fixed_amount") @db.Decimal(15, 2)
-  
+
   // Per person cost - chia đều cho số người ở
   perPersonAmount Decimal? @map("per_person_amount") @db.Decimal(15, 2)
-  
+
   // Metered cost - theo đồng hồ
-  unitPrice   Decimal? @map("unit_price") @db.Decimal(15, 2) // Giá per unit (kWh, m³)
-  unit        String? // Đơn vị đo (kWh, m³, etc.)
+  unitPrice        Decimal? @map("unit_price") @db.Decimal(15, 2) // Giá per unit (kWh, m³)
+  unit             String? // Đơn vị đo (kWh, m³, etc.)
   meterReading     Decimal? @map("meter_reading") @db.Decimal(15, 2) // Số đồng hồ hiện tại
   lastMeterReading Decimal? @map("last_meter_reading") @db.Decimal(15, 2) // Số đồng hồ tháng trước
 
@@ -635,8 +635,8 @@ model RoomCost {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  room           Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  costTypeTemplate CostTypeTemplate @relation(fields: [costTypeTemplateId], references: [id], onDelete: Cascade)
+  room                  Room                       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  costTypeTemplate      CostTypeTemplate           @relation(fields: [costTypeTemplateId], references: [id], onDelete: Cascade)
   instanceMeterReadings RoomInstanceMeterReading[]
 
   @@unique([roomId, costTypeTemplateId])
@@ -650,20 +650,20 @@ model RoomCost {
 // ========================================
 
 model RoomInstanceMeterReading {
-  id               String   @id @default(uuid())
-  roomInstanceId   String   @map("room_instance_id")
-  roomCostId       String   @map("room_cost_id")
-  
+  id             String @id @default(uuid())
+  roomInstanceId String @map("room_instance_id")
+  roomCostId     String @map("room_cost_id")
+
   // Meter readings for this specific room instance
   meterReading     Decimal? @map("meter_reading") @db.Decimal(15, 2) // Số đồng hồ hiện tại
   lastMeterReading Decimal? @map("last_meter_reading") @db.Decimal(15, 2) // Số đồng hồ tháng trước
-  
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  roomInstance     RoomInstance @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
-  roomCost         RoomCost     @relation(fields: [roomCostId], references: [id], onDelete: Cascade)
+  roomInstance RoomInstance @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
+  roomCost     RoomCost     @relation(fields: [roomCostId], references: [id], onDelete: Cascade)
 
   @@unique([roomInstanceId, roomCostId])
   @@index([roomInstanceId])
@@ -676,16 +676,16 @@ model RoomInstanceMeterReading {
 // ========================================
 
 model RoomIssue {
-  id             String             @id @default(uuid())
-  roomInstanceId String             @map("room_instance_id")
-  reporterId     String             @map("reporter_id")
+  id             String            @id @default(uuid())
+  roomInstanceId String            @map("room_instance_id")
+  reporterId     String            @map("reporter_id")
   title          String
   category       RoomIssueCategory
-  status         RoomIssueStatus    @default(new)
-  imageUrls      String[]           @map("image_urls")
-  landlordNote   String?            @map("landlord_note")
-  createdAt      DateTime           @default(now()) @map("created_at")
-  updatedAt      DateTime           @updatedAt @map("updated_at")
+  status         RoomIssueStatus   @default(new)
+  imageUrls      String[]          @map("image_urls")
+  landlordNote   String?           @map("landlord_note")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
 
   roomInstance RoomInstance @relation(fields: [roomInstanceId], references: [id], onDelete: Cascade)
   reporter     User         @relation("RoomIssueReporter", fields: [reporterId], references: [id], onDelete: Cascade)
@@ -728,27 +728,27 @@ model RoomPricing {
 // ========================================
 
 model RoomInvitation {
-  id                String           @id @default(uuid())
-  roomId            String           @map("room_id")
-  senderId          String           @map("sender_id") // Landlord
-  recipientId       String?          @map("recipient_id") // Tenant (optional if not registered)
-  recipientEmail    String?          @map("recipient_email") // For users not yet registered
-  roomSeekingPostId String?          @map("room_seeking_post_id")
-  monthlyRent       Decimal          @map("monthly_rent") @db.Decimal(15, 2)
-  depositAmount     Decimal          @map("deposit_amount") @db.Decimal(15, 2)
-  moveInDate        DateTime?        @map("move_in_date") @db.Date
-  rentalMonths      Int?             @map("rental_months")
+  id                String        @id @default(uuid())
+  roomId            String        @map("room_id")
+  senderId          String        @map("sender_id") // Landlord
+  recipientId       String?       @map("recipient_id") // Tenant (optional if not registered)
+  recipientEmail    String?       @map("recipient_email") // For users not yet registered
+  roomSeekingPostId String?       @map("room_seeking_post_id")
+  monthlyRent       Decimal       @map("monthly_rent") @db.Decimal(15, 2)
+  depositAmount     Decimal       @map("deposit_amount") @db.Decimal(15, 2)
+  moveInDate        DateTime?     @map("move_in_date") @db.Date
+  rentalMonths      Int?          @map("rental_months")
   status            RequestStatus @default(pending)
 
   // Landlord confirm sau khi tenant accept để tự động tạo rental
-  isConfirmedBySender Boolean  @default(false) @map("is_confirmed_by_sender")
+  isConfirmedBySender Boolean   @default(false) @map("is_confirmed_by_sender")
   confirmedAt         DateTime? @map("confirmed_at")
 
-  message           String?
-  expiresAt         DateTime?        @map("expires_at")
-  respondedAt       DateTime?        @map("responded_at")
-  createdAt         DateTime         @default(now()) @map("created_at")
-  updatedAt         DateTime         @updatedAt @map("updated_at")
+  message     String?
+  expiresAt   DateTime? @map("expires_at")
+  respondedAt DateTime? @map("responded_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   // Relations
   room            Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
@@ -771,21 +771,21 @@ model RoomInvitation {
 // ========================================
 
 model RoomBooking {
-  id             String            @id @default(uuid())
-  roomId         String            @map("room_id")
-  tenantId       String            @map("tenant_id")
-  moveInDate     DateTime          @map("move_in_date") @db.Date
-  moveOutDate    DateTime?         @map("move_out_date") @db.Date
-  rentalMonths   Int?             @map("rental_months")
-  monthlyRent    Decimal?         @map("monthly_rent") @db.Decimal(15, 2)
-  depositAmount  Decimal?         @map("deposit_amount") @db.Decimal(15, 2)
-  totalAmount    Decimal?         @map("total_amount") @db.Decimal(15, 2)
+  id             String        @id @default(uuid())
+  roomId         String        @map("room_id")
+  tenantId       String        @map("tenant_id")
+  moveInDate     DateTime      @map("move_in_date") @db.Date
+  moveOutDate    DateTime?     @map("move_out_date") @db.Date
+  rentalMonths   Int?          @map("rental_months")
+  monthlyRent    Decimal?      @map("monthly_rent") @db.Decimal(15, 2)
+  depositAmount  Decimal?      @map("deposit_amount") @db.Decimal(15, 2)
+  totalAmount    Decimal?      @map("total_amount") @db.Decimal(15, 2)
   status         RequestStatus @default(pending)
-  messageToOwner String?           @map("message_to_owner")
-  ownerNotes     String?           @map("owner_notes")
+  messageToOwner String?       @map("message_to_owner")
+  ownerNotes     String?       @map("owner_notes")
 
   // Tenant confirm sau khi landlord approve để tự động tạo rental
-  isConfirmedByTenant Boolean  @default(false) @map("is_confirmed_by_tenant")
+  isConfirmedByTenant Boolean   @default(false) @map("is_confirmed_by_tenant")
   confirmedAt         DateTime? @map("confirmed_at")
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -828,7 +828,7 @@ model Rental {
   owner                User                  @relation("RentalOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   payments             Payment[]
   ratings              Rating[]
-  bills         Bill[]
+  bills                Bill[]
   contract             Contract?
   roommateSeekingPosts RoommateSeekingPost[]
 
@@ -854,8 +854,8 @@ model Bill {
 
   // Rental period info for prorated calculation
   rentalStartDate DateTime? @map("rental_start_date") @db.Date // Ngày bắt đầu rental trong kỳ
-  rentalEndDate   DateTime? @map("rental_end_date") @db.Date   // Ngày kết thúc rental trong kỳ
-  occupancyCount  Int?      @map("occupancy_count")            // Số người ở trong kỳ
+  rentalEndDate   DateTime? @map("rental_end_date") @db.Date // Ngày kết thúc rental trong kỳ
+  occupancyCount  Int?      @map("occupancy_count") // Số người ở trong kỳ
 
   // Totals
   subtotal        Decimal @db.Decimal(15, 2)
@@ -872,7 +872,7 @@ model Bill {
   notes    String?
 
   // Auto-generation flags
-  isAutoGenerated Boolean @default(false) @map("is_auto_generated")
+  isAutoGenerated   Boolean @default(false) @map("is_auto_generated")
   requiresMeterData Boolean @default(false) @map("requires_meter_data") // Cần nhập dữ liệu đồng hồ
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -894,17 +894,17 @@ model Bill {
 }
 
 model BillItem {
-  id            String   @id @default(uuid())
-  billId String   @map("bill_id")
-  itemType      String   @map("item_type") // "rent", "utility", "service", "other"
-  itemName      String   @map("item_name")
-  description   String?
-  quantity      Decimal? @db.Decimal(10, 2)
-  unitPrice     Decimal? @map("unit_price") @db.Decimal(15, 2)
-  amount        Decimal  @db.Decimal(15, 2)
-  currency      String   @default("VND")
-  notes         String?
-  createdAt     DateTime @default(now()) @map("created_at")
+  id          String   @id @default(uuid())
+  billId      String   @map("bill_id")
+  itemType    String   @map("item_type") // "rent", "utility", "service", "other"
+  itemName    String   @map("item_name")
+  description String?
+  quantity    Decimal? @db.Decimal(10, 2)
+  unitPrice   Decimal? @map("unit_price") @db.Decimal(15, 2)
+  amount      Decimal  @db.Decimal(15, 2)
+  currency    String   @default("VND")
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
 
   // Relations  
   bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
@@ -917,7 +917,7 @@ model BillItem {
 model Payment {
   id                   String         @id @default(uuid())
   rentalId             String         @map("rental_id")
-  billId        String?        @map("bill_id")
+  billId               String?        @map("bill_id")
   payerId              String         @map("payer_id")
   paymentType          PaymentType    @map("payment_type")
   amount               Decimal        @db.Decimal(15, 2)
@@ -932,9 +932,9 @@ model Payment {
   updatedAt            DateTime       @updatedAt @map("updated_at")
 
   // Relations
-  rental      Rental       @relation(fields: [rentalId], references: [id], onDelete: Cascade)
-  bill Bill? @relation(fields: [billId], references: [id], onDelete: SetNull)
-  payer       User         @relation(fields: [payerId], references: [id], onDelete: Cascade)
+  rental Rental @relation(fields: [rentalId], references: [id], onDelete: Cascade)
+  bill   Bill?  @relation(fields: [billId], references: [id], onDelete: SetNull)
+  payer  User   @relation(fields: [payerId], references: [id], onDelete: Cascade)
 
   @@index([rentalId])
   @@index([billId])
@@ -947,7 +947,6 @@ model Payment {
 // ========================================
 // REVIEWS
 // ========================================
-
 
 // ========================================
 // RATING SYSTEM (ENHANCED)
@@ -1025,7 +1024,7 @@ model RoomSeekingPost {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  requester User            @relation(fields: [requesterId], references: [id], onDelete: Cascade)
+  requester User      @relation(fields: [requesterId], references: [id], onDelete: Cascade)
   amenities Amenity[]
 
   // Relations
@@ -1192,21 +1191,21 @@ model RoommateApplication {
 // ========================================
 
 model ErrorLog {
-  id         String   @id @default(uuid())
-  message    String
-  stack      String?
-  level      String   @default("error") // error, warn, fatal
-  context    String?
-  method     String? // HTTP method
-  url        String? // Request URL
-  statusCode Int? // HTTP status code
-  userId     String?  @map("user_id")
-  userAgent  String?  @map("user_agent")
-  ipAddress  String?  @map("ip_address")
-  requestId  String?  @map("request_id")
-  requestUserId String? @map("request_user_id")
-  metadata   Json? // Additional error details as JSON
-  createdAt  DateTime @default(now()) @map("created_at")
+  id            String   @id @default(uuid())
+  message       String
+  stack         String?
+  level         String   @default("error") // error, warn, fatal
+  context       String?
+  method        String? // HTTP method
+  url           String? // Request URL
+  statusCode    Int? // HTTP status code
+  userId        String?  @map("user_id")
+  userAgent     String?  @map("user_agent")
+  ipAddress     String?  @map("ip_address")
+  requestId     String?  @map("request_id")
+  requestUserId String?  @map("request_user_id")
+  metadata      Json? // Additional error details as JSON
+  createdAt     DateTime @default(now()) @map("created_at")
 
   @@index([level])
   @@index([context])
@@ -1222,37 +1221,37 @@ model ErrorLog {
 // ========================================
 
 model AiProcessingLog {
-  id        String   @id @default(uuid())
-  question  String   @db.Text
-  response  String?  @db.Text
-  
+  id       String  @id @default(uuid())
+  question String  @db.Text
+  response String? @db.Text
+
   // Orchestrator Agent data
   orchestratorData Json? @map("orchestrator_data")
-  
+
   // SQL Generation Agent data (array vì có thể retry nhiều lần)
   sqlGenerationAttempts Json[] @map("sql_generation_attempts")
-  
+
   // Result Validator Agent data
   validatorData Json? @map("validator_data")
-  
+
   // RAG Context từ vector DB
   ragContext Json? @map("rag_context")
 
   // Step-by-step log (for debugging each agent step)
-  stepsLog  String? @db.Text @map("steps_log")
-  
+  stepsLog String? @map("steps_log") @db.Text
+
   // Token usage tổng hợp
   tokenUsage Json? @map("token_usage")
-  
+
   // Timing (milliseconds)
   totalDuration Int? @map("total_duration") // Tổng thời gian xử lý
-  
+
   // Flow status
-  status    String   @default("completed") // completed, failed, partial
-  error     String?  @db.Text
-  
+  status String  @default("completed") // completed, failed, partial
+  error  String? @db.Text
+
   createdAt DateTime @default(now()) @map("created_at")
-  
+
   @@index([status])
   @@index([createdAt])
   @@map("ai_processing_logs")
@@ -1263,33 +1262,74 @@ model AiProcessingLog {
 // ========================================
 
 model PendingKnowledge {
-  id            String   @id @default(uuid())
-  question      String   @db.Text
-  sql           String?  @db.Text
-  response      String?  @db.Text // Câu trả lời từ response generator
-  evaluation    String?  @db.Text // Đánh giá chi tiết từ validator
-  status        String   @default("pending") // pending, approved, rejected
-  validatorData Json?    @map("validator_data") // Full validation result
-  
+  id            String  @id @default(uuid())
+  question      String  @db.Text
+  sql           String? @db.Text
+  response      String? @db.Text // Câu trả lời từ response generator
+  evaluation    String? @db.Text // Đánh giá chi tiết từ validator
+  status        String  @default("pending") // pending, approved, rejected
+  validatorData Json?   @map("validator_data") // Full validation result
+
   // Context
-  sessionId     String?  @map("session_id")
-  userId        String?  @map("user_id")
+  sessionId       String? @map("session_id")
+  userId          String? @map("user_id")
   processingLogId String? @map("processing_log_id") // Link to AiProcessingLog
-  
+
   // Approval tracking
-  approvedAt    DateTime? @map("approved_at")
-  approvedBy    String?   @map("approved_by") // User ID của admin
-  rejectedAt    DateTime? @map("rejected_at")
-  rejectedBy    String?   @map("rejected_by")
-  rejectionReason String? @db.Text @map("rejection_reason")
-  
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-  
+  approvedAt      DateTime? @map("approved_at")
+  approvedBy      String?   @map("approved_by") // User ID của admin
+  rejectedAt      DateTime? @map("rejected_at")
+  rejectedBy      String?   @map("rejected_by")
+  rejectionReason String?   @map("rejection_reason") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
   @@index([status])
   @@index([createdAt])
   @@index([userId])
   @@map("pending_knowledge")
+}
+
+// ========================================
+// AI CHAT SESSION MANAGEMENT
+// ========================================
+
+model AiChatSession {
+  id            String    @id @default(uuid())
+  userId        String?   @map("user_id")
+  title         String?   @default("New Chat")
+  summary       String?   @db.Text // Rolling summary cho context dài hạn
+  lastMessageAt DateTime? @map("last_message_at")
+  messageCount  Int       @default(0) @map("message_count")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user     User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages AiChatMessage[]
+
+  @@index([userId])
+  @@index([lastMessageAt])
+  @@index([createdAt])
+  @@map("ai_chat_sessions")
+}
+
+model AiChatMessage {
+  id             String   @id @default(uuid())
+  sessionId      String   @map("session_id")
+  role           String // 'user', 'assistant', 'system'
+  content        String   @db.Text
+  metadata       Json? // Lưu SQL query, execution time, token usage
+  sequenceNumber Int      @map("sequence_number") // Để maintain order và identify old messages
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  // Relations
+  session AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, sequenceNumber])
+  @@index([sessionId, createdAt])
+  @@map("ai_chat_messages")
 }
 
 // ========================================
