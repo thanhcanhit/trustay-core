@@ -119,6 +119,44 @@ export class AiService {
 	}
 
 	/**
+	 * Save processing log safely with error handling
+	 * Đảm bảo log luôn được lưu, kể cả khi có lỗi xảy ra
+	 */
+	private async saveProcessingLogSafely(
+		query: string,
+		processingLogData: any,
+		canonicalQuestion?: string,
+	): Promise<string | null> {
+		try {
+			const logId = await this.processingLogService.saveProcessingLog({
+				question: query,
+				canonicalQuestion,
+				...processingLogData,
+			});
+			if (logId) {
+				this.logInfo(
+					'PROCESSING_LOG',
+					`✅ Saved processing log | id=${logId} | question="${query.substring(0, 50)}..." | status=${processingLogData.status || 'N/A'} | duration=${processingLogData.totalDuration || 'N/A'}ms`,
+				);
+			} else {
+				this.logWarn(
+					'PROCESSING_LOG',
+					`⚠️ Failed to save processing log (returned null) | question="${query.substring(0, 50)}..." | status=${processingLogData.status || 'N/A'}`,
+				);
+			}
+			return logId;
+		} catch (logErr) {
+			// Log error nhưng không throw để không ảnh hưởng đến response
+			this.logError(
+				'PROCESSING_LOG',
+				`❌ Exception while saving processing log | question="${query.substring(0, 50)}..." | status=${processingLogData.status || 'N/A'}`,
+				logErr,
+			);
+			return null;
+		}
+	}
+
+	/**
 	 * Structured pipeline banners for easier tracing across a full question lifecycle
 	 */
 	private logPipelineStart(question: string, sessionId: string): number {
@@ -1307,10 +1345,7 @@ export class AiService {
 						totalTokens: processingLogData.tokenUsage?.totalTokens || 0,
 					});
 					processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
-					await this.processingLogService.saveProcessingLog({
-						question: query,
-						...processingLogData,
-					});
+					await this.saveProcessingLogSafely(query, processingLogData);
 
 					this.logPipelineEnd(
 						session.sessionId,
@@ -1344,10 +1379,7 @@ export class AiService {
 						totalTokens: processingLogData.tokenUsage?.totalTokens || 0,
 					});
 					processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
-					await this.processingLogService.saveProcessingLog({
-						question: query,
-						...processingLogData,
-					});
+					await this.saveProcessingLogSafely(query, processingLogData);
 
 					this.logPipelineEnd(
 						session.sessionId,
@@ -1398,10 +1430,7 @@ export class AiService {
 					totalTokens: processingLogData.tokenUsage?.totalTokens || 0,
 				});
 				processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
-				await this.processingLogService.saveProcessingLog({
-					question: query,
-					...processingLogData,
-				});
+				await this.saveProcessingLogSafely(query, processingLogData);
 
 				this.logPipelineEnd(
 					session.sessionId,
@@ -1704,10 +1733,7 @@ export class AiService {
 						totalTokens: orchestratorResponse.tokenUsage?.totalTokens || 0,
 					});
 					processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
-					await this.processingLogService.saveProcessingLog({
-						question: query,
-						...processingLogData,
-					});
+					await this.saveProcessingLogSafely(query, processingLogData);
 
 					this.logPipelineEnd(session.sessionId, errorResponse.kind, pipelineStartAt);
 					return errorResponse;
@@ -1859,22 +1885,6 @@ export class AiService {
 					payload: dataPayload,
 				};
 
-				// Save processing log trước để lấy ID và link với pending knowledge
-				processingLogData.response = parsedResponse.message;
-				processingLogData.status = 'completed';
-				processingLogData.tokenUsage = totalTokenUsage;
-				processingLogData.totalDuration = Date.now() - pipelineStartAt;
-				appendStep('SUMMARY', {
-					totalDurationMs: processingLogData.totalDuration,
-					totalTokens: totalTokenUsage.totalTokens || 0,
-				});
-				processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
-				const processingLogId = await this.processingLogService.saveProcessingLog({
-					question: query, // Original question (để lưu vào validatorData nếu có canonical)
-					canonicalQuestion: canonicalQuestion, // Pass canonical question để lưu làm question chính
-					...processingLogData,
-				});
-
 				// Persist Q&A - ƯU TIÊN LƯU: Chỉ skip nếu có ERROR severity rõ ràng
 				// isValid=true hoặc WARN severity → lưu vào pending để admin review
 				// CHỈ LƯU CÁC CÂU TRẢ LỜI ĐÚNG/CHẤT LƯỢNG:
@@ -1903,16 +1913,15 @@ export class AiService {
 							validatorData: validation,
 							sessionId: session.sessionId,
 							userId: session.userId,
-							processingLogId: processingLogId || undefined,
+							processingLogId: undefined, // Will be set after log is saved
 						});
 						this.logDebug(
 							'PERSIST',
-							`Đã lưu Q&A vào pending knowledge | id=${pendingResult.id} | status=${pendingResult.status} | processingLogId=${processingLogId || 'N/A'}`,
+							`Đã lưu Q&A vào pending knowledge | id=${pendingResult.id} | status=${pendingResult.status}`,
 						);
 						appendStep('PERSIST PENDING KNOWLEDGE', {
 							status: 'saved_to_pending',
 							pendingId: pendingResult.id,
-							processingLogId: processingLogId || 'none',
 							count: sqlResult.count,
 							severity: validation.severity || 'OK',
 							hasEvaluation: !!validation.evaluation,
@@ -1936,6 +1945,19 @@ export class AiService {
 					);
 					appendStep('PERSIST SKIPPED', skipReason);
 				}
+
+				// Save processing log SAU KHI tất cả các bước đã hoàn thành (bao gồm PERSIST)
+				// Đảm bảo stepsLog có đầy đủ thông tin từ tất cả các bước
+				processingLogData.response = parsedResponse.message;
+				processingLogData.status = 'completed';
+				processingLogData.tokenUsage = totalTokenUsage;
+				processingLogData.totalDuration = Date.now() - pipelineStartAt;
+				appendStep('SUMMARY', {
+					totalDurationMs: processingLogData.totalDuration,
+					totalTokens: totalTokenUsage.totalTokens || 0,
+				});
+				processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
+				await this.saveProcessingLogSafely(query, processingLogData, canonicalQuestion);
 
 				this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt, totalTokenUsage);
 				return response;
@@ -1971,10 +1993,7 @@ export class AiService {
 					totalTokens: processingLogData.tokenUsage?.totalTokens || 0,
 				});
 				processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
-				await this.processingLogService.saveProcessingLog({
-					question: query,
-					...processingLogData,
-				});
+				await this.saveProcessingLogSafely(query, processingLogData);
 
 				this.logPipelineEnd(
 					session.sessionId,
@@ -2012,11 +2031,12 @@ export class AiService {
 			processingLogData.status = 'failed';
 			processingLogData.error = (error as Error).message || 'Unknown error';
 			processingLogData.totalDuration = Date.now() - pipelineStartAt;
-			processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
-			await this.processingLogService.saveProcessingLog({
-				question: query,
-				...processingLogData,
+			appendStep('SUMMARY', {
+				totalDurationMs: processingLogData.totalDuration,
+				totalTokens: processingLogData.tokenUsage?.totalTokens || 0,
 			});
+			processingLogData.stepsLog = formatStepLogsToMarkdown(stepLogs);
+			await this.saveProcessingLogSafely(query, processingLogData);
 
 			this.logPipelineEnd(session.sessionId, response.kind, pipelineStartAt);
 			return response;

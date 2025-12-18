@@ -12,6 +12,70 @@ export class AiProcessingLogService {
 	constructor(private readonly prisma: PrismaService) {}
 
 	/**
+	 * Sanitize data to remove Functions and non-serializable values
+	 * Loại bỏ Functions, undefined, và các giá trị không thể serialize
+	 */
+	private sanitizeForDatabase(value: unknown, path: string = 'root'): unknown {
+		if (value === null || value === undefined) {
+			return null;
+		}
+		// Loại bỏ Functions
+		if (typeof value === 'function') {
+			this.logger.warn(
+				`Found Function object at path: ${path}. Replacing with '[Function]' placeholder.`,
+			);
+			return '[Function]';
+		}
+		// Xử lý Date objects
+		if (value instanceof Date) {
+			return value.toISOString();
+		}
+		// Xử lý BigInt (should already be handled by serializeBigInt, but just in case)
+		if (typeof value === 'bigint') {
+			return Number(value);
+		}
+		// Xử lý Error objects
+		if (value instanceof Error) {
+			return {
+				name: value.name,
+				message: value.message,
+				stack: value.stack,
+			};
+		}
+		// Xử lý Symbol (không thể serialize)
+		if (typeof value === 'symbol') {
+			return String(value);
+		}
+		// Xử lý Arrays
+		if (Array.isArray(value)) {
+			return value.map((item, index) => this.sanitizeForDatabase(item, `${path}[${index}]`));
+		}
+		// Xử lý Objects
+		if (typeof value === 'object') {
+			const sanitized: Record<string, unknown> = {};
+			for (const [key, val] of Object.entries(value)) {
+				// Skip undefined values
+				if (val === undefined) {
+					continue;
+				}
+				// Skip Functions
+				if (typeof val === 'function') {
+					this.logger.warn(
+						`Found Function object at path: ${path}.${key}. Replacing with '[Function]' placeholder.`,
+					);
+					sanitized[key] = '[Function]';
+					continue;
+				}
+				// Recursively sanitize nested objects
+				sanitized[key] = this.sanitizeForDatabase(val, `${path}.${key}`);
+			}
+			return sanitized;
+		}
+		// Return primitive values as-is
+		return value;
+	}
+
+	/**
 	 * Save AI processing log to database for audit and debugging
 	 * Mỗi câu hỏi chỉ lưu 1 bản ghi duy nhất, được append data ở từng bước
 	 */
@@ -49,27 +113,39 @@ export class AiProcessingLogService {
 						}
 					: validatorDataWithResponseGen;
 
+			// Sanitize tất cả dữ liệu trước khi lưu vào database để loại bỏ Functions và non-serializable values
+			const sanitizedData = {
+				question: finalQuestion, // Dùng canonical question nếu có
+				response: input.response,
+				orchestratorData: this.sanitizeForDatabase(input.orchestratorData),
+				sqlGenerationAttempts: this.sanitizeForDatabase(input.sqlGenerationAttempts || []),
+				validatorData: this.sanitizeForDatabase(finalValidatorData),
+				ragContext: this.sanitizeForDatabase(input.ragContext),
+				stepsLog: input.stepsLog,
+				tokenUsage: this.sanitizeForDatabase(input.tokenUsage),
+				totalDuration: input.totalDuration,
+				status: input.status || 'completed',
+				error: input.error,
+			};
+
 			const log = await (this.prisma as any).aiProcessingLog.create({
-				data: {
-					question: finalQuestion, // Dùng canonical question nếu có
-					response: input.response,
-					orchestratorData: input.orchestratorData,
-					sqlGenerationAttempts: input.sqlGenerationAttempts || [],
-					validatorData: finalValidatorData,
-					ragContext: input.ragContext,
-					stepsLog: input.stepsLog,
-					tokenUsage: input.tokenUsage,
-					totalDuration: input.totalDuration,
-					status: input.status || 'completed',
-					error: input.error,
-				},
+				data: sanitizedData,
 			});
 			this.logger.debug(
 				`Saved processing log | id=${log.id} | question="${finalQuestion.substring(0, 50)}..." | duration=${input.totalDuration || 'N/A'}ms`,
 			);
 			return log.id;
 		} catch (error) {
-			this.logger.warn('Failed to save processing log', error);
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			const errorStack = error instanceof Error ? error.stack : undefined;
+			this.logger.error(
+				`❌ Failed to save processing log | question="${input.question?.substring(0, 50) || 'N/A'}..." | error=${errorMessage}`,
+				errorStack,
+			);
+			// Log thêm thông tin để debug
+			this.logger.debug(
+				`Processing log data: status=${input.status || 'N/A'} | hasResponse=${!!input.response} | hasStepsLog=${!!input.stepsLog} | hasOrchestratorData=${!!input.orchestratorData}`,
+			);
 			return null;
 		}
 	}
