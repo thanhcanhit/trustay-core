@@ -242,8 +242,9 @@ export class AiProcessingLogService {
 				return null;
 			}
 			// Sanitize để loại bỏ Prisma objects và non-serializable values
+			// Sau đó serialize thành plain object để tránh lỗi class-transformer
 			try {
-				return {
+				const sanitized = {
 					id: log.id,
 					question: log.question,
 					response: log.response,
@@ -259,8 +260,11 @@ export class AiProcessingLogService {
 					totalDuration: log.totalDuration,
 					status: log.status,
 					error: log.error,
-					createdAt: log.createdAt,
+					createdAt: log.createdAt instanceof Date ? log.createdAt.toISOString() : log.createdAt,
 				};
+				// Serialize thành plain object để tránh lỗi class-transformer
+				// JSON.parse(JSON.stringify()) sẽ convert tất cả thành plain objects
+				return JSON.parse(JSON.stringify(sanitized));
 			} catch (e) {
 				this.logger.warn(
 					`Failed to sanitize log ${id}: ${(e as Error).message}. Returning basic fields only.`,
@@ -271,7 +275,7 @@ export class AiProcessingLogService {
 					question: log.question,
 					response: log.response,
 					status: log.status,
-					createdAt: log.createdAt,
+					createdAt: log.createdAt instanceof Date ? log.createdAt.toISOString() : log.createdAt,
 				};
 			}
 		} catch (error) {
@@ -394,9 +398,10 @@ export class AiProcessingLogService {
 			]);
 
 			// Sanitize items để loại bỏ Prisma objects và non-serializable values
+			// Sau đó serialize thành plain objects để tránh lỗi class-transformer
 			const sanitizedItems = (items || []).map((item: any) => {
 				try {
-					return {
+					const sanitized = {
 						id: item.id,
 						question: item.question,
 						response: item.response,
@@ -415,8 +420,12 @@ export class AiProcessingLogService {
 						totalDuration: item.totalDuration,
 						status: item.status,
 						error: item.error,
-						createdAt: item.createdAt,
+						createdAt:
+							item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
 					};
+					// Serialize thành plain object để tránh lỗi class-transformer
+					// JSON.parse(JSON.stringify()) sẽ convert tất cả thành plain objects
+					return JSON.parse(JSON.stringify(sanitized));
 				} catch (e) {
 					this.logger.warn(
 						`Failed to sanitize log item ${item.id}: ${(e as Error).message}. Returning basic fields only.`,
@@ -427,7 +436,8 @@ export class AiProcessingLogService {
 						question: item.question,
 						response: item.response,
 						status: item.status,
-						createdAt: item.createdAt,
+						createdAt:
+							item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
 					};
 				}
 			});

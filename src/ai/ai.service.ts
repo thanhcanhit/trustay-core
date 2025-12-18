@@ -448,9 +448,10 @@ export class AiService {
 				.join('\n\n');
 			sections.push(`\n[RECENT CONVERSATION]\n${historyText}\n`);
 			// Inject SQL query from metadata if available
-			const lastSqlMessage = recentMessages
-				.reverse()
-				.find((m) => m.metadata && (m.metadata as any)?.payload?.sql);
+			// recentMessages is already in DESC order (newest first), so find() will get the newest SQL
+			const lastSqlMessage = recentMessages.find(
+				(m) => m.metadata && (m.metadata as any)?.payload?.sql,
+			);
 			if (lastSqlMessage && (lastSqlMessage.metadata as any)?.payload?.sql) {
 				const sql = (lastSqlMessage.metadata as any).payload.sql;
 				sections.push(`\n[LAST SQL QUERY]\n${sql}\n`);
