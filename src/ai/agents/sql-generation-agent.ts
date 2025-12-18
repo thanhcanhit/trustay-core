@@ -102,6 +102,26 @@ export class SqlGenerationAgent {
 		return firstLine.slice(0, 120);
 	}
 
+	private buildSqlGenerationFailure(
+		message: string,
+		meta: {
+			attemptLogs: SqlGenerationAttempt[];
+			attempts: number;
+			lastSql?: string;
+			lastError?: string;
+			lastErrorKey?: string;
+		},
+	): Error {
+		const err = new Error(message);
+		(err as any).name = 'SqlGenerationFailed';
+		(err as any).attemptLogs = meta.attemptLogs;
+		(err as any).attempts = meta.attempts;
+		(err as any).lastSql = meta.lastSql;
+		(err as any).lastError = meta.lastError;
+		(err as any).lastErrorKey = meta.lastErrorKey;
+		return err;
+	}
+
 	/**
 	 * Extract and format Prisma error message for better AI understanding
 	 * Prisma errors have format: Invalid `prisma.$queryRawUnsafe()` invocation: Raw query failed. Code: `42P01`. Message: `relation "table_name" does not exist`
@@ -755,8 +775,15 @@ export class SqlGenerationAgent {
 					this.logger.error(
 						`[SQL Regeneration] Same error repeated ${consecutiveSameError} times (key=${currentErrorKey}). Stopping early. Error: ${currentError}`,
 					);
-					throw new Error(
+					throw this.buildSqlGenerationFailure(
 						`Failed to generate valid SQL after ${attempts} attempts. Same error repeated ${consecutiveSameError} times (key=${currentErrorKey}): ${currentError}`,
+						{
+							attemptLogs,
+							attempts,
+							lastSql,
+							lastError,
+							lastErrorKey,
+						},
 					);
 				}
 
@@ -773,8 +800,15 @@ export class SqlGenerationAgent {
 					`[SQL Regeneration] Attempt ${attempts}/${maxAttempts} failed: ${lastError}. Regenerating SQL...`,
 				);
 				if (attempts >= maxAttempts) {
-					throw new Error(
+					throw this.buildSqlGenerationFailure(
 						`Failed to generate valid SQL after ${maxAttempts} attempts. Last error: ${lastError}`,
+						{
+							attemptLogs,
+							attempts,
+							lastSql,
+							lastError,
+							lastErrorKey,
+						},
 					);
 				}
 				// Delay để tránh rate limiting

@@ -51,6 +51,20 @@ ${lastError}${lastSql ? `\n\nSQL CŨ (CÓ LỖI - CẦN SỬA):\n${lastSql}` : '
 
 HƯỚNG DẪN SỬA LỖI (BẮT BUỘC PHẢI LÀM THEO):
 
+0. NẾU THẤY "ERROR_KEY=sql_unchanged" hoặc lỗi nói "SQL unchanged from previous attempt":
+   - BẮT BUỘC: SQL TRẢ VỀ PHẢI KHÁC với SQL lần trước (lastSql) (không được copy y nguyên).
+   - Cách sửa nhanh (chọn ít nhất 1):
+     * Đổi alias + viết lại FROM/JOIN rõ ràng hơn
+     * Sửa đúng table/column theo SCHEMA (đừng đoán)
+     * Sửa WHERE scope (owner_id/tenant_id) theo SECURITY REQUIREMENTS
+     * Giảm SELECT còn các cột cần thiết rồi mở rộng lại
+
+0b. NẾU lastError có "ERROR_STAGE=...":
+   - ERROR_STAGE=generation: SQL output không hợp lệ/không phải SQL → chỉ trả về 1 câu SQL SELECT.
+   - ERROR_STAGE=validation: sai tên bảng/cột/syntax/safety → đọc SCHEMA và sửa đúng tên bảng/cột.
+   - ERROR_STAGE=filters_hint: WHERE không đúng scope/filter → sửa WHERE theo FILTERS_HINT + SECURITY REQUIREMENTS.
+   - ERROR_STAGE=execution: SQL chạy bị lỗi Postgres → đọc code lỗi (42P01/42703/...) và sửa đúng nguyên nhân.
+
 1. NẾU LỖI "relation does not exist" (42P01):
    - BẮT BUỘC: Kiểm tra lại tên bảng trong SCHEMA section ở trên
    - Tên bảng PHẢI đúng với schema (ví dụ: "room_requests" ✅, "room_seeking_posts" ❌)
@@ -340,13 +354,25 @@ BƯỚC 4: CÁC TRƯỜNG HỢP ĐẶC BIỆT (BẮT BUỘC)
    - Nếu user hỏi về role/thông tin của chính họ (ví dụ: "Tôi là người dùng gì?", "Tôi là landlord hay tenant?", "Thông tin của tôi"):
      * BẮT BUỘC: SELECT từ bảng users WHERE id = '${userId || 'USER_ID'}'
      * KHÔNG BAO GIỜ hardcode role như SELECT 'landlord' AS user_role
-     * PHẢI query từ database: SELECT u.role, u.name, u.email, u.phone FROM users u WHERE u.id = '${userId || 'USER_ID'}'
-     * Table users có các cột: id, email, name (hoặc first_name, last_name), phone, role (tenant/landlord), avatar_url, created_at, updated_at
+     * PHẢI query từ database: SELECT u.role, u.first_name, u.last_name, u.email, u.phone FROM users u WHERE u.id = '${userId || 'USER_ID'}'
+     * Table users KHÔNG có cột users.name (nếu cần "họ tên" thì dùng first_name + last_name). Chỉ dùng cột có trong COMPLETE DATABASE SCHEMA/SCHEMA.
      * Ví dụ ĐÚNG:
-       -- SELECT u.role AS user_role, u.name, u.email, u.phone FROM users u WHERE u.id = '${userId || 'USER_ID'}' LIMIT 1;
+       -- SELECT u.role AS user_role, concat_ws(' ', u.first_name, u.last_name) AS full_name, u.email, u.phone FROM users u WHERE u.id = '${userId || 'USER_ID'}' LIMIT 1;
      * Ví dụ SAI (KHÔNG BAO GIỜ LÀM):
        -- SELECT 'landlord' AS user_role LIMIT 1; ❌
        -- SELECT 'tenant' AS user_role LIMIT 1; ❌
+
+1b. LANDLORD XEM NGƯỜI ĐANG THUÊ + LIÊN LẠC (EMAIL/SĐT) (INTENT_ACTION=own):
+   - Đây là dữ liệu cá nhân, CHỈ cho phép khi userRole=LANDLORD và userId có.
+   - BẮT BUỘC filter đúng scope owner:
+     * Ưu tiên: JOIN room_instances → rooms → buildings và WHERE buildings.owner_id = '${userId || 'USER_ID'}'
+   - BẮT BUỘC JOIN để lấy người thuê (tenant):
+     * JOIN rentals (rental đang hiệu lực) theo rentals.room_instance_id = room_instances.id
+     * JOIN users tenant theo rentals.tenant_id = users.id
+   - SELECT tối thiểu:
+     * building_name (tên dãy trọ/toà nhà) + room_number/số phòng (nếu có) + tenant_name + tenant_email + tenant_phone
+   - Chỉ lấy email/phone nếu đúng tên cột trong SCHEMA (ví dụ: users.email, users.phone hoặc phone_number).
+   - LUÔN thêm điều kiện “đang thuê” dựa trên schema (ví dụ status='active' hoặc end_date IS NULL).
 
 2. QUY TẮC LIÊN KẾT VÀ FILTER THEO OWNER (BẮT BUỘC - ĐỌC KỸ):
    
@@ -504,7 +530,8 @@ BƯỚC 5: VÍ DỤ SQL MẪU (THAM KHẢO)
        - Thông tin phòng: r.id, r.name, r.description, r.slug, r.room_type, r.area_sqm, r.max_occupancy, r.total_rooms
        - Thông tin tòa nhà: b.name AS building_name, b.address_line_1, b.address_line_2
        - Địa chỉ: d.district_name, p.province_name
-       - Giá cả (QUAN TRỌNG - ƯU TIÊN): rp.base_price_monthly, rp.deposit_amount, rp.utility_cost_per_person, rp.electricity_cost, rp.water_cost, rp.internet_cost, rp.cleaning_cost
+       - Giá thuê/cọc (room_pricing): rp.base_price_monthly, rp.deposit_amount
+       - Chi phí phát sinh (room_costs + cost_type_templates): rc.cost_type, rc.fixed_amount, rc.per_person_amount, rc.unit_price, rc.unit, ctt.name
        - Tiện ích (QUAN TRỌNG - ƯU TIÊN): Danh sách amenities với tên đầy đủ (cần JOIN với room_amenities và amenities)
        - Rating (KHÔNG QUAN TRỌNG - chỉ lấy nếu có): r.overall_rating, r.total_ratings (có thể NULL)
      * JOIN với các bảng: buildings, districts, provinces, room_pricing, amenities, room_amenities
@@ -515,9 +542,45 @@ BƯỚC 5: VÍ DỤ SQL MẪU (THAM KHẢO)
        - KHÔNG BAO GIỜ query tất cả phòng khi có FILTERS_HINT - chỉ query 1 phòng cụ thể
      * KHÔNG cần LIMIT (chỉ 1 phòng)
      * KHÔNG filter theo buildings.owner_id (vì đây là query phòng cụ thể công khai, không phải dữ liệu cá nhân)
-     * ƯU TIÊN: Tập trung vào giá cả (base_price_monthly, utility_cost_per_person, electricity_cost, water_cost) và tiện ích (amenities)
-     * Ví dụ với slug: SELECT r.id, r.name, r.description, r.slug, r.room_type, r.area_sqm, r.max_occupancy, r.total_rooms, b.name AS building_name, b.address_line_1, d.district_name, p.province_name, rp.base_price_monthly, rp.deposit_amount, rp.utility_cost_per_person, rp.electricity_cost, rp.water_cost, rp.internet_cost, rp.cleaning_cost, array_agg(DISTINCT a.name ORDER BY a.name) AS amenities FROM rooms r JOIN buildings b ON r.building_id = b.id JOIN districts d ON b.district_id = d.id JOIN provinces p ON b.province_id = p.id LEFT JOIN room_pricing rp ON rp.room_id = r.id LEFT JOIN room_amenities ra ON ra.room_id = r.id LEFT JOIN amenities a ON a.id = ra.amenity_id WHERE r.slug = 'tuyenquan-go-vap-phong-ap1443' GROUP BY r.id, b.id, d.id, p.id, rp.id;
-     * Ví dụ với id: SELECT r.id, r.name, r.description, r.slug, r.room_type, r.area_sqm, r.max_occupancy, r.total_rooms, b.name AS building_name, b.address_line_1, d.district_name, p.province_name, rp.base_price_monthly, rp.deposit_amount, rp.utility_cost_per_person, rp.electricity_cost, rp.water_cost, rp.internet_cost, rp.cleaning_cost, array_agg(DISTINCT a.name ORDER BY a.name) AS amenities FROM rooms r JOIN buildings b ON r.building_id = b.id JOIN districts d ON b.district_id = d.id JOIN provinces p ON b.province_id = p.id LEFT JOIN room_pricing rp ON rp.room_id = r.id LEFT JOIN room_amenities ra ON ra.room_id = r.id LEFT JOIN amenities a ON a.id = ra.amenity_id WHERE r.id = '02a927ba-c5e4-40e3-a64c-0187c9b35e33' GROUP BY r.id, b.id, d.id, p.id, rp.id;
+     * ƯU TIÊN: Tập trung vào giá thuê/cọc (room_pricing) và chi phí phát sinh (room_costs) + tiện ích (amenities)
+     * Ví dụ với slug:
+       SELECT
+         r.id, r.name, r.description, r.slug, r.room_type, r.area_sqm, r.max_occupancy, r.total_rooms,
+         b.name AS building_name, b.address_line_1, d.district_name, p.province_name,
+         rp.base_price_monthly, rp.deposit_amount,
+         json_agg(DISTINCT jsonb_build_object('name', ctt.name, 'cost_type', rc.cost_type, 'fixed_amount', rc.fixed_amount, 'per_person_amount', rc.per_person_amount, 'unit_price', rc.unit_price, 'unit', rc.unit))
+           FILTER (WHERE rc.id IS NOT NULL) AS costs,
+         array_agg(DISTINCT a.name ORDER BY a.name) AS amenities
+       FROM rooms r
+       JOIN buildings b ON r.building_id = b.id
+       JOIN districts d ON b.district_id = d.id
+       JOIN provinces p ON b.province_id = p.id
+       LEFT JOIN room_pricing rp ON rp.room_id = r.id
+       LEFT JOIN room_costs rc ON rc.room_id = r.id AND rc.is_active = true
+       LEFT JOIN cost_type_templates ctt ON ctt.id = rc.cost_type_template_id
+       LEFT JOIN room_amenities ra ON ra.room_id = r.id
+       LEFT JOIN amenities a ON a.id = ra.amenity_id
+       WHERE r.slug = 'tuyenquan-go-vap-phong-ap1443'
+       GROUP BY r.id, b.id, d.id, p.id, rp.id;
+     * Ví dụ với id:
+       SELECT
+         r.id, r.name, r.description, r.slug, r.room_type, r.area_sqm, r.max_occupancy, r.total_rooms,
+         b.name AS building_name, b.address_line_1, d.district_name, p.province_name,
+         rp.base_price_monthly, rp.deposit_amount,
+         json_agg(DISTINCT jsonb_build_object('name', ctt.name, 'cost_type', rc.cost_type, 'fixed_amount', rc.fixed_amount, 'per_person_amount', rc.per_person_amount, 'unit_price', rc.unit_price, 'unit', rc.unit))
+           FILTER (WHERE rc.id IS NOT NULL) AS costs,
+         array_agg(DISTINCT a.name ORDER BY a.name) AS amenities
+       FROM rooms r
+       JOIN buildings b ON r.building_id = b.id
+       JOIN districts d ON b.district_id = d.id
+       JOIN provinces p ON b.province_id = p.id
+       LEFT JOIN room_pricing rp ON rp.room_id = r.id
+       LEFT JOIN room_costs rc ON rc.room_id = r.id AND rc.is_active = true
+       LEFT JOIN cost_type_templates ctt ON ctt.id = rc.cost_type_template_id
+       LEFT JOIN room_amenities ra ON ra.room_id = r.id
+       LEFT JOIN amenities a ON a.id = ra.amenity_id
+       WHERE r.id = '02a927ba-c5e4-40e3-a64c-0187c9b35e33'
+       GROUP BY r.id, b.id, d.id, p.id, rp.id;
    
    - TÌM KIẾM DANH SÁCH (từ khóa: tìm, phòng, room, bài đăng, post, ở, gần):
      * QUAN TRỌNG: Trong schema, table rooms có cột name (KHÔNG phải title). Phải dùng r.name AS title.
@@ -552,11 +615,11 @@ KIỂM TRA CUỐI CÙNG - FILTERS_HINT (BẮT BUỘC):
 ═══════════════════════════════════════════════════════════════
 TRƯỚC KHI TRẢ VỀ SQL, PHẢI KIỂM TRA:
 1. ✅ SQL có WHERE clause theo FILTERS_HINT: ${filtersHint} không?
-2. ✅ Nếu FILTERS_HINT có slug → SQL phải có WHERE r.slug = 'slug_value'
-3. ✅ Nếu FILTERS_HINT có id → SQL phải có WHERE r.id = 'id_value'
-4. ✅ KHÔNG có LIMIT 100 khi có FILTERS_HINT (chỉ query 1 phòng cụ thể)
-5. ✅ KHÔNG query tất cả phòng khi có FILTERS_HINT
-6. ✅ Nếu SQL có slug/id literal KHÁC với FILTERS_HINT (ví dụ bị dính canonical SQL) → SQL SAI, PHẢI thay bằng FILTERS_HINT
+2. ✅ Nếu FILTERS_HINT dạng <table>.<col>='value' (slug/id/owner_id/tenant_id/...) → SQL phải lọc đúng <col> và chứa đúng literal 'value'
+3. ✅ KHÔNG dùng cột trần (ví dụ WHERE owner_id=...), phải có alias/table đúng theo SCHEMA
+4. ✅ Nếu FILTERS_HINT là slug/id của entity cụ thể → KHÔNG query all rows và KHÔNG dùng literal slug/id khác (tránh dính canonical SQL)
+5. ✅ Nếu INTENT_ACTION=${intentAction || 'not specified'} và query dạng danh sách theo owner/tenant → dùng LIMIT hợp lý (≤ ${Math.max(1, Math.min(50, limit))})
+6. ✅ Nếu SQL có literal mâu thuẫn với FILTERS_HINT (ví dụ slug/id khác) → SQL SAI, PHẢI thay bằng FILTERS_HINT
 
 NẾU SQL KHÔNG CÓ WHERE clause theo FILTERS_HINT → SQL SAI, PHẢI SỬA LẠI!
 

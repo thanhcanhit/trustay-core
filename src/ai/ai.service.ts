@@ -114,7 +114,7 @@ export class AiService {
 			filtersHint?: string;
 			intentAction?: 'search' | 'own' | 'stats';
 		},
-	): void {
+	): { normalizedFiltersHint?: string } {
 		session.messages = session.messages.filter(
 			(m) => !(m.role === 'system' && m.content.startsWith('[INTENT] ')),
 		);
@@ -127,10 +127,25 @@ export class AiService {
 				timestamp,
 			});
 
+		const normalizedFiltersHint = (() => {
+			const hint = (intent.filtersHint || '').trim();
+			if (!hint) return undefined;
+			// Normalize common orchestrator outputs like "owner_id=<uuid>" into a SQL-safe, table-qualified expression.
+			// Prefer buildings.owner_id for landlord-owned inventory queries to match the ownership chain rules.
+			const ownerIdMatch = hint.match(
+				/^owner_id\s*=\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i,
+			);
+			if (ownerIdMatch && intent.intentAction === 'own') {
+				return `buildings.owner_id='${ownerIdMatch[1]}'`;
+			}
+			return hint;
+		})();
+
 		if (intent.tablesHint) push(`[INTENT] TABLES=${intent.tablesHint}`);
 		if (intent.relationshipsHint) push(`[INTENT] RELATIONSHIPS=${intent.relationshipsHint}`);
-		if (intent.filtersHint) push(`[INTENT] FILTERS=${intent.filtersHint}`);
+		if (normalizedFiltersHint) push(`[INTENT] FILTERS=${normalizedFiltersHint}`);
 		if (intent.intentAction) push(`[INTENT] ACTION=${intent.intentAction}`);
+		return { normalizedFiltersHint };
 	}
 
 	private isLikelySqlModificationQuery(query: string): boolean {
@@ -1331,12 +1346,15 @@ export class AiService {
 
 			// Make orchestrator hints available to downstream agents as non-persisted system messages.
 			// This prevents stale FILTERS/TABLES from previous turns from leaking into the next SQL generation.
-			this.setIntentSystemMessages(session, {
+			const { normalizedFiltersHint } = this.setIntentSystemMessages(session, {
 				tablesHint: orchestratorResponse.tablesHint,
 				relationshipsHint: orchestratorResponse.relationshipsHint,
 				filtersHint: orchestratorResponse.filtersHint,
 				intentAction: orchestratorResponse.intentAction,
 			});
+			if (normalizedFiltersHint && normalizedFiltersHint !== orchestratorResponse.filtersHint) {
+				processingLogData.orchestratorData.filtersHintForSql = normalizedFiltersHint;
+			}
 			// Capture RAG context
 			if (orchestratorResponse.businessContext) {
 				const businessCtx = orchestratorResponse.businessContext;
@@ -1626,28 +1644,33 @@ export class AiService {
 					// SQL generation failed completely - log đầy đủ error
 					sqlError = error instanceof Error ? error : new Error(String(error));
 					this.logError('SQL_AGENT', `SQL generation failed: ${sqlError.message}`, error);
+					const attemptLogs = (error as any)?.attemptLogs as any[] | undefined;
+					const attemptsCount = (error as any)?.attempts as number | undefined;
 					appendStep('SQL AGENT FAILED', {
 						error: sqlError.message,
 						stack: sqlError.stack,
-						attempts: 'unknown',
+						attempts: attemptLogs?.length ?? attemptsCount ?? 'unknown',
 					});
 					// Create a failed sqlResult for logging purposes
 					sqlResult = {
 						sql: '',
 						results: [],
 						count: 0,
-						attempts: 0,
+						attempts: attemptsCount ?? 0,
 						userId: session.userId,
 						userRole: orchestratorResponse.userRole,
 						tokenUsage: undefined,
 						debug: {
-							attempts: [
-								{
-									attempt: 0,
-									error: sqlError.message,
-									durationMs: Date.now() - sqlStartTime,
-								},
-							],
+							attempts:
+								attemptLogs && attemptLogs.length
+									? attemptLogs
+									: [
+											{
+												attempt: 0,
+												error: sqlError.message,
+												durationMs: Date.now() - sqlStartTime,
+											},
+										],
 						},
 					};
 					// Log failed attempt
