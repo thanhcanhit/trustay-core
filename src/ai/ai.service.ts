@@ -1306,6 +1306,9 @@ export class AiService {
 				filtersHint: orchestratorResponse.filtersHint || 'none',
 				entityHint: orchestratorResponse.entityHint || 'none',
 				intentAction: orchestratorResponse.intentAction || 'none',
+				currentPageDecision: orchestratorResponse.currentPageDecision
+					? JSON.stringify(orchestratorResponse.currentPageDecision)
+					: 'none',
 				durationMs: orchestratorDuration,
 			});
 
@@ -1320,6 +1323,7 @@ export class AiService {
 				relationshipsHint: orchestratorResponse.relationshipsHint,
 				intentModeHint: orchestratorResponse.intentModeHint,
 				intentAction: orchestratorResponse.intentAction,
+				currentPageDecision: orchestratorResponse.currentPageDecision,
 				missingParams: orchestratorResponse.missingParams,
 				tokenUsage: orchestratorResponse.tokenUsage,
 				duration: orchestratorDuration,

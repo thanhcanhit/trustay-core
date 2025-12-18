@@ -186,6 +186,11 @@ export interface OrchestratorAgentResponse {
 		identifier: string;
 		type?: 'slug' | 'id';
 	};
+	currentPageDecision?: {
+		useCurrentPage: boolean;
+		reason?: string;
+		method?: 'llm' | 'heuristic' | 'none';
+	};
 	businessContext?: string; // RAG business context from KnowledgeService
 	readyForSql: boolean;
 	needsClarification?: boolean;

@@ -66,6 +66,26 @@ export class SqlGenerationAgent {
 
 	constructor(private readonly knowledgeService?: KnowledgeService) {}
 
+	private enforceFiltersHintInSql(filtersHint: string, sql: string): void {
+		const hint = (filtersHint || '').trim();
+		if (!hint || hint.toLowerCase() === SqlGenerationAgent.VALIDATION_NONE) return;
+
+		// Typical hint: rooms.slug='abc' or rooms.id='uuid'
+		const match = hint.match(/\.(slug|id)\s*=\s*'([^']+)'/i);
+		if (!match) return;
+
+		const column = match[1].toLowerCase();
+		const expectedValue = match[2];
+
+		// Minimal fail-fast: SQL must contain the expected literal value.
+		// This prevents accidental reuse of canonical SQL with stale slug/id.
+		if (!sql.includes(`'${expectedValue}'`)) {
+			throw new Error(
+				`FILTERS_HINT enforcement failed: expected ${column}='${expectedValue}' to appear in SQL`,
+			);
+		}
+	}
+
 	/**
 	 * Extract and format Prisma error message for better AI understanding
 	 * Prisma errors have format: Invalid `prisma.$queryRawUnsafe()` invocation: Raw query failed. Code: `42P01`. Message: `relation "table_name" does not exist`
@@ -333,7 +353,8 @@ export class SqlGenerationAgent {
 		// High-confidence canonical reuse: execute validated canonical SQL directly, fallback to regeneration on failure
 		if (
 			canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE &&
-			canonicalDecision.reusePreferred
+			canonicalDecision.reusePreferred &&
+			!filtersHint
 		) {
 			const canonicalScore =
 				typeof canonicalDecision?.score === 'number' ? canonicalDecision.score.toFixed(4) : '?';
@@ -469,6 +490,17 @@ export class SqlGenerationAgent {
 				};
 			}
 		}
+		// Guard: if FILTERS_HINT exists, we must NOT directly reuse canonical SQL (it may contain stale slug/id).
+		// Instead, force regeneration so FILTERS_HINT can be enforced by the SQL prompt and safety checks.
+		if (
+			canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE &&
+			canonicalDecision.reusePreferred &&
+			filtersHint
+		) {
+			this.logger.debug(
+				`[Canonical Reuse] Skipping direct reuse because filtersHint is present: ${filtersHint}`,
+			);
+		}
 		const dbSchema = getCompleteDatabaseSchema();
 		let lastError: string = '';
 		let lastSql: string = '';
@@ -568,6 +600,12 @@ export class SqlGenerationAgent {
 				}
 				// Use enforced SQL if available (with LIMIT added)
 				const finalSql = safetyCheck.enforcedSql || sql;
+
+				// Fail-fast: when orchestrator provided FILTERS_HINT (page-specific), enforce it in SQL.
+				// This catches cases where the model accidentally outputs a stale slug/id (e.g., from canonical SQL).
+				if (filtersHint) {
+					this.enforceFiltersHintInSql(filtersHint, finalSql);
+				}
 
 				// Log SQL được generate để debug
 				this.logger.debug(
@@ -778,9 +816,11 @@ export class SqlGenerationAgent {
 	 * @returns Tables hint string or undefined
 	 */
 	private extractTablesHint(session: ChatSession): string | undefined {
-		const tablesMessage = session.messages
-			.filter((m) => m.role === 'system')
-			.find((m) => m.content.startsWith('[INTENT] TABLES='));
+		const tablesMessages = session.messages.filter(
+			(m) => m.role === 'system' && m.content.startsWith('[INTENT] TABLES='),
+		);
+		const tablesMessage =
+			tablesMessages.length > 0 ? tablesMessages[tablesMessages.length - 1] : null;
 		if (tablesMessage) {
 			const match = tablesMessage.content.match(/\[INTENT\] TABLES=(.+)/);
 			return match?.[1]?.trim();
@@ -794,9 +834,13 @@ export class SqlGenerationAgent {
 	 * @returns Relationships hint string or undefined
 	 */
 	private extractRelationshipsHint(session: ChatSession): string | undefined {
-		const relationshipsMessage = session.messages
-			.filter((m) => m.role === 'system')
-			.find((m) => m.content.startsWith('[INTENT] RELATIONSHIPS='));
+		const relationshipsMessages = session.messages.filter(
+			(m) => m.role === 'system' && m.content.startsWith('[INTENT] RELATIONSHIPS='),
+		);
+		const relationshipsMessage =
+			relationshipsMessages.length > 0
+				? relationshipsMessages[relationshipsMessages.length - 1]
+				: null;
 		if (relationshipsMessage) {
 			const match = relationshipsMessage.content.match(/\[INTENT\] RELATIONSHIPS=(.+)/);
 			return match?.[1]?.trim();
@@ -810,9 +854,11 @@ export class SqlGenerationAgent {
 	 * @returns Filters hint string or undefined
 	 */
 	private extractFiltersHint(session: ChatSession): string | undefined {
-		const filtersMessage = session.messages
-			.filter((m) => m.role === 'system')
-			.find((m) => m.content.startsWith('[INTENT] FILTERS='));
+		const filtersMessages = session.messages.filter(
+			(m) => m.role === 'system' && m.content.startsWith('[INTENT] FILTERS='),
+		);
+		const filtersMessage =
+			filtersMessages.length > 0 ? filtersMessages[filtersMessages.length - 1] : null;
 		if (filtersMessage) {
 			const match = filtersMessage.content.match(/\[INTENT\] FILTERS=(.+)/);
 			return match?.[1]?.trim();
@@ -826,9 +872,11 @@ export class SqlGenerationAgent {
 	 * @returns Intent action ('search' | 'own' | 'stats') or undefined
 	 */
 	private extractIntentAction(session: ChatSession): 'search' | 'own' | 'stats' | undefined {
-		const actionMessage = session.messages
-			.filter((m) => m.role === 'system')
-			.find((m) => m.content.startsWith('[INTENT] ACTION='));
+		const actionMessages = session.messages.filter(
+			(m) => m.role === 'system' && m.content.startsWith('[INTENT] ACTION='),
+		);
+		const actionMessage =
+			actionMessages.length > 0 ? actionMessages[actionMessages.length - 1] : null;
 		if (actionMessage) {
 			const match = actionMessage.content.match(/\[INTENT\] ACTION=(.+)/);
 			const action = match?.[1]?.trim().toLowerCase();

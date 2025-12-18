@@ -227,6 +227,9 @@ REASON: <tối đa 12 từ>`;
 		}
 
 		// Current page is always available, but MUST only be used when the user's query truly references it.
+		let currentPageDecision:
+			| { useCurrentPage: boolean; reason?: string; method?: 'llm' | 'heuristic' | 'none' }
+			| undefined;
 		if (currentPageContext) {
 			try {
 				const decision = await this.decideUseCurrentPageContextByLlm({
@@ -239,15 +242,28 @@ REASON: <tối đa 12 từ>`;
 				this.logger.debug(
 					`[OrchestratorAgent] currentPageContext decision: use=${decision.useCurrentPage} reason="${decision.reason}"`,
 				);
+				currentPageDecision = {
+					useCurrentPage: decision.useCurrentPage,
+					reason: decision.reason,
+					method: 'llm',
+				};
 				if (!decision.useCurrentPage) currentPageContext = undefined;
 			} catch (error) {
 				this.logger.warn(
 					`[OrchestratorAgent] Failed to decide currentPageContext via LLM, fallback to heuristic: ${(error as Error).message}`,
 				);
-				if (!this.shouldUseCurrentPageContextHeuristic(query, currentPageContext)) {
+				const useCurrentPage = this.shouldUseCurrentPageContextHeuristic(query, currentPageContext);
+				currentPageDecision = {
+					useCurrentPage,
+					reason: 'llm_failed_fallback_heuristic',
+					method: 'heuristic',
+				};
+				if (!useCurrentPage) {
 					currentPageContext = undefined;
 				}
 			}
+		} else {
+			currentPageDecision = { useCurrentPage: false, method: 'none' };
 		}
 
 		// Build orchestrator prompt with business context, user role, current page context, and summary
@@ -466,6 +482,7 @@ REASON: <tối đa 12 từ>`;
 				rawResponse: response,
 				recentMessages,
 				currentPageContext,
+				currentPageDecision,
 				businessContext: businessContext || undefined,
 				readyForSql,
 				needsClarification:
