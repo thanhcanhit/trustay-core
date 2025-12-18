@@ -212,10 +212,13 @@ export interface SqlGenerationAttempt {
 	attempt: number;
 	prompt?: string;
 	rawResponse?: string;
+	generatedSql?: string;
 	finalSql?: string;
 	tokenUsage?: TokenUsage;
 	durationMs?: number;
 	error?: string;
+	errorKey?: string;
+	errorStage?: 'generation' | 'validation' | 'filters_hint' | 'execution' | 'unknown';
 	safetyCheck?: {
 		isValid: boolean;
 		violations?: string[];
