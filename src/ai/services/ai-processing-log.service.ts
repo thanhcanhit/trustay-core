@@ -12,6 +12,57 @@ export class AiProcessingLogService {
 	constructor(private readonly prisma: PrismaService) {}
 
 	/**
+	 * Safely check if a value is a Date object
+	 * Avoids errors with Prisma objects that don't have normal prototype chains
+	 */
+	private isDate(value: unknown): boolean {
+		if (value === null || value === undefined) {
+			return false;
+		}
+		try {
+			if (value instanceof Date) {
+				return true;
+			}
+		} catch {
+			// If instanceof fails, check for Date-like properties
+			if (
+				value &&
+				typeof value === 'object' &&
+				'toISOString' in value &&
+				typeof (value as any).toISOString === 'function'
+			) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Safely convert a Date-like value to ISO string
+	 */
+	private toISOStringSafe(value: unknown): string | unknown {
+		if (!this.isDate(value)) {
+			return value;
+		}
+		try {
+			if (value instanceof Date) {
+				return value.toISOString();
+			}
+			if (
+				value &&
+				typeof value === 'object' &&
+				'toISOString' in value &&
+				typeof (value as any).toISOString === 'function'
+			) {
+				return (value as any).toISOString();
+			}
+		} catch {
+			// If conversion fails, return as-is
+		}
+		return value;
+	}
+
+	/**
 	 * Sanitize data to remove Functions and non-serializable values
 	 * Loại bỏ Functions, undefined, và các giá trị không thể serialize
 	 * Xử lý an toàn với Prisma objects (Decimal, etc.)
@@ -28,20 +79,8 @@ export class AiProcessingLogService {
 			return '[Function]';
 		}
 		// Xử lý Date objects - kiểm tra an toàn với constructor
-		try {
-			if (value instanceof Date) {
-				return value.toISOString();
-			}
-		} catch {
-			// Nếu instanceof fail (có thể do Prisma object), thử toString
-			if (
-				value &&
-				typeof value === 'object' &&
-				'toISOString' in value &&
-				typeof (value as any).toISOString === 'function'
-			) {
-				return (value as any).toISOString();
-			}
+		if (this.isDate(value)) {
+			return this.toISOStringSafe(value) as string;
 		}
 		// Xử lý BigInt (should already be handled by serializeBigInt, but just in case)
 		if (typeof value === 'bigint') {
@@ -260,7 +299,7 @@ export class AiProcessingLogService {
 					totalDuration: log.totalDuration,
 					status: log.status,
 					error: log.error,
-					createdAt: log.createdAt instanceof Date ? log.createdAt.toISOString() : log.createdAt,
+					createdAt: this.toISOStringSafe(log.createdAt),
 				};
 				// Serialize thành plain object để tránh lỗi class-transformer
 				// JSON.parse(JSON.stringify()) sẽ convert tất cả thành plain objects
@@ -269,14 +308,26 @@ export class AiProcessingLogService {
 				this.logger.warn(
 					`Failed to sanitize log ${id}: ${(e as Error).message}. Returning basic fields only.`,
 				);
-				// Fallback: chỉ trả về các field cơ bản
-				return {
+				// Fallback: chỉ trả về các field cơ bản và serialize để đảm bảo plain object
+				const fallback = {
 					id: log.id,
 					question: log.question,
 					response: log.response,
 					status: log.status,
-					createdAt: log.createdAt instanceof Date ? log.createdAt.toISOString() : log.createdAt,
+					createdAt: this.toISOStringSafe(log.createdAt),
 				};
+				try {
+					return JSON.parse(JSON.stringify(fallback));
+				} catch {
+					// If even fallback serialization fails, return minimal safe object
+					return {
+						id: String(log.id || ''),
+						question: String(log.question || ''),
+						response: String(log.response || ''),
+						status: String(log.status || ''),
+						createdAt: String(log.createdAt || ''),
+					};
+				}
 			}
 		} catch (error) {
 			this.logger.error(`Failed to find processing log by id: ${id}`, error);
@@ -420,8 +471,7 @@ export class AiProcessingLogService {
 						totalDuration: item.totalDuration,
 						status: item.status,
 						error: item.error,
-						createdAt:
-							item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
+						createdAt: this.toISOStringSafe(item.createdAt),
 					};
 					// Serialize thành plain object để tránh lỗi class-transformer
 					// JSON.parse(JSON.stringify()) sẽ convert tất cả thành plain objects
@@ -430,32 +480,49 @@ export class AiProcessingLogService {
 					this.logger.warn(
 						`Failed to sanitize log item ${item.id}: ${(e as Error).message}. Returning basic fields only.`,
 					);
-					// Fallback: chỉ trả về các field cơ bản
-					return {
+					// Fallback: chỉ trả về các field cơ bản và serialize để đảm bảo plain object
+					const fallback = {
 						id: item.id,
 						question: item.question,
 						response: item.response,
 						status: item.status,
-						createdAt:
-							item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
+						createdAt: this.toISOStringSafe(item.createdAt),
 					};
+					try {
+						return JSON.parse(JSON.stringify(fallback));
+					} catch {
+						// If even fallback serialization fails, return minimal safe object
+						return {
+							id: String(item.id || ''),
+							question: String(item.question || ''),
+							response: String(item.response || ''),
+							status: String(item.status || ''),
+							createdAt: String(item.createdAt || ''),
+						};
+					}
 				}
 			});
 
-			return {
+			// Ensure the entire response is a plain object to avoid class-transformer errors
+			const response = {
 				items: sanitizedItems,
 				total: total || 0,
 				limit,
 				offset,
 			};
+			// Double-serialize to ensure all nested objects are completely plain
+			// This prevents class-transformer from encountering problematic prototype chains
+			return JSON.parse(JSON.stringify(response));
 		} catch (error) {
 			this.logger.error('Failed to find processing logs', error);
-			return {
+			// Return plain object to avoid class-transformer errors
+			const errorResponse = {
 				items: [],
 				total: 0,
 				limit: params.limit || 20,
 				offset: params.offset || 0,
 			};
+			return JSON.parse(JSON.stringify(errorResponse));
 		}
 	}
 }

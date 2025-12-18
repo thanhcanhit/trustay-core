@@ -113,12 +113,19 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 		options?: EmbeddingOptions,
 	): Promise<number> {
 		try {
+			this.logger.debug(
+				`Adding chunk | collection=${chunk.collection} | hasEmbedding=${!!chunk.embedding} | sqlQaId=${chunk.sqlQaId || 'none'}`,
+			);
 			let embedding = chunk.embedding;
 
 			if (!embedding) {
+				this.logger.debug(`Generating embedding for chunk content`);
 				embedding = await this.generateEmbedding(chunk.content, options);
 			}
 
+			this.logger.log(
+				`Inserting new chunk (POST request) | collection=${chunk.collection} | content="${chunk.content.substring(0, 50)}..."`,
+			);
 			const { data, error } = await this.supabaseClient
 				.from('ai_chunks')
 				.insert({
@@ -133,10 +140,13 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 				.single();
 
 			if (error) {
+				this.logger.error(`Failed to insert chunk: ${error.message}`, error);
 				throw new Error(`Failed to insert chunk: ${error.message}`);
 			}
 
-			this.logger.debug(`Chunk added with ID: ${data.id}`);
+			this.logger.log(
+				`Chunk inserted successfully (POST) | id=${data.id} | collection=${chunk.collection}`,
+			);
 			return data.id;
 		} catch (error) {
 			this.logger.error('Error adding chunk:', error);
@@ -280,6 +290,9 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 	 */
 	async saveSqlQA(entry: SqlQAEntry): Promise<number> {
 		try {
+			this.logger.debug(
+				`Saving SQL QA | question="${entry.question.substring(0, 50)}..." | hasTemplate=${!!entry.sqlTemplate}`,
+			);
 			const normalizedTemplate = this.normalizeSqlTemplate(entry.sqlTemplate);
 			if (normalizedTemplate) {
 				const { data: existing } = await this.supabaseClient
@@ -290,6 +303,9 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 					.eq('sql_template', normalizedTemplate)
 					.maybeSingle();
 				if (existing?.id) {
+					this.logger.log(
+						`SQL QA template already exists (UPDATE, not INSERT) | id=${existing.id} | template="${normalizedTemplate.substring(0, 50)}..."`,
+					);
 					await this.supabaseClient
 						.from('sql_qa')
 						.update({ last_used_at: new Date().toISOString() })
@@ -301,6 +317,9 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 				}
 			}
 			// No template or not found, insert new
+			this.logger.log(
+				`Inserting new SQL QA | question="${entry.question.substring(0, 50)}..." | hasTemplate=${!!normalizedTemplate}`,
+			);
 			const payload: any = {
 				tenant_id: entry.tenantId || this.config.tenantId,
 				db_key: entry.dbKey || this.config.dbKey,
@@ -319,9 +338,12 @@ export class SupabaseVectorStoreService implements OnModuleInit {
 				.select('id')
 				.single();
 			if (error) {
+				this.logger.error(`Failed to upsert SQL QA: ${error.message}`, error);
 				throw new Error(`Failed to insert SQL QA: ${error.message}`);
 			}
-			this.logger.debug(`SQL QA saved with ID: ${data.id}`);
+			this.logger.log(
+				`SQL QA upserted successfully | id=${data.id} | question="${entry.question.substring(0, 50)}..." | (Note: upsert may UPDATE if exists, check Supabase logs)`,
+			);
 			return data.id;
 		} catch (error) {
 			this.logger.error('Error saving SQL QA:', error);
