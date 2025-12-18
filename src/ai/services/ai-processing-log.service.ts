@@ -119,6 +119,52 @@ export class AiProcessingLogService {
 					return String(value);
 				}
 			}
+			// Handle Decimal objects that were already serialized to JSON (have d, e, s properties)
+			// This happens when Decimal is stored in database and retrieved as JSON
+			// Decimal format: { d: number[], e: number, s: number } where d is digits array, e is exponent, s is sign
+			if (
+				'd' in value &&
+				'e' in value &&
+				's' in value &&
+				typeof (value as any).e === 'number' &&
+				typeof (value as any).s === 'number'
+			) {
+				try {
+					const d = (value as any).d;
+					const e = (value as any).e;
+					const s = (value as any).s;
+					// Handle case where d might be an array or a number (depending on serialization)
+					let digits: number[];
+					if (Array.isArray(d)) {
+						digits = d;
+					} else if (typeof d === 'number') {
+						digits = d === 0 ? [] : [d];
+					} else {
+						// Fallback: try to convert to number directly
+						return 0;
+					}
+					// If no digits, return 0
+					if (digits.length === 0) {
+						return 0;
+					}
+					// Reconstruct number from Decimal format
+					let numStr = s < 0 ? '-' : '';
+					const digitsStr = digits.join('');
+					const decimalPoint = digitsStr.length + e;
+					if (decimalPoint <= 0) {
+						numStr += `0.${'0'.repeat(-decimalPoint)}${digitsStr}`;
+					} else if (decimalPoint >= digitsStr.length) {
+						numStr += `${digitsStr}${'0'.repeat(decimalPoint - digitsStr.length)}`;
+					} else {
+						numStr += `${digitsStr.slice(0, decimalPoint)}.${digitsStr.slice(decimalPoint)}`;
+					}
+					const num = Number(numStr);
+					return Number.isNaN(num) ? 0 : num;
+				} catch {
+					// If reconstruction fails, return 0 to avoid errors
+					return 0;
+				}
+			}
 			// Kiểm tra nếu có method toString đặc biệt
 			if ('toString' in value && typeof (value as any).toString === 'function') {
 				try {
@@ -143,6 +189,10 @@ export class AiProcessingLogService {
 				const sanitized: Record<string, unknown> = {};
 				// Sử dụng Object.keys thay vì Object.entries để tránh lỗi với Prisma objects
 				for (const key of Object.keys(value)) {
+					// Skip constructor property to avoid class-transformer errors
+					if (key === 'constructor') {
+						continue;
+					}
 					const val = (value as Record<string, unknown>)[key];
 					// Skip undefined values
 					if (val === undefined) {
