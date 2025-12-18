@@ -366,17 +366,37 @@ export function validateSqlSafety(sql: string, isAggregate: boolean = false): Sq
 		const parseResult = parser.astify(sanitizedSql, { database: 'PostgreSQL' });
 		ast = parseResult;
 	} catch (error) {
-		// If parsing fails, fallback to basic validation
-		// Still check for dangerous patterns using regex
-		const errorMessage = (error as Error).message || String(error);
-		violations.push(`Invalid SQL syntax: ${errorMessage}`);
-		// Still check for dangerous patterns even if parsing fails
+		// If parsing fails, fallback to a more permissive but still safe mode.
+		// At this point we already enforced:
+		// - SELECT-only query (no DELETE/UPDATE/INSERT)
+		// - Single statement (no multiple queries separated by ;)
+		// We now:
+		// 1) Block access to system schemas (information_schema, pg_catalog, pg_*)
+		// 2) For non-aggregate queries, still enforce a LIMIT
+		// 3) Otherwise, allow the query to proceed instead of treating parser
+		//    limitations as fatal errors. This is important for some valid
+		//    PostgreSQL-specific syntax that node-sql-parser may not support.
 		for (const pattern of DENIED_SCHEMA_PATTERNS) {
 			if (pattern.test(sql)) {
 				violations.push('Access to system schemas is not allowed');
 			}
 		}
-		return { isValid: false, violations, sanitizedSql };
+		if (violations.length > 0) {
+			return { isValid: false, violations, sanitizedSql };
+		}
+		// Parser failed but query passed basic safety checks → allow it.
+		// For non-aggregate queries, still auto-enforce LIMIT 50 to avoid
+		// unbounded scans.
+		let enforcedSql: string | undefined;
+		if (!isAggregate) {
+			enforcedSql = enforceLimit(sanitizedSql, 50);
+		}
+		return {
+			isValid: true,
+			violations: [],
+			enforcedSql,
+			sanitizedSql,
+		};
 	}
 
 	// Check 2: Check for denied operations using AST
