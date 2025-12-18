@@ -158,6 +158,9 @@ export class SqlGenerationAgent {
 				// This helps vector search match with table_complete chunks (1 chunk per table)
 				tablesHint = this.extractTablesHint(session);
 				relationshipsHint = this.extractRelationshipsHint(session);
+				// Extract intent hints early so we can safely gate canonical/QA injections
+				intentAction = this.extractIntentAction(session);
+				filtersHint = this.extractFiltersHint(session);
 				// Enhanced query: add table names to help vector search find relevant table_complete chunks
 				// Format: "query table1 table2 table3" - helps match table_name field in chunks
 				const enhancedQuery = tablesHint
@@ -288,8 +291,10 @@ export class SqlGenerationAgent {
 						`Modification query detected | previousSql length=${previousSql.length} | previousCanonicalQuestion="${previousCanonicalQuestion || 'N/A'}"`,
 					);
 				} else if (
-					canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT ||
-					canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE
+					!filtersHint &&
+					intentAction !== 'own' &&
+					(canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT ||
+						canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE)
 				) {
 					ragContext += `\nCANONICAL SQL HINT (score=${canonicalDecision.score.toFixed(2)}, REFERENCE ONLY - schema may have changed):\n`;
 					ragContext += `Original question: ${canonicalDecision.question}\nPrevious SQL (for reference only):\n${canonicalDecision.sql}\n`;
@@ -313,7 +318,7 @@ export class SqlGenerationAgent {
 				this.logger.debug(
 					`RAG retrieval completed:` +
 						`\n  - Schema chunks: ${schemaResults.length}` +
-						`${canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT || canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE ? '\n  - Canonical hint: included (reference only)' : ''}` +
+						`${!filtersHint && intentAction !== 'own' && (canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT || canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE) ? '\n  - Canonical hint: included (reference only)' : ''}` +
 						`${canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT && !filtersHint ? '\n  - QA examples: included' : filtersHint ? '\n  - QA examples: skipped (room-specific query)' : ''}` +
 						`${ragContext.length > 0 ? `\n  - RAG context length: ${ragContext.length} chars` : '\n  - RAG context: empty (using fallback schema)'}`,
 				);
