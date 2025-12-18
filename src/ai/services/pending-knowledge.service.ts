@@ -61,6 +61,9 @@ export class PendingKnowledgeService {
 					: undefined;
 			// Ưu tiên lưu canonical question làm question chính nếu có
 			const finalQuestion = params.canonicalQuestion || params.question;
+			this.logger.debug(
+				`Attempting to save pending knowledge | question="${finalQuestion.substring(0, 50)}..." | hasSql=${!!params.sql} | hasResponse=${!!params.response}`,
+			);
 			const pendingKnowledge = await (this.prisma as any).pendingKnowledge.create({
 				data: {
 					question: finalQuestion, // Dùng canonical question nếu có
@@ -74,11 +77,9 @@ export class PendingKnowledgeService {
 					processingLogId: params.processingLogId,
 				},
 			});
-
-			this.logger.debug(
-				`Saved pending knowledge | id=${pendingKnowledge.id} | question="${finalQuestion.substring(0, 50)}..." | original="${params.question.substring(0, 30)}..."`,
+			this.logger.log(
+				`Successfully saved pending knowledge | id=${pendingKnowledge.id} | question="${finalQuestion.substring(0, 50)}..." | original="${params.question.substring(0, 30)}..."`,
 			);
-
 			// Extract canonical question from validatorData if stored there
 			const validatorData = pendingKnowledge.validatorData as any;
 			const canonicalQuestion =
@@ -95,7 +96,15 @@ export class PendingKnowledgeService {
 				createdAt: pendingKnowledge.createdAt,
 			};
 		} catch (error) {
-			this.logger.error('Failed to save pending knowledge', error);
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			const errorStack = error instanceof Error ? error.stack : undefined;
+			this.logger.error(
+				`Failed to save pending knowledge | question="${params.question.substring(0, 50)}..." | error=${errorMessage}`,
+				errorStack,
+			);
+			if (error instanceof Error && 'code' in error) {
+				this.logger.error(`Prisma error code: ${(error as any).code}`);
+			}
 			throw error;
 		}
 	}
@@ -116,16 +125,25 @@ export class PendingKnowledgeService {
 		sqlQAId?: number;
 	}> {
 		try {
+			this.logger.debug(`Starting approval process for pending knowledge id=${id}`);
 			// Get pending knowledge
 			const pending = await (this.prisma as any).pendingKnowledge.findUnique({
 				where: { id },
 			});
 
 			if (!pending) {
+				this.logger.error(`Pending knowledge with id ${id} not found`);
 				throw new Error(`Pending knowledge with id ${id} not found`);
 			}
 
+			this.logger.debug(
+				`Found pending knowledge | id=${id} | status=${pending.status} | hasSql=${!!pending.sql}`,
+			);
+
 			if (pending.status !== 'pending') {
+				this.logger.warn(
+					`Cannot approve pending knowledge ${id}: status is ${pending.status}, expected 'pending'`,
+				);
 				throw new Error(
 					`Pending knowledge with id ${id} is already ${pending.status}, cannot approve`,
 				);
@@ -133,6 +151,7 @@ export class PendingKnowledgeService {
 
 			// Validate SQL is not null
 			if (!pending.sql) {
+				this.logger.error(`Cannot approve pending knowledge ${id}: SQL is required but missing`);
 				throw new Error(`Cannot approve pending knowledge ${id}: SQL is required but missing`);
 			}
 
@@ -184,22 +203,27 @@ export class PendingKnowledgeService {
 
 			// Update status to approved (only if vector DB save succeeded)
 			// Use transaction to ensure atomicity of status update
+			this.logger.debug(`Updating status to 'approved' for pending knowledge ${id}`);
 			const result = await (this.prisma as any).$transaction(async (tx) => {
 				// Double-check status is still pending (prevent race condition)
 				const currentPending = await tx.pendingKnowledge.findUnique({
 					where: { id },
 				});
 				if (!currentPending) {
+					this.logger.error(`Pending knowledge with id ${id} not found in transaction`);
 					throw new Error(`Pending knowledge with id ${id} not found`);
 				}
 				if (currentPending.status !== 'pending') {
+					this.logger.warn(
+						`Pending knowledge ${id} status changed to ${currentPending.status} during approval`,
+					);
 					throw new Error(
 						`Pending knowledge with id ${id} is already ${currentPending.status}, cannot approve`,
 					);
 				}
 
 				// Update status to approved
-				await tx.pendingKnowledge.update({
+				const updated = await tx.pendingKnowledge.update({
 					where: { id },
 					data: {
 						status: 'approved',
@@ -207,6 +231,9 @@ export class PendingKnowledgeService {
 						approvedBy,
 					},
 				});
+				this.logger.debug(
+					`Status updated to 'approved' | id=${id} | approvedAt=${updated.approvedAt} | approvedBy=${approvedBy}`,
+				);
 
 				return vectorResult;
 			});
@@ -222,7 +249,15 @@ export class PendingKnowledgeService {
 				sqlQAId: result.sqlQAId,
 			};
 		} catch (error) {
-			this.logger.error(`Failed to approve pending knowledge id=${id}`, error);
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			const errorStack = error instanceof Error ? error.stack : undefined;
+			this.logger.error(
+				`Failed to approve pending knowledge id=${id} | error=${errorMessage}`,
+				errorStack,
+			);
+			if (error instanceof Error && 'code' in error) {
+				this.logger.error(`Prisma error code: ${(error as any).code}`);
+			}
 			throw error;
 		}
 	}
