@@ -14,6 +14,7 @@ export class AiProcessingLogService {
 	/**
 	 * Sanitize data to remove Functions and non-serializable values
 	 * Loại bỏ Functions, undefined, và các giá trị không thể serialize
+	 * Xử lý an toàn với Prisma objects (Decimal, etc.)
 	 */
 	private sanitizeForDatabase(value: unknown, path: string = 'root'): unknown {
 		if (value === null || value === undefined) {
@@ -26,50 +27,108 @@ export class AiProcessingLogService {
 			);
 			return '[Function]';
 		}
-		// Xử lý Date objects
-		if (value instanceof Date) {
-			return value.toISOString();
+		// Xử lý Date objects - kiểm tra an toàn với constructor
+		try {
+			if (value instanceof Date) {
+				return value.toISOString();
+			}
+		} catch {
+			// Nếu instanceof fail (có thể do Prisma object), thử toString
+			if (
+				value &&
+				typeof value === 'object' &&
+				'toISOString' in value &&
+				typeof (value as any).toISOString === 'function'
+			) {
+				return (value as any).toISOString();
+			}
 		}
 		// Xử lý BigInt (should already be handled by serializeBigInt, but just in case)
 		if (typeof value === 'bigint') {
 			return Number(value);
 		}
-		// Xử lý Error objects
-		if (value instanceof Error) {
-			return {
-				name: value.name,
-				message: value.message,
-				stack: value.stack,
-			};
+		// Xử lý Error objects - kiểm tra an toàn
+		try {
+			if (value instanceof Error) {
+				return {
+					name: value.name,
+					message: value.message,
+					stack: value.stack,
+				};
+			}
+		} catch {
+			// Nếu instanceof fail, thử kiểm tra properties
+			if (value && typeof value === 'object' && 'message' in value && 'name' in value) {
+				return {
+					name: String((value as any).name),
+					message: String((value as any).message),
+					stack: (value as any).stack ? String((value as any).stack) : undefined,
+				};
+			}
 		}
 		// Xử lý Symbol (không thể serialize)
 		if (typeof value === 'symbol') {
 			return String(value);
 		}
+		// Xử lý Prisma Decimal và các object đặc biệt khác
+		if (value && typeof value === 'object') {
+			// Kiểm tra nếu là Prisma Decimal hoặc có method toString/toNumber
+			if ('toNumber' in value && typeof (value as any).toNumber === 'function') {
+				try {
+					return (value as any).toNumber();
+				} catch {
+					return String(value);
+				}
+			}
+			// Kiểm tra nếu có method toString đặc biệt
+			if ('toString' in value && typeof (value as any).toString === 'function') {
+				try {
+					const str = (value as any).toString();
+					// Nếu toString trả về số, thử convert
+					const num = Number(str);
+					if (!Number.isNaN(num) && str.trim() !== '') {
+						return num;
+					}
+				} catch {
+					// Ignore
+				}
+			}
+		}
 		// Xử lý Arrays
 		if (Array.isArray(value)) {
 			return value.map((item, index) => this.sanitizeForDatabase(item, `${path}[${index}]`));
 		}
-		// Xử lý Objects
-		if (typeof value === 'object') {
-			const sanitized: Record<string, unknown> = {};
-			for (const [key, val] of Object.entries(value)) {
-				// Skip undefined values
-				if (val === undefined) {
-					continue;
+		// Xử lý Objects - kiểm tra an toàn với Object.entries
+		if (typeof value === 'object' && value !== null) {
+			try {
+				const sanitized: Record<string, unknown> = {};
+				// Sử dụng Object.keys thay vì Object.entries để tránh lỗi với Prisma objects
+				for (const key of Object.keys(value)) {
+					const val = (value as Record<string, unknown>)[key];
+					// Skip undefined values
+					if (val === undefined) {
+						continue;
+					}
+					// Skip Functions
+					if (typeof val === 'function') {
+						this.logger.warn(
+							`Found Function object at path: ${path}.${key}. Replacing with '[Function]' placeholder.`,
+						);
+						sanitized[key] = '[Function]';
+						continue;
+					}
+					// Recursively sanitize nested objects
+					sanitized[key] = this.sanitizeForDatabase(val, `${path}.${key}`);
 				}
-				// Skip Functions
-				if (typeof val === 'function') {
-					this.logger.warn(
-						`Found Function object at path: ${path}.${key}. Replacing with '[Function]' placeholder.`,
-					);
-					sanitized[key] = '[Function]';
-					continue;
-				}
-				// Recursively sanitize nested objects
-				sanitized[key] = this.sanitizeForDatabase(val, `${path}.${key}`);
+				return sanitized;
+			} catch (error) {
+				// Nếu không thể iterate, thử convert sang string
+				const errorMessage = error instanceof Error ? error.message : String(error);
+				this.logger.warn(
+					`Failed to sanitize object at path: ${path}. Converting to string. Error: ${errorMessage}`,
+				);
+				return String(value);
 			}
-			return sanitized;
 		}
 		// Return primitive values as-is
 		return value;
@@ -176,9 +235,45 @@ export class AiProcessingLogService {
 	 */
 	async findById(id: string) {
 		try {
-			return await (this.prisma as any).aiProcessingLog.findUnique({
+			const log = await (this.prisma as any).aiProcessingLog.findUnique({
 				where: { id },
 			});
+			if (!log) {
+				return null;
+			}
+			// Sanitize để loại bỏ Prisma objects và non-serializable values
+			try {
+				return {
+					id: log.id,
+					question: log.question,
+					response: log.response,
+					orchestratorData: this.sanitizeForDatabase(log.orchestratorData, 'orchestratorData'),
+					sqlGenerationAttempts: this.sanitizeForDatabase(
+						log.sqlGenerationAttempts,
+						'sqlGenerationAttempts',
+					),
+					validatorData: this.sanitizeForDatabase(log.validatorData, 'validatorData'),
+					ragContext: this.sanitizeForDatabase(log.ragContext, 'ragContext'),
+					stepsLog: log.stepsLog,
+					tokenUsage: this.sanitizeForDatabase(log.tokenUsage, 'tokenUsage'),
+					totalDuration: log.totalDuration,
+					status: log.status,
+					error: log.error,
+					createdAt: log.createdAt,
+				};
+			} catch (e) {
+				this.logger.warn(
+					`Failed to sanitize log ${id}: ${(e as Error).message}. Returning basic fields only.`,
+				);
+				// Fallback: chỉ trả về các field cơ bản
+				return {
+					id: log.id,
+					question: log.question,
+					response: log.response,
+					status: log.status,
+					createdAt: log.createdAt,
+				};
+			}
 		} catch (error) {
 			this.logger.error(`Failed to find processing log by id: ${id}`, error);
 			return null;
@@ -298,8 +393,47 @@ export class AiProcessingLogService {
 				(this.prisma as any).aiProcessingLog.count({ where }),
 			]);
 
+			// Sanitize items để loại bỏ Prisma objects và non-serializable values
+			const sanitizedItems = (items || []).map((item: any) => {
+				try {
+					return {
+						id: item.id,
+						question: item.question,
+						response: item.response,
+						orchestratorData: this.sanitizeForDatabase(
+							item.orchestratorData,
+							'items.orchestratorData',
+						),
+						sqlGenerationAttempts: this.sanitizeForDatabase(
+							item.sqlGenerationAttempts,
+							'items.sqlGenerationAttempts',
+						),
+						validatorData: this.sanitizeForDatabase(item.validatorData, 'items.validatorData'),
+						ragContext: this.sanitizeForDatabase(item.ragContext, 'items.ragContext'),
+						stepsLog: item.stepsLog,
+						tokenUsage: this.sanitizeForDatabase(item.tokenUsage, 'items.tokenUsage'),
+						totalDuration: item.totalDuration,
+						status: item.status,
+						error: item.error,
+						createdAt: item.createdAt,
+					};
+				} catch (e) {
+					this.logger.warn(
+						`Failed to sanitize log item ${item.id}: ${(e as Error).message}. Returning basic fields only.`,
+					);
+					// Fallback: chỉ trả về các field cơ bản
+					return {
+						id: item.id,
+						question: item.question,
+						response: item.response,
+						status: item.status,
+						createdAt: item.createdAt,
+					};
+				}
+			});
+
 			return {
-				items: items || [],
+				items: sanitizedItems,
 				total: total || 0,
 				limit,
 				offset,
