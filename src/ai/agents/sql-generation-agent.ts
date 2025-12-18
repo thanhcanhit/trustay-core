@@ -66,6 +66,42 @@ export class SqlGenerationAgent {
 
 	constructor(private readonly knowledgeService?: KnowledgeService) {}
 
+	private enforceFiltersHintInSql(filtersHint: string, sql: string): void {
+		const hint = (filtersHint || '').trim();
+		if (!hint || hint.toLowerCase() === SqlGenerationAgent.VALIDATION_NONE) return;
+
+		// Typical hint: rooms.slug='abc' or rooms.id='uuid'
+		const match = hint.match(/\.(slug|id)\s*=\s*'([^']+)'/i);
+		if (!match) return;
+
+		const column = match[1].toLowerCase();
+		const expectedValue = match[2];
+
+		// Minimal fail-fast: SQL must contain the expected literal value.
+		// This prevents accidental reuse of canonical SQL with stale slug/id.
+		if (!sql.includes(`'${expectedValue}'`)) {
+			throw new Error(
+				`FILTERS_HINT enforcement failed: expected ${column}='${expectedValue}' to appear in SQL`,
+			);
+		}
+	}
+
+	private normalizeSqlErrorKey(error: string): string {
+		const msg = (error || '').trim();
+		if (!msg) return 'empty_error';
+
+		const pg = msg.match(/PostgreSQL Error\s+([0-9A-Z]{5})\s*:/i);
+		if (pg?.[1]) return `pg_${pg[1].toUpperCase()}`;
+
+		if (/FILTERS_HINT enforcement failed/i.test(msg)) return 'filters_hint_enforcement';
+		if (/SQL safety validation failed/i.test(msg)) return 'sql_safety_validation';
+		if (/Only SELECT queries are allowed/i.test(msg)) return 'non_select_blocked';
+		if (/SQL unchanged from previous attempt/i.test(msg)) return 'sql_unchanged';
+
+		const firstLine = msg.split('\n')[0]?.trim() || msg;
+		return firstLine.slice(0, 120);
+	}
+
 	/**
 	 * Extract and format Prisma error message for better AI understanding
 	 * Prisma errors have format: Invalid `prisma.$queryRawUnsafe()` invocation: Raw query failed. Code: `42P01`. Message: `relation "table_name" does not exist`
@@ -158,6 +194,9 @@ export class SqlGenerationAgent {
 				// This helps vector search match with table_complete chunks (1 chunk per table)
 				tablesHint = this.extractTablesHint(session);
 				relationshipsHint = this.extractRelationshipsHint(session);
+				// Extract intent hints early so we can safely gate canonical/QA injections
+				intentAction = this.extractIntentAction(session);
+				filtersHint = this.extractFiltersHint(session);
 				// Enhanced query: add table names to help vector search find relevant table_complete chunks
 				// Format: "query table1 table2 table3" - helps match table_name field in chunks
 				const enhancedQuery = tablesHint
@@ -288,8 +327,10 @@ export class SqlGenerationAgent {
 						`Modification query detected | previousSql length=${previousSql.length} | previousCanonicalQuestion="${previousCanonicalQuestion || 'N/A'}"`,
 					);
 				} else if (
-					canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT ||
-					canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE
+					!filtersHint &&
+					intentAction !== 'own' &&
+					(canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT ||
+						canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE)
 				) {
 					ragContext += `\nCANONICAL SQL HINT (score=${canonicalDecision.score.toFixed(2)}, REFERENCE ONLY - schema may have changed):\n`;
 					ragContext += `Original question: ${canonicalDecision.question}\nPrevious SQL (for reference only):\n${canonicalDecision.sql}\n`;
@@ -313,7 +354,7 @@ export class SqlGenerationAgent {
 				this.logger.debug(
 					`RAG retrieval completed:` +
 						`\n  - Schema chunks: ${schemaResults.length}` +
-						`${canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT || canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE ? '\n  - Canonical hint: included (reference only)' : ''}` +
+						`${!filtersHint && intentAction !== 'own' && (canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT || canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE) ? '\n  - Canonical hint: included (reference only)' : ''}` +
 						`${canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_HINT && !filtersHint ? '\n  - QA examples: included' : filtersHint ? '\n  - QA examples: skipped (room-specific query)' : ''}` +
 						`${ragContext.length > 0 ? `\n  - RAG context length: ${ragContext.length} chars` : '\n  - RAG context: empty (using fallback schema)'}`,
 				);
@@ -328,7 +369,8 @@ export class SqlGenerationAgent {
 		// High-confidence canonical reuse: execute validated canonical SQL directly, fallback to regeneration on failure
 		if (
 			canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE &&
-			canonicalDecision.reusePreferred
+			canonicalDecision.reusePreferred &&
+			!filtersHint
 		) {
 			const canonicalScore =
 				typeof canonicalDecision?.score === 'number' ? canonicalDecision.score.toFixed(4) : '?';
@@ -464,8 +506,20 @@ export class SqlGenerationAgent {
 				};
 			}
 		}
+		// Guard: if FILTERS_HINT exists, we must NOT directly reuse canonical SQL (it may contain stale slug/id).
+		// Instead, force regeneration so FILTERS_HINT can be enforced by the SQL prompt and safety checks.
+		if (
+			canonicalDecision?.mode === SqlGenerationAgent.CANONICAL_MODE_REUSE &&
+			canonicalDecision.reusePreferred &&
+			filtersHint
+		) {
+			this.logger.debug(
+				`[Canonical Reuse] Skipping direct reuse because filtersHint is present: ${filtersHint}`,
+			);
+		}
 		const dbSchema = getCompleteDatabaseSchema();
 		let lastError: string = '';
+		let lastErrorKey: string = '';
 		let lastSql: string = '';
 		let attempts = 0;
 		const maxAttempts = SqlGenerationAgent.MAX_ATTEMPTS;
@@ -490,9 +544,16 @@ export class SqlGenerationAgent {
 		// để AI tự động regenerate SQL với context của lỗi trước đó
 		while (attempts < maxAttempts) {
 			attempts++;
+			let errorStage: SqlGenerationAttempt['errorStage'] = 'unknown';
+			let attemptRawResponse = '';
+			let attemptGeneratedSql = '';
+			let attemptFinalSql = '';
+			let attemptSafetyCheck: SqlGenerationAttempt['safetyCheck'] | undefined;
 			try {
 				attemptStart = Date.now();
+				errorStage = 'generation';
 				attemptTokenUsage = undefined;
+				const previousAttemptSql = lastSql;
 				if (attempts > 1) {
 					this.logger.debug(
 						`SQL Regeneration attempt ${attempts}/${maxAttempts} (previous error: ${lastError.substring(0, 100)})`,
@@ -525,6 +586,7 @@ export class SqlGenerationAgent {
 					temperature: aiConfig.temperature,
 					maxOutputTokens: aiConfig.maxTokens,
 				});
+				attemptRawResponse = text;
 				// Accumulate token usage across attempts
 				if (usage) {
 					const promptTokens = (usage as any).promptTokens || (usage as any).prompt || 0;
@@ -550,19 +612,41 @@ export class SqlGenerationAgent {
 				if (!sql.endsWith(';')) {
 					sql += ';';
 				}
+				attemptGeneratedSql = sql;
 				const sqlLower = sql.toLowerCase().trim();
 				if (!sqlLower.startsWith(SqlGenerationAgent.SQL_COMMAND_SELECT)) {
+					errorStage = 'validation';
 					throw new Error('Only SELECT queries are allowed for security reasons');
 				}
 
 				// SQL Safety Validation - MVP: enforce LIMIT and allow-list
+				errorStage = 'validation';
 				const isAggregate = isAggregateQuery(sql);
 				const safetyCheck = validateSqlSafety(sql, isAggregate);
+				attemptSafetyCheck = safetyCheck;
 				if (!safetyCheck.isValid) {
 					throw new Error(`SQL safety validation failed: ${safetyCheck.violations.join(', ')}`);
 				}
 				// Use enforced SQL if available (with LIMIT added)
 				const finalSql = safetyCheck.enforcedSql || sql;
+				attemptFinalSql = finalSql;
+
+				// Fail-fast: prevent the model from repeating the exact same SQL, which usually leads to the same error loop.
+				if (attempts > 1 && previousAttemptSql) {
+					const normalize = (s: string) => s.replace(/\s+/g, ' ').trim();
+					if (normalize(finalSql) === normalize(previousAttemptSql)) {
+						throw new Error(
+							'SQL unchanged from previous attempt; you must modify it to fix the error',
+						);
+					}
+				}
+
+				// Fail-fast: when orchestrator provided FILTERS_HINT (page-specific), enforce it in SQL.
+				// This catches cases where the model accidentally outputs a stale slug/id (e.g., from canonical SQL).
+				if (filtersHint) {
+					errorStage = 'filters_hint';
+					this.enforceFiltersHintInSql(filtersHint, finalSql);
+				}
 
 				// Log SQL được generate để debug
 				this.logger.debug(
@@ -576,6 +660,7 @@ export class SqlGenerationAgent {
 				// Lưu SQL để nếu fail thì có thể truyền vào prompt lần sau
 				lastSql = finalSql;
 
+				errorStage = 'execution';
 				const results = await prisma.$queryRawUnsafe(finalSql);
 				const serializedResults = serializeBigInt(results);
 				const resultCount = Array.isArray(serializedResults) ? serializedResults.length : 1;
@@ -591,6 +676,7 @@ export class SqlGenerationAgent {
 					attempt: attempts,
 					prompt: contextualPrompt.substring(0, PREVIEW_LENGTHS.PROMPT),
 					rawResponse: text.substring(0, PREVIEW_LENGTHS.RAW_RESPONSE),
+					generatedSql: attemptGeneratedSql,
 					finalSql,
 					tokenUsage: attemptTokenUsage,
 					durationMs: attemptDuration,
@@ -628,13 +714,22 @@ export class SqlGenerationAgent {
 				// Vòng phản hồi tự sửa lỗi: Lưu error và SQL cũ để truyền vào prompt lần sau
 				// AI sẽ tự động sửa SQL dựa trên error message và SQL cũ này
 				const currentError = this.extractPrismaErrorMessage(error);
+				const currentErrorKey = this.normalizeSqlErrorKey(currentError);
+				const decoratedError = `ERROR_KEY=${currentErrorKey}\nERROR_STAGE=${errorStage}\n${currentError}`;
 
 				// Detect if same error repeats (early exit to save resources)
-				const isSameError = lastError && currentError === lastError;
+				const isSameError = lastErrorKey && currentErrorKey === lastErrorKey;
 				if (isSameError) {
 					consecutiveSameError++;
 				} else {
 					consecutiveSameError = 1;
+				}
+
+				// Ensure we persist the SQL that actually failed (even if it failed before execution).
+				if (attemptFinalSql) {
+					lastSql = attemptFinalSql;
+				} else if (attemptGeneratedSql) {
+					lastSql = attemptGeneratedSql;
 				}
 
 				// Persist attempt detail for processing log
@@ -642,24 +737,31 @@ export class SqlGenerationAgent {
 				attemptLogs.push({
 					attempt: attempts,
 					prompt: contextualPrompt.substring(0, PREVIEW_LENGTHS.PROMPT),
-					rawResponse: currentError.substring(0, PREVIEW_LENGTHS.RAW_RESPONSE),
+					rawResponse: attemptRawResponse
+						? attemptRawResponse.substring(0, PREVIEW_LENGTHS.RAW_RESPONSE)
+						: currentError.substring(0, PREVIEW_LENGTHS.RAW_RESPONSE),
+					generatedSql: attemptGeneratedSql || undefined,
 					finalSql: lastSql,
 					tokenUsage: attemptTokenUsage,
 					durationMs: attemptDuration,
 					error: currentError,
+					errorKey: currentErrorKey,
+					errorStage: errorStage,
+					safetyCheck: attemptSafetyCheck,
 				});
 
 				// Early exit if same error repeats (AI is not learning from previous attempts)
 				if (consecutiveSameError >= SqlGenerationAgent.MAX_CONSECUTIVE_SAME_ERROR) {
 					this.logger.error(
-						`[SQL Regeneration] Same error repeated ${consecutiveSameError} times. Stopping early to save resources. Error: ${currentError}`,
+						`[SQL Regeneration] Same error repeated ${consecutiveSameError} times (key=${currentErrorKey}). Stopping early. Error: ${currentError}`,
 					);
 					throw new Error(
-						`Failed to generate valid SQL after ${attempts} attempts. Same error repeated ${consecutiveSameError} times: ${currentError}`,
+						`Failed to generate valid SQL after ${attempts} attempts. Same error repeated ${consecutiveSameError} times (key=${currentErrorKey}): ${currentError}`,
 					);
 				}
 
-				lastError = currentError;
+				lastError = decoratedError;
+				lastErrorKey = currentErrorKey;
 
 				// Log SQL cũ để debug
 				if (lastSql) {
@@ -773,9 +875,11 @@ export class SqlGenerationAgent {
 	 * @returns Tables hint string or undefined
 	 */
 	private extractTablesHint(session: ChatSession): string | undefined {
-		const tablesMessage = session.messages
-			.filter((m) => m.role === 'system')
-			.find((m) => m.content.startsWith('[INTENT] TABLES='));
+		const tablesMessages = session.messages.filter(
+			(m) => m.role === 'system' && m.content.startsWith('[INTENT] TABLES='),
+		);
+		const tablesMessage =
+			tablesMessages.length > 0 ? tablesMessages[tablesMessages.length - 1] : null;
 		if (tablesMessage) {
 			const match = tablesMessage.content.match(/\[INTENT\] TABLES=(.+)/);
 			return match?.[1]?.trim();
@@ -789,9 +893,13 @@ export class SqlGenerationAgent {
 	 * @returns Relationships hint string or undefined
 	 */
 	private extractRelationshipsHint(session: ChatSession): string | undefined {
-		const relationshipsMessage = session.messages
-			.filter((m) => m.role === 'system')
-			.find((m) => m.content.startsWith('[INTENT] RELATIONSHIPS='));
+		const relationshipsMessages = session.messages.filter(
+			(m) => m.role === 'system' && m.content.startsWith('[INTENT] RELATIONSHIPS='),
+		);
+		const relationshipsMessage =
+			relationshipsMessages.length > 0
+				? relationshipsMessages[relationshipsMessages.length - 1]
+				: null;
 		if (relationshipsMessage) {
 			const match = relationshipsMessage.content.match(/\[INTENT\] RELATIONSHIPS=(.+)/);
 			return match?.[1]?.trim();
@@ -805,9 +913,11 @@ export class SqlGenerationAgent {
 	 * @returns Filters hint string or undefined
 	 */
 	private extractFiltersHint(session: ChatSession): string | undefined {
-		const filtersMessage = session.messages
-			.filter((m) => m.role === 'system')
-			.find((m) => m.content.startsWith('[INTENT] FILTERS='));
+		const filtersMessages = session.messages.filter(
+			(m) => m.role === 'system' && m.content.startsWith('[INTENT] FILTERS='),
+		);
+		const filtersMessage =
+			filtersMessages.length > 0 ? filtersMessages[filtersMessages.length - 1] : null;
 		if (filtersMessage) {
 			const match = filtersMessage.content.match(/\[INTENT\] FILTERS=(.+)/);
 			return match?.[1]?.trim();
@@ -821,9 +931,11 @@ export class SqlGenerationAgent {
 	 * @returns Intent action ('search' | 'own' | 'stats') or undefined
 	 */
 	private extractIntentAction(session: ChatSession): 'search' | 'own' | 'stats' | undefined {
-		const actionMessage = session.messages
-			.filter((m) => m.role === 'system')
-			.find((m) => m.content.startsWith('[INTENT] ACTION='));
+		const actionMessages = session.messages.filter(
+			(m) => m.role === 'system' && m.content.startsWith('[INTENT] ACTION='),
+		);
+		const actionMessage =
+			actionMessages.length > 0 ? actionMessages[actionMessages.length - 1] : null;
 		if (actionMessage) {
 			const match = actionMessage.content.match(/\[INTENT\] ACTION=(.+)/);
 			const action = match?.[1]?.trim().toLowerCase();

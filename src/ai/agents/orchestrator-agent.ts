@@ -57,6 +57,81 @@ export class OrchestratorAgent {
 		`Xin chào! 👋 Tôi là AI Assistant của Trustay, rất vui được trò chuyện với bạn!\n\nTôi có thể giúp bạn tìm hiểu về dữ liệu phòng trọ, thống kê doanh thu, thông tin người dùng và nhiều thứ khác.\n\nBạn muốn tìm hiểu điều gì? 😊`;
 	private static readonly DEFAULT_SEARCH_MESSAGE = `Tôi sẽ tìm kiếm thông tin cho bạn ngay! 🔍`;
 
+	private shouldUseCurrentPageContextHeuristic(
+		query: string,
+		currentPageContext?: { entity: string; identifier: string; type?: 'slug' | 'id' },
+	): boolean {
+		if (!currentPageContext) return false;
+		const q = (query || '').toLowerCase();
+
+		// If the user explicitly includes the identifier/link, always treat as on-page target
+		if (currentPageContext.identifier && q.includes(currentPageContext.identifier.toLowerCase())) {
+			return true;
+		}
+
+		// Deictic cues that indicate "this thing I'm viewing" (avoid "đó" which often refers to previous results)
+		const hasDeictic =
+			/\b(này|ở đây|đang xem|hiện tại|trên trang|trang này|this|current|currently viewing)\b/i.test(
+				query,
+			);
+		if (!hasDeictic) return false;
+
+		// Entity cues: avoid false positives like "tháng này"
+		// NOTE: This project does not have a "building page" context, so avoid binding on building-like words.
+		const hasEntityCue = /\b(phòng|căn|trọ|room|bài|post|listing)\b/i.test(query);
+
+		// If we have deictic but no entity cue, be conservative and don't bind to current page.
+		return hasEntityCue;
+	}
+
+	private async decideUseCurrentPageContextByLlm(params: {
+		query: string;
+		currentPageContext: { entity: string; identifier: string; type?: 'slug' | 'id' };
+		recentMessages: string;
+		sessionSummary?: string | null;
+		model: string;
+	}): Promise<{ useCurrentPage: boolean; reason: string }> {
+		const { query, currentPageContext, recentMessages, sessionSummary, model } = params;
+
+		const prompt = `Bạn là bộ phân loại nhiệm vụ cho trợ lý AI.
+Mục tiêu: quyết định có nên gắn "current page" (đối tượng user đang xem) vào ngữ cảnh để hiểu query hay không.
+
+QUY TẮC:
+- MẶC ĐỊNH: USE_CURRENT_PAGE=no.
+- Chỉ trả USE_CURRENT_PAGE=yes khi user thật sự đang tham chiếu đối tượng đang xem (ví dụ: "phòng này", "đang xem", "ở đây", "trên trang", "hiện tại") HOẶC user đưa thẳng slug/id/link của đối tượng đó.
+- Nếu user đang hỏi một yêu cầu mới/độc lập (ví dụ: "tìm phòng ...", "gợi ý phòng ...", "liệt kê ...", "giá phòng khu ...") thì USE_CURRENT_PAGE=no.
+- Trường hợp mơ hồ: user nói "phòng này" nhưng trước đó đang có kết quả tìm kiếm/danh sách → ưu tiên USE_CURRENT_PAGE=no (để Orchestrator hỏi lại/clarify thay vì đoán).
+
+GHI CHÚ:
+- Không có "building page" trong hệ thống này, nên đừng suy diễn theo "tòa/dãy".
+
+ĐẦU VÀO:
+CURRENT_PAGE: entity=${currentPageContext.entity}, type=${currentPageContext.type || 'slug'}, identifier=${currentPageContext.identifier}
+SESSION_SUMMARY: ${sessionSummary ? sessionSummary : 'none'}
+RECENT_MESSAGES:
+${recentMessages || 'none'}
+QUERY:
+${query}
+
+Trả về đúng 2 dòng:
+USE_CURRENT_PAGE: yes|no
+REASON: <tối đa 12 từ>`;
+
+		const { text } = await generateText({
+			model: google(model),
+			prompt,
+			temperature: 0,
+			maxOutputTokens: 80,
+		});
+
+		const out = (text || '').trim();
+		const useMatch = out.match(/USE_CURRENT_PAGE:\s*(yes|no)/i);
+		const reasonMatch = out.match(/REASON:\s*(.+)/i);
+		const useCurrentPage = useMatch ? useMatch[1].toLowerCase() === 'yes' : false;
+		const reason = reasonMatch?.[1]?.trim() || 'no_reason';
+		return { useCurrentPage, reason };
+	}
+
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly knowledge: KnowledgeService,
@@ -149,6 +224,46 @@ export class OrchestratorAgent {
 			}
 		} else {
 			this.logger.debug('[OrchestratorAgent] No context messages found in session');
+		}
+
+		// Current page is always available, but MUST only be used when the user's query truly references it.
+		let currentPageDecision:
+			| { useCurrentPage: boolean; reason?: string; method?: 'llm' | 'heuristic' | 'none' }
+			| undefined;
+		if (currentPageContext) {
+			try {
+				const decision = await this.decideUseCurrentPageContextByLlm({
+					query,
+					currentPageContext,
+					recentMessages,
+					sessionSummary,
+					model: aiConfig.model,
+				});
+				this.logger.debug(
+					`[OrchestratorAgent] currentPageContext decision: use=${decision.useCurrentPage} reason="${decision.reason}"`,
+				);
+				currentPageDecision = {
+					useCurrentPage: decision.useCurrentPage,
+					reason: decision.reason,
+					method: 'llm',
+				};
+				if (!decision.useCurrentPage) currentPageContext = undefined;
+			} catch (error) {
+				this.logger.warn(
+					`[OrchestratorAgent] Failed to decide currentPageContext via LLM, fallback to heuristic: ${(error as Error).message}`,
+				);
+				const useCurrentPage = this.shouldUseCurrentPageContextHeuristic(query, currentPageContext);
+				currentPageDecision = {
+					useCurrentPage,
+					reason: 'llm_failed_fallback_heuristic',
+					method: 'heuristic',
+				};
+				if (!useCurrentPage) {
+					currentPageContext = undefined;
+				}
+			}
+		} else {
+			currentPageDecision = { useCurrentPage: false, method: 'none' };
 		}
 
 		// Build orchestrator prompt with business context, user role, current page context, and summary
@@ -367,6 +482,7 @@ export class OrchestratorAgent {
 				rawResponse: response,
 				recentMessages,
 				currentPageContext,
+				currentPageDecision,
 				businessContext: businessContext || undefined,
 				readyForSql,
 				needsClarification:

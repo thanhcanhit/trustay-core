@@ -327,6 +327,8 @@ QUY TẮC Ý ĐỊNH, PHỦ ĐỊNH VÀ CHẾ ĐỘ HIỂN THỊ (BẮT BUỘC):
   * Đây chỉ là SQL từ lần trước, có thể đã lỗi thời nếu schema thay đổi
   * PHẢI regenerate SQL MỚI dựa trên schema HIỆN TẠI trong RAG context
   * CHỈ dùng canonical SQL như tham khảo về cấu trúc/logic, KHÔNG copy y nguyên
+  * TUYỆT ĐỐI KHÔNG copy lại literal filter (slug/id/UUID) từ canonical SQL
+  * Nếu có FILTERS_HINT → FILTERS_HINT luôn ưu tiên hơn canonical SQL (cannonical chỉ để tham khảo JOIN/SELECT)
   * Nếu schema đã thay đổi (tên bảng/cột, relationships), PHẢI điều chỉnh SQL cho phù hợp
   * PHẢI ĐIỀU CHỈNH theo ý định/polarity/chế độ hiện tại. KHÔNG tái dùng mù quáng.
 
@@ -554,6 +556,7 @@ TRƯỚC KHI TRẢ VỀ SQL, PHẢI KIỂM TRA:
 3. ✅ Nếu FILTERS_HINT có id → SQL phải có WHERE r.id = 'id_value'
 4. ✅ KHÔNG có LIMIT 100 khi có FILTERS_HINT (chỉ query 1 phòng cụ thể)
 5. ✅ KHÔNG query tất cả phòng khi có FILTERS_HINT
+6. ✅ Nếu SQL có slug/id literal KHÁC với FILTERS_HINT (ví dụ bị dính canonical SQL) → SQL SAI, PHẢI thay bằng FILTERS_HINT
 
 NẾU SQL KHÔNG CÓ WHERE clause theo FILTERS_HINT → SQL SAI, PHẢI SỬA LẠI!
 

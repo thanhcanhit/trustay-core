@@ -102,6 +102,47 @@ export class AiService {
 		return `${tag} ${message}`;
 	}
 
+	/**
+	 * Replace (non-persisted) INTENT system messages so downstream agents don't accidentally read stale hints.
+	 * IMPORTANT: SqlGenerationAgent currently reads the first matching [INTENT] message, so we must remove old ones.
+	 */
+	private setIntentSystemMessages(
+		session: ChatSession,
+		intent: {
+			tablesHint?: string;
+			relationshipsHint?: string;
+			filtersHint?: string;
+			intentAction?: 'search' | 'own' | 'stats';
+		},
+	): void {
+		session.messages = session.messages.filter(
+			(m) => !(m.role === 'system' && m.content.startsWith('[INTENT] ')),
+		);
+
+		const timestamp = new Date();
+		const push = (content: string) =>
+			session.messages.push({
+				role: 'system',
+				content,
+				timestamp,
+			});
+
+		if (intent.tablesHint) push(`[INTENT] TABLES=${intent.tablesHint}`);
+		if (intent.relationshipsHint) push(`[INTENT] RELATIONSHIPS=${intent.relationshipsHint}`);
+		if (intent.filtersHint) push(`[INTENT] FILTERS=${intent.filtersHint}`);
+		if (intent.intentAction) push(`[INTENT] ACTION=${intent.intentAction}`);
+	}
+
+	private isLikelySqlModificationQuery(query: string): boolean {
+		const q = query.toLowerCase();
+		// Heuristic: only treat as follow-up/modification when user explicitly references previous results or asks to refine.
+		return Boolean(
+			q.match(
+				/\b(còn|vậy|tiếp|ở trên|kết quả|cái đó|phòng đó|như vậy|lọc|filter|thêm|bỏ|loại|sắp xếp|sort|tính lại|cập nhật|update|sửa|đổi|so sánh tiếp)\b/i,
+			),
+		);
+	}
+
 	private logDebug(step: string, message: string): void {
 		this.logger.debug(this.formatStep(step, message));
 	}
@@ -1042,15 +1083,6 @@ export class AiService {
 				type: 'slug',
 			};
 		}
-		// Parse pattern: /buildings/{slug}
-		const buildingMatch = currentPage.match(/^\/buildings\/([^/?#]+)/);
-		if (buildingMatch) {
-			return {
-				entity: 'building',
-				identifier: buildingMatch[1],
-				type: 'slug',
-			};
-		}
 		return null;
 	}
 
@@ -1274,6 +1306,9 @@ export class AiService {
 				filtersHint: orchestratorResponse.filtersHint || 'none',
 				entityHint: orchestratorResponse.entityHint || 'none',
 				intentAction: orchestratorResponse.intentAction || 'none',
+				currentPageDecision: orchestratorResponse.currentPageDecision
+					? JSON.stringify(orchestratorResponse.currentPageDecision)
+					: 'none',
 				durationMs: orchestratorDuration,
 			});
 
@@ -1288,10 +1323,20 @@ export class AiService {
 				relationshipsHint: orchestratorResponse.relationshipsHint,
 				intentModeHint: orchestratorResponse.intentModeHint,
 				intentAction: orchestratorResponse.intentAction,
+				currentPageDecision: orchestratorResponse.currentPageDecision,
 				missingParams: orchestratorResponse.missingParams,
 				tokenUsage: orchestratorResponse.tokenUsage,
 				duration: orchestratorDuration,
 			};
+
+			// Make orchestrator hints available to downstream agents as non-persisted system messages.
+			// This prevents stale FILTERS/TABLES from previous turns from leaking into the next SQL generation.
+			this.setIntentSystemMessages(session, {
+				tablesHint: orchestratorResponse.tablesHint,
+				relationshipsHint: orchestratorResponse.relationshipsHint,
+				filtersHint: orchestratorResponse.filtersHint,
+				intentAction: orchestratorResponse.intentAction,
+			});
 			// Capture RAG context
 			if (orchestratorResponse.businessContext) {
 				const businessCtx = orchestratorResponse.businessContext;
@@ -1499,7 +1544,13 @@ export class AiService {
 				previousCanonicalQuestion = await this.extractLastCanonicalQuestionFromSession(
 					session.sessionId,
 				);
-				if (previousSql) {
+				const shouldAttemptQuestionExpansion =
+					Boolean(previousSql) &&
+					!orchestratorResponse.filtersHint &&
+					orchestratorResponse.intentModeHint !== 'INSIGHT' &&
+					this.isLikelySqlModificationQuery(query);
+
+				if (previousSql && shouldAttemptQuestionExpansion) {
 					this.logInfo(
 						'QUESTION_EXPANSION',
 						`Attempting to expand question with LLM | originalQuery="${query}" | hasPreviousSql=true | previousCanonicalQuestion="${previousCanonicalQuestion || 'none'}"`,
@@ -1537,6 +1588,11 @@ export class AiService {
 						// Fallback: use original query
 						canonicalQuestion = query;
 					}
+				} else if (previousSql) {
+					this.logDebug(
+						'QUESTION_EXPANSION',
+						`Skipping question expansion | hasPreviousSql=true | hasFiltersHint=${Boolean(orchestratorResponse.filtersHint)} | modeHint=${orchestratorResponse.intentModeHint || 'none'} | likelyModification=${this.isLikelySqlModificationQuery(query)}`,
+					);
 				}
 				// ========================================
 				// BƯỚC 3: Agent 2 - SQL Generation Agent

@@ -186,6 +186,11 @@ export interface OrchestratorAgentResponse {
 		identifier: string;
 		type?: 'slug' | 'id';
 	};
+	currentPageDecision?: {
+		useCurrentPage: boolean;
+		reason?: string;
+		method?: 'llm' | 'heuristic' | 'none';
+	};
 	businessContext?: string; // RAG business context from KnowledgeService
 	readyForSql: boolean;
 	needsClarification?: boolean;
@@ -207,10 +212,13 @@ export interface SqlGenerationAttempt {
 	attempt: number;
 	prompt?: string;
 	rawResponse?: string;
+	generatedSql?: string;
 	finalSql?: string;
 	tokenUsage?: TokenUsage;
 	durationMs?: number;
 	error?: string;
+	errorKey?: string;
+	errorStage?: 'generation' | 'validation' | 'filters_hint' | 'execution' | 'unknown';
 	safetyCheck?: {
 		isValid: boolean;
 		violations?: string[];

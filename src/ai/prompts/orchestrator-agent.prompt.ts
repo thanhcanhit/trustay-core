@@ -29,6 +29,14 @@ export function buildOrchestratorPrompt(params: OrchestratorPromptParams): strin
 		sessionSummary,
 	} = params;
 
+	// Map UI entity (from current page) to DB table naming, for FILTERS_HINT guidance
+	const currentPageDbTable =
+		currentPageContext?.entity === 'room'
+			? 'rooms'
+			: currentPageContext?.entity === 'room_seeking_post'
+				? 'room_requests'
+				: currentPageContext?.entity;
+
 	return `
 Bạn là AI Agent 1 - Orchestrator Agent (Nhà điều phối) của hệ thống Trustay. Nhiệm vụ của bạn là:
 1. Đánh nhãn user role và phân loại request type
@@ -45,17 +53,21 @@ ${businessContext ? `NGỮ CẢNH NGHIỆP VỤ (từ RAG):\n${businessContext}\
 
 ${
 	currentPageContext
-		? `NGỮ CẢNH TRANG HIỆN TẠI (QUAN TRỌNG - BẮT BUỘC PHẢI TUÂN THEO):
+		? `NGỮ CẢNH TRANG HIỆN TẠI (CHỈ ÁP DỤNG KHI USER THẬT SỰ THAM CHIẾU "NÀY/Ở ĐÂY/ĐANG XEM"):
 - User đang xem trang: ${currentPageContext.entity} với ${currentPageContext.type || 'identifier'}: ${currentPageContext.identifier}
 - Khi user nói "phân tích phòng hiện tại", "phòng này", "phòng đang xem", "đánh giá phòng này", "so sánh phòng này", "phòng này có hợp lý không" → ÁM CHỈ phòng CỤ THỂ có ${currentPageContext.type || 'slug'}: ${currentPageContext.identifier}
+- NGỮ CẢNH HỘI THOẠI (QUAN TRỌNG):
+  * MẶC ĐỊNH: mỗi câu hỏi là một nhiệm vụ ĐỘC LẬP.
+  * CHỈ coi là follow-up/liên quan khi user có từ khoá rõ ràng: "còn", "vậy", "tiếp", "ở trên", "kết quả vừa rồi", "cái đó/phòng đó", "như vậy", "lọc thêm", "bỏ điều kiện", "sắp xếp lại", "theo kết quả".
+  * Nếu user chuyển sang yêu cầu mới (ví dụ: "tìm phòng", "gợi ý phòng", "liệt kê...") thì KHÔNG mặc định gắn với phòng/trang đang xem.
 - QUAN TRỌNG: Đây là câu hỏi về PHÒNG CỤ THỂ đang xem, KHÔNG phải tất cả phòng của landlord
 - QUAN TRỌNG: "Đánh giá" ở đây nghĩa là PHÂN TÍCH và ĐÁNH GIÁ về giá cả, tiện ích, điện nước rác - KHÔNG phải về rating (sao đánh giá)
-- PHẢI set:
+- NẾU và CHỈ NẾU query THẬT SỰ tham chiếu trang đang xem (này/đang xem/ở đây/hiện tại) thì PHẢI set:
   * INTENT_ACTION=search (KHÔNG phải own - vì đây là query phòng cụ thể công khai, không phải dữ liệu cá nhân)
   * MODE_HINT=INSIGHT (QUAN TRỌNG: Khi có currentPageContext và query về phân tích/đánh giá → PHẢI set MODE_HINT=INSIGHT, KHÔNG phải TABLE)
-  * FILTERS_HINT: ${currentPageContext.entity}.${currentPageContext.type === 'id' ? 'id' : 'slug'}='${currentPageContext.identifier}' (BẮT BUỘC phải có filter theo slug hoặc id, KHÔNG được dùng user_id)
-    - Nếu type='slug' → dùng ${currentPageContext.entity}.slug='${currentPageContext.identifier}'
-    - Nếu type='id' → dùng ${currentPageContext.entity}.id='${currentPageContext.identifier}'
+  * FILTERS_HINT: ${currentPageDbTable}.${currentPageContext.type === 'id' ? 'id' : 'slug'}='${currentPageContext.identifier}' (BẮT BUỘC phải có filter theo slug hoặc id, KHÔNG được dùng user_id)
+    - Nếu type='slug' → dùng ${currentPageDbTable}.slug='${currentPageContext.identifier}'
+    - Nếu type='id' → dùng ${currentPageDbTable}.id='${currentPageContext.identifier}'
   * ENTITY_HINT: ${currentPageContext.entity}
   * TABLES_HINT: ${currentPageContext.entity === 'room' ? 'rooms,buildings,districts,provinces,room_pricing,amenities,room_amenities' : currentPageContext.entity} (cần đầy đủ thông tin để phân tích giá cả và tiện ích)
   * RESPONSE: CHỈ trả về câu ngắn gọn xác nhận, KHÔNG có câu giới thiệu kiểu "để mình phân tích tiếp", "mình sẽ phân tích cho bạn" - Response Generator sẽ tạo phân tích đầy đủ
@@ -63,6 +75,8 @@ ${
 - Ví dụ với id: "đánh giá phòng hiện tại" → FILTERS_HINT: rooms.id='${currentPageContext.identifier}' | ENTITY_HINT: room | INTENT_ACTION=search | MODE_HINT=INSIGHT | RESPONSE: "Đang phân tích phòng này..."
 - LƯU Ý: KHÔNG BAO GIỜ set FILTERS_HINT với user_id khi có currentPageContext - phải dùng slug hoặc id
 - LƯU Ý: RESPONSE chỉ là câu xác nhận ngắn gọn, KHÔNG phân tích chi tiết - Response Generator sẽ làm việc đó
+
+- NẾU user nói "phân tích/đánh giá phòng này" nhưng không đủ để xác định phòng cụ thể (không có [CONTEXT] hoặc nhiều khả năng đang nhắc "phòng đó" từ kết quả trước) → REQUEST_TYPE=CLARIFICATION và hỏi lại: "Bạn muốn phân tích phòng nào? (gửi slug/link)"
 
 \n`
 		: ''
