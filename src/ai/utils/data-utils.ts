@@ -267,6 +267,7 @@ export function selectImportantColumns(
 		'area',
 		'count',
 		'total',
+		'value', // Thêm 'value' vào priority để giữ lại cho chart
 		'created_at',
 		'createdAt',
 		'updated_at',
@@ -288,9 +289,12 @@ export function selectImportantColumns(
 		return v === null || v === undefined || t === 'string' || t === 'number' || t === 'boolean';
 	});
 	const nonEmpty = primitiveColumns.filter((c) => isNonEmpty(c.key));
+	// Ưu tiên giữ lại label và value cho chart
+	const chartColumns = nonEmpty.filter((c) => /label|value/i.test(c.key));
 	const prioritized = [
-		...nonEmpty.filter((c) => PRIORITY_KEYS.includes(c.key)),
-		...nonEmpty.filter((c) => !PRIORITY_KEYS.includes(c.key)),
+		...chartColumns, // Ưu tiên label và value cho chart
+		...nonEmpty.filter((c) => PRIORITY_KEYS.includes(c.key) && !chartColumns.includes(c)),
+		...nonEmpty.filter((c) => !PRIORITY_KEYS.includes(c.key) && !chartColumns.includes(c)),
 	];
 	return prioritized.slice(0, MAX_COLUMNS);
 }
@@ -318,8 +322,12 @@ export function tryBuildChart(
 	if (rows.length === 0) {
 		return null;
 	}
-	const sample = rows[0];
-	const keys = Object.keys(sample);
+	// Tìm tất cả keys từ tất cả rows (không chỉ sample) để handle trường hợp một số rows thiếu field
+	const allKeys = new Set<string>();
+	rows.forEach((row) => {
+		Object.keys(row).forEach((k) => allKeys.add(k));
+	});
+	const keys = Array.from(allKeys);
 	const isNumericLike = (v: unknown): boolean => {
 		if (typeof v === 'number') return true;
 		if (typeof v === 'string') {
@@ -328,17 +336,44 @@ export function tryBuildChart(
 		}
 		return false;
 	};
-	const numericKeys = keys.filter((k) => isNumericLike((sample as Record<string, unknown>)[k]));
+	// Tìm numeric keys từ tất cả rows (không chỉ sample)
+	const numericKeys: string[] = [];
+	keys.forEach((k) => {
+		// Kiểm tra ít nhất một row có numeric value cho key này
+		const hasNumericValue = rows.some((r) => {
+			const v = (r as Record<string, unknown>)[k];
+			return v !== null && v !== undefined && isNumericLike(v);
+		});
+		if (hasNumericValue) {
+			numericKeys.push(k);
+		}
+	});
 	if (numericKeys.length === 0) {
+		// Debug: Log để biết tại sao không tìm thấy numeric keys
+		const sampleRow = rows[0];
+		const sampleKeys = Object.keys(sampleRow);
+		const sampleValues = sampleKeys.map((k) => ({
+			key: k,
+			value: (sampleRow as Record<string, unknown>)[k],
+			type: typeof (sampleRow as Record<string, unknown>)[k],
+		}));
+		console.warn(
+			`[tryBuildChart] No numeric keys found. Sample row keys: ${JSON.stringify(sampleValues)}`,
+		);
 		return null;
 	}
+	// Ưu tiên tìm 'value' key nếu có (thường dùng cho chart)
+	const valueKey =
+		numericKeys.find((k) => /^value$/i.test(k)) ||
+		numericKeys.find((k) => /value|amount|price|cost|total|sum|count|avg/i.test(k)) ||
+		numericKeys[0];
 	const labelKey =
-		keys.find((k) => /name|title|label|category|gender|type|status/i.test(k)) ??
+		keys.find((k) => /^label$/i.test(k)) ||
+		keys.find((k) => /name|title|label|category|gender|type|status/i.test(k)) ||
 		keys.find((k) => !numericKeys.includes(k));
 	if (!labelKey) {
 		return null;
 	}
-	const valueKey = numericKeys[0];
 	const statLike = keys.some((k) => /count|sum|avg|total|min|max|value/i.test(k));
 	const numericRatio = numericKeys.length / Math.max(keys.length, 1);
 	if (!statLike && numericRatio < 0.6) {

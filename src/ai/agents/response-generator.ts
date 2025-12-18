@@ -298,6 +298,92 @@ CHỈ trả về JSON, không có text khác:`;
 	}
 
 	/**
+	 * Detect chart type from query using LLM
+	 * @param query - User query
+	 * @param aiConfig - AI configuration
+	 * @returns Chart type or undefined
+	 */
+	private async detectChartTypeWithLLM(
+		query: string,
+		aiConfig?: { model: string; temperature: number; maxTokens: number },
+	): Promise<
+		| 'pie'
+		| 'bar'
+		| 'line'
+		| 'doughnut'
+		| 'radar'
+		| 'polarArea'
+		| 'area'
+		| 'horizontalBar'
+		| undefined
+	> {
+		if (!aiConfig || !query) {
+			return undefined;
+		}
+		try {
+			const prompt = `Phân tích câu hỏi của người dùng và xác định loại biểu đồ phù hợp nhất.
+
+Câu hỏi: "${query}"
+
+Các loại biểu đồ có sẵn:
+- pie: Biểu đồ tròn (phù hợp cho tỉ lệ, phần trăm, phân bổ)
+- doughnut: Biểu đồ vòng tròn (tương tự pie nhưng có lỗ ở giữa)
+- bar: Biểu đồ cột dọc (phù hợp cho so sánh số liệu)
+- horizontalBar: Biểu đồ cột ngang (tương tự bar nhưng nằm ngang)
+- line: Biểu đồ đường (phù hợp cho xu hướng theo thời gian)
+- area: Biểu đồ miền (tương tự line nhưng có vùng tô màu)
+- radar: Biểu đồ radar (phù hợp cho so sánh nhiều tiêu chí)
+- polarArea: Biểu đồ cực (tương tự radar)
+
+Yêu cầu:
+1. Phân tích ý định của người dùng từ câu hỏi
+2. Xác định loại biểu đồ phù hợp nhất
+3. Trả về CHỈ tên loại biểu đồ (pie, bar, line, doughnut, radar, polarArea, area, horizontalBar) hoặc "none" nếu không phù hợp
+
+Trả về CHỈ tên loại biểu đồ (không giải thích thêm):`;
+
+			const { text } = await generateText({
+				model: google(aiConfig.model),
+				prompt,
+				temperature: AI_TEMPERATURE.STANDARD,
+				maxOutputTokens: 50, // Chỉ cần tên loại biểu đồ
+			});
+
+			const chartType = text.trim().toLowerCase();
+			const validTypes = [
+				'pie',
+				'bar',
+				'line',
+				'doughnut',
+				'radar',
+				'polararea',
+				'area',
+				'horizontalbar',
+			];
+			if (validTypes.includes(chartType)) {
+				// Map polararea to polarArea, horizontalbar to horizontalBar
+				if (chartType === 'polararea') return 'polarArea';
+				if (chartType === 'horizontalbar') return 'horizontalBar';
+				return chartType as
+					| 'pie'
+					| 'bar'
+					| 'line'
+					| 'doughnut'
+					| 'radar'
+					| 'polarArea'
+					| 'area'
+					| 'horizontalBar';
+			}
+			return undefined;
+		} catch (error) {
+			this.logger.warn(
+				`Failed to detect chart type with LLM: ${(error as Error).message}. Falling back to pattern matching.`,
+			);
+			return undefined;
+		}
+	}
+
+	/**
 	 * Build structured data from SQL results
 	 * @param results - SQL query results
 	 * @param desiredMode - Desired output mode
@@ -327,20 +413,22 @@ CHỈ trả về JSON, không có text khác:`;
 			};
 		}
 
-		// Try CHART for aggregate/statistics-like data
-		if (desiredMode === ResponseGenerator.MODE_CHART) {
-			// Detect chart type from query
-			let chartType:
-				| 'pie'
-				| 'bar'
-				| 'line'
-				| 'doughnut'
-				| 'radar'
-				| 'polarArea'
-				| 'area'
-				| 'horizontalBar'
-				| undefined;
-			if (query) {
+		// Detect chart type from query using LLM (with pattern matching fallback)
+		let chartType:
+			| 'pie'
+			| 'bar'
+			| 'line'
+			| 'doughnut'
+			| 'radar'
+			| 'polarArea'
+			| 'area'
+			| 'horizontalBar'
+			| undefined;
+		if (query && aiConfig) {
+			// Ưu tiên dùng LLM để phân tích chính xác hơn
+			chartType = await this.detectChartTypeWithLLM(query, aiConfig);
+			// Fallback về pattern matching nếu LLM không trả về kết quả
+			if (!chartType) {
 				const queryLower = query.toLowerCase();
 				if (
 					/biểu đồ tròn|pie chart|pie|doughnut|tỉ lệ|tỷ lệ|phần trăm|percentage/i.test(queryLower)
@@ -364,6 +452,10 @@ CHỈ trả về JSON, không có text khác:`;
 					chartType = 'bar';
 				}
 			}
+		}
+
+		// Try CHART for aggregate/statistics-like data
+		if (desiredMode === ResponseGenerator.MODE_CHART) {
 			const chartData = tryBuildChart(rows, chartType, query);
 			if (chartData) {
 				return {
@@ -383,12 +475,53 @@ CHỈ trả về JSON, không có text khác:`;
 
 		// Fallback to TABLE
 		const inferred = inferColumns(rows);
+		// Khi có chart intent nhưng tryBuildChart failed, đảm bảo giữ lại label và value cho retry
+		const hasChartIntent = desiredMode === ResponseGenerator.MODE_CHART;
 		let columns = selectImportantColumns(inferred, rows);
+		// Nếu có chart intent nhưng không có label/value trong columns, thêm lại
+		if (hasChartIntent) {
+			const hasLabel = columns.some((c) => /^label$/i.test(c.key));
+			const hasValue = columns.some((c) => /^value$/i.test(c.key));
+			if (!hasLabel || !hasValue) {
+				// Tìm label và value từ inferred columns
+				const labelCol = inferred.find((c) => /^label$/i.test(c.key));
+				const valueCol = inferred.find((c) => /^value$/i.test(c.key));
+				if (labelCol && !hasLabel) {
+					columns.unshift(labelCol); // Thêm vào đầu
+				}
+				if (valueCol && !hasValue) {
+					columns.unshift(valueCol); // Thêm vào đầu
+				}
+			}
+		}
 		// Translate column labels with LLM if aiConfig is provided
 		if (aiConfig) {
 			columns = await this.translateColumnLabelsWithLLM(columns, aiConfig);
 		}
 		const normalized = normalizeRows(rows, columns).slice(0, ResponseGenerator.TABLE_ROWS_LIMIT);
+
+		// Retry chart generation với normalized rows nếu có chart intent
+		if (hasChartIntent && normalized.length > 0) {
+			const chartData = tryBuildChart(
+				normalized as ReadonlyArray<Record<string, unknown>>,
+				chartType,
+				query,
+			);
+			if (chartData) {
+				return {
+					list: null,
+					table: null,
+					chart: {
+						mimeType: ResponseGenerator.CHART_MIME_TYPE,
+						url: chartData.url,
+						width: chartData.width,
+						height: chartData.height,
+						alt: ResponseGenerator.CHART_ALT_TEXT,
+						type: chartData.type,
+					},
+				};
+			}
+		}
 
 		// MVP: Add path to table rows if entity and id exist
 		const rowsWithPath = normalized.map((row) => {
