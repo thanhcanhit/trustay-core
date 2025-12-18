@@ -1645,10 +1645,14 @@ export class AiService {
 
 				// Append SQL generation attempt vào processing log (đầy đủ theo log)
 				// Giới hạn kết quả SQL để tránh quá lớn (chỉ lưu tối đa 20 rows đầu tiên)
+				// Đảm bảo serialize lại để loại bỏ Decimal objects còn sót lại
 				const MAX_RESULTS_ROWS = 20;
 				const limitedResults = Array.isArray(sqlResult.results)
 					? sqlResult.results.slice(0, MAX_RESULTS_ROWS)
 					: sqlResult.results;
+				// Serialize lại một lần nữa để đảm bảo không còn Decimal objects (defensive)
+				// Vì có thể có Decimal objects còn sót lại sau serializeBigInt ban đầu
+				const fullySerializedResults = serializeBigInt(limitedResults);
 				if (sqlResult.debug?.attempts?.length) {
 					// Cập nhật attempts với results từ attempt cuối cùng (thành công)
 					const attemptsWithResults = sqlResult.debug.attempts.map((attempt: any, idx: number) => {
@@ -1656,7 +1660,7 @@ export class AiService {
 						if (idx === sqlResult.debug.attempts.length - 1 && sqlResult.sql) {
 							return {
 								...attempt,
-								results: limitedResults,
+								results: fullySerializedResults,
 								count: sqlResult.count,
 							};
 						}
@@ -1667,7 +1671,7 @@ export class AiService {
 					processingLogData.sqlGenerationAttempts!.push({
 						sql: sqlResult.sql,
 						count: sqlResult.count,
-						results: limitedResults,
+						results: fullySerializedResults,
 						tokenUsage: sqlResult.tokenUsage,
 						error: (sqlResult as any).error,
 						duration: sqlDuration,
