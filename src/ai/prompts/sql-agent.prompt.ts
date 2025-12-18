@@ -530,7 +530,8 @@ BƯỚC 5: VÍ DỤ SQL MẪU (THAM KHẢO)
        - Thông tin phòng: r.id, r.name, r.description, r.slug, r.room_type, r.area_sqm, r.max_occupancy, r.total_rooms
        - Thông tin tòa nhà: b.name AS building_name, b.address_line_1, b.address_line_2
        - Địa chỉ: d.district_name, p.province_name
-       - Giá cả (QUAN TRỌNG - ƯU TIÊN): rp.base_price_monthly, rp.deposit_amount, rp.utility_cost_monthly, rp.cleaning_fee, rp.service_fee_percentage
+       - Giá thuê/cọc (room_pricing): rp.base_price_monthly, rp.deposit_amount
+       - Chi phí phát sinh (room_costs + cost_type_templates): rc.cost_type, rc.fixed_amount, rc.per_person_amount, rc.unit_price, rc.unit, ctt.name
        - Tiện ích (QUAN TRỌNG - ƯU TIÊN): Danh sách amenities với tên đầy đủ (cần JOIN với room_amenities và amenities)
        - Rating (KHÔNG QUAN TRỌNG - chỉ lấy nếu có): r.overall_rating, r.total_ratings (có thể NULL)
      * JOIN với các bảng: buildings, districts, provinces, room_pricing, amenities, room_amenities
@@ -541,9 +542,45 @@ BƯỚC 5: VÍ DỤ SQL MẪU (THAM KHẢO)
        - KHÔNG BAO GIỜ query tất cả phòng khi có FILTERS_HINT - chỉ query 1 phòng cụ thể
      * KHÔNG cần LIMIT (chỉ 1 phòng)
      * KHÔNG filter theo buildings.owner_id (vì đây là query phòng cụ thể công khai, không phải dữ liệu cá nhân)
-     * ƯU TIÊN: Tập trung vào giá cả (base_price_monthly, utility_cost_monthly, cleaning_fee, service_fee_percentage) và tiện ích (amenities)
-     * Ví dụ với slug: SELECT r.id, r.name, r.description, r.slug, r.room_type, r.area_sqm, r.max_occupancy, r.total_rooms, b.name AS building_name, b.address_line_1, d.district_name, p.province_name, rp.base_price_monthly, rp.deposit_amount, rp.utility_cost_monthly, rp.cleaning_fee, rp.service_fee_percentage, array_agg(DISTINCT a.name ORDER BY a.name) AS amenities FROM rooms r JOIN buildings b ON r.building_id = b.id JOIN districts d ON b.district_id = d.id JOIN provinces p ON b.province_id = p.id LEFT JOIN room_pricing rp ON rp.room_id = r.id LEFT JOIN room_amenities ra ON ra.room_id = r.id LEFT JOIN amenities a ON a.id = ra.amenity_id WHERE r.slug = 'tuyenquan-go-vap-phong-ap1443' GROUP BY r.id, b.id, d.id, p.id, rp.id;
-     * Ví dụ với id: SELECT r.id, r.name, r.description, r.slug, r.room_type, r.area_sqm, r.max_occupancy, r.total_rooms, b.name AS building_name, b.address_line_1, d.district_name, p.province_name, rp.base_price_monthly, rp.deposit_amount, rp.utility_cost_monthly, rp.cleaning_fee, rp.service_fee_percentage, array_agg(DISTINCT a.name ORDER BY a.name) AS amenities FROM rooms r JOIN buildings b ON r.building_id = b.id JOIN districts d ON b.district_id = d.id JOIN provinces p ON b.province_id = p.id LEFT JOIN room_pricing rp ON rp.room_id = r.id LEFT JOIN room_amenities ra ON ra.room_id = r.id LEFT JOIN amenities a ON a.id = ra.amenity_id WHERE r.id = '02a927ba-c5e4-40e3-a64c-0187c9b35e33' GROUP BY r.id, b.id, d.id, p.id, rp.id;
+     * ƯU TIÊN: Tập trung vào giá thuê/cọc (room_pricing) và chi phí phát sinh (room_costs) + tiện ích (amenities)
+     * Ví dụ với slug:
+       SELECT
+         r.id, r.name, r.description, r.slug, r.room_type, r.area_sqm, r.max_occupancy, r.total_rooms,
+         b.name AS building_name, b.address_line_1, d.district_name, p.province_name,
+         rp.base_price_monthly, rp.deposit_amount,
+         json_agg(DISTINCT jsonb_build_object('name', ctt.name, 'cost_type', rc.cost_type, 'fixed_amount', rc.fixed_amount, 'per_person_amount', rc.per_person_amount, 'unit_price', rc.unit_price, 'unit', rc.unit))
+           FILTER (WHERE rc.id IS NOT NULL) AS costs,
+         array_agg(DISTINCT a.name ORDER BY a.name) AS amenities
+       FROM rooms r
+       JOIN buildings b ON r.building_id = b.id
+       JOIN districts d ON b.district_id = d.id
+       JOIN provinces p ON b.province_id = p.id
+       LEFT JOIN room_pricing rp ON rp.room_id = r.id
+       LEFT JOIN room_costs rc ON rc.room_id = r.id AND rc.is_active = true
+       LEFT JOIN cost_type_templates ctt ON ctt.id = rc.cost_type_template_id
+       LEFT JOIN room_amenities ra ON ra.room_id = r.id
+       LEFT JOIN amenities a ON a.id = ra.amenity_id
+       WHERE r.slug = 'tuyenquan-go-vap-phong-ap1443'
+       GROUP BY r.id, b.id, d.id, p.id, rp.id;
+     * Ví dụ với id:
+       SELECT
+         r.id, r.name, r.description, r.slug, r.room_type, r.area_sqm, r.max_occupancy, r.total_rooms,
+         b.name AS building_name, b.address_line_1, d.district_name, p.province_name,
+         rp.base_price_monthly, rp.deposit_amount,
+         json_agg(DISTINCT jsonb_build_object('name', ctt.name, 'cost_type', rc.cost_type, 'fixed_amount', rc.fixed_amount, 'per_person_amount', rc.per_person_amount, 'unit_price', rc.unit_price, 'unit', rc.unit))
+           FILTER (WHERE rc.id IS NOT NULL) AS costs,
+         array_agg(DISTINCT a.name ORDER BY a.name) AS amenities
+       FROM rooms r
+       JOIN buildings b ON r.building_id = b.id
+       JOIN districts d ON b.district_id = d.id
+       JOIN provinces p ON b.province_id = p.id
+       LEFT JOIN room_pricing rp ON rp.room_id = r.id
+       LEFT JOIN room_costs rc ON rc.room_id = r.id AND rc.is_active = true
+       LEFT JOIN cost_type_templates ctt ON ctt.id = rc.cost_type_template_id
+       LEFT JOIN room_amenities ra ON ra.room_id = r.id
+       LEFT JOIN amenities a ON a.id = ra.amenity_id
+       WHERE r.id = '02a927ba-c5e4-40e3-a64c-0187c9b35e33'
+       GROUP BY r.id, b.id, d.id, p.id, rp.id;
    
    - TÌM KIẾM DANH SÁCH (từ khóa: tìm, phòng, room, bài đăng, post, ở, gần):
      * QUAN TRỌNG: Trong schema, table rooms có cột name (KHÔNG phải title). Phải dùng r.name AS title.
