@@ -4,7 +4,29 @@
 
 **A self-validating multi-agent framework for solving the Text-to-SQL cold start**
 
-![NestJS](https://img.shields.io/badge/NestJS_11-E0234E?style=flat-square&logo=nestjs&logoColor=white)![TypeScript](https://img.shields.io/badge/TypeScript_5.7-3178C6?style=flat-square&logo=typescript&logoColor=white)![PostgreSQL](https://img.shields.io/badge/PostgreSQL_17-4169E1?style=flat-square&logo=postgresql&logoColor=white)![Gemini](https://img.shields.io/badge/Gemini_2.0_Flash-8E75B2?style=flat-square&logo=googlegemini&logoColor=white)![Paper](https://img.shields.io/badge/Paper-PDF-B31B1B?style=flat-square&logo=adobeacrobatreader&logoColor=white)![Status](https://img.shields.io/badge/status-research_prototype-F59E0B?style=flat-square)**Read the paper** · [**Architecture**](#system-architecture) · [**Evaluation**](#reported-evaluation) · [**Quick start**](#quick-start)
+<p>
+  <img src="https://img.shields.io/badge/NestJS_11-E0234E?style=flat-square&amp;logo=nestjs&amp;logoColor=white" alt="NestJS 11" />
+  &nbsp;&nbsp;
+  <img src="https://img.shields.io/badge/TypeScript_5.7-3178C6?style=flat-square&amp;logo=typescript&amp;logoColor=white" alt="TypeScript 5.7" />
+  &nbsp;&nbsp;
+  <img src="https://img.shields.io/badge/PostgreSQL_17-4169E1?style=flat-square&amp;logo=postgresql&amp;logoColor=white" alt="PostgreSQL 17" />
+  &nbsp;&nbsp;
+  <img src="https://img.shields.io/badge/Gemini_2.0_Flash-8E75B2?style=flat-square&amp;logo=googlegemini&amp;logoColor=white" alt="Gemini 2.0 Flash" />
+  &nbsp;&nbsp;
+  <img src="https://img.shields.io/badge/Paper-PDF-B31B1B?style=flat-square&amp;logo=adobeacrobatreader&amp;logoColor=white" alt="Paper PDF" />
+  &nbsp;&nbsp;
+  <img src="https://img.shields.io/badge/status-research_prototype-F59E0B?style=flat-square" alt="Research prototype" />
+</p>
+
+<p>
+  <strong><a href="docs/Trustay-AI.pdf">Read the paper</a></strong>
+  &nbsp;&nbsp;·&nbsp;&nbsp;
+  <strong><a href="#system-architecture">Architecture</a></strong>
+  &nbsp;&nbsp;·&nbsp;&nbsp;
+  <strong><a href="#reported-evaluation">Evaluation</a></strong>
+  &nbsp;&nbsp;·&nbsp;&nbsp;
+  <strong><a href="#quick-start">Quick start</a></strong>
+</p>
 
 ---
 
